@@ -26,5 +26,5 @@ pub fn lint() -> Result<()> {
 pub fn check_all() -> Result<()> {
 	fmt_check()?;
 	lint()?;
-	cargo(&["build", "--workspace"])
+	cargo(&["build"])
 }

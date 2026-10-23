@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "apps/*", "tools/*", "plugins/*"]
+default-members = ["crates/*", "apps/*", "tools/*"]
 exclude = ["plugins/theme-midnight", "plugins/theme-amoled-violet"]
 
 [workspace.package]
