@@ -1,8 +1,8 @@
-# Publishing plugins and themes
+# Publishing plugins
 
 ## For users: the catalog
 
-Settings, Plugins has a catalog section with a Catalog URL field and a Refresh button. It lists the plugins and themes of a catalog. The default catalog is the one in this repository (`plugins/catalog.json`, signed by `plugins/catalog.json.sig`). You can point the field at any other catalog URL.
+Settings, Plugins has a catalog section with a Catalog URL field and a Refresh button. It lists the plugins of a catalog. Themes have their own catalog, see `docs/themes.md`. The default catalog is the one in this repository (`plugins/catalog.json`, signed by `plugins/catalog.json.sig`). You can point the field at any other catalog URL.
 
 - Refreshing asks for consent first, then downloads the catalog and its `.sig` file over HTTPS with a client that sends no cookies and no account data.
 - The client verifies the signature against the catalog key compiled into it. A catalog with a missing or wrong signature is rejected as a whole.
@@ -11,7 +11,7 @@ Settings, Plugins has a catalog section with a Catalog URL field and a Refresh b
 
 ## For authors: ship your own plugin
 
-1. Scaffold: `cargo xtask plugin new dev.example.my-plugin`. Themes are a folder with `plugin.toml` and `theme.json`, see `docs/themes.md`.
+1. Scaffold: `cargo xtask plugin new dev.example.my-plugin`.
 2. Build and test: `cargo xtask plugin build plugins/my-plugin --release`, then `cargo xtask plugin conformance`.
 3. Pack: `cargo xtask plugin pack plugins/my-plugin --sign <your key file>` writes `<id>-<version>.oxidcord-plugin`. Make a key once with `cargo xtask plugin keygen <file>` and keep the file private.
 4. Share the archive directly (users install it from Settings, Plugins, Install from file), or host your own catalog.

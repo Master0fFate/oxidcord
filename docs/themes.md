@@ -57,22 +57,44 @@ The ones worth changing:
 
 The complete list, with the defaults, is the `tokens!` block in `crates/ui/src/theme.rs`. Every identifier there is a valid key.
 
-## Ship a theme as a plugin
+## Share a theme
 
-A theme-only plugin is a folder with a `plugin.toml` without `entry`, and a `theme.json`. It has no permissions and no wasm. Installing it from the catalog or from a `.oxidcord-plugin` file makes the theme appear in Settings, Themes while the plugin is enabled.
+First party themes live in the top level `themes/` folder, one folder per theme. They are not plugins: there is no manifest, no permissions and nothing runs.
 
-```toml
-id = "dev.example.theme-sunset"
-name = "Sunset"
-version = "0.1.0"
-api = "^1.0"
-authors = ["Example"]
-license = "MIT"
-description = "Warm dark theme."
-min_host = "0.1.0"
+```
+themes/sunset/theme.json
+themes/sunset/theme.toml
+themes/sunset/README.md
 ```
 
-Pack it with `cargo xtask plugin pack <folder>`. See `docs/plugin-api/publishing.md` for the catalog. The folders `plugins/theme-midnight` and `plugins/theme-amoled-violet` are complete examples.
+`theme.json` is the file described above. `theme.toml` describes it:
+
+```toml
+id = "sunset"
+name = "Sunset"
+version = "0.1.0"
+author = "Example"
+description = "Warm dark theme."
+```
+
+The `id` matches the folder name and `[a-z0-9-]{1,64}`. Bump `version` whenever `theme.json` changes.
+
+To add a theme, open a pull request that adds the folder to `themes/`. `themes/midnight` and `themes/amoled-violet` are complete examples.
+
+### Catalog
+
+`themes/catalog.json` lists every theme with the sha256 and length of its `theme.json`. `themes/catalog.json.sig` is a base64 ed25519 signature over the exact bytes of the catalog, made with the same key as the plugin catalog. After a theme is merged, a maintainer rebuilds and signs both files:
+
+```bash
+cargo xtask theme catalog --dir themes --out themes/catalog.json --base-url https://raw.githubusercontent.com/Master0fFate/oxidcord/main/themes
+cargo xtask theme sign themes/catalog.json <catalog key file>
+```
+
+### Install
+
+Open Settings, Themes and use the catalog section. Refresh loads the signed catalog, and Install downloads the theme, checks its length and sha256 against the signed entry and adds it to your themes list. Installed themes are plain files in the themes directory.
+
+A plugin package can also carry a `theme.json` (see `docs/plugin-api/building.md`), but first party themes ship through the themes catalog.
 
 ## Tips
 

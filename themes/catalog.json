@@ -1,0 +1,26 @@
+{
+  "generated_at": "2026-10-23T23:38:00Z",
+  "themes": [
+    {
+      "author": "Master0fFate",
+      "description": "True black AMOLED theme with a violet accent, softer corners and violet tinted surfaces.",
+      "id": "amoled-violet",
+      "length": 1264,
+      "name": "Amoled Violet",
+      "sha256": "58d72bf4a7111fa1d04ad573d3330f827443140bec3111459d7055fb4bb9164a",
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/themes/amoled-violet/theme.json",
+      "version": "0.1.0"
+    },
+    {
+      "author": "Master0fFate",
+      "description": "Deep blue dark theme with the Oxidcord violet accent.",
+      "id": "midnight",
+      "length": 823,
+      "name": "Midnight",
+      "sha256": "6dadb124536c0f805227d4d36bd1a026303e24a41ba1cf2ca7b274befe7f7ddf",
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/themes/midnight/theme.json",
+      "version": "0.1.0"
+    }
+  ],
+  "version": 1
+}

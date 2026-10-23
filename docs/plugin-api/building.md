@@ -27,7 +27,7 @@ priority = 0
 | `api` | Semver requirement on the plugin API, for example `^1.0`. The host currently implements 1.0.0 |
 | `permissions` | Either bare names or tables with a reason: `[[permissions]]` with `permission = "storage"` and `reason = "..."`. The consent dialog shows the reason |
 | `network_hosts` | Lowercase hostnames `fetch` may reach. Needs the `net-fetch` permission, and the user must approve each host |
-| `entry` | Relative path to the component inside the package, ending in `.wasm`, no `..`. Optional: a theme-only plugin leaves it out and ships a `theme.json` |
+| `entry` | Relative path to the component inside the package, ending in `.wasm`, no `..`. Optional: a plugin without one ships only a `theme.json`. First party themes do not use this, they ship through the themes catalog (`docs/themes.md`) |
 | `min_host` | Oldest host version the plugin runs on. Optional |
 | `priority` | Order in the render pipeline, lower runs first, ties by id. Optional, default 0 |
 | `settings_schema` | A JSON schema as a TOML table. Optional |

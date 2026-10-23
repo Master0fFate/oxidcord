@@ -1,6 +1,8 @@
 mod catalog;
 mod scaffold;
 
+pub(crate) use catalog::{SignArgs, sign};
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};

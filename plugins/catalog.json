@@ -137,28 +137,6 @@
       "reviewed": true
     },
     {
-      "id": "dev.oxidcord.theme-amoled-violet",
-      "name": "Amoled Violet",
-      "version": "0.1.0",
-      "description": "True black AMOLED theme with a violet accent, softer corners and violet tinted surfaces.",
-      "permissions": [],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.theme-amoled-violet-0.1.0.oxidcord-plugin",
-      "sha256": "52285c3eca167816ecc7d55dcc7aae0e8fe150a9e31cc47894407c6431060ffb",
-      "length": 888,
-      "reviewed": true
-    },
-    {
-      "id": "dev.oxidcord.theme-midnight",
-      "name": "Midnight",
-      "version": "0.1.0",
-      "description": "Deep blue dark theme with the Oxidcord violet accent.",
-      "permissions": [],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.theme-midnight-0.1.0.oxidcord-plugin",
-      "sha256": "7a621751072f7c15fc85f92eaafff0346b885c07d00ba2e7590a539db2ad1d7e",
-      "length": 714,
-      "reviewed": true
-    },
-    {
       "id": "dev.oxidcord.user-notes",
       "name": "User Notes",
       "version": "0.1.0",

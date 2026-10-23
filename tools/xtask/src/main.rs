@@ -2,6 +2,7 @@ mod checks;
 mod headless;
 mod plugin;
 mod release;
+mod theme;
 
 use std::process::ExitCode;
 
@@ -19,6 +20,7 @@ enum Task {
 	HeadlessRun(headless::Args),
 	Plugin(plugin::PluginArgs),
 	Release(release::ReleaseArgs),
+	Theme(theme::ThemeArgs),
 	FmtCheck,
 	Lint,
 	CheckAll,
@@ -30,6 +32,7 @@ fn main() -> ExitCode {
 		Task::HeadlessRun(args) => headless::run(args),
 		Task::Plugin(args) => plugin::run(args),
 		Task::Release(args) => release::run(args),
+		Task::Theme(args) => theme::run(args),
 		Task::FmtCheck => checks::fmt_check(),
 		Task::Lint => checks::lint(),
 		Task::CheckAll => checks::check_all(),

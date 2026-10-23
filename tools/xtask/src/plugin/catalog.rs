@@ -7,9 +7,9 @@ use anyhow::{Context, Result, anyhow};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use clap::Args;
-use ed25519_dalek::{Signer, SigningKey};
+use ed25519_dalek::{Signer, SigningKey, Verifier};
 use plugin_host::Package;
-use plugin_host::catalog::{CATALOG_VERSION, Catalog, CatalogEntry, verify_catalog};
+use plugin_host::catalog::{CATALOG_VERSION, Catalog, CatalogEntry};
 use sha2::{Digest, Sha256};
 
 use super::{pack_plugin, plugin_dirs, read_manifest};
@@ -118,8 +118,9 @@ pub fn sign(args: &SignArgs) -> Result<()> {
 	let bytes =
 		fs::read(&args.catalog).with_context(|| format!("could not read {}", args.catalog.display()))?;
 	let key = read_signing_key(&args.key)?;
-	let signature = STANDARD.encode(key.sign(&bytes).to_bytes());
-	verify_catalog(&bytes, signature.as_bytes(), &key.verifying_key())?;
+	let signature = key.sign(&bytes);
+	key.verifying_key().verify(&bytes, &signature)?;
+	let signature = STANDARD.encode(signature.to_bytes());
 	let mut signature_path = OsString::from(&args.catalog);
 	signature_path.push(".sig");
 	let signature_path = PathBuf::from(signature_path);
