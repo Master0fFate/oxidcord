@@ -14,7 +14,7 @@ mod task;
 pub use broker::{BrokerSink, NoopSink};
 pub use command::Command;
 pub use config::{NotifyFn, PluginOptions, SessionConfig, VoiceIo};
-pub use plugin_host::catalog::{Catalog, CatalogEntry};
+pub use plugin_host::catalog::{Catalog, CatalogEntry, ThemeCatalog, ThemeEntry};
 pub use plugin_host::{
 	CommandEntry, Permission, PluginInfo, PluginManager, PluginState, SlotEntry, Slots, Trust,
 };

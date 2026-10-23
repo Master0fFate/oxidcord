@@ -1,8 +1,0 @@
-id = "dev.oxidcord.theme-amoled-violet"
-name = "Amoled Violet"
-version = "0.1.0"
-api = "^1.0"
-authors = ["fate"]
-license = "MIT OR Apache-2.0"
-description = "True black AMOLED theme with a violet accent, softer corners and violet tinted surfaces."
-min_host = "0.1.0"

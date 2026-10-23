@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result, bail, ensure};
 use parking_lot::Mutex;
-use plugin_host::catalog::{Catalog, CatalogEntry};
+use plugin_host::catalog::{Catalog, CatalogEntry, ThemeCatalog};
 use plugin_host::{Grants, Package, Permission, PluginManager, PluginState, THEME_FILE};
 use store::Store;
 
@@ -34,6 +34,8 @@ pub(crate) struct PluginHub {
 	themes: Mutex<Vec<PathBuf>>,
 	catalog: Mutex<Option<Arc<Catalog>>>,
 	catalog_error: Mutex<Option<String>>,
+	theme_catalog: Mutex<Option<Arc<ThemeCatalog>>>,
+	theme_catalog_error: Mutex<Option<String>>,
 	last_error: Mutex<Option<String>>,
 }
 
@@ -47,6 +49,8 @@ impl PluginHub {
 			themes: Mutex::new(Vec::new()),
 			catalog: Mutex::new(None),
 			catalog_error: Mutex::new(None),
+			theme_catalog: Mutex::new(None),
+			theme_catalog_error: Mutex::new(None),
 			last_error: Mutex::new(None),
 		}
 	}
@@ -81,6 +85,32 @@ impl PluginHub {
 
 	pub(crate) fn catalog_error(&self) -> Option<String> {
 		self.catalog_error.lock().clone()
+	}
+
+	pub(crate) fn theme_catalog(&self) -> Option<Arc<ThemeCatalog>> {
+		self.theme_catalog.lock().clone()
+	}
+
+	pub(crate) fn set_theme_catalog(&self, outcome: Result<ThemeCatalog>) {
+		match outcome {
+			Ok(catalog) => {
+				*self.theme_catalog.lock() = Some(Arc::new(catalog));
+				*self.theme_catalog_error.lock() = None;
+			}
+			Err(error) => self.set_theme_catalog_error(error),
+		}
+	}
+
+	pub(crate) fn set_theme_catalog_error(&self, error: anyhow::Error) {
+		*self.theme_catalog_error.lock() = Some(format!("{error:#}"));
+	}
+
+	pub(crate) fn clear_theme_catalog_error(&self) {
+		*self.theme_catalog_error.lock() = None;
+	}
+
+	pub(crate) fn theme_catalog_error(&self) -> Option<String> {
+		self.theme_catalog_error.lock().clone()
 	}
 
 	pub(crate) fn last_error(&self) -> Option<String> {

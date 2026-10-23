@@ -17,7 +17,7 @@ use tokio::time::Instant;
 
 use super::{Core, Internal};
 use crate::broker::{view_of, voice_info};
-use crate::catalog::{download_plugin, fetch_catalog};
+use crate::catalog::{download_plugin, download_theme, fetch_catalog, fetch_theme_catalog, write_theme};
 use crate::command::Command;
 use crate::plugins::{PluginFlags, PluginHub};
 use crate::render::{RenderJob, RenderResult};
@@ -74,6 +74,18 @@ async fn install_from_catalog(hub: Arc<PluginHub>, id: &str) -> Result<()> {
 	};
 	let _ = fs::remove_file(&archive);
 	installed
+}
+
+async fn install_theme_from_catalog(hub: Arc<PluginHub>, id: &str) -> Result<()> {
+	let entry = hub
+		.theme_catalog()
+		.and_then(|catalog| catalog.themes.iter().find(|entry| entry.id == id).cloned())
+		.context("theme is not in the catalog")?;
+	let bytes = download_theme(&entry).await?;
+	let themes_dir = hub.store.paths.themes_dir();
+	tokio::task::spawn_blocking(move || write_theme(&themes_dir, &entry, &bytes))
+		.await
+		.context("install task failed")?
 }
 
 impl Core {
@@ -514,6 +526,25 @@ impl Core {
 					let outcome = install_from_catalog(Arc::clone(&hub), &id).await;
 					hub.record("install from catalog", outcome);
 					let _ = internal.send(Internal::PluginsChanged);
+				});
+			}
+			Command::ThemeCatalogRefresh { url } => {
+				let hub = Arc::clone(&self.hub);
+				let internal = self.internal.clone();
+				self.runtime.spawn(async move {
+					hub.set_theme_catalog(fetch_theme_catalog(&url).await);
+					let _ = internal.send(Internal::CatalogChanged);
+				});
+			}
+			Command::ThemeInstall { id } => {
+				let hub = Arc::clone(&self.hub);
+				let internal = self.internal.clone();
+				self.runtime.spawn(async move {
+					match install_theme_from_catalog(Arc::clone(&hub), &id).await {
+						Ok(()) => hub.clear_theme_catalog_error(),
+						Err(error) => hub.set_theme_catalog_error(error),
+					}
+					let _ = internal.send(Internal::CatalogChanged);
 				});
 			}
 			_ => {}

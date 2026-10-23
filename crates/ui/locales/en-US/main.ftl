@@ -395,6 +395,8 @@ themes-apply = Apply
 themes-applied = Applied
 themes-open-folder = Open Themes Folder
 themes-empty = No theme plugins are installed.
+themes-downloaded = Downloaded
+themes-catalog = Theme Catalog
 
 developer-debug = Plugin debug panel
 developer-debug-note = Shows call counts, timings, denied calls and crashes for every plugin at the bottom of the window.

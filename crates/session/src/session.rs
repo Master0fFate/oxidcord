@@ -3,7 +3,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use gateway::{Gateway, GatewayConfig, GatewayHandle};
-use plugin_host::catalog::Catalog;
+use plugin_host::catalog::{Catalog, ThemeCatalog};
 use plugin_host::{CommandEntry, Grants, PluginInfo, PluginManager, RuntimeConfig, Slots};
 use protocol::Token;
 use rest::{RestClient, RestConfig};
@@ -194,6 +194,14 @@ impl Session {
 
 	pub fn catalog_error(&self) -> Option<String> {
 		self.hub.catalog_error()
+	}
+
+	pub fn theme_catalog(&self) -> Option<Arc<ThemeCatalog>> {
+		self.hub.theme_catalog()
+	}
+
+	pub fn theme_catalog_error(&self) -> Option<String> {
+		self.hub.theme_catalog_error()
 	}
 
 	pub fn theme_files(&self) -> Vec<std::path::PathBuf> {

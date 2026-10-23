@@ -741,7 +741,9 @@ impl Core {
 			| Command::PluginSetSetting { .. }
 			| Command::PluginsChanged
 			| Command::CatalogRefresh { .. }
-			| Command::CatalogInstall { .. }) => self.on_plugin_command(command),
+			| Command::CatalogInstall { .. }
+			| Command::ThemeCatalogRefresh { .. }
+			| Command::ThemeInstall { .. }) => self.on_plugin_command(command),
 			Command::Reconnect => self.gateway.reconnect(),
 			Command::Logout => {
 				self.store.tokens.clear();

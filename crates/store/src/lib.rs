@@ -11,6 +11,7 @@ mod token;
 use parking_lot::RwLock;
 
 pub use accounts::{Account, AccountStore};
+pub use atomic::write_atomic;
 pub use database::{Database, MediaEntry, ReadState, Table};
 pub use error::{Result, StoreError};
 pub use paths::Paths;

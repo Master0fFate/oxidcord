@@ -96,7 +96,7 @@ impl PluginPages {
 			}),
 			themes: cx.new({
 				let (data, backend) = (data.clone(), backend.clone());
-				|cx| ThemesPage::new(data, backend, cx)
+				|cx| ThemesPage::new(data, backend, window, cx)
 			}),
 			developer: cx.new(|cx| DeveloperPage::new(data, backend, cx)),
 			slot: cx.new(|_| SlotPage { selected: None }),

@@ -162,6 +162,12 @@ pub enum Command {
 	CatalogInstall {
 		id: String,
 	},
+	ThemeCatalogRefresh {
+		url: String,
+	},
+	ThemeInstall {
+		id: String,
+	},
 	StartCamera {
 		device_id: Option<String>,
 		quality: VideoQuality,
