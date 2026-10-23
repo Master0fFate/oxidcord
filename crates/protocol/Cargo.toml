@@ -17,4 +17,6 @@ chrono.workspace = true
 thiserror.workspace = true
 zeroize.workspace = true
 base64.workspace = true
+
+[target.'cfg(windows)'.dependencies]
 windows.workspace = true
