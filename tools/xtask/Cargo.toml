@@ -1,0 +1,30 @@
+[package]
+name = "xtask"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+session = { workspace = true, features = ["mock"] }
+mockcord.workspace = true
+store.workspace = true
+state.workspace = true
+markdown.workspace = true
+protocol.workspace = true
+tokio.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+url.workspace = true
+plugin-host.workspace = true
+ed25519-dalek.workspace = true
+base64.workspace = true
+sha2.workspace = true
+hex.workspace = true
+rand.workspace = true
+chrono.workspace = true
+updater.workspace = true

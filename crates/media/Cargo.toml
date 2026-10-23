@@ -1,0 +1,28 @@
+[package]
+name = "oxidcord-media"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "media"
+
+[dependencies]
+tokio.workspace = true
+reqwest.workspace = true
+futures-util.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+bytes.workspace = true
+url.workspace = true
+parking_lot.workspace = true
+sha2.workspace = true
+hex.workspace = true
+image.workspace = true
+fast_image_resize.workspace = true
+blurhash.workspace = true
+thumbhash.workspace = true
+lru.workspace = true
+base64.workspace = true

@@ -1,0 +1,326 @@
+use crate::theme::rem;
+use gpui::{
+	App, Hsla, InteractiveElement as _, IntoElement, Rems, RenderOnce, SharedString, Styled as _, Window, svg,
+};
+use gpui_kit_assets::IconName;
+use protocol::ChannelType;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum IconKind {
+	Hash,
+	Volume,
+	Megaphone,
+	Forum,
+	Stage,
+	Thread,
+	Lock,
+	ChevronDown,
+	ChevronRight,
+	Plus,
+	Minus,
+	Settings,
+	Mic,
+	MicOff,
+	Headphones,
+	HeadphonesOff,
+	Inbox,
+	Help,
+	Pin,
+	Members,
+	Search,
+	Bell,
+	BellOff,
+	Gift,
+	Sticker,
+	Emoji,
+	Gif,
+	Send,
+	Attach,
+	Reply,
+	Edit,
+	Trash,
+	More,
+	Close,
+	Check,
+	Copy,
+	Link,
+	Download,
+	AtSign,
+	Image,
+	Compass,
+	Home,
+	Friends,
+	Nitro,
+	Shop,
+	Phone,
+	Video,
+	LogOut,
+	Account,
+	Profile,
+	Shield,
+	Devices,
+	Connections,
+	Clips,
+	FriendRequests,
+	Appearance,
+	Accessibility,
+	Chat,
+	Keybinds,
+	Language,
+	Streamer,
+	Advanced,
+	Plugins,
+	Themes,
+	Developer,
+	WindowMinimize,
+	WindowMaximize,
+	WindowRestore,
+	WindowClose,
+	Group,
+	Calendar,
+	Folder,
+	Join,
+	Play,
+	File,
+	ExternalLink,
+	VideoOff,
+	ScreenShare,
+	ScreenShareOff,
+	PhoneOff,
+	SignalHigh,
+	SignalMedium,
+	SignalLow,
+	Hand,
+	Expand,
+	Shrink,
+	Warning,
+	VolumeOff,
+	AppWindow,
+	Ban,
+	Gavel,
+	Clock,
+	Crown,
+	Flag,
+	Archive,
+	Unarchive,
+	Tag,
+	GridLayout,
+	ListLayout,
+	Eye,
+	AuditLog,
+	UserX,
+	Mail,
+	Sparkles,
+	ArrowUp,
+	ArrowDown,
+	Grip,
+	Upload,
+	ImagePlus,
+	Funnel,
+	NewThread,
+	Timer,
+	Unpin,
+	ChevronUp,
+	ChevronLeft,
+	Star,
+	Heart,
+	Smile,
+	Eraser,
+	Tv,
+	UserCog,
+	Forward,
+}
+
+impl IconKind {
+	pub fn path(self) -> SharedString {
+		self.name().path()
+	}
+
+	fn name(self) -> IconName {
+		match self {
+			Self::Hash => IconName::Hash,
+			Self::Volume => IconName::Volume2,
+			Self::Megaphone => IconName::Megaphone,
+			Self::Forum => IconName::MessagesSquare,
+			Self::Stage => IconName::Radio,
+			Self::Thread => IconName::MessageSquareText,
+			Self::Lock => IconName::Lock,
+			Self::ChevronDown => IconName::ChevronDown,
+			Self::ChevronRight => IconName::ChevronRight,
+			Self::Plus => IconName::Plus,
+			Self::Minus => IconName::Minus,
+			Self::Settings => IconName::Settings,
+			Self::Mic => IconName::Mic,
+			Self::MicOff => IconName::MicOff,
+			Self::Headphones => IconName::Headphones,
+			Self::HeadphonesOff => IconName::HeadphoneOff,
+			Self::Inbox => IconName::Inbox,
+			Self::Help => IconName::CircleQuestionMark,
+			Self::Pin => IconName::Pin,
+			Self::Members => IconName::Users,
+			Self::Search => IconName::Search,
+			Self::Bell => IconName::Bell,
+			Self::BellOff => IconName::BellOff,
+			Self::Gift => IconName::Gift,
+			Self::Sticker => IconName::Sticker,
+			Self::Emoji => IconName::FaceSlightlySmiling,
+			Self::Gif => IconName::ImagePlay,
+			Self::Send => IconName::Send,
+			Self::Attach => IconName::Paperclip,
+			Self::Reply => IconName::Reply,
+			Self::Edit => IconName::Pencil,
+			Self::Trash => IconName::Trash,
+			Self::More => IconName::Ellipsis,
+			Self::Close => IconName::X,
+			Self::Check => IconName::Check,
+			Self::Copy => IconName::Copy,
+			Self::Link => IconName::Link,
+			Self::Download => IconName::Download,
+			Self::AtSign => IconName::AtSign,
+			Self::Image => IconName::Image,
+			Self::Compass => IconName::Compass,
+			Self::Home => IconName::MessageCircle,
+			Self::Friends => IconName::Users,
+			Self::Nitro => IconName::Zap,
+			Self::Shop => IconName::Store,
+			Self::Phone => IconName::Phone,
+			Self::Video => IconName::Video,
+			Self::LogOut => IconName::LogOut,
+			Self::Account => IconName::User,
+			Self::Profile => IconName::IdCard,
+			Self::Shield => IconName::ShieldCheck,
+			Self::Devices => IconName::Monitor,
+			Self::Connections => IconName::Link2,
+			Self::Clips => IconName::Clapperboard,
+			Self::FriendRequests => IconName::UserPlus,
+			Self::Appearance => IconName::Palette,
+			Self::Accessibility => IconName::Accessibility,
+			Self::Chat => IconName::MessageSquare,
+			Self::Keybinds => IconName::Keyboard,
+			Self::Language => IconName::Globe,
+			Self::Streamer => IconName::Tv,
+			Self::Advanced => IconName::Cog,
+			Self::Plugins => IconName::Puzzle,
+			Self::Themes => IconName::SwatchBook,
+			Self::Developer => IconName::Terminal,
+			Self::WindowMinimize => IconName::WindowMinimize,
+			Self::WindowMaximize => IconName::WindowMaximize,
+			Self::WindowRestore => IconName::WindowRestore,
+			Self::WindowClose => IconName::WindowClose,
+			Self::Group => IconName::UsersRound,
+			Self::Calendar => IconName::Calendar,
+			Self::Folder => IconName::Folder,
+			Self::Join => IconName::ArrowRight,
+			Self::Play => IconName::Play,
+			Self::File => IconName::File,
+			Self::ExternalLink => IconName::ExternalLink,
+			Self::VideoOff => IconName::VideoOff,
+			Self::ScreenShare => IconName::ScreenShare,
+			Self::ScreenShareOff => IconName::ScreenShareOff,
+			Self::PhoneOff => IconName::PhoneOff,
+			Self::SignalHigh => IconName::SignalHigh,
+			Self::SignalMedium => IconName::SignalMedium,
+			Self::SignalLow => IconName::SignalLow,
+			Self::Hand => IconName::Hand,
+			Self::Expand => IconName::Maximize2,
+			Self::Shrink => IconName::Minimize2,
+			Self::Warning => IconName::TriangleAlert,
+			Self::VolumeOff => IconName::VolumeX,
+			Self::AppWindow => IconName::AppWindow,
+			Self::Ban => IconName::Ban,
+			Self::Gavel => IconName::Gavel,
+			Self::Clock => IconName::Clock,
+			Self::Crown => IconName::Crown,
+			Self::Flag => IconName::Flag,
+			Self::Archive => IconName::Archive,
+			Self::Unarchive => IconName::ArchiveRestore,
+			Self::Tag => IconName::Tag,
+			Self::GridLayout => IconName::LayoutGrid,
+			Self::ListLayout => IconName::LayoutList,
+			Self::Eye => IconName::Eye,
+			Self::AuditLog => IconName::ScrollText,
+			Self::UserX => IconName::UserX,
+			Self::Mail => IconName::Mail,
+			Self::Sparkles => IconName::Sparkles,
+			Self::ArrowUp => IconName::ArrowUp,
+			Self::ArrowDown => IconName::ArrowDown,
+			Self::Grip => IconName::GripVertical,
+			Self::Upload => IconName::Upload,
+			Self::ImagePlus => IconName::ImagePlus,
+			Self::Funnel => IconName::ListFilter,
+			Self::NewThread => IconName::MessageSquarePlus,
+			Self::Timer => IconName::Timer,
+			Self::Unpin => IconName::PinOff,
+			Self::ChevronUp => IconName::ChevronUp,
+			Self::ChevronLeft => IconName::ChevronLeft,
+			Self::Star => IconName::Star,
+			Self::Heart => IconName::Heart,
+			Self::Smile => IconName::FaceSlightlySmiling,
+			Self::Eraser => IconName::Eraser,
+			Self::Tv => IconName::Tv,
+			Self::UserCog => IconName::UserCog,
+			Self::Forward => IconName::Forward,
+		}
+	}
+}
+
+pub fn channel_icon(kind: ChannelType) -> IconKind {
+	match kind {
+		ChannelType::GuildVoice => IconKind::Volume,
+		ChannelType::GuildStageVoice => IconKind::Stage,
+		ChannelType::GuildAnnouncement | ChannelType::AnnouncementThread => IconKind::Megaphone,
+		ChannelType::GuildForum | ChannelType::GuildMedia => IconKind::Forum,
+		ChannelType::PublicThread | ChannelType::PrivateThread => IconKind::Thread,
+		ChannelType::Dm | ChannelType::GroupDm => IconKind::AtSign,
+		_ => IconKind::Hash,
+	}
+}
+
+#[derive(IntoElement)]
+pub struct Icon {
+	kind: IconKind,
+	size: Rems,
+	color: Option<Hsla>,
+	hover: Option<(SharedString, Hsla)>,
+}
+
+impl Icon {
+	pub fn new(kind: IconKind) -> Self {
+		Self {
+			kind,
+			size: rem(20.),
+			color: None,
+			hover: None,
+		}
+	}
+
+	pub fn size(mut self, size: Rems) -> Self {
+		self.size = size;
+		self
+	}
+
+	pub fn color(mut self, color: impl Into<Hsla>) -> Self {
+		self.color = Some(color.into());
+		self
+	}
+
+	pub fn group_hover(mut self, group: impl Into<SharedString>, color: Hsla) -> Self {
+		self.hover = Some((group.into(), color));
+		self
+	}
+}
+
+impl RenderOnce for Icon {
+	fn render(self, window: &mut Window, _: &mut App) -> impl IntoElement {
+		let color = self.color.unwrap_or_else(|| window.text_style().color);
+		let icon = svg()
+			.path(self.kind.path())
+			.flex_shrink_0()
+			.size(self.size)
+			.text_color(color);
+		match self.hover {
+			Some((group, hover)) => icon.group_hover(group, |style| style.text_color(hover)),
+			None => icon,
+		}
+	}
+}

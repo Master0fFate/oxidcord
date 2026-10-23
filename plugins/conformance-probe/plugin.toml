@@ -1,0 +1,10 @@
+id = "dev.oxidcord.conformance-probe"
+name = "Conformance Probe"
+version = "0.1.0"
+api = "^1.0"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Loops forever or exhausts memory when the conformance runner asks it to."
+permissions = []
+entry = "conformance_probe.wasm"
+min_host = "0.1.0"

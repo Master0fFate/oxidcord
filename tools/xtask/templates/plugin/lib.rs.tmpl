@@ -1,0 +1,14 @@
+use plugin_sdk::{Md, MessageView, Plugin, export_plugin, host};
+
+#[derive(Default)]
+struct @struct@;
+
+impl Plugin for @struct@ {
+	fn render_message(&mut self, msg: &MessageView, mut ast: Vec<Md>) -> Option<Vec<Md>> {
+		let elapsed_secs = (host::now_ms() - msg.timestamp_ms).max(0) / 1000;
+		ast.push(Md::subtext(format!("sent {elapsed_secs} s ago")));
+		Some(ast)
+	}
+}
+
+export_plugin!(@struct@);

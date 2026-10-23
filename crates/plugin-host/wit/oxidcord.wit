@@ -1,0 +1,350 @@
+package oxidcord:plugin@1.0.0;
+
+interface types {
+	type snowflake = u64;
+
+	record user {
+		id: snowflake,
+		username: string,
+		display-name: string,
+		avatar: option<string>,
+		bot: bool,
+	}
+
+	record message-ref {
+		id: snowflake,
+		channel-id: snowflake,
+		guild-id: option<snowflake>,
+	}
+
+	record message-view {
+		id: snowflake,
+		channel-id: snowflake,
+		guild-id: option<snowflake>,
+		author: user,
+		content: string,
+		timestamp-ms: s64,
+		edited: bool,
+		reply-to: option<snowflake>,
+		%flags: u64,
+	}
+
+	record outgoing-message {
+		channel-id: snowflake,
+		content: string,
+		reply-to: option<snowflake>,
+	}
+
+	record md-tree {
+		nodes: list<md-node>,
+		roots: list<u32>,
+	}
+
+	record md-code-block {
+		lang: option<string>,
+		code: string,
+	}
+
+	record md-heading {
+		level: u8,
+		children: list<u32>,
+	}
+
+	record md-list {
+		ordered: bool,
+		start: u32,
+		items: list<list<u32>>,
+	}
+
+	record md-emoji {
+		name: string,
+		id: u64,
+		animated: bool,
+	}
+
+	record md-timestamp {
+		unix: s64,
+		style: string,
+	}
+
+	record md-command {
+		name: string,
+		id: u64,
+	}
+
+	record md-link {
+		url: string,
+		text: option<list<u32>>,
+		suppress-embed: bool,
+	}
+
+	variant md-node {
+		text(string),
+		bold(list<u32>),
+		italic(list<u32>),
+		underline(list<u32>),
+		strike(list<u32>),
+		spoiler(list<u32>),
+		code(string),
+		code-block(md-code-block),
+		quote(list<u32>),
+		heading(md-heading),
+		subtext(list<u32>),
+		%list(md-list),
+		user-mention(u64),
+		role-mention(u64),
+		channel-mention(u64),
+		everyone,
+		here,
+		custom-emoji(md-emoji),
+		timestamp(md-timestamp),
+		command-mention(md-command),
+		guild-nav(string),
+		link(md-link),
+		line-break,
+	}
+
+	record ui-tree {
+		nodes: list<ui-node>,
+		roots: list<u32>,
+	}
+
+	record ui-box {
+		id: option<string>,
+		gap: u8,
+		padding: u8,
+		children: list<u32>,
+		align: string,
+	}
+
+	record text-style {
+		bold: bool,
+		muted: bool,
+		size: u8,
+		color: option<string>,
+	}
+
+	record ui-text {
+		value: string,
+		style: text-style,
+	}
+
+	record ui-button {
+		id: string,
+		label: string,
+		%variant: string,
+		icon: option<string>,
+	}
+
+	record ui-input {
+		id: string,
+		placeholder: string,
+		value: string,
+	}
+
+	record ui-toggle {
+		id: string,
+		label: string,
+		on: bool,
+	}
+
+	record ui-image {
+		url: string,
+		width: u32,
+		height: u32,
+	}
+
+	record ui-badge {
+		label: string,
+		color: option<string>,
+	}
+
+	record ui-link {
+		label: string,
+		url: string,
+	}
+
+	variant ui-node {
+		column(ui-box),
+		row(ui-box),
+		text(ui-text),
+		button(ui-button),
+		input(ui-input),
+		toggle(ui-toggle),
+		image(ui-image),
+		badge(ui-badge),
+		divider,
+		icon(string),
+		progress(f32),
+		link(ui-link),
+	}
+
+	enum permission {
+		context-basic,
+		context-timeline,
+		context-directory,
+		context-members,
+		context-voice,
+		context-private,
+		message-render,
+		message-send,
+		message-filter,
+		user-display,
+		actions-send,
+		actions-react,
+		actions-navigate,
+		actions-clipboard,
+		actions-notify,
+		actions-open-url,
+		storage,
+		net-fetch,
+		ui-slots,
+	}
+
+	variant host-error {
+		denied(permission),
+		rate-limited,
+		invalid(string),
+		timeout,
+		unavailable,
+	}
+
+	record fetch-request {
+		method: string,
+		url: string,
+		headers: list<tuple<string, string>>,
+		body: option<list<u8>>,
+	}
+
+	record fetch-response {
+		status: u16,
+		headers: list<tuple<string, string>>,
+		body: list<u8>,
+	}
+
+	record reaction-event {
+		message: message-ref,
+		user-id: snowflake,
+		emoji: string,
+	}
+
+	record typing-event {
+		channel-id: snowflake,
+		user-id: snowflake,
+	}
+
+	record channel-switch {
+		guild-id: option<snowflake>,
+		channel-id: snowflake,
+	}
+
+	record setting-change {
+		key: string,
+		value: string,
+	}
+
+	record guild-summary {
+		id: snowflake,
+		name: string,
+		icon: option<string>,
+		owner: bool,
+		member-count: option<u32>,
+	}
+
+	record channel-summary {
+		id: snowflake,
+		guild-id: option<snowflake>,
+		name: string,
+		kind: u32,
+		parent-id: option<snowflake>,
+		position: u32,
+	}
+
+	record member-summary {
+		user-id: snowflake,
+		display-name: string,
+		roles: list<snowflake>,
+		status: string,
+	}
+
+	record voice-info {
+		guild-id: option<snowflake>,
+		channel-id: snowflake,
+		self-mute: bool,
+		self-deaf: bool,
+		participants: list<snowflake>,
+		speaking: list<snowflake>,
+		e2ee: bool,
+	}
+
+	variant event {
+		message-created(message-view),
+		message-updated(message-view),
+		message-deleted(message-ref),
+		reaction-added(reaction-event),
+		typing(typing-event),
+		channel-switched(channel-switch),
+		setting-changed(setting-change),
+		connection(string),
+		voice-changed(voice-info),
+	}
+
+	variant send-decision {
+		pass,
+		replace(outgoing-message),
+		cancel(string),
+	}
+
+	record display-override {
+		name: option<string>,
+		color: option<string>,
+		badge: option<string>,
+	}
+}
+
+interface host {
+	use types.{snowflake, user, message-ref, message-view, outgoing-message, ui-tree, host-error, fetch-request, fetch-response, guild-summary, channel-summary, member-summary, voice-info};
+
+	log: func(level: u8, msg: string);
+	storage-get: func(key: string) -> result<option<list<u8>>, host-error>;
+	storage-set: func(key: string, value: list<u8>) -> result<_, host-error>;
+	storage-delete: func(key: string) -> result<_, host-error>;
+	storage-list: func() -> result<list<string>, host-error>;
+	fetch: func(req: fetch-request) -> result<fetch-response, host-error>;
+	send-message: func(msg: outgoing-message) -> result<snowflake, host-error>;
+	add-reaction: func(m: message-ref, emoji: string) -> result<_, host-error>;
+	open-channel: func(guild-id: option<snowflake>, channel-id: snowflake) -> result<_, host-error>;
+	clipboard-write: func(text: string) -> result<_, host-error>;
+	notify: func(title: string, body: string) -> result<_, host-error>;
+	open-url: func(url: string) -> result<_, host-error>;
+	current-user: func() -> result<user, host-error>;
+	current-channel: func() -> result<option<tuple<option<snowflake>, snowflake>>, host-error>;
+	channel-messages: func(channel-id: snowflake, limit: u32) -> result<list<message-view>, host-error>;
+	display-name: func(guild-id: option<snowflake>, user-id: snowflake) -> result<string, host-error>;
+	list-guilds: func() -> result<list<guild-summary>, host-error>;
+	list-channels: func(guild-id: option<snowflake>) -> result<list<channel-summary>, host-error>;
+	list-members: func(guild-id: snowflake, limit: u32) -> result<list<member-summary>, host-error>;
+	voice-state: func() -> result<option<voice-info>, host-error>;
+	now-ms: func() -> s64;
+	register-slot: func(slot: string, node: ui-tree) -> result<_, host-error>;
+	register-command: func(name: string, description: string) -> result<_, host-error>;
+}
+
+interface guest {
+	use types.{snowflake, user, message-view, outgoing-message, md-tree, ui-tree, event, send-decision, display-override};
+
+	init: func() -> result<_, string>;
+	on-event: func(event: event);
+	render-message: func(msg: message-view, ast: md-tree) -> option<md-tree>;
+	before-send: func(msg: outgoing-message) -> send-decision;
+	filter-message: func(msg: message-view) -> bool;
+	display-user: func(guild-id: option<snowflake>, user: user) -> option<display-override>;
+	on-ui-action: func(id: string, payload: string) -> ui-tree;
+	on-command: func(name: string, args: string, channel-id: snowflake) -> result<_, string>;
+	settings-schema: func() -> string;
+}
+
+world plugin {
+	import host;
+	export guest;
+}

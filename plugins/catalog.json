@@ -1,0 +1,193 @@
+{
+  "version": 1,
+  "generated_at": "2026-10-23T18:08:07Z",
+  "plugins": [
+    {
+      "id": "dev.oxidcord.delete-keeper",
+      "name": "Delete Keeper",
+      "version": "0.1.0",
+      "description": "Keeps the text of deleted messages and shows it under a deleted badge.",
+      "permissions": [
+        "context-timeline",
+        "storage",
+        "ui-slots"
+      ],
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.delete-keeper-0.1.0.oxidcord-plugin",
+      "sha256": "4304484ed7f1f5df5b5f817b85ac63e17d05fa45635788afca25c6460598e1b1",
+      "length": 50289,
+      "reviewed": true
+    },
+    {
+      "id": "dev.oxidcord.edit-history",
+      "name": "Edit History",
+      "version": "0.1.0",
+      "description": "Keeps the previous versions of edited messages and shows them under the message.",
+      "permissions": [
+        "context-timeline",
+        "storage",
+        "message-render"
+      ],
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.edit-history-0.1.0.oxidcord-plugin",
+      "sha256": "f3ad8b2f1aa7a1b927975fa3ff7c299df374b0e9f09cc4807f1421bf38d20ca2",
+      "length": 57056,
+      "reviewed": true
+    },
+    {
+      "id": "dev.oxidcord.hello-timestamps",
+      "name": "Hello Timestamps",
+      "version": "0.1.0",
+      "description": "Appends a relative send time under every message and adds a Copy ID button.",
+      "permissions": [
+        "message-render",
+        "ui-slots",
+        "actions-clipboard"
+      ],
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.hello-timestamps-0.1.0.oxidcord-plugin",
+      "sha256": "3782822a20ac305d24d2102a27e46b97f5a68d30faf8bc80813d5f0a4a243b1f",
+      "length": 46683,
+      "reviewed": true
+    },
+    {
+      "id": "dev.oxidcord.keyword-highlighter",
+      "name": "Keyword Highlighter",
+      "version": "0.1.0",
+      "description": "Bolds your keywords in messages, adds a keyword badge and notifies on a match.",
+      "permissions": [
+        "message-render",
+        "storage",
+        "context-basic",
+        "actions-notify"
+      ],
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.keyword-highlighter-0.1.0.oxidcord-plugin",
+      "sha256": "d81192a184d16e9d3d8a21c8488f071d0da529d669c04f0e11bf6349fd46c287",
+      "length": 53076,
+      "reviewed": true
+    },
+    {
+      "id": "dev.oxidcord.link-cleaner",
+      "name": "Link Cleaner",
+      "version": "0.1.0",
+      "description": "Strips tracking parameters from links before a message is sent.",
+      "permissions": [
+        "message-send"
+      ],
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.link-cleaner-0.1.0.oxidcord-plugin",
+      "sha256": "fcaf7a1f27e3b13b317f8294e27d3b16c4f9a672e53dac865ee476e1a944081c",
+      "length": 47217,
+      "reviewed": true
+    },
+    {
+      "id": "dev.oxidcord.local-status-badge",
+      "name": "Local Status Badge",
+      "version": "0.1.0",
+      "description": "Status bar item with the current channel id and a badge that cycles through three colors.",
+      "permissions": [
+        "context-basic",
+        "ui-slots"
+      ],
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.local-status-badge-0.1.0.oxidcord-plugin",
+      "sha256": "1c94d40818faad1ea23b5ee03a436c2b2175b1b7e3bb2a15a79670b304d88b6f",
+      "length": 46106,
+      "reviewed": true
+    },
+    {
+      "id": "dev.oxidcord.quick-replies",
+      "name": "Quick Replies",
+      "version": "0.1.0",
+      "description": "Saved snippets you can send from a composer popover or with /snip <name>.",
+      "permissions": [
+        "ui-slots",
+        "storage",
+        "actions-send",
+        "context-basic"
+      ],
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.quick-replies-0.1.0.oxidcord-plugin",
+      "sha256": "0803098db48d7165e39655cea165e14d469e3e270c0c9f4552bfdd7bc7f37ba1",
+      "length": 54482,
+      "reviewed": true
+    },
+    {
+      "id": "dev.oxidcord.spoiler-all",
+      "name": "Spoiler All",
+      "version": "0.1.0",
+      "description": "Hides every message behind a spoiler, switched by a button in the composer toolbar.",
+      "permissions": [
+        "message-render",
+        "ui-slots",
+        "storage"
+      ],
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.spoiler-all-0.1.0.oxidcord-plugin",
+      "sha256": "da03b620beb289313a40826a8f5925b72b13cb4f3a4cd96d6098c2e8e8b7f46d",
+      "length": 47160,
+      "reviewed": true
+    },
+    {
+      "id": "dev.oxidcord.text-shortcuts",
+      "name": "Text Shortcuts",
+      "version": "0.1.0",
+      "description": "Expands :shrug: style emoticons and your own ;shortcuts in messages before they are sent.",
+      "permissions": [
+        "message-send",
+        "storage",
+        "ui-slots"
+      ],
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.text-shortcuts-0.1.0.oxidcord-plugin",
+      "sha256": "c062df0cbed5c86b205bea08634a0a6248433c395eb8711e2a5fef01dd0b124e",
+      "length": 63424,
+      "reviewed": true
+    },
+    {
+      "id": "dev.oxidcord.theme-amoled-violet",
+      "name": "Amoled Violet",
+      "version": "0.1.0",
+      "description": "True black AMOLED theme with a violet accent, softer corners and violet tinted surfaces.",
+      "permissions": [],
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.theme-amoled-violet-0.1.0.oxidcord-plugin",
+      "sha256": "52285c3eca167816ecc7d55dcc7aae0e8fe150a9e31cc47894407c6431060ffb",
+      "length": 888,
+      "reviewed": true
+    },
+    {
+      "id": "dev.oxidcord.theme-midnight",
+      "name": "Midnight",
+      "version": "0.1.0",
+      "description": "Deep blue dark theme with the Oxidcord violet accent.",
+      "permissions": [],
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.theme-midnight-0.1.0.oxidcord-plugin",
+      "sha256": "7a621751072f7c15fc85f92eaafff0346b885c07d00ba2e7590a539db2ad1d7e",
+      "length": 714,
+      "reviewed": true
+    },
+    {
+      "id": "dev.oxidcord.user-notes",
+      "name": "User Notes",
+      "version": "0.1.0",
+      "description": "Private notes on people, shown as a badge next to their name.",
+      "permissions": [
+        "ui-slots",
+        "storage",
+        "user-display"
+      ],
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.user-notes-0.1.0.oxidcord-plugin",
+      "sha256": "e456203c9e88b3a84a324779bd92b873bd634c1191e62ad1872bdf0ebbd9afad",
+      "length": 52128,
+      "reviewed": true
+    },
+    {
+      "id": "dev.oxidcord.word-mute",
+      "name": "Word Mute",
+      "version": "0.1.0",
+      "description": "Hides messages that contain words or phrases you muted, for spoilers and noise.",
+      "permissions": [
+        "message-filter",
+        "storage",
+        "ui-slots",
+        "context-basic"
+      ],
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.word-mute-0.1.0.oxidcord-plugin",
+      "sha256": "65356fd60d7a36b82c263ed21ffeb8e2f870a4edd1503d727c34b9d55909b0b4",
+      "length": 59869,
+      "reviewed": true
+    }
+  ]
+}

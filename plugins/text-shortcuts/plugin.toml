@@ -1,0 +1,21 @@
+id = "dev.oxidcord.text-shortcuts"
+name = "Text Shortcuts"
+version = "0.1.0"
+api = "^1.0"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Expands :shrug: style emoticons and your own ;shortcuts in messages before they are sent."
+entry = "text_shortcuts.wasm"
+min_host = "0.1.0"
+
+[[permissions]]
+permission = "message-send"
+reason = "Rewrites the shortcuts in a message you are about to send."
+
+[[permissions]]
+permission = "storage"
+reason = "Keeps your shortcuts and the on/off switches."
+
+[[permissions]]
+permission = "ui-slots"
+reason = "Adds the Shortcuts button, its popover and the /shortcut command."

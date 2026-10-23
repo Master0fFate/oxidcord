@@ -1,0 +1,10 @@
+id = "dev.oxidcord.hello-timestamps"
+name = "Hello Timestamps"
+version = "0.1.0"
+api = "^1.0"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Appends a relative send time under every message and adds a Copy ID button."
+permissions = ["message-render", "ui-slots", "actions-clipboard"]
+entry = "hello_timestamps.wasm"
+min_host = "0.1.0"

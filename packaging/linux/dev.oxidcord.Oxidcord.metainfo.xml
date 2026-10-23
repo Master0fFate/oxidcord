@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+	<id>dev.oxidcord.Oxidcord</id>
+	<name>Oxidcord</name>
+	<summary>A native Discord client with a sandboxed plugin system</summary>
+	<metadata_license>CC0-1.0</metadata_license>
+	<project_license>MIT OR Apache-2.0</project_license>
+	<developer_name>Oxidcord contributors</developer_name>
+	<description>
+		<p>Oxidcord is a native Discord client written in Rust. It renders its own interface, keeps the token in the system keyring and extends itself through WebAssembly plugins that only get the permissions you approve.</p>
+		<p>Using a third-party client on a user account can violate Discord's Terms of Service.</p>
+	</description>
+	<launchable type="desktop-id">dev.oxidcord.Oxidcord.desktop</launchable>
+	<url type="homepage">https://github.com/Master0fFate/oxidcord</url>
+	<url type="bugtracker">https://github.com/Master0fFate/oxidcord/issues</url>
+	<provides>
+		<binary>oxidcord</binary>
+	</provides>
+	<categories>
+		<category>Network</category>
+		<category>Chat</category>
+	</categories>
+	<content_rating type="oars-1.1">
+		<content_attribute id="social-chat">intense</content_attribute>
+		<content_attribute id="social-info">mild</content_attribute>
+	</content_rating>
+	<releases>
+		<release version="0.1.0" date="2026-10-22"/>
+	</releases>
+</component>

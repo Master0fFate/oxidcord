@@ -1,0 +1,46 @@
+{
+	"app-id": "dev.oxidcord.Oxidcord",
+	"runtime": "org.freedesktop.Platform",
+	"runtime-version": "25.08",
+	"sdk": "org.freedesktop.Sdk",
+	"sdk-extensions": ["org.freedesktop.Sdk.Extension.rust-stable"],
+	"command": "oxidcord",
+	"finish-args": [
+		"--share=network",
+		"--share=ipc",
+		"--socket=wayland",
+		"--socket=fallback-x11",
+		"--socket=pulseaudio",
+		"--device=dri",
+		"--talk-name=org.freedesktop.Notifications",
+		"--talk-name=org.freedesktop.secrets",
+		"--talk-name=org.kde.StatusNotifierWatcher"
+	],
+	"build-options": {
+		"append-path": "/usr/lib/sdk/rust-stable/bin",
+		"env": {
+			"CARGO_HOME": "/run/build/oxidcord/cargo"
+		}
+	},
+	"modules": [
+		{
+			"name": "oxidcord",
+			"buildsystem": "simple",
+			"build-commands": [
+				"cargo --offline fetch --manifest-path Cargo.toml --verbose",
+				"cargo --offline build --release --locked -p oxidcord",
+				"install -Dm755 target/release/oxidcord /app/bin/oxidcord",
+				"install -Dm644 packaging/linux/oxidcord.desktop /app/share/applications/dev.oxidcord.Oxidcord.desktop",
+				"install -Dm644 packaging/linux/dev.oxidcord.Oxidcord.metainfo.xml /app/share/metainfo/dev.oxidcord.Oxidcord.metainfo.xml",
+				"install -Dm644 assets/icon.png /app/share/icons/hicolor/256x256/apps/dev.oxidcord.Oxidcord.png"
+			],
+			"sources": [
+				{
+					"type": "dir",
+					"path": "../.."
+				},
+				"cargo-sources.json"
+			]
+		}
+	]
+}

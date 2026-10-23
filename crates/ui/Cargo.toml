@@ -1,0 +1,49 @@
+[package]
+name = "oxidcord-ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "ui"
+
+[dependencies]
+gpui.workspace = true
+gpui-platform.workspace = true
+updater.workspace = true
+gpui-component.workspace = true
+gpui-kit-assets.workspace = true
+markdown.workspace = true
+media.workspace = true
+store.workspace = true
+session.workspace = true
+plugin-host.workspace = true
+voice.workspace = true
+state.workspace = true
+rest.workspace = true
+platform.workspace = true
+login.workspace = true
+protocol.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+parking_lot.workspace = true
+tracing.workspace = true
+image.workspace = true
+fluent-bundle.workspace = true
+fluent-langneg.workspace = true
+unic-langid.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+tokio.workspace = true
+rfd.workspace = true
+lru.workspace = true
+bytes.workspace = true
+url.workspace = true
+smallvec.workspace = true
+base64.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+raw-window-handle.workspace = true
+windows.workspace = true

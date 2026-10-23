@@ -1,0 +1,21 @@
+id = "dev.oxidcord.spoiler-all"
+name = "Spoiler All"
+version = "0.1.0"
+api = "^1.0"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Hides every message behind a spoiler, switched by a button in the composer toolbar."
+entry = "spoiler_all.wasm"
+min_host = "0.1.0"
+
+[[permissions]]
+permission = "message-render"
+reason = "Wraps message bodies in a spoiler."
+
+[[permissions]]
+permission = "ui-slots"
+reason = "Adds the toggle button to the composer toolbar."
+
+[[permissions]]
+permission = "storage"
+reason = "Remembers whether spoilers are on."

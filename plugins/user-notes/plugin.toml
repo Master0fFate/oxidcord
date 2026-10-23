@@ -1,0 +1,21 @@
+id = "dev.oxidcord.user-notes"
+name = "User Notes"
+version = "0.1.0"
+api = "^1.0"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Private notes on people, shown as a badge next to their name."
+entry = "user_notes.wasm"
+min_host = "0.1.0"
+
+[[permissions]]
+permission = "ui-slots"
+reason = "Adds the Add note menu item and the note dialog."
+
+[[permissions]]
+permission = "storage"
+reason = "Keeps your notes."
+
+[[permissions]]
+permission = "user-display"
+reason = "Shows the start of a note next to the person's name."

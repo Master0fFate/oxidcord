@@ -1,0 +1,131 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/*", "tools/*", "plugins/*"]
+exclude = ["plugins/theme-midnight", "plugins/theme-amoled-violet"]
+
+[workspace.package]
+version = "0.1.0-beta.1"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Master0fFate/oxidcord"
+rust-version = "1.99"
+
+[workspace.dependencies]
+protocol = { path = "crates/protocol", package = "oxidcord-protocol" }
+rest = { path = "crates/rest", package = "oxidcord-rest" }
+gateway = { path = "crates/gateway", package = "oxidcord-gateway" }
+state = { path = "crates/state", package = "oxidcord-state" }
+store = { path = "crates/store", package = "oxidcord-store" }
+markdown = { path = "crates/markdown", package = "oxidcord-markdown" }
+plugin-host = { path = "crates/plugin-host", package = "oxidcord-plugin-host" }
+plugin-sdk = { path = "crates/plugin-sdk", package = "oxidcord-plugin-sdk" }
+ui = { path = "crates/ui", package = "oxidcord-ui" }
+platform = { path = "crates/platform", package = "oxidcord-platform" }
+media = { path = "crates/media", package = "oxidcord-media" }
+session = { path = "crates/session", package = "oxidcord-session" }
+voice = { path = "crates/voice", package = "oxidcord-voice" }
+login = { path = "crates/login", package = "oxidcord-login" }
+updater = { path = "crates/updater", package = "oxidcord-updater" }
+mockcord = { path = "tools/mockcord" }
+
+tokio = { version = "1.54", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "fs", "signal"] }
+tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "stream", "multipart", "gzip", "brotli", "zstd", "http2"] }
+futures-util = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["raw_value"] }
+serde_repr = "0.1"
+rusqlite = { version = "0.40", features = ["bundled"] }
+keyring = "4.2"
+flate2 = "1.1"
+thiserror = "2.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+bitflags = { version = "2.13", features = ["serde"] }
+bytes = "1"
+url = "2"
+rustls = "0.23"
+rand = "0.9"
+parking_lot = "0.12"
+indexmap = { version = "2", features = ["serde"] }
+smallvec = "1"
+chrono = { version = "0.4", features = ["serde"] }
+axum = { version = "0.8", features = ["ws", "json", "macros"] }
+sha2 = "0.10"
+rsa = "0.9"
+qrcode = { version = "0.14", default-features = false }
+wry = "0.57"
+tao = "0.37"
+hex = "0.4"
+zeroize = { version = "1", features = ["derive"] }
+directories = "6.0"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "ico"] }
+fast_image_resize = "6.1"
+blurhash = "0.2"
+thumbhash = "0.1"
+lru = "0.19"
+base64 = "0.23"
+interprocess = { version = "2.4", features = ["tokio"] }
+notify-rust = "4.18"
+tray-icon = { version = "0.26", default-features = false, features = ["ksni"] }
+auto-launch = "0.6"
+arboard = "3.7"
+raw-window-handle = "0.6"
+rfd = "0.17"
+global-hotkey = "0.9"
+windows = { version = "0.62", features = [
+	"Win32_Foundation",
+	"Win32_System_Registry",
+	"Win32_System_SystemInformation",
+	"Win32_UI_Input_KeyboardAndMouse",
+	"Win32_UI_Shell",
+	"Win32_UI_WindowsAndMessaging",
+	"Wdk_System_SystemServices",
+] }
+
+wasmtime = { version = "50", default-features = false, features = ["component-model", "cranelift", "runtime", "parallel-compilation", "std"] }
+wit-bindgen = "0.63"
+wasmtime-wasi = { version = "50", default-features = false, features = ["p2"] }
+toml = "1.1"
+semver = "1.0"
+ed25519-dalek = "3.0"
+zip = { version = "9.0", default-features = false, features = ["deflate-flate2"] }
+
+fluent-bundle = "0.16"
+fluent-langneg = "0.14"
+unic-langid = "0.9"
+clap = { version = "4.6", features = ["derive"] }
+embed-resource = "3.0"
+
+cpal = "0.18"
+opus = "0.4"
+rubato = "5.0"
+aes-gcm = { version = "0.11", features = ["hazmat"] }
+chacha20poly1305 = "0.11"
+nnnoiseless = { version = "0.5", default-features = false }
+openh264 = { version = "0.9", default-features = false, features = ["source"] }
+openmls = "0.9"
+openmls_rust_crypto = "0.6"
+openmls_basic_credential = "0.6"
+openmls_traits = "0.6"
+tls_codec = "0.5"
+hmac = "0.12"
+
+gpui = { package = "gpui-pre", version = "=0.3.9" }
+gpui-platform = { package = "gpui-pre-platform", version = "=0.3.9" }
+gpui-component = "0.8.0"
+gpui-kit-assets = "0.8.0"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+panic = "unwind"
+strip = "debuginfo"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3

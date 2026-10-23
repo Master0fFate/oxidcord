@@ -1,0 +1,56 @@
+[package]
+name = "oxidcord"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "oxidcord"
+path = "src/main.rs"
+
+[dependencies]
+ui.workspace = true
+store.workspace = true
+session.workspace = true
+protocol.workspace = true
+rest.workspace = true
+gateway.workspace = true
+mockcord.workspace = true
+url.workspace = true
+platform.workspace = true
+updater.workspace = true
+login.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+
+[build-dependencies]
+embed-resource.workspace = true
+
+[package.metadata.deb]
+name = "oxidcord"
+maintainer = "Oxidcord contributors"
+copyright = "Oxidcord contributors"
+extended-description = "A native Discord client with a sandboxed plugin system."
+section = "net"
+priority = "optional"
+depends = "$auto"
+assets = [
+	["target/release/oxidcord", "usr/bin/oxidcord", "755"],
+	["../../packaging/linux/oxidcord.desktop", "usr/share/applications/dev.oxidcord.Oxidcord.desktop", "644"],
+	["../../packaging/linux/dev.oxidcord.Oxidcord.metainfo.xml", "usr/share/metainfo/dev.oxidcord.Oxidcord.metainfo.xml", "644"],
+	["../../assets/icon.png", "usr/share/icons/hicolor/256x256/apps/dev.oxidcord.Oxidcord.png", "644"],
+]
+
+[package.metadata.generate-rpm]
+name = "oxidcord"
+summary = "A native Discord client with a sandboxed plugin system."
+assets = [
+	{ source = "target/release/oxidcord", dest = "/usr/bin/oxidcord", mode = "755" },
+	{ source = "../../packaging/linux/oxidcord.desktop", dest = "/usr/share/applications/dev.oxidcord.Oxidcord.desktop", mode = "644" },
+	{ source = "../../packaging/linux/dev.oxidcord.Oxidcord.metainfo.xml", dest = "/usr/share/metainfo/dev.oxidcord.Oxidcord.metainfo.xml", mode = "644" },
+	{ source = "../../assets/icon.png", dest = "/usr/share/icons/hicolor/256x256/apps/dev.oxidcord.Oxidcord.png", mode = "644" },
+]

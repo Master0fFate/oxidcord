@@ -1,0 +1,38 @@
+[package]
+name = "oxidcord-session"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "session"
+
+[features]
+mock = ["voice/testing"]
+
+[dependencies]
+protocol.workspace = true
+rest.workspace = true
+gateway.workspace = true
+state.workspace = true
+store.workspace = true
+voice.workspace = true
+markdown.workspace = true
+plugin-host.workspace = true
+tokio.workspace = true
+parking_lot.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+rustls.workspace = true
+url.workspace = true
+reqwest.workspace = true
+ed25519-dalek.workspace = true
+sha2.workspace = true
+base64.workspace = true
+hex.workspace = true

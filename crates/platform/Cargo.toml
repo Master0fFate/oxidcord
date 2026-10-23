@@ -1,0 +1,25 @@
+[package]
+name = "oxidcord-platform"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "platform"
+
+[dependencies]
+arboard.workspace = true
+auto-launch.workspace = true
+global-hotkey.workspace = true
+interprocess.workspace = true
+notify-rust.workspace = true
+parking_lot.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tray-icon.workspace = true
+url.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows.workspace = true

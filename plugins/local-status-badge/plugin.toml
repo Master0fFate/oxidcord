@@ -1,0 +1,17 @@
+id = "dev.oxidcord.local-status-badge"
+name = "Local Status Badge"
+version = "0.1.0"
+api = "^1.0"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Status bar item with the current channel id and a badge that cycles through three colors."
+entry = "local_status_badge.wasm"
+min_host = "0.1.0"
+
+[[permissions]]
+permission = "context-basic"
+reason = "Reads the current channel and follows channel switches."
+
+[[permissions]]
+permission = "ui-slots"
+reason = "Adds the item to the status bar."

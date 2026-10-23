@@ -1,0 +1,8 @@
+id = "dev.oxidcord.theme-midnight"
+name = "Midnight"
+version = "0.1.0"
+api = "^1.0"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Deep blue dark theme with the Oxidcord violet accent."
+min_host = "0.1.0"

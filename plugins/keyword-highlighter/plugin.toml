@@ -1,0 +1,25 @@
+id = "dev.oxidcord.keyword-highlighter"
+name = "Keyword Highlighter"
+version = "0.1.0"
+api = "^1.0"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Bolds your keywords in messages, adds a keyword badge and notifies on a match."
+entry = "keyword_highlighter.wasm"
+min_host = "0.1.0"
+
+[[permissions]]
+permission = "message-render"
+reason = "Highlights keywords in message text."
+
+[[permissions]]
+permission = "storage"
+reason = "Keeps your keyword list."
+
+[[permissions]]
+permission = "context-basic"
+reason = "Tells your own messages apart from other people's."
+
+[[permissions]]
+permission = "actions-notify"
+reason = "Shows a notification when someone else uses a keyword."

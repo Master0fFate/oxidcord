@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Oxidcord
+GenericName=Chat Client
+Comment=A native Discord client with a sandboxed plugin system
+Exec=oxidcord %U
+Icon=dev.oxidcord.Oxidcord
+Terminal=false
+Categories=Network;InstantMessaging;Chat;
+StartupNotify=true
+StartupWMClass=dev.oxidcord.Oxidcord
