@@ -64,7 +64,11 @@ pub(crate) fn is_sealed(bytes: &[u8]) -> bool {
 
 pub(crate) fn load_or_create_key(file_path: PathBuf, plaintext: bool) -> Result<Zeroizing<[u8; KEY_LEN]>> {
 	let slot = SecretSlot::new(KEYRING_USER, file_path);
-	if let Some(encoded) = slot.load(plaintext)? {
+	let stored = slot.load(plaintext).unwrap_or_else(|error| {
+		tracing::warn!(%error, "could not read the cache key");
+		None
+	});
+	if let Some(encoded) = stored {
 		let encoded = Zeroizing::new(encoded);
 		let mut key = Zeroizing::new([0u8; KEY_LEN]);
 		if hex::decode_to_slice(encoded.trim(), key.as_mut()).is_ok() {
