@@ -1,6 +1,10 @@
-# Oxidcord
+<p align="center">
+	<img src="assets/icon.png" width="128" height="128" alt="Oxidcord icon">
+</p>
 
-A native Discord client written in Rust, with a sandboxed WebAssembly plugin system.
+<h1 align="center">Oxidcord</h1>
+
+<p align="center">A native Discord client written in Rust, with a sandboxed WebAssembly plugin system.</p>
 
 > **Oxidcord is not an official Discord product. It is not made, endorsed, sponsored or supported by Discord Inc.**
 >
@@ -11,6 +15,7 @@ A native Discord client written in Rust, with a sandboxed WebAssembly plugin sys
 ## Contents
 
 - [What it is](#what-it-is)
+- [Performance](#performance)
 - [Install](#install)
 - [First run](#first-run)
 - [Everyday use](#everyday-use)
@@ -29,6 +34,20 @@ A native Discord client written in Rust, with a sandboxed WebAssembly plugin sys
 - No telemetry, no analytics, no crash upload, no remote logging.
 - Session token kept in the operating system credential store. The local message cache is encrypted with a key held in the same store.
 - Windows, macOS and Linux.
+
+## Performance
+
+<p align="center">
+	<img src="assets/performance.png" alt="Oxidcord against Discord desktop: memory, CPU, threads and disk footprint" width="900">
+</p>
+
+Measured on one Windows 10 machine with 12 logical cores. Oxidcord is the 0.1.0-beta.1 release build running against its built-in mock server. Discord is a live, logged-in session with real servers, so the workloads differ and the numbers show an order of magnitude, not a lab result.
+
+- Startup to first window: 290 ms median over 5 runs (270 to 346 ms).
+- Idle memory 176 MB against 1926 MB, idle CPU 0.5% against a 29% median of five 20 second samples.
+- Stress is the window resized 156 times in 20 seconds with the same script on both apps: 9.7% of one core against 121.7%, peak memory 177 MB against 1961 MB.
+
+Discord startup time was not measured, because that would mean closing a running session.
 
 ## Install
 
