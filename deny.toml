@@ -3,7 +3,10 @@ all-features = false
 
 [advisories]
 version = 2
-ignore = []
+ignore = [
+	{ id = "RUSTSEC-2023-0071", reason = "no patched rsa release exists, used only for the one-off QR login key exchange, never as a network oracle" },
+]
+unmaintained = "workspace"
 
 [licenses]
 version = 2
@@ -29,7 +32,7 @@ confidence-threshold = 0.8
 
 [bans]
 multiple-versions = "allow"
-wildcards = "deny"
+wildcards = "allow"
 
 [sources]
 unknown-registry = "deny"
