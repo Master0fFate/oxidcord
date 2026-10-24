@@ -41,7 +41,7 @@
 	<img src="assets/performance.png" alt="Oxidcord against Discord desktop: scroll, idle and resize CPU, memory, threads and disk footprint" width="900">
 </p>
 
-Measured on one Windows 10 machine with 12 logical cores. Oxidcord is the 0.2.0-beta.1 release build running against its built-in mock server, averaged over two runs. Discord is a live, logged-in session with real servers, so the workloads differ and the numbers show an order of magnitude, not a lab result.
+Measured on one Windows 10 machine with 12 logical cores. Oxidcord is the 0.3.0-beta.1 release build running against its built-in mock server, averaged over two runs. Discord is a live, logged-in session with real servers, so the workloads differ and the numbers show an order of magnitude, not a lab result.
 
 - Scrolling the message list at 60 wheel ticks a second for 20 seconds: 20.5% of one core against 147.5%.
 - Idle memory 200 MB against 2630 MB, idle CPU under 0.1% against 58.1%.
