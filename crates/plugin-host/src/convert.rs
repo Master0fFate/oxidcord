@@ -298,6 +298,8 @@ pub fn user_view(user: &protocol::User) -> User {
 	}
 }
 
+pub const DELETED_FLAG: u64 = 1 << 63;
+
 pub fn message_view(message: &protocol::Message) -> MessageView {
 	MessageView {
 		id: message.id.get(),

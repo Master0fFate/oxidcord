@@ -419,23 +419,21 @@ impl PluginManager {
 
 	pub fn render_message(&self, view: &MessageView, ast: Vec<Node>) -> Vec<Node> {
 		let plugins = self.active_for_message(Permission::MessageRender, view.guild_id);
-		if plugins.is_empty() {
-			return ast;
-		}
-		let mut tree = md_to_tree(&ast);
-		for (plugin, instance) in plugins {
-			match instance.render_message(view.clone(), tree.clone()) {
-				Ok(Some(output)) if tree_to_md(&output).is_some() => tree = output,
-				Ok(Some(_)) => {
-					tracing::warn!(target: "plugin", plugin = %plugin.manifest.id, "invalid markdown tree ignored");
-				}
-				Ok(None) => {}
-				Err(error) => {
-					tracing::debug!(target: "plugin", plugin = %plugin.manifest.id, "render skipped: {error}");
-				}
-			}
-		}
-		tree_to_md(&tree).unwrap_or(ast)
+		render_chain(plugins, view, &ast).unwrap_or(ast)
+	}
+
+	pub fn render_deleted(&self, view: &MessageView, ast: &[Node]) -> Option<Vec<Node>> {
+		let grants = self.runtime.grants();
+		let mut plugins = self.active_for_message(Permission::MessageRender, view.guild_id);
+		plugins.retain(|(plugin, _)| grants.has(&plugin.manifest.id, Permission::ContextTimeline));
+		render_chain(plugins, view, ast)
+	}
+
+	pub fn has_message_log(&self) -> bool {
+		let grants = self.runtime.grants();
+		self.active(Permission::MessageRender)
+			.iter()
+			.any(|(plugin, _)| grants.has(&plugin.manifest.id, Permission::ContextTimeline))
 	}
 
 	pub fn before_send(&self, outgoing: OutgoingMessage) -> SendDecision {
@@ -553,6 +551,34 @@ fn event_visible(grants: &crate::grants::Grants, id: &str, event: &Event) -> boo
 		}
 		Event::SettingChanged(_) | Event::Connection(_) => true,
 	}
+}
+
+fn render_chain(
+	plugins: Vec<(Arc<LoadedPlugin>, Arc<PluginInstance>)>,
+	view: &MessageView,
+	ast: &[Node],
+) -> Option<Vec<Node>> {
+	if plugins.is_empty() {
+		return None;
+	}
+	let mut tree = md_to_tree(ast);
+	let mut changed = false;
+	for (plugin, instance) in plugins {
+		match instance.render_message(view.clone(), tree.clone()) {
+			Ok(Some(output)) if tree_to_md(&output).is_some() => {
+				tree = output;
+				changed = true;
+			}
+			Ok(Some(_)) => {
+				tracing::warn!(target: "plugin", plugin = %plugin.manifest.id, "invalid markdown tree ignored");
+			}
+			Ok(None) => {}
+			Err(error) => {
+				tracing::debug!(target: "plugin", plugin = %plugin.manifest.id, "render skipped: {error}");
+			}
+		}
+	}
+	changed.then(|| tree_to_md(&tree)).flatten()
 }
 
 fn sanitize_override(mut over: DisplayOverride) -> DisplayOverride {

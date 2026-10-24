@@ -19,7 +19,7 @@ pub use self::chrome::{
 };
 pub use self::commands::{list as command_list, parse as parse_command};
 pub use self::menu::PluginMenu;
-pub use self::message::{author_badge, extras as message_extras, message_actions, orphan_accessories};
+pub use self::message::{author_badge, extras as message_extras, message_actions};
 pub use self::overlays::PluginUi;
 pub use self::settings::{PluginPages, ThemeApplied};
 use super::SettingsBackend;

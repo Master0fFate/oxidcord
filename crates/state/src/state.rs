@@ -69,6 +69,7 @@ pub struct State {
 	pub(crate) sent_by_plugin: HashMap<Snowflake, String>,
 	pub(crate) user_overrides: HashMap<(Option<Snowflake>, Snowflake), Option<UserOverride>>,
 	pub(crate) unrendered: Vec<Arc<Message>>,
+	pub(crate) keep_deleted: bool,
 	pub(crate) lazy: Lazy,
 	pub(crate) streams: HashMap<String, StreamSummary>,
 	pub(crate) rejection: Option<Rejection>,
@@ -366,9 +367,20 @@ impl State {
 						.by_id
 						.get(id)
 						.is_some_and(|current| current.content == source.content)
+					&& cache.is_deleted(*id) == rendered.deleted
 				{
 					cache.rendered.insert(*id, Arc::clone(rendered));
 					changes.messages.insert(*channel_id);
+				}
+			}
+			LocalEvent::KeepDeleted(keep) => {
+				self.keep_deleted = *keep;
+				if !keep {
+					for (&channel_id, cache) in &mut self.messages {
+						if cache.drop_deleted() {
+							changes.messages.insert(channel_id);
+						}
+					}
 				}
 			}
 			LocalEvent::UserOverrides { entries } => {

@@ -38,6 +38,12 @@ pub use types::{
 };
 pub use ui::Ui;
 
+pub const DELETED_FLAG: u64 = 1 << 63;
+
 pub fn now_ms() -> i64 {
 	host::now_ms()
+}
+
+pub fn is_deleted(msg: &MessageView) -> bool {
+	msg.flags & DELETED_FLAG != 0
 }

@@ -1,7 +1,8 @@
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Duration;
 
-use protocol::{StatusKind, User};
+use protocol::{EditMessage, StatusKind, User};
 use rand::Rng;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -10,6 +11,7 @@ use tokio::task::JoinHandle;
 
 use crate::fixtures::corpus::{SENTENCES, pick};
 use crate::fixtures::{CURRENT_USER_ID, random_presence};
+use crate::json::parse_id;
 use crate::member_list::presence_json;
 use crate::ops::Draft;
 use crate::state::Shared;
@@ -19,6 +21,9 @@ const CHAOS_CLOSE_CODE: u16 = 4000;
 const MESSAGE_INTERVAL: Duration = Duration::from_secs(3);
 const TYPING_LEAD: Duration = Duration::from_secs(1);
 const PRESENCE_INTERVAL: Duration = Duration::from_secs(10);
+const RECENT_CAPACITY: usize = 6;
+const EDIT_EVERY: u64 = 3;
+const DELETE_EVERY: u64 = 4;
 const STATUSES: [StatusKind; 4] = [
 	StatusKind::Online,
 	StatusKind::Idle,
@@ -115,8 +120,16 @@ fn pick_target(shared: &Shared) -> Option<Target> {
 	})
 }
 
+struct Posted {
+	channel_id: u64,
+	id: u64,
+	author_id: u64,
+}
+
 async fn message_loop(shared: Arc<Shared>) {
 	let mut shutdown = shared.shutdown.clone();
+	let mut recent: VecDeque<Posted> = VecDeque::new();
+	let mut round: u64 = 0;
 	loop {
 		if interrupted(&mut shutdown, MESSAGE_INTERVAL - TYPING_LEAD).await {
 			return;
@@ -130,12 +143,52 @@ async fn message_loop(shared: Arc<Shared>) {
 		if interrupted(&mut shutdown, TYPING_LEAD).await {
 			return;
 		}
-		if shared
-			.post_message(target.channel_id, &target.author, Draft::text(target.content))
-			.is_ok()
-		{
+		let posted = shared.post_message(target.channel_id, &target.author, Draft::text(target.content));
+		if let Some(id) = posted.ok().and_then(|value| parse_id(&value["id"])) {
 			tracing::info!(channel_id = target.channel_id, "live message");
+			recent.push_back(Posted {
+				channel_id: target.channel_id,
+				id,
+				author_id: target.author.id.0,
+			});
+			if recent.len() > RECENT_CAPACITY {
+				recent.pop_front();
+			}
 		}
+		round += 1;
+		if round.is_multiple_of(EDIT_EVERY) {
+			edit_recent(&shared, &recent);
+		}
+		if round.is_multiple_of(DELETE_EVERY) {
+			delete_oldest(&shared, &mut recent);
+		}
+	}
+}
+
+fn edit_recent(shared: &Shared, recent: &VecDeque<Posted>) {
+	let Some(posted) = recent.iter().rev().nth(1) else {
+		return;
+	};
+	let edit = EditMessage {
+		content: Some((*pick(&mut live_rng(), SENTENCES)).to_owned()),
+		..EditMessage::default()
+	};
+	if shared
+		.edit_as(posted.channel_id, posted.id, posted.author_id, edit)
+		.is_ok()
+	{
+		tracing::info!(channel_id = posted.channel_id, "live edit");
+	}
+}
+
+fn delete_oldest(shared: &Shared, recent: &mut VecDeque<Posted>) {
+	if recent.len() < RECENT_CAPACITY {
+		return;
+	}
+	if let Some(posted) = recent.pop_front()
+		&& shared.delete_message(posted.channel_id, posted.id).is_ok()
+	{
+		tracing::info!(channel_id = posted.channel_id, "live delete");
 	}
 }
 

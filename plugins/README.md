@@ -10,8 +10,7 @@ Every plugin here is a workspace member, builds with `cargo build -p <name> --ta
 | `keyword-highlighter` | Bolds keywords, adds a keyword line, notifies on a match | `message-render`, `storage`, `context-basic`, `actions-notify` |
 | `quick-replies` | Snippet popover in the composer and `/snip <name>` | `ui-slots`, `storage`, `actions-send`, `context-basic` |
 | `text-shortcuts` | Expands `:shrug:` style emoticons and your own `;shortcuts` before sending | `message-send`, `storage`, `ui-slots` |
-| `delete-keeper` | Keeps and shows the text of deleted messages | `context-timeline`, `storage`, `ui-slots` |
-| `edit-history` | Keeps earlier versions of edited messages and shows them | `context-timeline`, `storage`, `message-render` |
+| `message-logger` | Keeps deleted messages visible in red and the earlier versions of edited messages behind a history button | `context-timeline`, `message-render`, `storage`, `ui-slots` |
 | `user-notes` | Private notes on users, shown as a badge | `ui-slots`, `storage`, `user-display` |
 | `local-status-badge` | Status bar item with the channel id and a color cycling badge | `context-basic`, `ui-slots` |
 | `word-mute` | Hides messages containing words or phrases you muted | `message-filter`, `storage`, `ui-slots`, `context-basic` |

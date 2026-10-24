@@ -40,6 +40,7 @@ use crate::theme::{Theme, rem};
 const SNIPPET_LENGTH: usize = 120;
 const AVATAR_SIZE: f32 = 40.;
 const SKELETON_ROWS: usize = 4;
+const DELETED_OPACITY: f32 = 0.7;
 
 #[derive(Clone, Copy)]
 pub struct Prefs {
@@ -863,11 +864,15 @@ fn content_column(view: &MessageView, env: &RowEnv, cx: &App) -> Vec<AnyElement>
 		out.push(editor(editing, env, cx));
 	} else if !message.content.is_empty() {
 		let document = document_of(env, view);
-		let trailer = message.edited_timestamp.is_some().then(|| cx.t("message-edited"));
+		let trailer = if view.deleted {
+			Some(cx.t("message-deleted"))
+		} else {
+			message.edited_timestamp.is_some().then(|| cx.t("message-edited"))
+		};
 		let body_env = body_env
 			.jumbo(document.is_only_emoji())
 			.trailer(trailer)
-			.color(view.failed.then_some(theme.danger));
+			.color((view.failed || view.deleted).then_some(theme.danger));
 		out.push(render_body(&document, &body_env, cx));
 	}
 	let body_env = BodyEnv::new(
@@ -1038,7 +1043,7 @@ fn interactive(
 	env: &RowEnv,
 	cx: &App,
 ) -> AnyElement {
-	if view.pending {
+	if view.pending || view.deleted {
 		return row.into_any_element();
 	}
 	let id = view.message.id;
@@ -1078,6 +1083,7 @@ fn message_row(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 		.py(rem(2.))
 		.hover(|style| style.bg(message_hover_background()))
 		.when(view.pending, |row| row.opacity(0.5))
+		.when(view.deleted, |row| row.opacity(DELETED_OPACITY))
 		.when(view.failed, |row| row.text_color(theme.danger));
 	if view.grouped_with_previous {
 		let row = container
@@ -1191,6 +1197,7 @@ fn compact_message(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 		.pr(rem(48.))
 		.hover(|style| style.bg(message_hover_background()))
 		.when(view.pending, |row| row.opacity(0.5))
+		.when(view.deleted, |row| row.opacity(DELETED_OPACITY))
 		.child(
 			div()
 				.flex_none()

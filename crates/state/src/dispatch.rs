@@ -288,7 +288,12 @@ impl State {
 		if let Some(cache) = self.messages.get_mut(&channel_id) {
 			let mut removed = false;
 			for &id in ids {
-				removed |= cache.remove(id);
+				if !self.keep_deleted {
+					removed |= cache.remove(id);
+				} else if let Some(tombstone) = cache.mark_deleted(id) {
+					self.unrendered.push(tombstone);
+					removed = true;
+				}
 			}
 			if removed {
 				changes.messages.insert(channel_id);

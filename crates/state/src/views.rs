@@ -41,6 +41,7 @@ pub struct ChannelTreeNode {
 pub struct RenderedMessage {
 	pub ast: Vec<markdown::Node>,
 	pub hidden: bool,
+	pub deleted: bool,
 	pub revision: u64,
 }
 
@@ -49,6 +50,7 @@ impl RenderedMessage {
 		Self {
 			ast: markdown::parse(content).nodes,
 			hidden,
+			deleted: false,
 			revision,
 		}
 	}
@@ -71,6 +73,7 @@ pub struct MessageView {
 	pub plugin: Option<String>,
 	pub altered_by: Option<String>,
 	pub rendered: Option<Arc<RenderedMessage>>,
+	pub deleted: bool,
 	pub author_color: Option<u32>,
 	pub author_display: String,
 	pub author_badge: Option<String>,

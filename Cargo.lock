@@ -2170,13 +2170,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "delete-keeper"
-version = "0.3.0-beta.1"
-dependencies = [
- "oxidcord-plugin-sdk",
-]
-
-[[package]]
 name = "der"
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2512,13 +2505,6 @@ dependencies = [
  "sha2 0.11.1",
  "subtle",
  "zeroize",
-]
-
-[[package]]
-name = "edit-history"
-version = "0.3.0-beta.1"
-dependencies = [
- "oxidcord-plugin-sdk",
 ]
 
 [[package]]
@@ -5865,6 +5851,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "message-logger"
+version = "0.3.0-beta.1"
+dependencies = [
+ "oxidcord-plugin-sdk",
 ]
 
 [[package]]

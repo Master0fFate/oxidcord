@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use gpui::{
 	AnyElement, AppContext as _, Context, Entity, FontWeight, InteractiveElement as _, IntoElement,
-	ParentElement as _, Render, StatefulInteractiveElement as _, Styled as _, Window, div,
+	ParentElement as _, Render, StatefulInteractiveElement as _, Styled as _, Subscription, Window, div,
 	prelude::FluentBuilder as _,
 };
 
@@ -19,6 +19,7 @@ pub use self::themes_page::{ThemeApplied, ThemesPage};
 use self::widgets::{card, icon_tile, note};
 use super::bridge::PluginBridge;
 use super::slot_renderer::{Scope, SlotHost, render_column};
+use crate::data::{Data, DataEvent};
 use crate::i18n::Translate as _;
 use crate::icons::{Icon, IconKind};
 use crate::theme::{Theme, rem};
@@ -29,9 +30,24 @@ const NAV_PADDING: f32 = 10.;
 
 pub struct SlotPage {
 	selected: Option<Arc<str>>,
+	_subscription: Subscription,
 }
 
 impl SlotPage {
+	fn new(data: &Entity<Data>, cx: &mut Context<Self>) -> Self {
+		let subscription = cx.subscribe(data, |_, _, event: &DataEvent, cx| {
+			if let DataEvent::Changed(changes) = event
+				&& changes.plugin_slots
+			{
+				cx.notify();
+			}
+		});
+		Self {
+			selected: None,
+			_subscription: subscription,
+		}
+	}
+
 	pub fn select(&mut self, plugin: Arc<str>, cx: &mut Context<Self>) {
 		self.selected = Some(plugin);
 		cx.notify();
@@ -98,8 +114,8 @@ impl PluginPages {
 				let (data, backend) = (data.clone(), backend.clone());
 				|cx| ThemesPage::new(data, backend, window, cx)
 			}),
+			slot: cx.new(|cx| SlotPage::new(&data, cx)),
 			developer: cx.new(|cx| DeveloperPage::new(data, backend, cx)),
-			slot: cx.new(|_| SlotPage { selected: None }),
 		}
 	}
 

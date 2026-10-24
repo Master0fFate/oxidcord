@@ -180,13 +180,16 @@ impl HostBroker for SessionBroker {
 		let channel_id = Snowflake(channel_id);
 		let state = self.state.read();
 		let cache = state.messages(channel_id).ok_or(HostError::Unavailable)?;
-		let skip = cache.ordered.len().saturating_sub(limit as usize);
-		Ok(cache
+		let mut views: Vec<MessageView> = cache
 			.ordered
 			.iter()
-			.skip(skip)
+			.rev()
+			.filter(|message| !cache.is_deleted(message.id))
+			.take(limit as usize)
 			.map(|message| view_of(message, || state.channel_guild(channel_id)))
-			.collect())
+			.collect();
+		views.reverse();
+		Ok(views)
 	}
 
 	fn display_name(&self, _plugin: &str, guild_id: Option<u64>, user_id: u64) -> Result<String, HostError> {

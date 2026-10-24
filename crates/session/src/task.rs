@@ -190,6 +190,7 @@ pub(crate) struct Core {
 	custom_status: Option<CustomStatus>,
 	hub: Arc<PluginHub>,
 	render_worker: RenderWorker,
+	plugin_jobs: mpsc::UnboundedSender<plugin_link::PluginJob>,
 	safe_mode: bool,
 	locale: String,
 	flags: PluginFlags,
@@ -228,6 +229,7 @@ struct CustomStatus {
 impl Core {
 	pub(crate) fn new(parts: CoreParts) -> Self {
 		let persist = Persistor::spawn(parts.store.clone(), &parts.runtime);
+		let plugin_jobs = plugin_link::spawn_plugin_jobs(&parts.runtime);
 		let render_worker = RenderWorker::spawn(
 			Arc::clone(&parts.hub.manager),
 			Arc::clone(&parts.hub.stats),
@@ -256,6 +258,7 @@ impl Core {
 			custom_status: None,
 			hub: parts.hub,
 			render_worker,
+			plugin_jobs,
 			safe_mode: parts.safe_mode,
 			locale: parts.locale,
 			flags: PluginFlags::default(),

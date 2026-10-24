@@ -18,6 +18,7 @@ pub(crate) struct PluginFlags {
 	pub(crate) filter: bool,
 	pub(crate) send: bool,
 	pub(crate) display: bool,
+	pub(crate) logs: bool,
 }
 
 impl PluginFlags {
@@ -62,6 +63,7 @@ impl PluginHub {
 			filter: self.manager.has_active(Permission::MessageFilter),
 			send: self.manager.has_active(Permission::MessageSend),
 			display: self.manager.has_active(Permission::UserDisplay),
+			logs: self.manager.has_message_log(),
 		}
 	}
 

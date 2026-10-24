@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use parking_lot::{Condvar, Mutex};
 use plugin_host::PluginManager;
+use plugin_host::convert::DELETED_FLAG;
 use protocol::{Message, Snowflake};
 use state::RenderedMessage;
 use tokio::sync::mpsc::UnboundedSender;
@@ -21,6 +22,7 @@ pub(crate) struct RenderJob {
 	pub(crate) message: Arc<Message>,
 	pub(crate) guild_id: Option<Snowflake>,
 	pub(crate) epoch: u64,
+	pub(crate) deleted: bool,
 }
 
 pub(crate) struct RenderResult {
@@ -153,15 +155,26 @@ fn next_job(shared: &Shared) -> Option<(RenderJob, bool)> {
 
 fn render(manager: &PluginManager, job: &RenderJob) -> RenderedMessage {
 	let message = &job.message;
-	let view = view_of(message, || job.guild_id);
-	let hidden = !manager.filter_message(&view);
+	let mut view = view_of(message, || job.guild_id);
+	if job.deleted {
+		view.flags |= DELETED_FLAG;
+	}
+	let mut hidden = !manager.filter_message(&view);
 	let mut ast = markdown::parse(&message.content).nodes;
 	if !hidden {
-		ast = manager.render_message(&view, ast);
+		if job.deleted {
+			match manager.render_deleted(&view, &ast) {
+				Some(kept) => ast = kept,
+				None => hidden = true,
+			}
+		} else {
+			ast = manager.render_message(&view, ast);
+		}
 	}
 	RenderedMessage {
 		ast,
 		hidden,
+		deleted: job.deleted,
 		revision: job.epoch,
 	}
 }

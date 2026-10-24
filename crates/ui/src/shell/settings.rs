@@ -197,6 +197,7 @@ impl SettingsWindow {
 			cx.notify();
 		})
 		.detach();
+		cx.observe(&plugin_pages.slot, |_, _, cx| cx.notify()).detach();
 		let updates = cx.new(|cx| UpdatesPage::new(backend.clone(), cx));
 		UpdatesPage::watch(cx);
 		let ui_scale = cx.new(|cx| {

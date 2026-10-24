@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::rc::Rc;
 
 use gpui::{
@@ -8,7 +7,7 @@ use gpui::{
 use plugin_host::SlotEntry;
 use plugin_host::api::{UiBox, UiNode, UiTree};
 use protocol::Snowflake;
-use state::{MessageRow, MessageView};
+use state::MessageView;
 
 use super::bridge::PluginBridge;
 use super::slot_renderer::{MESSAGE_ACTION, Scope, SlotHost, render_node};
@@ -18,7 +17,7 @@ use crate::icons::{Icon, IconKind};
 use crate::theme::{Theme, rem};
 
 const ACCESSORY_SLOT: &str = "message-accessory";
-const TARGET_PREFIXES: [&str; 2] = ["deleted-", "msg-"];
+const TARGET_PREFIX: &str = "msg-";
 const CAPTION_ICON: f32 = 12.;
 
 type Part = (usize, Option<u64>);
@@ -47,12 +46,7 @@ fn box_of(node: &UiNode) -> Option<&UiBox> {
 }
 
 fn target_of(layout: &UiBox) -> Option<u64> {
-	let id = layout.id.as_deref()?;
-	TARGET_PREFIXES
-		.iter()
-		.find_map(|prefix| id.strip_prefix(prefix))?
-		.parse()
-		.ok()
+	layout.id.as_deref()?.strip_prefix(TARGET_PREFIX)?.parse().ok()
 }
 
 fn parts(tree: &UiTree) -> Vec<Part> {
@@ -111,48 +105,6 @@ fn accessories(message: Snowflake, theme: &Theme, cx: &App) -> Vec<AnyElement> {
 		}
 	}
 	out
-}
-
-pub fn orphan_accessories(rows: &[MessageRow], cx: &App) -> Option<AnyElement> {
-	let entries = entries(ACCESSORY_SLOT, cx);
-	if entries.is_empty() {
-		return None;
-	}
-	let visible: HashSet<u64> = rows
-		.iter()
-		.filter_map(|row| match row {
-			MessageRow::Message(view) => Some(view.message.id.get()),
-			_ => None,
-		})
-		.collect();
-	let theme = cx.global::<Theme>();
-	let mut out = Vec::new();
-	for entry in entries.iter() {
-		for (index, target) in parts(&entry.tree) {
-			let Some(target) = target.filter(|target| !visible.contains(target)) else {
-				continue;
-			};
-			let scope = accessory_scope(entry, target);
-			out.push(render_node(&entry.tree, index, &scope, theme));
-		}
-	}
-	if out.is_empty() {
-		return None;
-	}
-	Some(
-		div()
-			.flex()
-			.flex_col()
-			.flex_none()
-			.gap(theme.space_8)
-			.px(theme.space_16)
-			.py(theme.space_8)
-			.border_t_1()
-			.border_color(theme.divider)
-			.bg(theme.background_secondary)
-			.children(out)
-			.into_any_element(),
-	)
 }
 
 fn caption(icon: IconKind, text: SharedString, theme: &Theme) -> AnyElement {

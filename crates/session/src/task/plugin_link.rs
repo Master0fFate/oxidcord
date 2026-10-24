@@ -10,9 +10,11 @@ use plugin_host::api::{
 };
 use plugin_host::convert::user_view;
 use plugin_host::{PACKAGE_EXTENSION, SendDecision};
-use protocol::{DispatchEvent, Message, Nonce, PartialEmoji, Snowflake, User};
+use protocol::{DispatchEvent, Message, MessageUpdate, Nonce, PartialEmoji, Snowflake, User};
 use rest::UploadFile;
-use state::{Changes, Event, LocalEvent, MemberSlot, RenderedMessage, UserOverride};
+use state::{Changes, Event, LocalEvent, MemberSlot, RenderedMessage, UserOverride, apply_update};
+use tokio::runtime::Handle;
+use tokio::sync::mpsc;
 use tokio::time::Instant;
 
 use super::{Core, Internal};
@@ -27,6 +29,20 @@ const OVERRIDE_BATCH: usize = 200;
 const OVERRIDE_AUTHOR_WINDOW: usize = 100;
 
 type OverrideEntry = (Option<Snowflake>, Snowflake, Option<UserOverride>);
+
+pub(super) type PluginJob = Box<dyn FnOnce() + Send>;
+
+pub(super) fn spawn_plugin_jobs(runtime: &Handle) -> mpsc::UnboundedSender<PluginJob> {
+	let (sender, mut jobs) = mpsc::unbounded_channel::<PluginJob>();
+	runtime.spawn(async move {
+		while let Some(job) = jobs.recv().await {
+			if let Err(error) = tokio::task::spawn_blocking(job).await {
+				tracing::warn!(target: "plugin", %error, "plugin job panicked");
+			}
+		}
+	});
+	sender
+}
 
 fn emoji_text(emoji: &PartialEmoji) -> String {
 	match (&emoji.name, emoji.id) {
@@ -47,6 +63,20 @@ fn to_override(over: DisplayOverride) -> Option<UserOverride> {
 		color,
 		badge: over.badge,
 	})
+}
+
+fn uncached_update(update: &MessageUpdate) -> Option<Message> {
+	update.content.as_ref()?;
+	update.author.as_ref()?;
+	let mut message = Message {
+		id: update.id,
+		channel_id: update.channel_id,
+		guild_id: update.guild_id,
+		timestamp: update.timestamp,
+		..Message::default()
+	};
+	apply_update(&mut message, update);
+	Some(message)
 }
 
 fn download_name() -> String {
@@ -93,14 +123,25 @@ impl Core {
 		let hub = Arc::clone(&self.hub);
 		let internal = self.internal.clone();
 		let safe_mode = self.safe_mode;
-		self.runtime.spawn_blocking(move || {
+		self.queue_plugin_job(move || {
 			hub.load_all(safe_mode);
 			let _ = internal.send(Internal::PluginsChanged);
 		});
 	}
 
+	fn queue_plugin_job(&self, job: impl FnOnce() + Send + 'static) {
+		if self.plugin_jobs.send(Box::new(job)).is_err() {
+			tracing::warn!(target: "plugin", "plugin job queue is closed");
+		}
+	}
+
 	pub(super) fn on_plugins_changed(&mut self) {
-		self.flags = self.hub.flags();
+		let flags = self.hub.flags();
+		let logs_changed = flags.logs != self.flags.logs;
+		self.flags = flags;
+		if logs_changed {
+			self.apply_local(LocalEvent::KeepDeleted(flags.logs));
+		}
 		self.epoch += 1;
 		self.render_worker.set_epoch(self.epoch);
 		self.apply_local(LocalEvent::UserOverridesCleared);
@@ -134,22 +175,31 @@ impl Core {
 	pub(super) fn render_messages(&mut self, messages: Vec<Arc<Message>>) {
 		let PluginFlags { filter, .. } = self.flags;
 		let revision = self.epoch;
-		let parsed: Vec<(Arc<Message>, Arc<RenderedMessage>)> = messages
+		let parsed: Vec<(Arc<Message>, RenderedMessage)> = messages
 			.into_iter()
 			.map(|message| {
-				let rendered = Arc::new(RenderedMessage::plain(&message.content, filter, revision));
+				let rendered = RenderedMessage::plain(&message.content, filter, revision);
 				(message, rendered)
 			})
 			.collect();
 		let mut jobs = Vec::new();
 		let mut state = self.state.write();
-		for (message, rendered) in parsed {
+		for (message, mut rendered) in parsed {
 			let channel_id = message.channel_id;
+			let deleted = state
+				.messages(channel_id)
+				.is_some_and(|cache| cache.is_deleted(message.id));
+			if deleted {
+				rendered.hidden = true;
+				rendered.deleted = true;
+			}
+			let rendered = Arc::new(rendered);
 			if self.flags.renders() {
 				jobs.push(RenderJob {
 					guild_id: message.guild_id.or_else(|| state.channel_guild(channel_id)),
 					message: Arc::clone(&message),
 					epoch: revision,
+					deleted,
 				});
 			}
 			state.apply(&Event::Local(LocalEvent::MessageRendered {
@@ -255,14 +305,17 @@ impl Core {
 					state.channel_guild(message.channel_id)
 				}))]
 			}
-			DispatchEvent::MessageUpdate(update) => state
-				.messages(update.channel_id)
-				.and_then(|cache| cache.by_id.get(&update.id))
-				.map(|message| {
-					PluginEvent::MessageUpdated(view_of(message, || state.channel_guild(message.channel_id)))
-				})
-				.into_iter()
-				.collect(),
+			DispatchEvent::MessageUpdate(update) => {
+				let guild = || state.channel_guild(update.channel_id);
+				let view = match state
+					.messages(update.channel_id)
+					.and_then(|cache| cache.by_id.get(&update.id))
+				{
+					Some(message) => Some(view_of(message, guild)),
+					None => uncached_update(update).map(|message| view_of(&message, guild)),
+				};
+				view.map(PluginEvent::MessageUpdated).into_iter().collect()
+			}
 			DispatchEvent::MessageDelete(delete) => {
 				vec![deleted(delete.id, delete.channel_id, delete.guild_id)]
 			}
@@ -445,7 +498,7 @@ impl Core {
 	) {
 		let hub = Arc::clone(&self.hub);
 		let internal = self.internal.clone();
-		self.runtime.spawn_blocking(move || {
+		self.queue_plugin_job(move || {
 			let outcome = task(&hub);
 			hub.record(what, outcome);
 			let _ = internal.send(if reload {
@@ -462,7 +515,7 @@ impl Core {
 				name,
 				args,
 				channel_id,
-			} => self.plugin_task("plugin command", false, move |hub| {
+			} => self.plugin_task("plugin command", true, move |hub| {
 				hub.manager.command(&name, &args, channel_id.get())?;
 				Ok(())
 			}),

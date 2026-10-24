@@ -22,6 +22,8 @@ The world is `plugin`: it imports the `host` interface and exports the `guest` i
 
 Events: `message-created`, `message-updated`, `message-deleted`, `reaction-added`, `typing`, `channel-switched`, `setting-changed`, `connection`, `voice-changed`. Message, reaction and typing events need `context-timeline`, and events from direct messages additionally need `context-private`. `channel-switched` needs `context-basic`. `voice-changed` carries a `voice-info` and needs `context-voice`, and calls in direct messages additionally need `context-private`. `setting-changed` and `connection` are always delivered.
 
+Deleted messages: while a running plugin holds both `message-render` and `context-timeline`, a deleted message stays in the cache and goes through `render-message` again with bit 63 of `flags` set (`DELETED_FLAG` and `is_deleted` in the SDK). It stays in the chat, shown in red with a deleted marker, only when one of those plugins returns a tree for it. Otherwise it disappears as usual.
+
 ### Host imports
 
 | Function | Permission | Limits |

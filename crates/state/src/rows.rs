@@ -351,6 +351,9 @@ impl State {
 		let mut previous: Option<(&Message, NaiveDate)> = None;
 		let mut marker_placed = false;
 		for (message, pending) in confirmed.chain(pending) {
+			if pending.is_none() && cache.is_hidden(message.id) {
+				continue;
+			}
 			let day = local_day(message);
 			if previous.is_none_or(|(_, previous_day)| previous_day != day) {
 				rows.push(MessageRow::DaySeparator(day));
@@ -414,6 +417,7 @@ impl State {
 			plugin,
 			altered_by,
 			rendered,
+			deleted: pending.is_none() && cache.is_deleted(message.id),
 			author_color: over.and_then(|over| over.color).or(role_color),
 			author_display: over.and_then(|over| over.name.clone()).unwrap_or(author_display),
 			author_badge: over.and_then(|over| over.badge.clone()),

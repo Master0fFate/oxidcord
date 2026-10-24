@@ -42,6 +42,7 @@ pub enum LocalEvent {
 		entries: Vec<(Option<Snowflake>, Snowflake, Option<UserOverride>)>,
 	},
 	UserOverridesCleared,
+	KeepDeleted(bool),
 	PendingDiscarded {
 		nonce: Nonce,
 	},

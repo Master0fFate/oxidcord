@@ -1,0 +1,25 @@
+id = "dev.oxidcord.message-logger"
+name = "Message Logger"
+version = "0.2.0"
+api = "^1.0"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Keeps deleted messages visible and the earlier versions of edited messages one click away."
+entry = "message_logger.wasm"
+min_host = "0.1.0"
+
+[[permissions]]
+permission = "context-timeline"
+reason = "Sees messages as they are created, edited and deleted."
+
+[[permissions]]
+permission = "message-render"
+reason = "Keeps deleted messages in the chat and notices edits."
+
+[[permissions]]
+permission = "storage"
+reason = "Keeps the earlier versions of edited messages across restarts."
+
+[[permissions]]
+permission = "ui-slots"
+reason = "Shows the edit history under an edited message."

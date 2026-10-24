@@ -166,6 +166,7 @@ time-in = in { $span }
 message-edit = Edit Message
 message-edit-hint = Enter to save, Escape to cancel
 message-edited = (edited)
+message-deleted = (deleted)
 message-failed = Message failed to send.
 message-retry = Retry
 message-reply-deleted = Original message was deleted

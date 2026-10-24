@@ -25,7 +25,7 @@ use super::message::{
 	render_row,
 };
 use super::moderation;
-use super::plugins::{PluginBridge, orphan_accessories};
+use super::plugins::PluginBridge;
 use crate::components::{ChatList, ChatListState};
 use crate::data::Data;
 use crate::i18n::Translate as _;
@@ -90,6 +90,8 @@ fn same_row(a: &MessageRow, b: &MessageRow) -> bool {
 				&& x.failure_reason == y.failure_reason
 				&& x.plugin == y.plugin
 				&& x.altered_by == y.altered_by
+				&& x.deleted == y.deleted
+				&& x.rendered.as_ref().map(Arc::as_ptr) == y.rendered.as_ref().map(Arc::as_ptr)
 		}
 		(MessageRow::DaySeparator(x), MessageRow::DaySeparator(y)) => x == y,
 		(MessageRow::UnreadMarker, MessageRow::UnreadMarker)
@@ -834,6 +836,5 @@ impl Render for Timeline {
 			.when(!self.selection.is_empty(), |timeline| {
 				timeline.child(self.selection_bar(&theme, cx))
 			})
-			.children(orphan_accessories(&self.rows, cx))
 	}
 }

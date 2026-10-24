@@ -28,7 +28,7 @@ pub use loaded::{
 	Loaded, ProfileBadge, UserProfile, audit_action_label,
 };
 pub use member_list::{MemberList, MemberSlot};
-pub use messages::{ChannelMessages, MESSAGE_CAP, PendingMessage};
+pub use messages::{ChannelMessages, MESSAGE_CAP, PendingMessage, apply_update};
 pub use notifications::Alert;
 pub use permissions::DM_PERMISSIONS;
 pub use settings::{GuildFolder, RailEntry, guild_folders_settings};

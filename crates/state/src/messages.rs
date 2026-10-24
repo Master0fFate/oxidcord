@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use protocol::{Message, MessageUpdate, Nonce, PartialEmoji, Reaction, Snowflake};
@@ -26,10 +26,35 @@ pub struct ChannelMessages {
 	pub reached_start: bool,
 	pub pending: Vec<PendingMessage>,
 	pub gaps: Vec<(Snowflake, Snowflake)>,
+	deleted: HashSet<Snowflake>,
 	detached: bool,
 }
 
 impl ChannelMessages {
+	pub fn is_deleted(&self, id: Snowflake) -> bool {
+		self.deleted.contains(&id)
+	}
+
+	pub fn is_hidden(&self, id: Snowflake) -> bool {
+		let deleted = self.is_deleted(id);
+		self.rendered
+			.get(&id)
+			.map_or(deleted, |rendered| rendered.hidden || rendered.deleted != deleted)
+	}
+
+	pub fn mark_deleted(&mut self, id: Snowflake) -> Option<Arc<Message>> {
+		let message = self.by_id.get(&id).cloned()?;
+		self.deleted.insert(id).then_some(message)
+	}
+
+	pub fn drop_deleted(&mut self) -> bool {
+		let deleted = std::mem::take(&mut self.deleted);
+		for &id in &deleted {
+			self.remove(id);
+		}
+		!deleted.is_empty()
+	}
+
 	pub fn newest_id(&self) -> Option<Snowflake> {
 		self.ordered.last().map(|message| message.id)
 	}
@@ -61,6 +86,7 @@ impl ChannelMessages {
 			self.ordered.clear();
 			self.by_id.clear();
 			self.rendered.clear();
+			self.deleted.clear();
 			self.gaps.clear();
 		}
 		for message in messages {
@@ -94,6 +120,7 @@ impl ChannelMessages {
 		self.ordered.remove(index);
 		self.by_id.remove(&id);
 		self.rendered.remove(&id);
+		self.deleted.remove(&id);
 		true
 	}
 
@@ -192,6 +219,7 @@ impl ChannelMessages {
 		for message in self.ordered.drain(..excess) {
 			self.by_id.remove(&message.id);
 			self.rendered.remove(&message.id);
+			self.deleted.remove(&message.id);
 		}
 		self.reached_start = false;
 	}
@@ -203,6 +231,7 @@ impl ChannelMessages {
 		for message in self.ordered.drain(MESSAGE_CAP..) {
 			self.by_id.remove(&message.id);
 			self.rendered.remove(&message.id);
+			self.deleted.remove(&message.id);
 		}
 		self.detached = true;
 	}

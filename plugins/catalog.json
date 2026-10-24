@@ -3,36 +3,6 @@
   "generated_at": "2026-10-23T18:08:07Z",
   "plugins": [
     {
-      "id": "dev.oxidcord.delete-keeper",
-      "name": "Delete Keeper",
-      "version": "0.1.0",
-      "description": "Keeps the text of deleted messages and shows it under a deleted badge.",
-      "permissions": [
-        "context-timeline",
-        "storage",
-        "ui-slots"
-      ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.delete-keeper-0.1.0.oxidcord-plugin",
-      "sha256": "4304484ed7f1f5df5b5f817b85ac63e17d05fa45635788afca25c6460598e1b1",
-      "length": 50289,
-      "reviewed": true
-    },
-    {
-      "id": "dev.oxidcord.edit-history",
-      "name": "Edit History",
-      "version": "0.1.0",
-      "description": "Keeps the previous versions of edited messages and shows them under the message.",
-      "permissions": [
-        "context-timeline",
-        "storage",
-        "message-render"
-      ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.edit-history-0.1.0.oxidcord-plugin",
-      "sha256": "f3ad8b2f1aa7a1b927975fa3ff7c299df374b0e9f09cc4807f1421bf38d20ca2",
-      "length": 57056,
-      "reviewed": true
-    },
-    {
       "id": "dev.oxidcord.hello-timestamps",
       "name": "Hello Timestamps",
       "version": "0.1.0",

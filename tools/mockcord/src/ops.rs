@@ -244,12 +244,22 @@ impl Shared {
 	}
 
 	pub fn edit_message(&self, channel_id: u64, id: u64, edit: EditMessage) -> Result<Value, ApiError> {
+		self.edit_as(channel_id, id, CURRENT_USER_ID, edit)
+	}
+
+	pub fn edit_as(
+		&self,
+		channel_id: u64,
+		id: u64,
+		author: u64,
+		edit: EditMessage,
+	) -> Result<Value, ApiError> {
 		let mut store = self.store.lock();
 		Self::guild_of(&store, channel_id)?;
 		let message = store
 			.message_mut(channel_id, id)
 			.ok_or_else(ApiError::unknown_message)?;
-		if author_id(message) != CURRENT_USER_ID {
+		if author_id(message) != author {
 			return Err(ApiError::not_author());
 		}
 		if let Some(content) = edit.content {
