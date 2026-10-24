@@ -6,7 +6,7 @@ use plugin_host::api::{
 	VoiceInfo,
 };
 use plugin_host::convert::{message_view, user_view};
-use protocol::Snowflake;
+use protocol::{Snowflake, StatusKind};
 use state::{MemberListRow, SharedState, State};
 use tokio::sync::mpsc;
 
@@ -145,6 +145,9 @@ impl HostBroker for SessionBroker {
 	}
 
 	fn notify(&self, plugin: &str, title: String, body: String) -> Result<(), HostError> {
+		if self.state.read().own_status() == StatusKind::Dnd {
+			return Ok(());
+		}
 		delivered(self.sink.notify(plugin, &title, &body))
 	}
 

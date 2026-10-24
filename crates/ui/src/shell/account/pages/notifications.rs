@@ -30,13 +30,14 @@ impl NotificationsPage {
 	}
 
 	fn send_test(&mut self, cx: &mut Context<Self>) {
-		let sounds = (self.backend.read)().notifications.sounds;
+		if (self.backend.read)().notifications.sounds {
+			platform::sound::play_chime();
+		}
 		let notification = platform::notifications::Notification {
 			title: cx.t("app-name").to_string(),
 			body: cx.t("notifications-test-body").to_string(),
 			icon_path: None,
 			app_id: crate::APP_ID.to_owned(),
-			sound: sounds,
 		};
 		let task = cx
 			.background_executor()

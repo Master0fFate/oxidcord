@@ -480,8 +480,7 @@ impl Core {
 			}
 			Command::SetStatus(status) => {
 				let body = json!({ "status": status.as_str() });
-				self.status = status;
-				self.publish_presence();
+				self.apply_local(LocalEvent::StatusChosen(status));
 				self.spawn_action("status", move |rest| async move {
 					rest.patch_user_settings(body).await.map(drop)
 				});
@@ -963,29 +962,18 @@ impl Core {
 				activity
 			})
 			.collect();
-		let idle = self.afk && self.status == StatusKind::Online;
-		let status = if idle {
-			StatusKind::Idle
-		} else {
-			self.status.clone()
+		let (status, afk) = {
+			let state = self.state.read();
+			(state.own_status(), state.is_afk())
 		};
-		if let Err(error) = self.gateway.send_presence(status.as_str(), activities, self.afk) {
+		if let Err(error) = self.gateway.send_presence(status.as_str(), activities, afk) {
 			tracing::warn!(%error, "presence was not sent");
 		}
 	}
 
-	pub(super) fn set_afk(&mut self, afk: bool) {
-		if self.afk == afk {
-			return;
-		}
-		self.afk = afk;
-		self.publish_presence();
-	}
-
 	pub(super) fn set_presence_command(&mut self, status: StatusKind, custom_status: Option<String>) {
-		self.status = status;
 		self.custom_status = custom_status.map(|text| CustomStatus { text, emoji: None });
-		self.publish_presence();
+		self.apply_local(LocalEvent::StatusChosen(status));
 	}
 }
 

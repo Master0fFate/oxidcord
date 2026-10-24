@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
-use protocol::{ProtoGuildFolder, ProtoGuildFolders, Snowflake, UserGuildSettings, decode_guild_folders};
+use protocol::{
+	ProtoGuildFolder, ProtoGuildFolders, ProtoSettings, Snowflake, UserGuildSettings, decode_settings,
+};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
@@ -82,16 +84,24 @@ impl State {
 	}
 
 	pub(crate) fn apply_settings_proto(&mut self, encoded: &str) -> Changes {
-		let Some(ProtoGuildFolders { folders, positions }) = decode_guild_folders(encoded) else {
-			return Changes::default();
+		let mut changes = Changes::default();
+		let Some(ProtoSettings {
+			status,
+			guild_folders,
+		}) = decode_settings(encoded)
+		else {
+			return changes;
 		};
-		self.guild_folders = folders.into_iter().map(GuildFolder::from).collect();
-		self.guild_positions = positions;
-		self.reorder_guilds();
-		Changes {
-			guild_list: true,
-			..Changes::default()
+		if let Some(status) = status {
+			changes.own_status = self.restore_status(&status);
 		}
+		if let Some(ProtoGuildFolders { folders, positions }) = guild_folders {
+			self.guild_folders = folders.into_iter().map(GuildFolder::from).collect();
+			self.guild_positions = positions;
+			self.reorder_guilds();
+			changes.guild_list = true;
+		}
+		changes
 	}
 
 	pub(crate) fn apply_settings_proto_update(&mut self, update: &Value) -> Changes {
@@ -118,6 +128,9 @@ impl State {
 				stored.extend(fields.iter().map(|(key, value)| (key.clone(), value.clone())));
 			}
 			changes.user_settings = true;
+		}
+		if let Some(status) = settings.get("status").and_then(Value::as_str) {
+			changes.own_status = self.restore_status(status);
 		}
 		if let Some(folders) = settings.get("guild_folders").and_then(Value::as_array) {
 			self.guild_folders = folders

@@ -12,6 +12,7 @@ name = "platform"
 [dependencies]
 arboard.workspace = true
 auto-launch.workspace = true
+cpal.workspace = true
 global-hotkey.workspace = true
 interprocess.workspace = true
 notify-rust.workspace = true

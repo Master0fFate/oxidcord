@@ -34,13 +34,15 @@ use std::time::Instant;
 
 use gpui::{
 	Anchor, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement as _,
-	IntoElement, ParentElement as _, Pixels, Point, Render, SharedString, Styled as _, Subscription, Window,
-	anchored, deferred, div, prelude::FluentBuilder as _,
+	IntoElement, ParentElement as _, Pixels, Point, Render, SharedString, Styled as _, Subscription, Task,
+	Window, anchored, deferred, div, prelude::FluentBuilder as _,
 };
 use gpui_component::WindowExt as _;
-use protocol::{ChannelType, Snowflake};
+use platform::notifications::Notification;
+use protocol::{ChannelType, Snowflake, StatusKind};
 use session::Command;
-use state::{Changes, State};
+use state::{Alert, Changes, State};
+use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 use self::account::{AccountHub, GroupEvent, Groups};
 use self::channel_sidebar::{ChannelSidebar, SidebarEvent};
@@ -49,7 +51,7 @@ use self::composer::{Composer, ComposerEvent};
 use self::dm_sidebar::{DmSidebar, DmSidebarEvent};
 use self::friends::{FriendsEvent, HomePage, HomePages};
 use self::member_list::{MemberList, MemberListEvent};
-use self::message::ImageTarget;
+use self::message::{ImageTarget, snippet};
 use self::pickers::PickerTab;
 use self::plugins::{DebugPanel, PluginUi, RightPanel as PluginRightPanel, SidebarPanel};
 use self::profile::{ProfileCard, ProfileEvent};
@@ -132,8 +134,8 @@ pub struct Shell {
 	panel: RightPanel,
 	members_visible: bool,
 	pending_jump: Option<Snowflake>,
-	mention_counts: HashMap<Snowflake, i64>,
-	mentions_primed: bool,
+	seen_alert: u64,
+	notification_clicks: UnboundedSender<Snowflake>,
 	title_mentions: u32,
 	rail: Entity<ServerRail>,
 	channel_sidebar: Entity<ChannelSidebar>,
@@ -155,6 +157,7 @@ pub struct Shell {
 	settings: Option<Entity<SettingsWindow>>,
 	overlay: Option<Overlay>,
 	_subscriptions: Vec<Subscription>,
+	_notification_clicks: Task<()>,
 }
 
 impl EventEmitter<ShellEvent> for Shell {}
@@ -190,6 +193,36 @@ fn selectable_channels(state: &State, guild: Snowflake) -> Vec<Snowflake> {
 		})
 		.map(|channel| channel.id)
 		.collect()
+}
+
+fn alert_notification(state: &State, alert: &Alert, show_content: bool) -> Notification {
+	let message = &alert.message;
+	let author = state.display_name(alert.guild_id, message.author.id);
+	let channel = state.channel(message.channel_id);
+	let title = match (alert.guild_id.and_then(|id| state.guild(id)), channel) {
+		(Some(guild), Some(channel)) => format!(
+			"{author} ({} / #{})",
+			guild.name,
+			channel.name.as_deref().unwrap_or_default()
+		),
+		(Some(guild), None) => format!("{author} ({})", guild.name),
+		(None, Some(channel)) if channel.kind == ChannelType::GroupDm => match channel.name.as_deref() {
+			Some(name) if !name.is_empty() => format!("{author} ({name})"),
+			_ => author,
+		},
+		_ => author,
+	};
+	let body = if show_content {
+		snippet(&markdown::parse(&message.content), NOTIFICATION_BODY_LIMIT)
+	} else {
+		String::new()
+	};
+	Notification {
+		title,
+		body,
+		icon_path: None,
+		app_id: crate::APP_ID.to_owned(),
+	}
 }
 
 fn describe(state: &State, guild: Option<Snowflake>, channel: Snowflake) -> Described {
@@ -454,6 +487,17 @@ impl Shell {
 		let focus = cx.focus_handle();
 		window.focus(&focus, cx);
 
+		let (notification_clicks, mut clicked) = unbounded_channel();
+		let notification_task = cx.spawn_in(window, async move |this, cx| {
+			while let Some(channel) = clicked.recv().await {
+				let opened = this.update_in(cx, |shell, window, cx| shell.open_notified(channel, window, cx));
+				if opened.is_err() {
+					break;
+				}
+			}
+		});
+		let seen_alert = data.read(cx).state().last_alert_id();
+
 		let mut shell = Self {
 			data,
 			backend,
@@ -468,8 +512,8 @@ impl Shell {
 			panel: RightPanel::Members,
 			members_visible: true,
 			pending_jump: None,
-			mention_counts: HashMap::new(),
-			mentions_primed: false,
+			seen_alert,
+			notification_clicks,
 			title_mentions: 0,
 			rail,
 			channel_sidebar,
@@ -491,6 +535,7 @@ impl Shell {
 			settings: None,
 			overlay: None,
 			_subscriptions: subscriptions,
+			_notification_clicks: notification_task,
 		};
 		shell.on_changes(&Changes::everything(), window, cx);
 		shell
@@ -759,7 +804,7 @@ impl Shell {
 		{
 			self.channel_sidebar.update(cx, |sidebar, cx| sidebar.refresh(cx));
 		}
-		if changes.current_user || changes.session || changes.presence_any() {
+		if changes.current_user || changes.own_status || changes.session || changes.presence_any() {
 			self.user_panel.update(cx, |panel, cx| panel.refresh(cx));
 		}
 		if changes.session {
@@ -804,6 +849,9 @@ impl Shell {
 		if changes.read_state || changes.guild_list || changes.private_channels {
 			self.update_mentions(window, cx);
 		}
+		if changes.alerts {
+			self.raise_alerts(window, cx);
+		}
 	}
 
 	fn on_media_ready(&mut self, cx: &mut Context<Self>) {
@@ -821,36 +869,16 @@ impl Shell {
 	}
 
 	fn update_mentions(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-		let settings = (self.backend.read)().notifications;
-		let focused = window.is_window_active();
-		let mut total = 0u32;
-		let mut raised: Vec<Snowflake> = Vec::new();
-		{
+		let total = {
 			let data = self.data.read(cx);
 			let state = data.state();
-			total += state
+			state
 				.guild_summaries()
 				.iter()
 				.map(|summary| summary.mentions)
-				.sum::<u32>();
-			total += state.dm_rows().iter().map(|row| row.mentions).sum::<u32>();
-			let channels = state
-				.guilds()
-				.flat_map(|guild| guild.channels.keys().copied())
-				.chain(state.private_channels().map(|channel| channel.id));
-			for channel in channels {
-				let count = state
-					.read_state(channel)
-					.and_then(|read| read.mention_count)
-					.unwrap_or(0);
-				let previous = self.mention_counts.insert(channel, count);
-				let increased = previous.is_some_and(|previous| count > previous);
-				if self.mentions_primed && increased && (Some(channel) != self.channel || !focused) {
-					raised.push(channel);
-				}
-			}
-		}
-		self.mentions_primed = true;
+				.sum::<u32>()
+				+ state.dm_rows().iter().map(|row| row.mentions).sum::<u32>()
+		};
 		if total != self.title_mentions {
 			self.title_mentions = total;
 			let title = if total > 0 {
@@ -860,54 +888,53 @@ impl Shell {
 			};
 			window.set_window_title(&title);
 		}
-		if settings.enabled {
-			for channel in raised {
-				let sounds = settings.sounds && !crate::data::streamer_mode(cx).mutes_sounds();
-				self.notify_mention(channel, settings.show_content, sounds, cx);
+	}
+
+	fn raise_alerts(&mut self, window: &Window, cx: &mut Context<Self>) {
+		let settings = (self.backend.read)().notifications;
+		let viewing = self.channel.filter(|_| window.is_window_active());
+		let notifications: Vec<(Snowflake, Notification)> = {
+			let data = self.data.read(cx);
+			let state = data.state();
+			let seen = std::mem::replace(&mut self.seen_alert, state.last_alert_id());
+			if state.own_status() == StatusKind::Dnd || !(settings.enabled || settings.sounds) {
+				return;
 			}
+			let mut alerts = state
+				.alerts_after(seen)
+				.filter(|alert| Some(alert.message.channel_id) != viewing)
+				.peekable();
+			if alerts.peek().is_none() {
+				return;
+			}
+			if settings.enabled {
+				alerts
+					.map(|alert| {
+						(
+							alert.message.channel_id,
+							alert_notification(&state, alert, settings.show_content),
+						)
+					})
+					.collect()
+			} else {
+				Vec::new()
+			}
+		};
+		if settings.sounds && !crate::data::streamer_mode(cx).mutes_sounds() {
+			platform::sound::play_chime();
+		}
+		for (channel, notification) in notifications {
+			let clicks = self.notification_clicks.clone();
+			platform::notifications::show_with_click(notification, move || {
+				clicks.send(channel).ok();
+			});
 		}
 	}
 
-	fn notify_mention(&self, channel: Snowflake, show_content: bool, sound: bool, cx: &mut Context<Self>) {
-		let (title, body) = {
-			let data = self.data.read(cx);
-			let state = data.state();
-			let guild = state.channel_guild(channel);
-			let place = describe(&state, guild, channel).name;
-			let latest = state
-				.messages(channel)
-				.and_then(|cache| cache.ordered.last().cloned())
-				.filter(|message| Some(message.author.id) != state.current_user_id());
-			let title = match (&latest, guild.and_then(|id| state.guild(id))) {
-				(Some(message), Some(guild)) => format!(
-					"{} ({} / #{place})",
-					state.display_name(Some(guild.id), message.author.id),
-					guild.name
-				),
-				(Some(message), None) => state.display_name(None, message.author.id),
-				(None, Some(guild)) => format!("#{place} ({})", guild.name),
-				(None, None) => place.to_string(),
-			};
-			let body = match (&latest, show_content) {
-				(Some(message), true) => message.content.chars().take(NOTIFICATION_BODY_LIMIT).collect(),
-				_ => String::new(),
-			};
-			(title, body)
-		};
-		let notification = platform::notifications::Notification {
-			title,
-			body,
-			icon_path: None,
-			app_id: crate::APP_ID.to_owned(),
-			sound,
-		};
-		cx.background_executor()
-			.spawn(async move {
-				if let Err(error) = platform::notifications::show(&notification) {
-					tracing::warn!(%error, "could not show the notification");
-				}
-			})
-			.detach();
+	fn open_notified(&mut self, channel: Snowflake, window: &mut Window, cx: &mut Context<Self>) {
+		crate::desktop::show_window(window);
+		let guild = self.data.read(cx).state().channel_guild(channel);
+		self.select(guild, channel, cx);
 	}
 
 	fn run_search(&mut self, query: String, cx: &mut Context<Self>) {

@@ -4,7 +4,9 @@ use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
 
 use crate::snowflake::Snowflake;
 
+const PRELOADED_STATUS: u32 = 11;
 const PRELOADED_GUILD_FOLDERS: u32 = 14;
+const STATUS_VALUE: u32 = 1;
 const FOLDERS: u32 = 1;
 const POSITIONS: u32 = 2;
 const FOLDER_GUILD_IDS: u32 = 1;
@@ -30,6 +32,12 @@ pub struct ProtoGuildFolder {
 pub struct ProtoGuildFolders {
 	pub folders: Vec<ProtoGuildFolder>,
 	pub positions: Vec<Snowflake>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ProtoSettings {
+	pub status: Option<String>,
+	pub guild_folders: Option<ProtoGuildFolders>,
 }
 
 #[derive(Clone, Copy)]
@@ -152,10 +160,27 @@ fn decode_folders(bytes: &[u8]) -> ProtoGuildFolders {
 	decoded
 }
 
-pub fn decode_guild_folders(encoded: &str) -> Option<ProtoGuildFolders> {
-	let bytes = LENIENT.decode(encoded.trim()).ok()?;
-	Fields::new(&bytes).find_map(|(number, wire)| match (number, wire) {
-		(PRELOADED_GUILD_FOLDERS, Wire::Bytes(inner)) => Some(decode_folders(inner)),
+fn decode_status(bytes: &[u8]) -> Option<String> {
+	Fields::new(bytes).find_map(|(number, wire)| match (number, wire) {
+		(STATUS_VALUE, Wire::Bytes(inner)) => match wrapped(inner)? {
+			Wire::Bytes(text) => Some(String::from_utf8_lossy(text).into_owned()),
+			_ => None,
+		},
 		_ => None,
 	})
+}
+
+pub fn decode_settings(encoded: &str) -> Option<ProtoSettings> {
+	let bytes = LENIENT.decode(encoded.trim()).ok()?;
+	let mut settings = ProtoSettings::default();
+	for (number, wire) in Fields::new(&bytes) {
+		match (number, wire) {
+			(PRELOADED_STATUS, Wire::Bytes(inner)) => settings.status = decode_status(inner),
+			(PRELOADED_GUILD_FOLDERS, Wire::Bytes(inner)) => {
+				settings.guild_folders = Some(decode_folders(inner));
+			}
+			_ => {}
+		}
+	}
+	Some(settings)
 }

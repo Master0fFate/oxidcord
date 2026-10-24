@@ -11,7 +11,7 @@ use plugin_host::SendDecision;
 use plugin_host::api::VoiceInfo;
 use protocol::{
 	Channel, ChannelType, CreateMessage, DISCORD_EPOCH_MS, DispatchEvent, EditMessage, Message, MessageAck,
-	MessageReference, MessagesQuery, Nonce, Snowflake, StatusKind, Token, User,
+	MessageReference, MessagesQuery, Nonce, Snowflake, Token, User,
 };
 use rest::api::SearchQuery;
 use rest::{RestClient, UploadFile};
@@ -187,8 +187,6 @@ pub(crate) struct Core {
 	voice: VoiceLink,
 	video: SharedVideo,
 	streams: StreamLink,
-	status: StatusKind,
-	afk: bool,
 	custom_status: Option<CustomStatus>,
 	hub: Arc<PluginHub>,
 	render_worker: RenderWorker,
@@ -255,8 +253,6 @@ impl Core {
 			voice: VoiceLink::new(parts.voice_io, parts.shared_voice),
 			video: parts.video,
 			streams: StreamLink::default(),
-			status: StatusKind::Online,
-			afk: false,
 			custom_status: None,
 			hub: parts.hub,
 			render_worker,
@@ -368,6 +364,9 @@ impl Core {
 		}
 		if !changes.typing.is_empty() {
 			self.typing_expiry = Some(Instant::now() + TYPING_TIMEOUT + TYPING_EXPIRY_SLACK);
+		}
+		if changes.own_status {
+			self.publish_presence();
 		}
 		self.notifier.push(changes);
 	}
@@ -680,7 +679,7 @@ impl Core {
 				status,
 				custom_status,
 			} => self.set_presence_command(status, custom_status),
-			Command::SetAfk(afk) => self.set_afk(afk),
+			Command::SetAfk(afk) => self.apply_local(LocalEvent::AfkChanged(afk)),
 			Command::SubscribeGuild { guild_id } => {
 				let channel_id = self.subscription_channel(guild_id);
 				self.subscribe(guild_id, channel_id);

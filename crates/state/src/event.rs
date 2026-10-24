@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use protocol::{DispatchEvent, Message, Nonce, Ready, ReadySupplemental, Snowflake, User};
+use protocol::{DispatchEvent, Message, Nonce, Ready, ReadySupplemental, Snowflake, StatusKind, User};
 
 use crate::loaded::Loaded;
 use crate::views::{RenderedMessage, UserOverride};
@@ -106,6 +106,8 @@ pub enum LocalEvent {
 	CommandRejected {
 		reason: String,
 	},
+	StatusChosen(StatusKind),
+	AfkChanged(bool),
 }
 
 #[derive(Debug)]

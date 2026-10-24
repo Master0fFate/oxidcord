@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
-use protocol::{Channel, ChannelType, Emoji, Guild, Member, Role, Snowflake, VoiceState};
+use protocol::{
+	Channel, ChannelType, DefaultMessageNotifications, Emoji, Guild, Member, Role, Snowflake, VoiceState,
+};
 
 use crate::member_list::MemberList;
 
@@ -19,6 +21,7 @@ pub struct GuildState {
 	pub joined_at: Option<DateTime<Utc>>,
 	pub large: bool,
 	pub unavailable: bool,
+	pub default_notifications: Option<DefaultMessageNotifications>,
 	pub channels: IndexMap<Snowflake, Channel>,
 	pub threads: IndexMap<Snowflake, Channel>,
 	pub roles: IndexMap<Snowflake, Role>,
@@ -82,6 +85,7 @@ impl GuildState {
 		self.joined_at = guild.joined_at.or(self.joined_at);
 		self.large = guild.large.unwrap_or(self.large);
 		self.unavailable = guild.unavailable.unwrap_or(false);
+		self.default_notifications = guild.default_message_notifications.or(self.default_notifications);
 		if !guild.features.is_empty() {
 			self.features.clone_from(&guild.features);
 		}

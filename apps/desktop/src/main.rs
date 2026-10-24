@@ -86,7 +86,6 @@ impl BrokerSink for PlatformSink {
 			body: body.to_owned(),
 			icon_path: None,
 			app_id: ui::APP_ID.to_owned(),
-			sound: false,
 		};
 		report(
 			plugin,

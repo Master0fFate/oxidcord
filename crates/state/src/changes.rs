@@ -67,9 +67,11 @@ pub struct Changes {
 	pub guild_list: bool,
 	pub private_channels: bool,
 	pub current_user: bool,
+	pub own_status: bool,
 	pub user_settings: bool,
 	pub relationships: bool,
 	pub read_state: bool,
+	pub alerts: bool,
 	pub session: bool,
 	pub selection: bool,
 	pub search: bool,
@@ -95,9 +97,11 @@ impl Changes {
 			guild_list: true,
 			private_channels: true,
 			current_user: true,
+			own_status: true,
 			user_settings: true,
 			relationships: true,
 			read_state: true,
+			alerts: true,
 			session: true,
 			selection: true,
 			search: true,
@@ -122,9 +126,11 @@ impl Changes {
 		!(self.guild_list
 			|| self.private_channels
 			|| self.current_user
+			|| self.own_status
 			|| self.user_settings
 			|| self.relationships
 			|| self.read_state
+			|| self.alerts
 			|| self.session
 			|| self.selection
 			|| self.search
@@ -148,9 +154,11 @@ impl Changes {
 		self.guild_list |= other.guild_list;
 		self.private_channels |= other.private_channels;
 		self.current_user |= other.current_user;
+		self.own_status |= other.own_status;
 		self.user_settings |= other.user_settings;
 		self.relationships |= other.relationships;
 		self.read_state |= other.read_state;
+		self.alerts |= other.alerts;
 		self.session |= other.session;
 		self.selection |= other.selection;
 		self.search |= other.search;

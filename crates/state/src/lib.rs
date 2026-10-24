@@ -29,6 +29,7 @@ pub use loaded::{
 };
 pub use member_list::{MemberList, MemberSlot};
 pub use messages::{ChannelMessages, MESSAGE_CAP, PendingMessage};
+pub use notifications::Alert;
 pub use permissions::DM_PERMISSIONS;
 pub use settings::{GuildFolder, RailEntry, guild_folders_settings};
 pub use state::{Rejection, Selection, SessionInfo, SharedState, State, TYPING_TIMEOUT};

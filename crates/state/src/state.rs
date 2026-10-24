@@ -1,11 +1,13 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use indexmap::IndexMap;
 use parking_lot::RwLock;
-use protocol::{Channel, Message, Presence, ReadState, Relationship, Snowflake, User, UserGuildSettings};
+use protocol::{
+	Channel, Message, Presence, ReadState, Relationship, Snowflake, StatusKind, User, UserGuildSettings,
+};
 use serde_json::Value;
 use smallvec::SmallVec;
 
@@ -14,6 +16,7 @@ use crate::event::{Event, LoadDirection, LocalEvent};
 use crate::guild::GuildState;
 use crate::loaded::Lazy;
 use crate::messages::ChannelMessages;
+use crate::notifications::Alert;
 use crate::settings::GuildFolder;
 use crate::views::RenderedMessage;
 use crate::views::UserOverride;
@@ -70,6 +73,10 @@ pub struct State {
 	pub(crate) streams: HashMap<String, StreamSummary>,
 	pub(crate) rejection: Option<Rejection>,
 	pub(crate) rejection_count: u64,
+	pub(crate) chosen_status: Option<StatusKind>,
+	pub(crate) afk: bool,
+	pub(crate) alerts: VecDeque<Alert>,
+	pub(crate) alert_count: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -487,6 +494,14 @@ impl State {
 					reason: reason.clone(),
 				});
 				changes.rejected = true;
+			}
+			LocalEvent::StatusChosen(status) => {
+				self.chosen_status = Some(status.clone());
+				changes.own_status = true;
+			}
+			LocalEvent::AfkChanged(afk) => {
+				changes.own_status = self.afk != *afk;
+				self.afk = *afk;
 			}
 		}
 		changes

@@ -196,13 +196,16 @@ impl State {
 		let channel_id = message.channel_id;
 		let guild_id = message.guild_id.or_else(|| self.channel_guild(channel_id));
 		self.ingest_message_people(guild_id, message);
+		let alert = self.wants_alert(message, guild_id);
 		let mut changes = Changes::default();
+		let mut shared = None;
 		if let Some(cache) = self.messages.get_mut(&channel_id) {
 			let pending = message.nonce.as_ref().and_then(|nonce| cache.take_pending(nonce));
 			let confirmed = pending.is_some();
-			let shared = Arc::new(message.clone());
-			if cache.push_live(Arc::clone(&shared)) {
-				self.unrendered.push(shared);
+			let live = Arc::new(message.clone());
+			shared = Some(Arc::clone(&live));
+			if cache.push_live(Arc::clone(&live)) {
+				self.unrendered.push(live);
 				changes.messages.insert(channel_id);
 			} else if confirmed {
 				changes.messages.insert(channel_id);
@@ -237,6 +240,10 @@ impl State {
 			self.set_read_state(channel_id, message.id, 0);
 		} else if !is_selected && (guild_id.is_none() || self.mentions_me(message, guild_id)) {
 			self.bump_mentions(channel_id);
+		}
+		if alert {
+			self.push_alert(guild_id, shared.unwrap_or_else(|| Arc::new(message.clone())));
+			changes.alerts = true;
 		}
 		changes.read_state = true;
 		self.mark_channel_dirty(channel_id, &mut changes);

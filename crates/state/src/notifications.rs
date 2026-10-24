@@ -1,11 +1,23 @@
+use std::sync::Arc;
+
 use chrono::{DateTime, Utc};
 use protocol::{
-	Channel, ChannelType, Message, MuteConfig, Permissions, ReadState, Snowflake, UserGuildSettings,
+	Channel, ChannelType, DefaultMessageNotifications, Message, MuteConfig, NotificationLevel, Permissions,
+	ReadState, Snowflake, StatusKind, UserGuildSettings,
 };
 
 use crate::guild::GuildState;
 use crate::permissions::compute_permissions;
 use crate::state::State;
+
+const ALERT_BACKLOG: usize = 16;
+
+#[derive(Debug, Clone)]
+pub struct Alert {
+	pub id: u64,
+	pub guild_id: Option<Snowflake>,
+	pub message: Arc<Message>,
+}
 
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct ChannelStatus {
@@ -54,6 +66,15 @@ pub(crate) fn channel_muted(
 		})
 }
 
+fn override_level(settings: Option<&UserGuildSettings>, channel_id: Snowflake) -> Option<NotificationLevel> {
+	settings?
+		.channel_overrides
+		.iter()
+		.find(|entry| entry.channel_id == channel_id)?
+		.message_notifications
+		.filter(|level| *level != NotificationLevel::Inherit)
+}
+
 fn mention_count(read_state: Option<&ReadState>) -> u32 {
 	read_state
 		.and_then(|state| state.mention_count)
@@ -61,6 +82,103 @@ fn mention_count(read_state: Option<&ReadState>) -> u32 {
 }
 
 impl State {
+	pub fn own_status(&self) -> StatusKind {
+		match &self.chosen_status {
+			None | Some(StatusKind::Online) if self.afk => StatusKind::Idle,
+			Some(status) => status.clone(),
+			None => StatusKind::Online,
+		}
+	}
+
+	pub fn is_afk(&self) -> bool {
+		self.afk
+	}
+
+	pub fn alerts_after(&self, seen: u64) -> impl Iterator<Item = &Alert> {
+		self.alerts.iter().filter(move |alert| alert.id > seen)
+	}
+
+	pub fn last_alert_id(&self) -> u64 {
+		self.alert_count
+	}
+
+	pub fn notification_level(
+		&self,
+		guild_id: Option<Snowflake>,
+		channel_id: Option<Snowflake>,
+	) -> NotificationLevel {
+		let Some(guild_id) = guild_id else {
+			return NotificationLevel::AllMessages;
+		};
+		let settings = self.guild_settings.get(&guild_id);
+		let channel = channel_id.and_then(|id| self.channel(id));
+		let overridden = channel
+			.into_iter()
+			.flat_map(|channel| [Some(channel.id), channel.parent_id])
+			.flatten()
+			.find_map(|id| override_level(settings, id));
+		let chosen = settings
+			.and_then(|settings| settings.message_notifications)
+			.filter(|level| *level != NotificationLevel::Inherit);
+		overridden.or(chosen).unwrap_or_else(|| {
+			match self
+				.guilds
+				.get(&guild_id)
+				.and_then(|guild| guild.default_notifications)
+			{
+				Some(DefaultMessageNotifications::OnlyMentions) => NotificationLevel::OnlyMentions,
+				_ => NotificationLevel::AllMessages,
+			}
+		})
+	}
+
+	pub(crate) fn restore_status(&mut self, status: &str) -> bool {
+		let status = StatusKind::from(status);
+		if status.is_unknown()
+			|| status == StatusKind::Offline
+			|| self.chosen_status.as_ref() == Some(&status)
+		{
+			return false;
+		}
+		self.chosen_status = Some(status);
+		true
+	}
+
+	pub(crate) fn wants_alert(&self, message: &Message, guild_id: Option<Snowflake>) -> bool {
+		let Some(me) = self.current_user_id() else {
+			return false;
+		};
+		if message.author.id == me {
+			return false;
+		}
+		let settings = self.guild_settings(guild_id);
+		let now = Utc::now();
+		let muted = match self.channel(message.channel_id) {
+			Some(channel) => channel_muted(settings, channel, now),
+			None => guild_muted(settings, now),
+		};
+		if muted {
+			return false;
+		}
+		match self.notification_level(guild_id, Some(message.channel_id)) {
+			NotificationLevel::AllMessages => true,
+			NotificationLevel::NoMessages => false,
+			_ => self.mentions_me(message, guild_id),
+		}
+	}
+
+	pub(crate) fn push_alert(&mut self, guild_id: Option<Snowflake>, message: Arc<Message>) {
+		if self.alerts.len() == ALERT_BACKLOG {
+			self.alerts.pop_front();
+		}
+		self.alert_count += 1;
+		self.alerts.push_back(Alert {
+			id: self.alert_count,
+			guild_id,
+			message,
+		});
+	}
+
 	pub(crate) fn channel_status(
 		&self,
 		channel: &Channel,

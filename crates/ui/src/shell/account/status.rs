@@ -114,7 +114,7 @@ impl StatusMenu {
 		self.name = state.display_name(None, user.id).into();
 		self.handle = user.username.clone().into();
 		self.avatar = user_avatar(user, 64);
-		self.status = presence.map_or(Status::Online, |presence| Status::from(&presence.status));
+		self.status = Status::from(&state.own_status());
 		self.custom = presence
 			.and_then(|presence| {
 				presence

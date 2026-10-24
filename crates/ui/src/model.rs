@@ -23,6 +23,9 @@ impl From<&StatusKind> for Status {
 }
 
 pub fn status_of(state: &State, user_id: protocol::Snowflake) -> Status {
+	if state.current_user_id() == Some(user_id) {
+		return Status::from(&state.own_status());
+	}
 	state
 		.presence(user_id)
 		.map_or(Status::Offline, |presence| Status::from(&presence.status))

@@ -47,10 +47,7 @@ fn until(minutes: Option<i64>) -> Option<DateTime<Utc>> {
 pub fn current_level(data: &Data, scope: Scope) -> NotificationLevel {
 	let state = data.state();
 	match scope {
-		Scope::Guild(guild) => state
-			.guild_settings(Some(guild))
-			.and_then(|settings| settings.message_notifications)
-			.unwrap_or(NotificationLevel::AllMessages),
+		Scope::Guild(guild) => state.notification_level(Some(guild), None),
 		Scope::Channel { guild, channel } => state
 			.guild_settings(guild)
 			.and_then(|settings| {
@@ -178,17 +175,16 @@ pub fn open_guild_modal(window: &mut Window, cx: &mut App, guild: Snowflake) {
 	let data = data_handle(cx);
 	let (level, suppress_everyone, suppress_roles) = {
 		let state = data.read(cx).state();
-		state
+		let (suppress_everyone, suppress_roles) = state
 			.guild_settings(Some(guild))
-			.map_or((NotificationLevel::AllMessages, false, false), |settings| {
-				(
-					settings
-						.message_notifications
-						.unwrap_or(NotificationLevel::AllMessages),
-					settings.suppress_everyone,
-					settings.suppress_roles,
-				)
-			})
+			.map_or((false, false), |settings| {
+				(settings.suppress_everyone, settings.suppress_roles)
+			});
+		(
+			state.notification_level(Some(guild), None),
+			suppress_everyone,
+			suppress_roles,
+		)
 	};
 	let view = cx.new(|_| GuildNotifications {
 		data,

@@ -554,10 +554,10 @@ language-pt-br = Português (Brasil)
 language-ru = Русский
 language-zh-cn = 简体中文
 
-notifications-desktop = Desktop Notifications
-notifications-enable = Enable Desktop Notifications
+notifications-desktop = Alerts
+notifications-enable = Desktop Notifications
 notifications-enable-note = Show a notification when you are mentioned or get a direct message.
-notifications-sounds = Notification Sounds
+notifications-sounds = Notification Sound
 notifications-sounds-note = Play a sound with each notification.
 notifications-content = Show Message Content
 notifications-content-note = Include the start of the message in the notification.
