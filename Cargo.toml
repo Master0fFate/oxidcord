@@ -129,3 +129,9 @@ opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3
+
+[patch.crates-io]
+gpui-pre = { git = "https://github.com/longbridge/gpui-fast", rev = "124f79b0f14c688ae87877e370c015a9dc9d7ce5" }
+gpui-pre-platform = { git = "https://github.com/longbridge/gpui-fast", rev = "124f79b0f14c688ae87877e370c015a9dc9d7ce5" }
+gpui-pre-macros = { git = "https://github.com/longbridge/gpui-fast", rev = "124f79b0f14c688ae87877e370c015a9dc9d7ce5" }
+gpui-pre-sum-tree = { git = "https://github.com/longbridge/gpui-fast", rev = "124f79b0f14c688ae87877e370c015a9dc9d7ce5" }
