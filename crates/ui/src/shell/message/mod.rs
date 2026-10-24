@@ -28,7 +28,9 @@ pub use self::body::snippet;
 use self::body::{BodyEnv, render_body};
 pub use self::reaction_tip::ReactionRequests;
 use super::community;
-use super::plugins::{PluginMenu as _, author_badge, message_actions, message_extras};
+use super::plugins::{
+	MenuTarget, PatchEffects, PluginMenu as _, author_badge, message_actions, message_extras, patch_effects,
+};
 use crate::components::{Avatar, ContextMenuBuilder, IconButton, tooltip};
 use crate::format;
 use crate::i18n::{ArgValue, Translate as _};
@@ -41,6 +43,8 @@ const SNIPPET_LENGTH: usize = 120;
 const AVATAR_SIZE: f32 = 40.;
 const SKELETON_ROWS: usize = 4;
 const DELETED_OPACITY: f32 = 0.7;
+const FADED_OPACITY: f32 = 0.5;
+const REVEAL_INDEX: usize = usize::MAX;
 
 #[derive(Clone, Copy)]
 pub struct Prefs {
@@ -744,7 +748,11 @@ fn menu_for(view: &MessageView, env: &RowEnv, cx: &App) -> ContextMenuBuilder {
 			report(RowAction::Report, window, cx)
 		});
 	}
-	menu.plugin_items("message-context-menu", id.to_string(), cx)
+	menu.plugin_items(
+		"message-context-menu",
+		MenuTarget::message(message, env.lookup.guild, env.me),
+		cx,
+	)
 }
 
 fn toolbar(view: &MessageView, group: SharedString, env: &RowEnv, cx: &App) -> AnyElement {
@@ -814,7 +822,7 @@ fn toolbar(view: &MessageView, group: SharedString, env: &RowEnv, cx: &App) -> A
 				.tooltip(cx.t("message-more"))
 				.dropdown_menu(more_menu),
 		)
-		.children(message_actions(id, cx))
+		.children(message_actions(view, cx))
 		.into_any_element()
 }
 
@@ -848,10 +856,96 @@ fn same_rendered(left: &Option<Arc<RenderedMessage>>, right: &Option<Arc<Rendere
 	}
 }
 
-fn content_column(view: &MessageView, env: &RowEnv, cx: &App) -> Vec<AnyElement> {
+fn veil_line(
+	veil: &super::plugins::Veil,
+	message: u64,
+	revealed: bool,
+	env: &RowEnv,
+	cx: &App,
+) -> AnyElement {
+	let theme = env.theme;
+	let key = if veil.collapsed {
+		"plugin-collapsed-by"
+	} else {
+		"plugin-hidden-by"
+	};
+	let label = cx.t_args(key, &[("name", ArgValue::from(veil.plugin.to_string()))]);
+	let toggle = env.dispatch.clone();
+	let hover = theme.link;
+	div()
+		.flex()
+		.items_center()
+		.gap(theme.space_8)
+		.text_size(theme.font_sm)
+		.text_color(theme.text_muted)
+		.child(
+			Icon::new(IconKind::Plugins)
+				.size(rem(14.))
+				.color(theme.text_muted),
+		)
+		.child(label)
+		.when(!veil.reason.is_empty(), |line| {
+			line.child(format!("· {}", veil.reason))
+		})
+		.child(
+			div()
+				.id(("plugin-reveal", message))
+				.cursor_pointer()
+				.text_color(theme.link)
+				.hover(move |style| style.underline().text_color(hover))
+				.on_click(move |_, window, cx| {
+					toggle(RowAction::ToggleSpoiler(message, REVEAL_INDEX), window, cx)
+				})
+				.child(cx.t(if revealed {
+					"plugin-hide-again"
+				} else {
+					"plugin-show"
+				})),
+		)
+		.into_any_element()
+}
+
+fn media_source(message: &Arc<Message>, effects: Option<&PatchEffects>) -> Option<Message> {
+	let effects = effects.filter(|effects| effects.touches_media())?;
+	let mut filtered = (**message).clone();
+	filtered.attachments = message
+		.attachments
+		.iter()
+		.filter(|attachment| !effects.hides_attachment(attachment.id))
+		.cloned()
+		.collect::<Vec<_>>()
+		.into();
+	filtered.embeds = message
+		.embeds
+		.iter()
+		.enumerate()
+		.filter(|(index, _)| effects.embed_action(*index).is_none())
+		.map(|(_, embed)| embed.clone())
+		.collect::<Vec<_>>()
+		.into();
+	Some(filtered)
+}
+
+fn content_column(
+	view: &MessageView,
+	env: &RowEnv,
+	effects: Option<&PatchEffects>,
+	cx: &App,
+) -> Vec<AnyElement> {
 	let message = &view.message;
 	let theme = env.theme;
 	let mut out: Vec<AnyElement> = Vec::new();
+	if let Some(veil) = effects.and_then(|effects| effects.veil(cx)) {
+		let id = message.id.get();
+		let revealed = env.revealed.contains(&(id, REVEAL_INDEX));
+		out.push(veil_line(&veil, id, revealed, env, cx));
+		if !revealed {
+			out.extend(message_extras(view, None, theme, cx));
+			return out;
+		}
+	}
+	let faded = effects.is_some_and(PatchEffects::faded);
+	let strike = effects.is_some_and(PatchEffects::strike);
 	let body_env = BodyEnv::new(
 		theme,
 		env.lookup,
@@ -873,7 +967,16 @@ fn content_column(view: &MessageView, env: &RowEnv, cx: &App) -> Vec<AnyElement>
 			.jumbo(document.is_only_emoji())
 			.trailer(trailer)
 			.color((view.failed || view.deleted).then_some(theme.danger));
-		out.push(render_body(&document, &body_env, cx));
+		let body = render_body(&document, &body_env, cx);
+		out.push(if faded || strike {
+			div()
+				.when(faded, |body| body.opacity(FADED_OPACITY))
+				.when(strike, |body| body.line_through())
+				.child(body)
+				.into_any_element()
+		} else {
+			body
+		});
 	}
 	let body_env = BodyEnv::new(
 		theme,
@@ -883,9 +986,24 @@ fn content_column(view: &MessageView, env: &RowEnv, cx: &App) -> Vec<AnyElement>
 		env.revealed,
 		env.prefs,
 	);
-	out.extend(media::attachments(message, &body_env, env.prefs.inline_media, cx));
+	let filtered = media_source(message, effects);
+	let media_message = filtered.as_ref().unwrap_or(message);
+	out.extend(media::attachments(
+		media_message,
+		&body_env,
+		env.prefs.inline_media,
+		cx,
+	));
 	if !message.flags.contains(protocol::MessageFlags::SUPPRESS_EMBEDS) {
-		out.extend(media::embeds(message, &body_env, env.prefs.link_previews, cx));
+		out.extend(media::embeds(
+			media_message,
+			&body_env,
+			env.prefs.link_previews,
+			cx,
+		));
+	}
+	if let Some(effects) = effects {
+		out.extend(effects.cards(message.embeds.len(), message.id, theme));
 	}
 	out.extend(media::stickers(message, &body_env, cx));
 	out.extend(thread_chip(message, env, cx));
@@ -909,7 +1027,7 @@ fn content_column(view: &MessageView, env: &RowEnv, cx: &App) -> Vec<AnyElement>
 	if view.failed {
 		out.push(failed_notice(view, env, cx));
 	}
-	out.extend(message_extras(view, theme, cx));
+	out.extend(message_extras(view, effects, theme, cx));
 	out
 }
 
@@ -1071,7 +1189,10 @@ fn message_row(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 	let group: SharedString = format!("message-{id}").into();
 	let reply = reply_header(view, env, cx);
 	let has_reply = reply.is_some();
-	let content = content_column(view, env, cx);
+	let effects = patch_effects(message.id, cx);
+	let content = content_column(view, env, effects.as_ref(), cx);
+	let accent = effects.as_ref().and_then(|effects| effects.accent(theme));
+	let tint = effects.as_ref().and_then(|effects| effects.background(theme));
 	let container = div()
 		.id(("message", id))
 		.group(group.clone())
@@ -1084,7 +1205,9 @@ fn message_row(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 		.hover(|style| style.bg(message_hover_background()))
 		.when(view.pending, |row| row.opacity(0.5))
 		.when(view.deleted, |row| row.opacity(DELETED_OPACITY))
-		.when(view.failed, |row| row.text_color(theme.danger));
+		.when(view.failed, |row| row.text_color(theme.danger))
+		.when_some(tint, |row, tint| row.bg(tint))
+		.when_some(accent, |row, accent| row.border_l_2().border_color(accent));
 	if view.grouped_with_previous {
 		let row = container
 			.child(
@@ -1186,7 +1309,10 @@ fn compact_message(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 	let message = &view.message;
 	let id = message.id.get();
 	let group: SharedString = format!("message-{id}").into();
-	let content = content_column(view, env, cx);
+	let effects = patch_effects(message.id, cx);
+	let content = content_column(view, env, effects.as_ref(), cx);
+	let accent = effects.as_ref().and_then(|effects| effects.accent(theme));
+	let tint = effects.as_ref().and_then(|effects| effects.background(theme));
 	let row = div()
 		.id(("message", id))
 		.group(group.clone())
@@ -1198,6 +1324,8 @@ fn compact_message(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 		.hover(|style| style.bg(message_hover_background()))
 		.when(view.pending, |row| row.opacity(0.5))
 		.when(view.deleted, |row| row.opacity(DELETED_OPACITY))
+		.when_some(tint, |row, tint| row.bg(tint))
+		.when_some(accent, |row, accent| row.border_l_2().border_color(accent))
 		.child(
 			div()
 				.flex_none()

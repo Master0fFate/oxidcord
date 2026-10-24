@@ -9,13 +9,14 @@ use gpui_component::Sizable as _;
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::menu::ContextMenuExt as _;
 use gpui_component::scroll::ScrollableElement as _;
+use plugin_host::ViewContext;
 use protocol::Snowflake;
 use session::Command;
 use state::{MemberListRow, State};
 
 use super::community::developer_mode;
 use super::moderation;
-use super::plugins::PluginMenu as _;
+use super::plugins::{MenuTarget, PluginMenu as _};
 use crate::components::{Avatar, ContextMenuBuilder};
 use crate::data::Data;
 use crate::i18n::{ArgValue, Translate as _};
@@ -211,7 +212,10 @@ impl MemberList {
 			Some(guild) => moderation::user_items(menu, guild, id, &member.name),
 			None => menu,
 		};
-		let menu = menu.plugin_items("user-context-menu", id.to_string(), cx).build();
+		let me = self.data.read(cx).me();
+		let menu = menu
+			.plugin_items("user-context-menu", MenuTarget::user(self.guild, id, me), cx)
+			.build();
 		div()
 			.id(("member", id.get()))
 			.flex()
@@ -395,6 +399,14 @@ impl Render for MemberList {
 				Row::Member(member) => sections.push(self.row(member, &bot_label, developer, &theme, cx)),
 			}
 		}
+		let plugin_sections = super::plugins::contextual(
+			"member-list-section",
+			ViewContext {
+				guild_id: self.guild.map(Snowflake::get),
+				..ViewContext::default()
+			},
+			cx,
+		);
 		div()
 			.flex()
 			.flex_col()
@@ -409,6 +421,18 @@ impl Render for MemberList {
 					.pt(theme.space_8)
 					.child(Input::new(&search).small()),
 			)
+			.when(!plugin_sections.is_empty(), |list| {
+				list.child(
+					div()
+						.flex()
+						.flex_col()
+						.flex_none()
+						.gap(theme.space_8)
+						.px(theme.space_8)
+						.pt(theme.space_8)
+						.children(plugin_sections),
+				)
+			})
 			.child(
 				div()
 					.flex()

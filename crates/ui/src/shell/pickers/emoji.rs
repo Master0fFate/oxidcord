@@ -134,6 +134,23 @@ impl Picker {
 				.hover(|style| style.bg(theme.modifier_selected))
 				.on_click(cx.listener(move |_, _, _, cx| cx.emit(PickerEvent::Emoji(choice.clone()))))
 				.into_any_element()
+		} else if self.plugin_pick {
+			let emoji = plugin_host::api::model::EmojiRef {
+				id: Some(emoji.id.get()),
+				name: emoji.name.clone(),
+				animated: emoji.animated,
+			};
+			let channel = self.channel;
+			cell.cursor_pointer()
+				.hover(|style| style.bg(theme.modifier_selected))
+				.tooltip(tooltip(cx.t("picker-emoji-plugin")))
+				.on_click(cx.listener(move |_, _, _, cx| {
+					cx.emit(PickerEvent::PluginPick {
+						emoji: emoji.clone(),
+						channel,
+					})
+				}))
+				.into_any_element()
 		} else {
 			cell.cursor_not_allowed()
 				.tooltip(tooltip(cx.t("picker-emoji-locked")))

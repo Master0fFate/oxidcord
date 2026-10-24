@@ -40,6 +40,10 @@ pub struct RateLimits {
 	pub notify: Bucket,
 	pub fetch: Bucket,
 	pub open_url: Bucket,
+	pub ui: Bucket,
+	pub toast: Bucket,
+	pub timer: Bucket,
+	pub composer: Bucket,
 }
 
 impl RateLimits {
@@ -51,6 +55,10 @@ impl RateLimits {
 			notify: Bucket::new(1, Duration::from_secs(5)),
 			fetch: Bucket::new(20, Duration::from_secs(6)),
 			open_url: Bucket::new(1, Duration::from_secs(10)),
+			ui: Bucket::new(60, Duration::from_millis(50)),
+			toast: Bucket::new(1, Duration::from_secs(5)),
+			timer: Bucket::new(32, Duration::from_millis(250)),
+			composer: Bucket::new(5, Duration::from_secs(1)),
 		}
 	}
 }

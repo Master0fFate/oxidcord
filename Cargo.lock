@@ -2740,6 +2740,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "fake-nitro"
+version = "0.3.0-beta.1"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
 name = "fallible-iterator"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6190,6 +6197,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b11ce00d2594068e8a27c9146fdc5cf9f3ac38eb42c7cd34d05fea618873ac9f"
 dependencies = [
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "notes-panel"
+version = "0.3.0-beta.1"
+dependencies = [
+ "oxidcord-plugin-sdk",
 ]
 
 [[package]]

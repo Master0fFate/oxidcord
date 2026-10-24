@@ -14,6 +14,11 @@ pub struct HookTimeouts {
 	pub ui_action: Duration,
 	pub command: Duration,
 	pub settings_schema: Duration,
+	pub render_view: Duration,
+	pub view_event: Duration,
+	pub intercept_message: Duration,
+	pub timer: Duration,
+	pub emoji_pick: Duration,
 }
 
 impl Default for HookTimeouts {
@@ -28,6 +33,11 @@ impl Default for HookTimeouts {
 			ui_action: Duration::from_secs(2),
 			command: Duration::from_secs(2),
 			settings_schema: Duration::from_millis(500),
+			render_view: Duration::from_millis(200),
+			view_event: Duration::from_secs(2),
+			intercept_message: Duration::from_millis(50),
+			timer: Duration::from_millis(200),
+			emoji_pick: Duration::from_millis(200),
 		}
 	}
 }

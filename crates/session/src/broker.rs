@@ -1,13 +1,14 @@
 use std::sync::Arc;
 
 use plugin_host::HostBroker;
+use plugin_host::api::model::{EmojiInfo, EmojiRef, Lifecycle, MessageFull, StickerInfo};
 use plugin_host::api::{
 	ChannelSummary, GuildSummary, HostError, MemberSummary, MessageRef, MessageView, OutgoingMessage, User,
 	VoiceInfo,
 };
-use plugin_host::convert::{message_view, user_view};
-use protocol::{Snowflake, StatusKind};
-use state::{MemberListRow, SharedState, State};
+use plugin_host::convert::{message_full, message_view, user_view};
+use protocol::{Snowflake, StatusKind, Sticker};
+use state::{ChannelMessages, MemberListRow, SharedState, State};
 use tokio::sync::mpsc;
 
 use crate::command::Command;
@@ -51,6 +52,33 @@ pub(crate) fn view_of(
 	let mut view = message_view(message);
 	view.guild_id = message.guild_id.or_else(channel_guild).map(Snowflake::get);
 	view
+}
+
+pub(crate) fn full_of(
+	state: &State,
+	cache: &ChannelMessages,
+	message: &protocol::Message,
+	lifecycle: Lifecycle,
+) -> MessageFull {
+	let channel_id = message.channel_id;
+	let view = view_of(message, || state.channel_guild(channel_id));
+	let mine = state.current_user_id() == Some(message.author.id);
+	let lifecycle = match lifecycle {
+		Lifecycle::Live if cache.is_deleted(message.id) => Lifecycle::Deleted(0),
+		other => other,
+	};
+	message_full(message, view, mine, lifecycle)
+}
+
+fn sticker_info(sticker: &Sticker) -> StickerInfo {
+	StickerInfo {
+		id: sticker.id.get(),
+		name: sticker.name.clone(),
+		format: sticker
+			.format_type
+			.map_or(0, |format| u8::try_from(i64::from(format)).unwrap_or(0)),
+		guild_id: sticker.guild_id.map(Snowflake::get),
+	}
 }
 
 pub(crate) fn voice_info(state: &State) -> Option<VoiceInfo> {
@@ -282,13 +310,98 @@ impl HostBroker for SessionBroker {
 		Ok(voice_info(&self.state.read()))
 	}
 
-	fn register_slot(
+	fn surfaces_changed(&self) {
+		let _ = self.internal.send(Internal::SlotsChanged);
+	}
+
+	fn send_as_user(&self, _plugin: &str, msg: OutgoingMessage) -> Result<(), HostError> {
+		self.queue(Command::SendMessage {
+			channel_id: Snowflake(msg.channel_id),
+			content: msg.content,
+			reply_to: msg.reply_to.map(Snowflake),
+			files: Vec::new(),
+			by_plugin: None,
+		})
+	}
+
+	fn list_emojis(&self, _plugin: &str, channel_id: Option<u64>) -> Result<Vec<EmojiInfo>, HostError> {
+		let state = self.state.read();
+		let channel = channel_id
+			.map(Snowflake)
+			.or_else(|| state.selected().map(|selected| selected.channel_id));
+		let guild = channel.and_then(|channel| state.channel_guild(channel));
+		Ok(state
+			.emoji_catalog(guild)
+			.guilds
+			.into_iter()
+			.flat_map(|section| section.emojis)
+			.map(|emoji| EmojiInfo {
+				emoji: EmojiRef {
+					id: Some(emoji.id.get()),
+					name: emoji.name,
+					animated: emoji.animated,
+				},
+				guild_id: Some(emoji.guild_id.get()),
+				usable: emoji.usable,
+				available: emoji.available,
+			})
+			.collect())
+	}
+
+	fn list_stickers(&self, _plugin: &str, guild_id: Option<u64>) -> Result<Vec<StickerInfo>, HostError> {
+		let state = self.state.read();
+		let stickers: Vec<StickerInfo> = match guild_id {
+			Some(guild_id) => state
+				.guild_stickers(Snowflake(guild_id))
+				.unwrap_or_default()
+				.iter()
+				.map(sticker_info)
+				.collect(),
+			None => state
+				.sticker_packs()
+				.unwrap_or_default()
+				.iter()
+				.flat_map(|pack| pack.stickers.iter())
+				.map(sticker_info)
+				.collect(),
+		};
+		Ok(stickers)
+	}
+
+	fn message_full(
 		&self,
 		_plugin: &str,
-		_slot: &str,
-		_tree: &plugin_host::api::UiTree,
-	) -> Result<(), HostError> {
-		let _ = self.internal.send(Internal::SlotsChanged);
-		Ok(())
+		channel_id: u64,
+		message_id: u64,
+	) -> Result<Option<MessageFull>, HostError> {
+		let state = self.state.read();
+		let cache = state
+			.messages(Snowflake(channel_id))
+			.ok_or(HostError::Unavailable)?;
+		Ok(cache
+			.by_id
+			.get(&Snowflake(message_id))
+			.map(|message| full_of(&state, cache, message, Lifecycle::Live)))
+	}
+
+	fn channel_messages_full(
+		&self,
+		_plugin: &str,
+		channel_id: u64,
+		limit: u32,
+	) -> Result<Vec<MessageFull>, HostError> {
+		let state = self.state.read();
+		let cache = state
+			.messages(Snowflake(channel_id))
+			.ok_or(HostError::Unavailable)?;
+		let mut messages: Vec<MessageFull> = cache
+			.ordered
+			.iter()
+			.rev()
+			.take(limit as usize)
+			.map(|message| full_of(&state, cache, message, Lifecycle::Live))
+			.collect();
+		messages.reverse();
+		Ok(messages)
 	}
 }

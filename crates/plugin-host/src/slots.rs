@@ -4,12 +4,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use parking_lot::RwLock;
 
-use crate::api::{UiNode, UiTree};
+use crate::api::model::ViewTree;
+use crate::convert::has_key;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SlotEntry {
 	pub plugin_id: Arc<str>,
-	pub tree: UiTree,
+	pub tree: ViewTree,
 }
 
 #[derive(Default)]
@@ -31,7 +32,7 @@ impl Slots {
 		self.entries.read().keys().cloned().collect()
 	}
 
-	pub fn set(&self, plugin_id: &Arc<str>, slot: &str, tree: UiTree) {
+	pub fn set(&self, plugin_id: &Arc<str>, slot: &str, tree: ViewTree) {
 		let mut entries = self.entries.write();
 		let list = entries.entry(slot.to_owned()).or_default();
 		match list.iter_mut().find(|entry| entry.plugin_id == *plugin_id) {
@@ -59,12 +60,12 @@ impl Slots {
 		}
 	}
 
-	pub fn replace_owner_of(&self, plugin_id: &str, action_id: &str, tree: UiTree) -> bool {
+	pub fn replace_owner_of(&self, plugin_id: &str, action_id: &str, tree: ViewTree) -> bool {
 		let mut entries = self.entries.write();
 		let owner = entries
 			.values_mut()
 			.flatten()
-			.find(|entry| &*entry.plugin_id == plugin_id && owns_id(&entry.tree, action_id));
+			.find(|entry| &*entry.plugin_id == plugin_id && has_key(&entry.tree, action_id));
 		let Some(owner) = owner else {
 			return false;
 		};
@@ -77,16 +78,6 @@ impl Slots {
 	fn bump(&self) {
 		self.revision.fetch_add(1, Ordering::AcqRel);
 	}
-}
-
-fn owns_id(tree: &UiTree, action_id: &str) -> bool {
-	tree.nodes.iter().any(|node| match node {
-		UiNode::Column(layout) | UiNode::Row(layout) => layout.id.as_deref() == Some(action_id),
-		UiNode::Button(button) => button.id == action_id,
-		UiNode::Input(input) => input.id == action_id,
-		UiNode::Toggle(toggle) => toggle.id == action_id,
-		_ => false,
-	})
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

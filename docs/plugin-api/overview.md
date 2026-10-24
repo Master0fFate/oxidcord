@@ -1,12 +1,30 @@
 # Plugin API overview
 
-Plugins are WebAssembly components that implement the `oxidcord:plugin@1.0.0` WIT package (`crates/plugin-host/wit/oxidcord.wit`). The host runs each plugin on its own worker thread inside wasmtime. A plugin can only reach the outside world through the `host` interface, and every function there is gated by a permission the user granted.
+Plugins are WebAssembly components that implement the `oxidcord:plugin@1.1.0` WIT package (`crates/plugin-host/wit/oxidcord.wit`). The host runs each plugin on its own worker thread inside wasmtime. A plugin reaches the outside world only through host interfaces, and every function there is gated by a permission the user granted.
 
-## Shape of the API
+Related pages:
 
-The world is `plugin`: it imports the `host` interface and exports the `guest` interface. Shared data types live in the `types` interface.
+- `views.md`: view trees, mount points, context menus, view events, toasts and modals.
+- `interception.md`: `intercept-message`, `before-send`, message lifecycle and ordering.
+- `building.md`: manifest, packaging, signing, timeouts.
+- `publishing.md`: catalogs.
 
-### Guest exports (the hooks a plugin implements)
+## Versions and worlds
+
+The package defines two worlds.
+
+| World | Imports | Exports | Built with |
+| --- | --- | --- | --- |
+| `plugin` | `host` | `guest` | `export_plugin!(T)` |
+| `plugin-ext` | `host`, `ui`, `client` | `guest`, `hooks` | `export_plugin!(T, ext)` with the SDK feature `ext` |
+
+The `types`, `host` and `guest` interfaces are unchanged from 1.0.0. The host loads every plugin with one linker. It looks up the `oxidcord:plugin/hooks` export at load time: a component that exports it runs as an extended plugin, any other component runs as a 1.0 plugin and the 1.1 hooks are never called for it. Components built against `oxidcord:plugin@1.0.0` load unchanged, because import and export lookups match any 1.x version.
+
+The host implements API 1.1.0. Manifests with `api = "^1.0"` keep loading. A plugin that uses the 1.1 interfaces should declare `api = "^1.1"` so that 1.0 hosts list it as incompatible instead of failing to instantiate it.
+
+## Guest hooks
+
+### `guest` (all plugins)
 
 | Hook | Permission needed | Default deadline | Result |
 | --- | --- | --- | --- |
@@ -20,11 +38,22 @@ The world is `plugin`: it imports the `host` interface and exports the `guest` i
 | `on-command` | `ui-slots` (to register) | 2 s | `result<_, string>` |
 | `settings-schema` | none | 500 ms | JSON schema as a string |
 
-Events: `message-created`, `message-updated`, `message-deleted`, `reaction-added`, `typing`, `channel-switched`, `setting-changed`, `connection`, `voice-changed`. Message, reaction and typing events need `context-timeline`, and events from direct messages additionally need `context-private`. `channel-switched` needs `context-basic`. `voice-changed` carries a `voice-info` and needs `context-voice`, and calls in direct messages additionally need `context-private`. `setting-changed` and `connection` are always delivered.
+### `hooks` (extended plugins)
 
-Deleted messages: while a running plugin holds both `message-render` and `context-timeline`, a deleted message stays in the cache and goes through `render-message` again with bit 63 of `flags` set (`DELETED_FLAG` and `is_deleted` in the SDK). It stays in the chat, shown in red with a deleted marker, only when one of those plugins returns a tree for it. Otherwise it disappears as usual.
+| Hook | Called when | Default deadline | Result |
+| --- | --- | --- | --- |
+| `render-view` | A contextual mount point the plugin provides is shown | 200 ms | `option<view-tree>` |
+| `on-view-event` | The user interacts with a keyed node in one of the plugin's views | 2 s | `view-reply` |
+| `on-menu-item` | The user picks one of the plugin's context menu items | 2 s | nothing |
+| `intercept-message` | A message is rendered, needs `message-intercept` | 50 ms | `message-patch` |
+| `on-timer` | A timer set with `client.set-timer` fires | 200 ms | nothing |
+| `on-emoji-pick` | The user picks an emoji the account cannot use, needs `composer` | 200 ms | `pick-verdict` |
 
-### Host imports
+Events: `message-created`, `message-updated`, `message-deleted`, `reaction-added`, `typing`, `channel-switched`, `setting-changed`, `connection`, `voice-changed`. Message, reaction and typing events need `context-timeline`, and events from direct messages also need `context-private`. `channel-switched` needs `context-basic`. `voice-changed` needs `context-voice`, and calls in direct messages also need `context-private`. `setting-changed` and `connection` are always delivered.
+
+## Host imports
+
+### `host` (all plugins)
 
 | Function | Permission | Limits |
 | --- | --- | --- |
@@ -32,7 +61,7 @@ Deleted messages: while a running plugin holds both `message-render` and `contex
 | `now-ms` | none | |
 | `storage-get`, `storage-set`, `storage-delete`, `storage-list` | `storage` | 5 MB per plugin, 1024 keys, keys up to 256 bytes |
 | `fetch` | `net-fetch` | https and port 443 only, hosts must be in `network_hosts` and approved, 10 requests per minute with a burst of 20, 4 MB response, 10 s |
-| `send-message` | `actions-send` | 1 per 2 s, burst 3, 4000 bytes |
+| `send-message` | `actions-send` | needs a user action, 3 sends per action, 1 per 2 s with a burst of 3, 4000 bytes |
 | `add-reaction` | `actions-react` | 1 per second, burst 5 |
 | `open-channel` | `actions-navigate` | |
 | `clipboard-write` | `actions-clipboard` | 64 KB |
@@ -41,82 +70,154 @@ Deleted messages: while a running plugin holds both `message-render` and `contex
 | `current-user`, `current-channel` | `context-basic` | direct message channels are hidden without `context-private` |
 | `channel-messages` | `context-timeline` | at most 100 messages, direct messages dropped without `context-private` |
 | `display-name` | `context-members` | |
-| `list-guilds`, `list-members` | `context-directory` | `list-members` returns at most 1000 members, `limit` is clamped to 1 to 1000 |
+| `list-guilds`, `list-members` | `context-directory` | `list-members` returns at most 1000 members |
 | `list-channels` | `context-directory` | a `guild-id` of `none` lists direct message channels and also needs `context-private` |
-| `voice-state` | `context-voice` | `none` when not in a call, direct message calls hidden without `context-private` |
-| `register-slot`, `register-command` | `ui-slots` | slot names and command names are `[a-z0-9._-]` |
+| `voice-state` | `context-voice` | direct message calls hidden without `context-private` |
+| `register-slot`, `register-command` | `ui-slots` | names are `[a-z0-9._-]` |
 
-A denied call returns `host-error::denied(permission)`. Rate limited calls return `rate-limited`. Calls the app cannot serve return `unavailable`.
+### `ui` (extended plugins)
 
-### Permissions
+| Function | Permission | Limits |
+| --- | --- | --- |
+| `mount`, `update`, `unmount` | `ui-mount` | 32 mounts per plugin, 20 updates per second after a burst of 60 |
+| `provide`, `invalidate` | `ui-mount` | contextual points only |
+| `set-menu-items` | `ui-mount` | 16 items per menu, one submenu level |
+| `toast` | `ui-mount` | 1 per 5 s, unlimited while handling a user action, 1.5 to 15 s on screen |
+| `open-modal` | `ui-mount` | only while handling a user action |
 
-| Permission | Unlocks |
-| --- | --- |
-| `context-basic` | Current user, current channel, channel switch events |
-| `context-timeline` | Message, reaction and typing events and `channel-messages` for server channels |
-| `context-directory` | `list-guilds`, `list-channels`, `list-members` |
-| `context-members` | `display-name` |
-| `context-voice` | `voice-state` and `voice-changed` events |
-| `context-private` | Direct message data in every context-timeline feature and in the render and filter hooks |
-| `message-render` | `render-message` |
-| `message-send` | `before-send`. The UI shows an indicator when a plugin altered a message. A rewrite cannot change the channel or reply target |
-| `message-filter` | `filter-message` |
-| `user-display` | `display-user` |
-| `actions-send` | `send-message` |
-| `actions-react` | `add-reaction` |
-| `actions-navigate` | `open-channel` |
-| `actions-clipboard` | `clipboard-write` |
-| `actions-notify` | `notify` |
-| `actions-open-url` | `open-url` |
-| `storage` | The four `storage-*` functions |
-| `net-fetch` | `fetch` to approved hosts |
-| `ui-slots` | `register-slot` and `register-command` |
+### `client` (extended plugins)
+
+| Function | Permission | Limits |
+| --- | --- | --- |
+| `set-timer`, `clear-timer` | none | 64 timers per plugin, first delay at least 250 ms, repeat 0 or at least 1 s |
+| `list-emojis`, `list-stickers` | `context-expressions` | |
+| `emoji-url`, `sticker-url` | none | Discord CDN URLs, size clamped to 16 to 512 |
+| `composer-insert` | `composer` | 2000 bytes, 1 per second after a burst of 5 |
+| `get-message`, `channel-messages-full` | `context-timeline` | direct messages need `context-private`, at most 100 messages |
+| `send-as-user` | `actions-send-user` | needs a user action, shares the `send-message` limits |
+
+A call denied for a 1.0 permission returns `host-error::denied(permission)`. A call denied for a permission added in 1.1 returns `host-error::invalid("permission <name> is not granted")`, because the 1.0 `permission` enum cannot grow. Rate limited calls return `rate-limited`, calls the app cannot serve return `unavailable`.
+
+## User actions
+
+The host marks a call as a user action while it handles real user input: `on-ui-action`, `on-command`, `on-view-event` and `on-menu-item`. The mark is cleared when the hook returns. `send-message` and `send-as-user` work only inside a user action, at most three times per action, and return `host-error::invalid("requires a user action")` otherwise. This is a change from 1.0, where `send-message` could be called from any hook. Plugins that send from a button or a slash command keep working. Toasts are not rate limited inside a user action, and modals can only be opened inside one.
+
+## Permissions
+
+The consent dialog groups permissions by tier. Low tier permissions are collapsed into one expandable line, medium ones get a line each, and high and sensitive ones carry a warning.
+
+| Permission | Tier | Unlocks |
+| --- | --- | --- |
+| `context-basic` | low | Current user, current channel, channel switch events |
+| `context-expressions` | low | `list-emojis`, `list-stickers` |
+| `storage` | low | The four `storage-*` functions |
+| `ui-slots` | low | `register-slot` and `register-command` |
+| `ui-mount` | low | The `ui` interface |
+| `actions-navigate` | low | `open-channel` |
+| `actions-notify` | low | `notify` |
+| `context-timeline` | medium | Message, reaction and typing events, `channel-messages`, `get-message`, `channel-messages-full` |
+| `context-directory` | medium | `list-guilds`, `list-channels`, `list-members` |
+| `context-members` | medium | `display-name` |
+| `context-voice` | medium | `voice-state` and `voice-changed` events |
+| `message-render` | medium | `render-message` |
+| `message-intercept` | medium | `intercept-message` |
+| `user-display` | medium | `display-user` |
+| `composer` | medium | `composer-insert` and `on-emoji-pick` |
+| `actions-react` | medium | `add-reaction` |
+| `actions-clipboard` | medium | `clipboard-write` |
+| `actions-open-url` | medium | `open-url` |
+| `message-send` | high | `before-send`. A rewrite cannot change the channel or reply target |
+| `message-filter` | high | `filter-message` |
+| `actions-send` | high | `send-message`, marked as sent through the plugin |
+| `actions-send-user` | high | `send-as-user`, sent without the plugin marker |
+| `net-fetch` | high | `fetch` to approved hosts |
+| `context-private` | sensitive | Direct message data in every context feature and in the render, filter and intercept hooks |
+| `message-retain` | sensitive | Keeping deleted messages visible through `message-patch.retain` |
+
+`network_hosts` may not name `discord.com`, `discordapp.com`, `discord.gg`, `discord.media`, `discordapp.net` or any of their subdomains.
+
+## Images
+
+Every image a plugin shows (view images, embed cards, inline images in message content) must be an `https` URL. Images on `cdn.discordapp.com` and `media.discordapp.net` are always allowed. Images from other hosts are allowed in 1.0 `ui-tree` slots as before, and in 1.1 views and patches only when the host is listed in the manifest `image_hosts` and the user approved it. Images that fail the check are dropped from the tree.
 
 ## Trees instead of recursive nodes
 
-WIT has no recursive types, so markdown and UI nodes are flat. An `md-tree` or `ui-tree` is a `nodes` list plus `roots`, and every container refers to its children by index. A child must have a higher index than its parent, which keeps the structure acyclic. The host rejects trees that break the rule, are too deep (64 levels for markdown), too large (50,000 markdown nodes, 2,000 UI nodes) or point at out of range indices. The SDK hides this: `Md` and `Ui` are ordinary recursive Rust types converted on the way in and out.
-
-## UI slots
-
-`register-slot(slot, tree)` publishes a declarative tree under a slot name such as `message-action`. The UI reads the slot registry and renders the tree. When the user interacts with a node that has an id (button, input, toggle or a box), the host calls `on-ui-action(id, payload)`. A non-empty tree returned from it replaces the tree of the slot that owns that id. Images must use `https://` URLs and links `http://` or `https://`.
+WIT has no recursive types, so markdown, UI and view nodes are flat. A tree is a `nodes` list plus `roots`, and containers refer to their children by index. A child must have a higher index than its parent. Plugin data is untrusted: the host checks every node and drops bad nodes one at a time (out of range or backward indices, unknown color tokens, bad URLs, invalid icon names, too deep or too large trees) instead of rejecting the whole tree. Strings are clipped to their limits. The SDK hides the flat form: `Md` and `view::Node` are ordinary recursive Rust types.
 
 ## Sandbox
 
 - One wasmtime instance per plugin on its own thread, with epoch interruption ticking every 10 ms.
 - Linear memory is capped at 64 MB and tables at 10,000 elements. Exceeding the memory cap traps the plugin.
-- WASI preview 2 is linked with an empty context: no preopened directories, no environment, no arguments, no sockets, stdio goes nowhere. It exists so that `std` works for guests, not to give them capabilities.
-- A trap, timeout or memory trap restarts the instance (new store, `init` runs again) after a backoff that starts at 100 ms and doubles up to 5 s. Five crashes within 60 seconds disable the plugin until it is enabled again. Plugin storage survives restarts.
-- Each plugin has a queue. Events are dropped oldest first beyond 256 queued events. Interactive calls (render, send, filter, display, ui action, command) jump ahead of queued events.
+- WASI preview 2 is linked with an empty context: no preopened directories, environment, arguments or sockets.
+- A trap, timeout or memory trap restarts the instance (new store, `init` runs again, timers cleared) after a backoff that starts at 100 ms and doubles up to 5 s. Five crashes within 60 seconds disable the plugin until it is enabled again. Plugin storage survives restarts.
+- Each plugin has a queue. Events and timer firings are dropped oldest first beyond 256 queued items, and a repeating timer that is still queued is not queued again. Interactive calls jump ahead of queued events.
+- All timers of all plugins share one thread that sleeps until the next deadline.
 
 ## Writing a plugin
 
-Create a library crate with `crate-type = ["cdylib"]`, depend on `oxidcord-plugin-sdk`, implement `Plugin` and call `export_plugin!`.
+A 1.0 style plugin implements `Plugin` and calls `export_plugin!(T)`. An extended plugin enables the `ext` feature of the SDK, implements `Plugin` and `PluginExt`, and calls `export_plugin!(T, ext)`. Every method of both traits has a no-op default.
+
+```toml
+[dependencies]
+oxidcord-plugin-sdk = { version = "0.3", features = ["ext"] }
+```
 
 ```rust
-use oxidcord_plugin_sdk::{Md, MessageView, Plugin, export_plugin, host};
+use oxidcord_plugin_sdk::model::{Space, Tone, ViewEvent};
+use oxidcord_plugin_sdk::view::{self, Node};
+use oxidcord_plugin_sdk::{Plugin, PluginExt, Reply, export_plugin, log, mount};
 
 #[derive(Default)]
-struct Example;
+struct Counter {
+	clicks: u32,
+}
 
-impl Plugin for Example {
-	fn render_message(&mut self, msg: &MessageView, mut ast: Vec<Md>) -> Option<Vec<Md>> {
-		let age_secs = (host::now_ms() - msg.timestamp_ms) / 1000;
-		ast.push(Md::subtext(format!("sent {age_secs} s ago")));
-		Some(ast)
+impl Counter {
+	fn page(&self) -> Vec<Node> {
+		vec![
+			view::column()
+				.gap(Space::Md)
+				.padding(Space::Xl)
+				.child(view::heading("Counter"))
+				.child(view::text(format!("{} clicks", self.clicks)).muted())
+				.child(view::button("add", "Add one").icon("plus").tone(Tone::Brand)),
+		]
 	}
 }
 
-export_plugin!(Example);
+impl Plugin for Counter {
+	fn init(&mut self) -> Result<(), String> {
+		let options = mount::Options::new("Counter").icon("calculator");
+		let mounted = mount::mount(mount::APP_NAV, "counter", Vec::<Node>::new(), options.clone())
+			.and_then(|()| mount::mount(mount::MAIN_VIEW, "counter", self.page(), options));
+		if let Err(error) = mounted {
+			log::warn!("could not mount the counter: {error:?}");
+		}
+		Ok(())
+	}
+}
+
+impl PluginExt for Counter {
+	fn on_view_event(&mut self, event: ViewEvent) -> Reply {
+		if event.node == "add" {
+			self.clicks += 1;
+			return Reply::none().replace(self.page());
+		}
+		Reply::none()
+	}
+}
+
+export_plugin!(Counter, ext);
 ```
 
-Every method of `Plugin` has a no-op default. Helpers: `log::info!` and friends, `storage::get`, `storage::set`, `host::send_message`, and the `ui` builders (`ui::column().child(ui::text("x")).button("id", "label")`). See `plugins/hello-timestamps` for a complete plugin and `plugins/conformance-probe` for the misbehaving one the conformance runner uses.
+The manifest of this plugin asks for `ui-mount`. See `plugins/notes-panel` and `plugins/fake-nitro` for complete extended plugins, `plugins/hello-timestamps` for a 1.0 plugin and `plugins/conformance-probe` for the misbehaving one the conformance runner uses.
 
 ## Conformance
 
 `plugin_host::conformance::run(plugins_dir)` loads every plugin in a directory with its manifest permissions granted, then checks:
 
-- ungranted calls to every gated host function return `denied`, and `send-message` is rate limited after a burst of three;
-- `init` succeeds and each hook the manifest has a permission for answers within its deadline;
+- ungranted calls to every gated 1.0 host function return `denied`, and `send-message` is rate limited after a burst of three;
+- `init` succeeds and each hook the manifest has a permission for answers within its deadline, including `intercept-message` for plugins that ask for `message-intercept`;
 - `settings-schema` returns valid JSON;
 - a `setting-changed` event with key `oxidcord.conformance.spin` that makes the plugin loop forever is interrupted within the `on-event` deadline and the instance restarts;
 - a `setting-changed` event with key `oxidcord.conformance.alloc` that makes the plugin allocate past the memory cap traps and the instance restarts.

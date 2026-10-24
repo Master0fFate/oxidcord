@@ -5,13 +5,14 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use store::{Paths, Store};
 
+use crate::api::model::{Lifecycle, MessageFull};
 use crate::api::{
 	Event, FetchRequest, HostError, MessageRef, MessageView, OutgoingMessage, SettingChange, UiTree, User,
 };
 use crate::bindings::oxidcord::plugin::host::Host;
 use crate::broker::NoopBroker;
 use crate::config::RuntimeConfig;
-use crate::convert::md_to_tree;
+use crate::convert::{md_to_rich, md_to_tree};
 use crate::grants::{Grants, PluginGrant};
 use crate::host_state::HostState;
 use crate::instance::{CallError, PluginInstance};
@@ -372,6 +373,7 @@ fn check_host_gating(runtime: &Runtime) -> Vec<Check> {
 	}
 	let mut limited_at = None;
 	for attempt in 1..=6 {
+		state.begin_gesture();
 		if matches!(state.send_message(outgoing.clone()), Err(HostError::RateLimited)) {
 			limited_at = Some(attempt);
 			break;
@@ -518,6 +520,26 @@ fn check_hooks(
 		};
 		let outcome = instance.before_send(outgoing);
 		record_simple(recorder, "before-send", started.elapsed(), outcome.map(|_| ()));
+	}
+	if manifest.requests(Permission::MessageIntercept) {
+		let started = Instant::now();
+		let full = MessageFull {
+			view: message.clone(),
+			attachments: Vec::new(),
+			embeds: Vec::new(),
+			stickers: Vec::new(),
+			reactions: Vec::new(),
+			mentions: Vec::new(),
+			mine: false,
+			lifecycle: Lifecycle::Live,
+		};
+		let outcome = instance.intercept(full, md_to_rich(&[markdown::Node::Text("hello".to_owned())]));
+		record_simple(
+			recorder,
+			"intercept-message",
+			started.elapsed(),
+			outcome.map(|_| ()),
+		);
 	}
 	if manifest.requests(Permission::MessageFilter) {
 		let started = Instant::now();

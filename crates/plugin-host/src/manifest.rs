@@ -6,7 +6,15 @@ use serde::{Deserialize, Serialize};
 use crate::error::{Error, Result};
 use crate::permission::Permission;
 
-pub const API_VERSION: Version = Version::new(1, 0, 0);
+pub const API_VERSION: Version = Version::new(1, 1, 0);
+
+const DISCORD_DOMAINS: [&str; 5] = [
+	"discord.com",
+	"discordapp.com",
+	"discord.gg",
+	"discord.media",
+	"discordapp.net",
+];
 
 pub const MANIFEST_FILE: &str = "plugin.toml";
 
@@ -57,6 +65,8 @@ pub struct Manifest {
 	#[serde(default)]
 	pub network_hosts: Vec<String>,
 	#[serde(default)]
+	pub image_hosts: Vec<String>,
+	#[serde(default)]
 	pub entry: Option<String>,
 	#[serde(default)]
 	pub min_host: Option<Version>,
@@ -81,8 +91,13 @@ impl Manifest {
 		if let Some(entry) = &self.entry {
 			validate_entry(entry)?;
 		}
-		for host in &self.network_hosts {
+		for host in self.network_hosts.iter().chain(&self.image_hosts) {
 			validate_host(host)?;
+		}
+		if let Some(host) = self.network_hosts.iter().find(|host| is_discord_host(host)) {
+			return Err(Error::Manifest(format!(
+				"network host `{host}` belongs to Discord and cannot be fetched by plugins"
+			)));
 		}
 		if !self.network_hosts.is_empty() && !self.requests(Permission::NetFetch) {
 			return Err(Error::Manifest(
@@ -129,6 +144,15 @@ fn validate_entry(entry: &str) -> Result<()> {
 		)));
 	}
 	Ok(())
+}
+
+pub(crate) fn is_discord_host(host: &str) -> bool {
+	DISCORD_DOMAINS.iter().any(|domain| {
+		host == *domain
+			|| host
+				.strip_suffix(domain)
+				.is_some_and(|prefix| prefix.ends_with('.'))
+	})
 }
 
 fn validate_host(host: &str) -> Result<()> {

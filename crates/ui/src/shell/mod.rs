@@ -53,7 +53,7 @@ use self::friends::{FriendsEvent, HomePage, HomePages};
 use self::member_list::{MemberList, MemberListEvent};
 use self::message::{ImageTarget, snippet};
 use self::pickers::PickerTab;
-use self::plugins::{DebugPanel, PluginUi, RightPanel as PluginRightPanel, SidebarPanel};
+use self::plugins::{DebugPanel, PluginUi, PluginUiEvent, RightPanel as PluginRightPanel, SidebarPanel};
 use self::profile::{ProfileCard, ProfileEvent};
 use self::quick_switcher::{QuickSwitcher, QuickSwitcherEvent};
 use self::search_panel::{SearchEvent, SearchPanel};
@@ -274,6 +274,17 @@ impl Shell {
 		updates::UpdatesPage::watch(cx);
 
 		let rail = cx.new(|cx| ServerRail::new(data.clone(), cx));
+		subscriptions.push(cx.subscribe_in(
+			&plugin_ui,
+			window,
+			|this, _, event: &PluginUiEvent, window, cx| match event {
+				PluginUiEvent::Insert(text) => {
+					let composer = this.community.read(cx).plugin_composer(cx);
+					composer.update(cx, |composer, cx| composer.insert(text, window, cx));
+				}
+				PluginUiEvent::PageChanged => this.rail.update(cx, |_, cx| cx.notify()),
+			},
+		));
 		subscriptions.push(cx.subscribe_in(
 			&rail,
 			window,
@@ -548,6 +559,7 @@ impl Shell {
 
 	fn select(&mut self, guild: Option<Snowflake>, channel: Snowflake, cx: &mut Context<Self>) {
 		self.home_pages.close(cx);
+		self.plugin_ui.update(cx, |ui, cx| ui.close_page(cx));
 		self.send(
 			Command::SelectChannel {
 				guild_id: guild,
@@ -599,6 +611,7 @@ impl Shell {
 	}
 
 	fn show_home(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+		self.plugin_ui.update(cx, |ui, cx| ui.close_page(cx));
 		self.home = true;
 		self.guild = None;
 		let dm = {
@@ -620,6 +633,7 @@ impl Shell {
 	}
 
 	fn show_guild(&mut self, guild: Snowflake, window: &mut Window, cx: &mut Context<Self>) {
+		self.plugin_ui.update(cx, |ui, cx| ui.close_page(cx));
 		let target = {
 			let data = self.data.read(cx);
 			let state = data.state();
@@ -743,7 +757,15 @@ impl Shell {
 				topic: None,
 			},
 		};
-		self.top_bar.update(cx, |bar, cx| bar.set_title(title, cx));
+		let context = plugin_host::ViewContext {
+			guild_id: guild.map(Snowflake::get),
+			channel_id: channel.map(Snowflake::get),
+			..plugin_host::ViewContext::default()
+		};
+		self.top_bar.update(cx, |bar, cx| {
+			bar.set_title(title, cx);
+			bar.set_plugin_context(context, cx);
+		});
 		self.community
 			.update(cx, |community, cx| community.show_main(guild, channel, cx));
 		self.timeline.update(cx, |timeline, cx| {
@@ -839,6 +861,7 @@ impl Shell {
 			self.search_panel.update(cx, |panel, cx| panel.refresh(cx));
 		}
 		if changes.plugin_slots {
+			self.rail.update(cx, |_, cx| cx.notify());
 			self.timeline
 				.update(cx, |timeline, cx| timeline.on_plugin_slots(cx));
 			self.composer.update(cx, |_, cx| cx.notify());
@@ -1347,6 +1370,7 @@ impl Render for Shell {
 		};
 		let overlay = self.overlay_element(window, &theme, cx);
 		let home = self.home_pages.element(&theme);
+		let plugin_page = plugins::open_page(cx).and_then(|page| plugins::main_view(&page, cx));
 		div()
 			.key_context(SHELL_CONTEXT)
 			.track_focus(&self.focus)
@@ -1420,9 +1444,10 @@ impl Render for Shell {
 											.min_w_0()
 											.min_h_0()
 											.when(room, |column| column.child(self.voice_room.clone()))
-											.when(!room, |column| match forum {
-												Some(forum) => column.child(forum),
-												None => column
+											.when(!room, |column| match (plugin_page, forum) {
+												(Some(page), _) => column.child(page).children(status_bar),
+												(None, Some(forum)) => column.child(forum),
+												(None, None) => column
 													.child(self.timeline.clone())
 													.child(self.composer.clone())
 													.children(status_bar),

@@ -14,6 +14,7 @@ use crate::permission::Permission;
 pub struct PluginGrant {
 	pub permissions: BTreeSet<Permission>,
 	pub network_hosts: BTreeSet<String>,
+	pub image_hosts: BTreeSet<String>,
 	pub enabled: bool,
 }
 
@@ -22,6 +23,7 @@ impl Default for PluginGrant {
 		Self {
 			permissions: BTreeSet::new(),
 			network_hosts: BTreeSet::new(),
+			image_hosts: BTreeSet::new(),
 			enabled: true,
 		}
 	}
@@ -90,6 +92,7 @@ impl Grants {
 				.permissions
 				.extend(manifest.permissions.iter().map(|request| request.permission));
 			grant.network_hosts.extend(manifest.network_hosts.iter().cloned());
+			grant.image_hosts.extend(manifest.image_hosts.iter().cloned());
 		})
 	}
 
@@ -97,6 +100,7 @@ impl Grants {
 		self.update(plugin_id, |grant| {
 			grant.permissions.clear();
 			grant.network_hosts.clear();
+			grant.image_hosts.clear();
 		})
 	}
 
@@ -115,6 +119,10 @@ impl Grants {
 		self.get(plugin_id).network_hosts.contains(host)
 	}
 
+	pub fn allows_image_host(&self, plugin_id: &str, host: &str) -> bool {
+		self.get(plugin_id).image_hosts.contains(host)
+	}
+
 	pub fn requires_reprompt(&self, manifest: &Manifest) -> bool {
 		let grant = self.get(&manifest.id);
 		manifest
@@ -125,5 +133,9 @@ impl Grants {
 				.network_hosts
 				.iter()
 				.any(|host| !grant.network_hosts.contains(host))
+			|| manifest
+				.image_hosts
+				.iter()
+				.any(|host| !grant.image_hosts.contains(host))
 	}
 }

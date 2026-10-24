@@ -1,6 +1,8 @@
 # First-party plugins
 
-Every plugin here is a workspace member, builds with `cargo build -p <name> --target wasm32-wasip2 --release` and passes the conformance suite. The API is described in `docs/plugin-api/`.
+Every plugin here is a workspace member, builds with `cargo build -p <name> --target wasm32-wasip2 --release` and passes the conformance suite. The API is described in `docs/plugin-api/`. `fake-nitro` and `notes-panel` use API 1.1 and enable the SDK feature `ext`, the others are 1.0 plugins.
+
+Since API 1.1, `send-message` only works while the plugin handles a user action (a button, input, menu item or slash command) and at most three times per action. `quick-replies` sends from a click or `/snip` and is not affected.
 
 | Plugin | What it does | Permissions |
 | --- | --- | --- |
@@ -11,6 +13,8 @@ Every plugin here is a workspace member, builds with `cargo build -p <name> --ta
 | `quick-replies` | Snippet popover in the composer and `/snip <name>` | `ui-slots`, `storage`, `actions-send`, `context-basic` |
 | `text-shortcuts` | Expands `:shrug:` style emoticons and your own `;shortcuts` before sending | `message-send`, `storage`, `ui-slots` |
 | `message-logger` | Keeps deleted messages visible in red and the earlier versions of edited messages behind a history button | `context-timeline`, `message-render`, `storage`, `ui-slots` |
+| `fake-nitro` | Sends emoji you cannot use as image links and shows received emoji links inline (API 1.1) | `composer`, `context-expressions`, `message-send`, `message-intercept` |
+| `notes-panel` | Notes page in the server rail with tabs and a form, Save to notes message menu item, status bar counter (API 1.1) | `ui-mount`, `storage`, `context-timeline` |
 | `user-notes` | Private notes on users, shown as a badge | `ui-slots`, `storage`, `user-display` |
 | `local-status-badge` | Status bar item with the channel id and a color cycling badge | `context-basic`, `ui-slots` |
 | `word-mute` | Hides messages containing words or phrases you muted | `message-filter`, `storage`, `ui-slots`, `context-basic` |

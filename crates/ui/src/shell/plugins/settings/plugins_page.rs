@@ -153,6 +153,7 @@ impl PluginsPage {
 						version: package.manifest.version.to_string(),
 						permissions: package.manifest.permissions.clone(),
 						hosts: package.manifest.network_hosts.clone(),
+						image_hosts: package.manifest.image_hosts.clone(),
 						trust: Some(trust),
 					};
 					this.review_install(path, package.manifest.id.clone(), spec, window, cx);
@@ -195,6 +196,7 @@ impl PluginsPage {
 			version: info.version.to_string(),
 			permissions: info.permissions.clone(),
 			hosts: info.network_hosts.clone(),
+			image_hosts: info.image_hosts.clone(),
 			trust: Some(info.trust),
 		};
 		let id = info.id.clone();
@@ -291,6 +293,7 @@ impl PluginsPage {
 				})
 				.collect(),
 			hosts: Vec::new(),
+			image_hosts: Vec::new(),
 			trust: Some(Trust::Catalog),
 		};
 		let (id, version) = (entry.id.clone(), entry.version.to_string());

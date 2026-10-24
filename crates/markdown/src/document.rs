@@ -87,7 +87,9 @@ fn write_plain(nodes: &[Node], out: &mut String) {
 			| Node::Strike(children)
 			| Node::Quote(children)
 			| Node::Subtext(children)
+			| Node::Styled { children, .. }
 			| Node::Heading { children, .. } => write_plain(children, out),
+			Node::InlineImage { alt, .. } => out.push_str(alt),
 			Node::Spoiler(_) => out.push_str("[spoiler]"),
 			Node::CodeBlock { code, .. } => out.push_str(code),
 			Node::List {

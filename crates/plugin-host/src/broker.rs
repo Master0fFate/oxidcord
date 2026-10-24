@@ -1,6 +1,7 @@
+use crate::api::model::{EmojiInfo, MessageFull, StickerInfo};
 use crate::api::{
-	ChannelSummary, GuildSummary, HostError, MemberSummary, MessageRef, MessageView, OutgoingMessage, UiTree,
-	User, VoiceInfo,
+	ChannelSummary, GuildSummary, HostError, MemberSummary, MessageRef, MessageView, OutgoingMessage, User,
+	VoiceInfo,
 };
 
 pub trait HostBroker: Send + Sync {
@@ -37,12 +38,40 @@ pub trait HostBroker: Send + Sync {
 
 	fn voice_state(&self, plugin: &str) -> Result<Option<VoiceInfo>, HostError>;
 
-	fn register_slot(&self, _plugin: &str, _slot: &str, _tree: &UiTree) -> Result<(), HostError> {
-		Ok(())
-	}
+	fn surfaces_changed(&self) {}
 
 	fn register_command(&self, _plugin: &str, _name: &str, _description: &str) -> Result<(), HostError> {
 		Ok(())
+	}
+
+	fn send_as_user(&self, _plugin: &str, _msg: OutgoingMessage) -> Result<(), HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn list_emojis(&self, _plugin: &str, _channel_id: Option<u64>) -> Result<Vec<EmojiInfo>, HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn list_stickers(&self, _plugin: &str, _guild_id: Option<u64>) -> Result<Vec<StickerInfo>, HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn message_full(
+		&self,
+		_plugin: &str,
+		_channel_id: u64,
+		_message_id: u64,
+	) -> Result<Option<MessageFull>, HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn channel_messages_full(
+		&self,
+		_plugin: &str,
+		_channel_id: u64,
+		_limit: u32,
+	) -> Result<Vec<MessageFull>, HostError> {
+		Err(HostError::Unavailable)
 	}
 }
 

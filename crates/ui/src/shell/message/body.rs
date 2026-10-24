@@ -9,7 +9,7 @@ use gpui::{
 	prelude::FluentBuilder as _, px,
 };
 use markdown::highlight::{TokenKind, highlight};
-use markdown::{Document, GuildNavKind, Node, TimestampStyle};
+use markdown::{Color, Document, GuildNavKind, Node, TimestampStyle};
 use media::SizeHint;
 use protocol::Snowflake;
 
@@ -131,11 +131,23 @@ enum Click {
 	User(Snowflake),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
+enum Glyph {
+	Emoji {
+		id: u64,
+		animated: bool,
+	},
+	Image {
+		url: SharedString,
+		width: f32,
+		height: f32,
+	},
+}
+
+#[derive(Clone)]
 struct EmojiAt {
 	at: usize,
-	id: u64,
-	animated: bool,
+	glyph: Glyph,
 }
 
 #[derive(Default, Clone)]
@@ -245,9 +257,12 @@ impl Inline {
 		};
 		let mut children: Vec<AnyElement> = Vec::new();
 		let mut cursor = 0;
-		for emoji in self.emoji.iter().copied() {
+		for emoji in &self.emoji {
 			self.push_chunks(cursor..emoji.at, env, &mut children);
-			children.push(emoji_element(emoji.id, emoji.animated, size, cx));
+			children.push(match &emoji.glyph {
+				Glyph::Emoji { id, animated } => emoji_element(*id, *animated, size, cx),
+				Glyph::Image { url, width, height } => image_element(url, *width, *height, cx),
+			});
 			cursor = emoji.at;
 		}
 		self.push_chunks(cursor..self.text.len(), env, &mut children);
@@ -300,6 +315,26 @@ fn emoji_element(id: u64, animated: bool, size: f32, cx: &App) -> AnyElement {
 		.mx(rem(1.))
 		.when_some(image, |slot, image| slot.child(img(image).size_full()))
 		.into_any_element()
+}
+
+fn image_element(url: &SharedString, width: f32, height: f32, cx: &App) -> AnyElement {
+	let image = cx
+		.global::<Images>()
+		.get(url, SizeHint::new((width * 2.) as u32, (height * 2.) as u32));
+	div()
+		.flex_none()
+		.w(rem(width))
+		.h(rem(height))
+		.mx(rem(1.))
+		.when_some(image, |slot, image| slot.child(img(image).size_full()))
+		.into_any_element()
+}
+
+fn tint(color: &Color, theme: &Theme) -> Option<gpui::Hsla> {
+	match color {
+		Color::Token(token) => theme.token(token),
+		Color::Rgba(rgba) => Some(gpui::rgba(*rgba).into()),
+	}
 }
 
 struct Blocks<'a> {
@@ -459,9 +494,41 @@ impl<'a> Blocks<'a> {
 			Node::CommandMention { name, .. } => self.mention(format!("/{name}"), None, style),
 			Node::CustomEmoji { id, animated, .. } => self.inline.emoji.push(EmojiAt {
 				at: self.inline.text.len(),
-				id: *id,
-				animated: *animated,
+				glyph: Glyph::Emoji {
+					id: *id,
+					animated: *animated,
+				},
 			}),
+			Node::InlineImage {
+				src, width, height, ..
+			} => self.inline.emoji.push(EmojiAt {
+				at: self.inline.text.len(),
+				glyph: Glyph::Image {
+					url: src.clone().into(),
+					width: *width as f32,
+					height: *height as f32,
+				},
+			}),
+			Node::Styled {
+				children,
+				color,
+				background,
+				mono,
+			} => {
+				let next = Self::styled(style, |h| {
+					if let Some(color) = color.as_ref().and_then(|color| tint(color, theme)) {
+						h.color = Some(color);
+					}
+					if let Some(fill) = background.as_ref().and_then(|fill| tint(fill, theme)) {
+						h.background_color = Some(fill);
+					}
+				});
+				let start = self.inline.text.len();
+				self.children(children, &next);
+				if *mono {
+					self.inline.codes.push(start..self.inline.text.len());
+				}
+			}
 			Node::Timestamp { unix, style: kind } => {
 				let label = timestamp_label(*unix, *kind, self.env.prefs.time_24h, self.cx);
 				let next = Self::styled(style, |h| h.background_color = Some(theme.code_background));

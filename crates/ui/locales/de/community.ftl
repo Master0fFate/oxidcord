@@ -365,6 +365,7 @@ picker-sticker-empty = No stickers here yet.
 picker-sticker-lottie = Animated sticker, preview unavailable
 picker-emoji-recent = Frequently Used
 picker-emoji-locked = Get Nitro to use this emoji everywhere
+picker-emoji-plugin = Send with a plugin
 picker-emoji-tone = Skin tone
 picker-emoji-from = from { $name }
 picker-emoji-people = Smileys & People

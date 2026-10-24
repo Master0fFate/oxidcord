@@ -1,0 +1,25 @@
+id = "dev.oxidcord.fake-nitro"
+name = "Fake Nitro"
+version = "0.1.0"
+api = "^1.1"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Sends emoji you cannot use as image links and shows received emoji links inline."
+entry = "fake_nitro.wasm"
+min_host = "0.3.0"
+
+[[permissions]]
+permission = "composer"
+reason = "Puts the emoji link into the composer when you pick an emoji you cannot use."
+
+[[permissions]]
+permission = "context-expressions"
+reason = "Checks which emoji your account can use in the current channel."
+
+[[permissions]]
+permission = "message-send"
+reason = "Turns emoji you cannot use into links before the message is sent."
+
+[[permissions]]
+permission = "message-intercept"
+reason = "Shows received emoji links inline and hides their link previews."

@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
-use plugin_host::Permission;
+use plugin_host::api::model::{EmojiRef, UiContext, ViewEvent};
+use plugin_host::{Permission, ViewContext};
 use protocol::{
 	ChannelType, Gif, NotificationLevel, PermissionOverwriteKind, Permissions, Snowflake, StatusKind,
 };
@@ -137,6 +138,24 @@ pub enum Command {
 		plugin_id: String,
 		id: String,
 		payload: String,
+	},
+	PluginViewEvent {
+		plugin_id: String,
+		event: ViewEvent,
+	},
+	PluginMenuItem {
+		plugin_id: String,
+		menu: String,
+		key: String,
+		context: UiContext,
+	},
+	PluginRenderView {
+		point: String,
+		context: ViewContext,
+	},
+	PluginEmojiPick {
+		emoji: EmojiRef,
+		channel_id: Snowflake,
 	},
 	PluginEnable(String),
 	PluginDisable(String),

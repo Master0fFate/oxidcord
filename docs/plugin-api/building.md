@@ -8,12 +8,13 @@ Every plugin has a `plugin.toml` next to its wasm file.
 id = "dev.example.my-plugin"
 name = "My Plugin"
 version = "0.1.0"
-api = "^1.0"
+api = "^1.1"
 authors = ["Example"]
 license = "MIT"
 description = "What it does."
 permissions = ["message-render", "storage"]
 network_hosts = []
+image_hosts = []
 entry = "my_plugin.wasm"
 min_host = "0.1.0"
 priority = 0
@@ -24,9 +25,10 @@ priority = 0
 | `id` | Reverse DNS name, 3 to 128 characters of `[a-z0-9.-]`. Also the install directory name |
 | `name`, `description`, `authors`, `license` | Shown in the plugin manager |
 | `version` | Semver |
-| `api` | Semver requirement on the plugin API, for example `^1.0`. The host currently implements 1.0.0 |
+| `api` | Semver requirement on the plugin API. The host implements 1.1.0, so `^1.0` and `^1.1` both load. Use `^1.1` when the plugin uses the `ui`, `client` or `hooks` interfaces |
 | `permissions` | Either bare names or tables with a reason: `[[permissions]]` with `permission = "storage"` and `reason = "..."`. The consent dialog shows the reason |
-| `network_hosts` | Lowercase hostnames `fetch` may reach. Needs the `net-fetch` permission, and the user must approve each host |
+| `network_hosts` | Lowercase hostnames `fetch` may reach. Needs the `net-fetch` permission, and the user must approve each host. Discord hosts (`discord.com`, `discordapp.com`, `discord.gg`, `discord.media`, `discordapp.net` and their subdomains) are rejected |
+| `image_hosts` | Lowercase hostnames 1.1 views and patches may load images from, besides the Discord CDN. The user must approve each host |
 | `entry` | Relative path to the component inside the package, ending in `.wasm`, no `..`. Optional: a plugin without one ships only a `theme.json`. First party themes do not use this, they ship through the themes catalog (`docs/themes.md`) |
 | `min_host` | Oldest host version the plugin runs on. Optional |
 | `priority` | Order in the render pipeline, lower runs first, ties by id. Optional, default 0 |
@@ -45,6 +47,13 @@ The `wasm32-wasip2` target links the crate straight into a WebAssembly component
 The output is `target/wasm32-wasip2/release/<crate_name>.wasm`. Copy it next to `plugin.toml` under the name given by `entry`, or point `Package::from_files` at it.
 
 Inside this workspace the SDK is a workspace dependency named `plugin-sdk`, so first-party plugins write `use plugin_sdk::...`. Outside it, depend on the `oxidcord-plugin-sdk` package and write `use oxidcord_plugin_sdk::...`.
+
+The SDK has one feature, `ext`. Without it the bindings cover the 1.0 `plugin` world and `export_plugin!(T)` produces a component that also loads on 1.0 hosts. With it the bindings cover the `plugin-ext` world: the `view`, `mount`, `menu`, `patch`, `timer` and `client` modules and the `PluginExt` trait become available and `export_plugin!(T, ext)` exports the 1.1 hooks. A plugin built with the feature but exported with plain `export_plugin!(T)` exports no-op hooks.
+
+```toml
+[dependencies]
+plugin-sdk = { workspace = true, features = ["ext"] }
+```
 
 ## Install layout
 
@@ -69,11 +78,11 @@ The signature is an ed25519 signature over the sha256 of the manifest bytes foll
 
 ## Grants
 
-The user's decision is stored per plugin id under `plugins.grants.<id>` in the store key-value table: the granted permissions, the approved network hosts and the enabled flag. `Grants::requires_reprompt(&manifest)` is true when a manifest asks for a permission or host that was not granted yet, for example after an update. Revoking takes effect on the next host call, no restart needed.
+The user's decision is stored per plugin id under `plugins.grants.<id>` in the store key-value table: the granted permissions, the approved network hosts, the approved image hosts and the enabled flag. `Command::PluginGrant` takes one host list and splits it between `network_hosts` and `image_hosts` by the manifest. `Grants::requires_reprompt(&manifest)` is true when a manifest asks for a permission or host that was not granted yet, for example after an update. Revoking takes effect on the next host call, no restart needed.
 
 ## Hook timeouts
 
-Each hook runs against an epoch deadline. The engine increments its epoch every 10 ms, and a call is given `ceil(timeout / 10 ms) + 1` ticks, so a hook is killed between its timeout and roughly one tick after it. The defaults are `init` 5 s, `on-event` 200 ms, `render-message` 50 ms, `before-send` 500 ms, `filter-message` 50 ms, `display-user` 50 ms, `on-ui-action` 2 s, `on-command` 2 s and `settings-schema` 500 ms. They are fields of `HookTimeouts` in `RuntimeConfig`.
+Each hook runs against an epoch deadline. The engine increments its epoch every 10 ms, and a call is given `ceil(timeout / 10 ms) + 1` ticks, so a hook is killed between its timeout and roughly one tick after it. The defaults are `init` 5 s, `on-event` 200 ms, `render-message` 50 ms, `before-send` 500 ms, `filter-message` 50 ms, `display-user` 50 ms, `on-ui-action` 2 s, `on-command` 2 s, `settings-schema` 500 ms, `render-view` 200 ms, `on-view-event` and `on-menu-item` 2 s, `intercept-message` 50 ms, `on-timer` 200 ms and `on-emoji-pick` 200 ms. They are fields of `HookTimeouts` in `RuntimeConfig`.
 
 The epoch only interrupts guest code. While the guest waits inside a host call (a `fetch` can take up to 10 s) the interrupt fires when the call returns. The caller of a hook therefore also waits at most `timeout + 100 ms`; past that it gives up, skips the plugin, and if the plugin had already started the call the instance is abandoned, counted as a crash and replaced after the backoff.
 
@@ -105,6 +114,8 @@ The session owns the `PluginManager`. It loads `store.paths.plugins_dir()` on a 
 
 - `before-send` runs on a blocking task before the REST call. A cancel marks the pending message as failed with the plugin's reason, a rewrite sends the new content and marks the message as altered by that plugin. Messages sent by a plugin through `send-message` skip `before-send`.
 - Every message that enters the cache is parsed immediately and stored as a `RenderedMessage`. When a plugin holds `message-render` or `message-filter`, a single `plugin-render` thread then runs the render and filter hooks, the selected channel first and the newest message first, and publishes finished batches about every 30 ms. Until a result arrives the parsed message is shown, or hidden when a filter plugin is active. A message a filter hook rejected is left out of the chat.
+- When a plugin holds `message-intercept`, the same thread runs `intercept-message` after the render and filter hooks and stores the patches in the plugin host's `Patches` store, which the message rows read. See `interception.md`.
+- View events, menu items, contextual `render-view` calls and emoji picks run on the plugin job queue, never on the session task or the UI thread. View events and menu items bump the render epoch like `on-ui-action` does.
 - `display-user` overrides are computed in the background for the authors of the visible channel and the member list, with a 2 s debounce after changes, and read by the message and member rows.
 - Enabling, disabling, reloading, installing, uninstalling or granting a plugin bumps a render epoch. Cached messages with an older epoch are rendered again, the visible channel at once and other channels when they are opened.
 - A plugin package with a `theme.json` is copied to `<themes_dir>/<id>.json` while the plugin is enabled.

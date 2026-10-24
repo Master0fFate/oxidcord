@@ -24,10 +24,24 @@ pub enum Permission {
 	Storage,
 	NetFetch,
 	UiSlots,
+	UiMount,
+	MessageIntercept,
+	MessageRetain,
+	Composer,
+	ContextExpressions,
+	ActionsSendUser,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Tier {
+	Low,
+	Medium,
+	High,
+	Sensitive,
 }
 
 impl Permission {
-	pub const ALL: [Permission; 19] = [
+	pub const ALL: [Permission; 25] = [
 		Self::ContextBasic,
 		Self::ContextTimeline,
 		Self::ContextDirectory,
@@ -47,6 +61,12 @@ impl Permission {
 		Self::Storage,
 		Self::NetFetch,
 		Self::UiSlots,
+		Self::UiMount,
+		Self::MessageIntercept,
+		Self::MessageRetain,
+		Self::Composer,
+		Self::ContextExpressions,
+		Self::ActionsSendUser,
 	];
 
 	pub fn as_str(self) -> &'static str {
@@ -70,33 +90,79 @@ impl Permission {
 			Self::Storage => "storage",
 			Self::NetFetch => "net-fetch",
 			Self::UiSlots => "ui-slots",
+			Self::UiMount => "ui-mount",
+			Self::MessageIntercept => "message-intercept",
+			Self::MessageRetain => "message-retain",
+			Self::Composer => "composer",
+			Self::ContextExpressions => "context-expressions",
+			Self::ActionsSendUser => "actions-send-user",
 		}
 	}
-}
 
-impl From<Permission> for api::Permission {
-	fn from(permission: Permission) -> Self {
-		match permission {
-			Permission::ContextBasic => Self::ContextBasic,
-			Permission::ContextTimeline => Self::ContextTimeline,
-			Permission::ContextDirectory => Self::ContextDirectory,
-			Permission::ContextMembers => Self::ContextMembers,
-			Permission::ContextVoice => Self::ContextVoice,
-			Permission::ContextPrivate => Self::ContextPrivate,
-			Permission::MessageRender => Self::MessageRender,
-			Permission::MessageSend => Self::MessageSend,
-			Permission::MessageFilter => Self::MessageFilter,
-			Permission::UserDisplay => Self::UserDisplay,
-			Permission::ActionsSend => Self::ActionsSend,
-			Permission::ActionsReact => Self::ActionsReact,
-			Permission::ActionsNavigate => Self::ActionsNavigate,
-			Permission::ActionsClipboard => Self::ActionsClipboard,
-			Permission::ActionsNotify => Self::ActionsNotify,
-			Permission::ActionsOpenUrl => Self::ActionsOpenUrl,
-			Permission::Storage => Self::Storage,
-			Permission::NetFetch => Self::NetFetch,
-			Permission::UiSlots => Self::UiSlots,
+	pub fn tier(self) -> Tier {
+		match self {
+			Self::ContextBasic
+			| Self::ContextExpressions
+			| Self::Storage
+			| Self::UiSlots
+			| Self::UiMount
+			| Self::ActionsNavigate
+			| Self::ActionsNotify => Tier::Low,
+			Self::ContextTimeline
+			| Self::ContextDirectory
+			| Self::ContextMembers
+			| Self::ContextVoice
+			| Self::MessageRender
+			| Self::UserDisplay
+			| Self::ActionsReact
+			| Self::ActionsClipboard
+			| Self::ActionsOpenUrl
+			| Self::MessageIntercept
+			| Self::Composer => Tier::Medium,
+			Self::MessageSend
+			| Self::MessageFilter
+			| Self::ActionsSend
+			| Self::ActionsSendUser
+			| Self::NetFetch => Tier::High,
+			Self::ContextPrivate | Self::MessageRetain => Tier::Sensitive,
 		}
+	}
+
+	pub fn denied(self) -> api::HostError {
+		match self.api() {
+			Some(permission) => api::HostError::Denied(permission),
+			None => api::HostError::Invalid(format!("permission {} is not granted", self.as_str())),
+		}
+	}
+
+	fn api(self) -> Option<api::Permission> {
+		Some(match self {
+			Self::ContextBasic => api::Permission::ContextBasic,
+			Self::ContextTimeline => api::Permission::ContextTimeline,
+			Self::ContextDirectory => api::Permission::ContextDirectory,
+			Self::ContextMembers => api::Permission::ContextMembers,
+			Self::ContextVoice => api::Permission::ContextVoice,
+			Self::ContextPrivate => api::Permission::ContextPrivate,
+			Self::MessageRender => api::Permission::MessageRender,
+			Self::MessageSend => api::Permission::MessageSend,
+			Self::MessageFilter => api::Permission::MessageFilter,
+			Self::UserDisplay => api::Permission::UserDisplay,
+			Self::ActionsSend => api::Permission::ActionsSend,
+			Self::ActionsReact => api::Permission::ActionsReact,
+			Self::ActionsNavigate => api::Permission::ActionsNavigate,
+			Self::ActionsClipboard => api::Permission::ActionsClipboard,
+			Self::ActionsNotify => api::Permission::ActionsNotify,
+			Self::ActionsOpenUrl => api::Permission::ActionsOpenUrl,
+			Self::Storage => api::Permission::Storage,
+			Self::NetFetch => api::Permission::NetFetch,
+			Self::UiSlots => api::Permission::UiSlots,
+			Self::UiMount
+			| Self::MessageIntercept
+			| Self::MessageRetain
+			| Self::Composer
+			| Self::ContextExpressions
+			| Self::ActionsSendUser => return None,
+		})
 	}
 }
 

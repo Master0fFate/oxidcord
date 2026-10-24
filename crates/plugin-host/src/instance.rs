@@ -9,14 +9,18 @@ use parking_lot::{Condvar, Mutex};
 use wasmtime::component::Component;
 use wasmtime::{Store, Trap};
 
+use crate::api::model::{
+	EmojiRef, MessageFull, MessagePatch, PickVerdict, RichTree, UiContext, ViewEvent, ViewReply, ViewTree,
+};
 use crate::api::{
 	DisplayOverride, Event, MdTree, MessageView, OutgoingMessage, SendDecision, SettingChange, UiTree, User,
 };
 use crate::bindings::Plugin;
-use crate::bindings::PluginPre;
+use crate::bindings::ext::exports::oxidcord::plugin::hooks;
 use crate::config::{HookTimeouts, RuntimeConfig};
+use crate::convert::empty_patch;
 use crate::host_state::HostState;
-use crate::runtime::RuntimeShared;
+use crate::runtime::{Prepared, RuntimeShared};
 
 const WORKER_STACK_BYTES: usize = 4 * 1024 * 1024;
 
@@ -193,11 +197,40 @@ pub enum CallKind {
 		key: String,
 		value: String,
 	},
+	ViewEvent(ViewEvent),
+	MenuItem {
+		menu: String,
+		key: String,
+		context: UiContext,
+	},
+	RenderView {
+		point: String,
+		context: UiContext,
+	},
+	Intercept {
+		msg: MessageFull,
+		content: RichTree,
+	},
+	Timer {
+		id: u64,
+		tag: String,
+	},
+	EmojiPick {
+		emoji: EmojiRef,
+		channel_id: u64,
+	},
 }
 
 impl CallKind {
 	fn is_event(&self) -> bool {
-		matches!(self, Self::Event(_))
+		matches!(self, Self::Event(_) | Self::Timer { .. })
+	}
+
+	fn is_gesture(&self) -> bool {
+		matches!(
+			self,
+			Self::UiAction { .. } | Self::Command { .. } | Self::ViewEvent(_) | Self::MenuItem { .. }
+		)
 	}
 
 	fn timeout(&self, timeouts: &HookTimeouts) -> Duration {
@@ -212,6 +245,11 @@ impl CallKind {
 			Self::Command { .. } => timeouts.command,
 			Self::SettingsSchema => timeouts.settings_schema,
 			Self::Setting { .. } => timeouts.on_event,
+			Self::ViewEvent(_) | Self::MenuItem { .. } => timeouts.view_event,
+			Self::RenderView { .. } => timeouts.render_view,
+			Self::Intercept { .. } => timeouts.intercept_message,
+			Self::Timer { .. } => timeouts.timer,
+			Self::EmojiPick { .. } => timeouts.emoji_pick,
 		}
 	}
 }
@@ -225,6 +263,10 @@ pub enum Output {
 	Ui(UiTree),
 	Command(Result<(), String>),
 	Schema(String),
+	Reply(ViewReply),
+	View(Option<ViewTree>),
+	Patch(Box<MessagePatch>),
+	Pick(PickVerdict),
 }
 
 struct Reply {
@@ -283,6 +325,19 @@ impl CallQueue {
 		true
 	}
 
+	fn push_timer(&self, call: Call) -> bool {
+		let CallKind::Timer { id, .. } = &call.kind else {
+			return false;
+		};
+		let queued = self
+			.state
+			.lock()
+			.items
+			.iter()
+			.any(|item| matches!(&item.kind, CallKind::Timer { id: other, .. } if other == id));
+		!queued && self.push_event(call)
+	}
+
 	fn push_interactive(&self, call: Call) -> bool {
 		let mut state = self.state.lock();
 		if state.closed || state.items.iter().filter(|item| !item.kind.is_event()).count() >= self.event_cap {
@@ -324,13 +379,22 @@ impl CallQueue {
 struct Running {
 	store: Store<HostState>,
 	plugin: Plugin,
+	hooks: Option<hooks::Guest>,
 }
 
 struct WorkerContext {
 	id: Arc<str>,
 	runtime: Arc<RuntimeShared>,
-	pre: PluginPre<HostState>,
+	pre: Prepared,
 	health: Arc<Health>,
+}
+
+fn quiet_reply() -> ViewReply {
+	ViewReply {
+		replace: None,
+		close_overlay: false,
+		toast: None,
+	}
 }
 
 impl WorkerContext {
@@ -351,27 +415,40 @@ impl WorkerContext {
 
 	fn start(&self) -> Result<Running, CallError> {
 		let config = &self.runtime.config;
+		self.runtime.services.timers.clear_plugin(&self.id);
 		let state = HostState::new(Arc::clone(&self.id), Arc::clone(&self.runtime.services), config)
 			.with_health(Arc::clone(&self.health));
 		let mut store = Store::new(&self.runtime.engine, state);
 		store.limiter(|state| &mut state.limits);
 		store.epoch_deadline_trap();
 		store.set_epoch_deadline(self.epoch_ticks(config.timeouts.init));
-		let plugin = match self.pre.instantiate(&mut store) {
-			Ok(plugin) => plugin,
+		let loaded = self.pre.instance.instantiate(&mut store).and_then(|instance| {
+			let plugin = self.pre.guest.load(&mut store, &instance)?;
+			let hooks = match &self.pre.hooks {
+				Some(indices) => Some(indices.load(&mut store, &instance)?),
+				None => None,
+			};
+			Ok((plugin, hooks))
+		});
+		let (plugin, hooks) = match loaded {
+			Ok(loaded) => loaded,
 			Err(error) => return Err(self.classify(&error, store.data().limits.memory_exceeded)),
 		};
 		match plugin.oxidcord_plugin_guest().call_init(&mut store) {
-			Ok(Ok(())) => Ok(Running { store, plugin }),
+			Ok(Ok(())) => Ok(Running { store, plugin, hooks }),
 			Ok(Err(message)) => Err(CallError::InitFailed(message)),
 			Err(error) => Err(self.classify(&error, store.data().limits.memory_exceeded)),
 		}
 	}
 
 	fn execute(&self, running: &mut Running, kind: CallKind, timeout: Duration) -> Result<Output, CallError> {
-		running.store.set_epoch_deadline(self.epoch_ticks(timeout));
-		let guest = running.plugin.oxidcord_plugin_guest();
-		let store = &mut running.store;
+		let Running { store, plugin, hooks } = running;
+		store.set_epoch_deadline(self.epoch_ticks(timeout));
+		let guest = plugin.oxidcord_plugin_guest();
+		let gesture = kind.is_gesture();
+		if gesture {
+			store.data_mut().begin_gesture();
+		}
 		let result = match kind {
 			CallKind::Init => Ok(Output::Done),
 			CallKind::Event(event) => guest.call_on_event(&mut *store, &event).map(|()| Output::Done),
@@ -401,8 +478,12 @@ impl WorkerContext {
 				let event = Event::SettingChanged(SettingChange { key, value });
 				guest.call_on_event(&mut *store, &event).map(|()| Output::Done)
 			}
+			kind => execute_hook(store, hooks.as_ref(), kind),
 		};
-		result.map_err(|error| self.classify(&error, running.store.data().limits.memory_exceeded))
+		if gesture {
+			store.data_mut().end_gesture();
+		}
+		result.map_err(|error| self.classify(&error, store.data().limits.memory_exceeded))
 	}
 
 	fn run(
@@ -453,6 +534,38 @@ impl WorkerContext {
 	}
 }
 
+fn execute_hook(
+	store: &mut Store<HostState>,
+	hooks: Option<&hooks::Guest>,
+	kind: CallKind,
+) -> wasmtime::Result<Output> {
+	match (hooks, kind) {
+		(Some(hooks), CallKind::ViewEvent(event)) => {
+			hooks.call_on_view_event(&mut *store, &event).map(Output::Reply)
+		}
+		(None, CallKind::ViewEvent(_)) => Ok(Output::Reply(quiet_reply())),
+		(Some(hooks), CallKind::MenuItem { menu, key, context }) => hooks
+			.call_on_menu_item(&mut *store, &menu, &key, &context)
+			.map(|()| Output::Done),
+		(Some(hooks), CallKind::RenderView { point, context }) => hooks
+			.call_render_view(&mut *store, &point, &context)
+			.map(Output::View),
+		(None, CallKind::RenderView { .. }) => Ok(Output::View(None)),
+		(Some(hooks), CallKind::Intercept { msg, content }) => hooks
+			.call_intercept_message(&mut *store, &msg, &content)
+			.map(|patch| Output::Patch(Box::new(patch))),
+		(None, CallKind::Intercept { .. }) => Ok(Output::Patch(Box::new(empty_patch()))),
+		(Some(hooks), CallKind::Timer { id, tag }) => {
+			hooks.call_on_timer(&mut *store, id, &tag).map(|()| Output::Done)
+		}
+		(Some(hooks), CallKind::EmojiPick { emoji, channel_id }) => hooks
+			.call_on_emoji_pick(&mut *store, &emoji, channel_id)
+			.map(Output::Pick),
+		(None, CallKind::EmojiPick { .. }) => Ok(Output::Pick(PickVerdict::Default)),
+		_ => Ok(Output::Done),
+	}
+}
+
 fn worker_main(context: WorkerContext, queue: Arc<CallQueue>) {
 	let mut running: Option<Running> = None;
 	let mut restart_at = Instant::now();
@@ -492,7 +605,7 @@ impl Drop for PluginInstance {
 pub struct PluginInstance {
 	id: Arc<str>,
 	runtime: Arc<RuntimeShared>,
-	pre: PluginPre<HostState>,
+	pre: Prepared,
 	health: Arc<Health>,
 	slot: Mutex<Slot>,
 }
@@ -504,7 +617,7 @@ impl PluginInstance {
 		component: &Component,
 		health: Arc<Health>,
 	) -> crate::error::Result<Arc<Self>> {
-		let pre = runtime.instance_pre(component)?;
+		let pre = runtime.prepare(component)?;
 		Ok(Arc::new(Self {
 			id,
 			runtime,
@@ -523,6 +636,10 @@ impl PluginInstance {
 
 	pub fn health(&self) -> &Arc<Health> {
 		&self.health
+	}
+
+	pub fn is_ext(&self) -> bool {
+		self.pre.hooks.is_some()
 	}
 
 	pub fn start(&self) -> Result<(), CallError> {
@@ -579,6 +696,19 @@ impl PluginInstance {
 		let kind = CallKind::Event(event);
 		let timeout = kind.timeout(&self.runtime.config.timeouts);
 		queue.push_event(Call {
+			kind,
+			timeout,
+			reply: None,
+		});
+	}
+
+	pub fn post_timer(&self, id: u64, tag: String) {
+		let Ok(queue) = self.queue() else {
+			return;
+		};
+		let kind = CallKind::Timer { id, tag };
+		let timeout = kind.timeout(&self.runtime.config.timeouts);
+		queue.push_timer(Call {
 			kind,
 			timeout,
 			reply: None,
@@ -712,5 +842,39 @@ impl PluginInstance {
 
 	pub fn call_event(&self, event: Event) -> Result<(), CallError> {
 		self.call(CallKind::Event(event)).map(|_| ())
+	}
+}
+
+impl PluginInstance {
+	pub fn view_event(&self, event: ViewEvent) -> Result<ViewReply, CallError> {
+		match self.call(CallKind::ViewEvent(event))? {
+			Output::Reply(reply) => Ok(reply),
+			_ => Err(mismatch()),
+		}
+	}
+
+	pub fn menu_item(&self, menu: String, key: String, context: UiContext) -> Result<(), CallError> {
+		self.call(CallKind::MenuItem { menu, key, context }).map(|_| ())
+	}
+
+	pub fn render_view(&self, point: String, context: UiContext) -> Result<Option<ViewTree>, CallError> {
+		match self.call(CallKind::RenderView { point, context })? {
+			Output::View(tree) => Ok(tree),
+			_ => Err(mismatch()),
+		}
+	}
+
+	pub fn intercept(&self, msg: MessageFull, content: RichTree) -> Result<MessagePatch, CallError> {
+		match self.call(CallKind::Intercept { msg, content })? {
+			Output::Patch(patch) => Ok(*patch),
+			_ => Err(mismatch()),
+		}
+	}
+
+	pub fn emoji_pick(&self, emoji: EmojiRef, channel_id: u64) -> Result<PickVerdict, CallError> {
+		match self.call(CallKind::EmojiPick { emoji, channel_id })? {
+			Output::Pick(verdict) => Ok(verdict),
+			_ => Err(mismatch()),
+		}
 	}
 }

@@ -18,7 +18,7 @@ pub use self::plugins_page::PluginsPage;
 pub use self::themes_page::{ThemeApplied, ThemesPage};
 use self::widgets::{card, icon_tile, note};
 use super::bridge::PluginBridge;
-use super::slot_renderer::{Scope, SlotHost, render_column};
+use super::view::{Ctx, Scope};
 use crate::data::{Data, DataEvent};
 use crate::i18n::Translate as _;
 use crate::icons::{Icon, IconKind};
@@ -57,8 +57,7 @@ impl SlotPage {
 impl Render for SlotPage {
 	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
-		let host = SlotHost::new("settings-page");
-		let entries = host.entries(cx);
+		let entries = cx.global::<PluginBridge>().slot_entries("settings-page", cx);
 		let entry = entries
 			.iter()
 			.find(|entry| Some(&entry.plugin_id) == self.selected.as_ref())
@@ -67,7 +66,7 @@ impl Render for SlotPage {
 			return note(cx.t("plugin-slot-empty"), &theme);
 		};
 		let name = cx.global::<PluginBridge>().name_of(&entry.plugin_id, cx);
-		let scope: Scope = host.scope(entry);
+		let scope = Scope::slot(&entry.plugin_id, "settings-page", "");
 		div()
 			.flex()
 			.flex_col()
@@ -86,7 +85,7 @@ impl Render for SlotPage {
 							.child(name),
 					),
 			)
-			.child(card(&theme).child(render_column(&entry.tree, &scope, &theme)))
+			.child(card(&theme).child(Ctx::new(&entry.tree, scope).column(&theme)))
 			.into_any_element()
 	}
 }
@@ -127,7 +126,7 @@ impl PluginPages {
 		on_select: impl Fn(&mut T, &mut Context<T>) + Clone + 'static,
 	) -> Vec<AnyElement> {
 		let selected = self.slot.read(cx).selected.clone();
-		let entries = SlotHost::new("settings-page").entries(cx);
+		let entries = cx.global::<PluginBridge>().slot_entries("settings-page", cx);
 		let first = entries.first().map(|entry| entry.plugin_id.clone());
 		entries
 			.iter()

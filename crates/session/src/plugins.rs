@@ -19,11 +19,12 @@ pub(crate) struct PluginFlags {
 	pub(crate) send: bool,
 	pub(crate) display: bool,
 	pub(crate) logs: bool,
+	pub(crate) intercept: bool,
 }
 
 impl PluginFlags {
 	pub(crate) fn renders(self) -> bool {
-		self.render || self.filter
+		self.render || self.filter || self.intercept
 	}
 }
 
@@ -64,6 +65,7 @@ impl PluginHub {
 			send: self.manager.has_active(Permission::MessageSend),
 			display: self.manager.has_active(Permission::UserDisplay),
 			logs: self.manager.has_message_log(),
+			intercept: self.manager.has_intercept(),
 		}
 	}
 
@@ -181,14 +183,19 @@ impl PluginHub {
 			.copied()
 			.filter(|permission| requested.contains(permission))
 			.collect();
-		let approved: BTreeSet<String> = hosts
-			.iter()
-			.filter(|host| manifest.network_hosts.contains(host))
-			.cloned()
-			.collect();
+		let approve = |allowed: &[String]| -> BTreeSet<String> {
+			hosts
+				.iter()
+				.filter(|host| allowed.contains(host))
+				.cloned()
+				.collect()
+		};
+		let network_hosts = approve(&manifest.network_hosts);
+		let image_hosts = approve(&manifest.image_hosts);
 		self.grants.update(id, |grant| {
 			grant.permissions = granted;
-			grant.network_hosts = approved;
+			grant.network_hosts = network_hosts;
+			grant.image_hosts = image_hosts;
 		})?;
 		self.manager.reload(id)?;
 		self.sync_themes();

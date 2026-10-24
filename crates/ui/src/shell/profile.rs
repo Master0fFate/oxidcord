@@ -6,6 +6,7 @@ use gpui::{
 };
 use gpui_component::Sizable as _;
 use gpui_component::button::{Button, ButtonVariants as _};
+use plugin_host::ViewContext;
 use protocol::Snowflake;
 use session::Command;
 
@@ -46,7 +47,10 @@ impl ProfileCard {
 		});
 		let subscription = cx.subscribe(&data, move |_, _, event: &DataEvent, cx| {
 			if let DataEvent::Changed(changes) = event
-				&& (changes.loaded.contains(user) || changes.relationships || !changes.presence.is_empty())
+				&& (changes.loaded.contains(user)
+					|| changes.relationships
+					|| changes.plugin_slots
+					|| !changes.presence.is_empty())
 			{
 				cx.notify();
 			}
@@ -91,6 +95,15 @@ impl Render for ProfileCard {
 			.map(|bio| account::markdown_text(bio, &theme));
 		let joined = profile.joined.map(format::day_label);
 		let created = format::day_label(profile.created);
+		let plugin_sections = super::plugins::contextual(
+			"user-popout-section",
+			ViewContext {
+				guild_id: self.guild.map(Snowflake::get),
+				user_id: Some(self.user.get()),
+				..ViewContext::default()
+			},
+			cx,
+		);
 		let handle = match &profile.pronouns {
 			Some(pronouns) => format!("{} \u{b7} {pronouns}", profile.handle),
 			None => profile.handle.to_string(),
@@ -190,6 +203,7 @@ impl Render for ProfileCard {
 								.child(div().flex().flex_wrap().gap(theme.space_4).children(roles)),
 						)
 					})
+					.children(plugin_sections)
 					.children(stats)
 					.child(actions)
 					.child(

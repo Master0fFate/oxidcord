@@ -349,6 +349,20 @@ impl<'a> Generator<'a, '_> {
 						id_of(emoji)
 					));
 				}
+				if let Some(emoji) = spec.emojis.iter().find(|emoji| emoji.available == Some(false)) {
+					let link = format!(
+						"https://cdn.discordapp.com/emojis/{}.webp?size=48&name={}",
+						id_of(emoji),
+						emoji.name.as_deref().unwrap_or("emoji")
+					);
+					content.push_str(&format!(" {link}"));
+					message.embeds = LenientVec::from(vec![Embed {
+						kind: Some(EmbedKind::Image),
+						url: Some(link.clone()),
+						thumbnail: Some(self.media(&link, 48, 48)),
+						..Embed::default()
+					}]);
+				}
 				message.content = content;
 			}
 			Special::UnicodeEmoji => {

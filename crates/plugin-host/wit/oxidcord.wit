@@ -1,4 +1,4 @@
-package oxidcord:plugin@1.0.0;
+package oxidcord:plugin@1.1.0;
 
 interface types {
 	type snowflake = u64;
@@ -344,7 +344,508 @@ interface guest {
 	settings-schema: func() -> string;
 }
 
+interface model {
+	use types.{snowflake, message-view, md-node};
+
+	enum tone {
+		normal,
+		muted,
+		brand,
+		success,
+		warning,
+		danger,
+	}
+
+	enum space {
+		none,
+		xs,
+		sm,
+		md,
+		lg,
+		xl,
+	}
+
+	enum radius {
+		none,
+		sm,
+		md,
+		lg,
+		full,
+	}
+
+	enum text-size {
+		tiny,
+		xs,
+		sm,
+		md,
+		lg,
+		xl,
+	}
+
+	enum weight {
+		normal,
+		medium,
+		semibold,
+		bold,
+	}
+
+	enum align {
+		start,
+		center,
+		end,
+		stretch,
+	}
+
+	enum justify {
+		start,
+		center,
+		end,
+		between,
+	}
+
+	enum axis {
+		row,
+		column,
+	}
+
+	enum button-variant {
+		solid,
+		outline,
+		ghost,
+		link,
+	}
+
+	variant length {
+		auto,
+		fill,
+		px(u32),
+	}
+
+	variant color {
+		token(string),
+		rgba(u32),
+	}
+
+	record style {
+		width: length,
+		height: length,
+		padding: space,
+		gap: space,
+		align: align,
+		justify: justify,
+		background: option<color>,
+		border: option<color>,
+		radius: radius,
+		tooltip: option<string>,
+		disabled: bool,
+	}
+
+	record emoji-ref {
+		id: option<snowflake>,
+		name: string,
+		animated: bool,
+	}
+
+	variant image-source {
+		url(string),
+		emoji(emoji-ref),
+		avatar(snowflake),
+	}
+
+	record stack-node {
+		axis: axis,
+		wrap: bool,
+		children: list<u32>,
+	}
+
+	record text-node {
+		value: string,
+		size: text-size,
+		weight: weight,
+		tone: tone,
+		color: option<color>,
+		mono: bool,
+		italic: bool,
+	}
+
+	record image-node {
+		source: image-source,
+		width: u32,
+		height: u32,
+		alt: string,
+	}
+
+	record icon-node {
+		name: string,
+		tone: tone,
+		size: u32,
+	}
+
+	record avatar-node {
+		user-id: snowflake,
+		size: u32,
+	}
+
+	record emoji-node {
+		emoji: emoji-ref,
+		size: u32,
+	}
+
+	record button-node {
+		label: string,
+		icon: option<string>,
+		tone: tone,
+		%variant: button-variant,
+		submit: bool,
+	}
+
+	record icon-button-node {
+		icon: string,
+		tone: tone,
+	}
+
+	record link-node {
+		label: string,
+		url: string,
+	}
+
+	record input-node {
+		value: string,
+		placeholder: string,
+	}
+
+	record select-option {
+		value: string,
+		label: string,
+	}
+
+	record select-node {
+		options: list<select-option>,
+		selected: option<string>,
+		placeholder: string,
+	}
+
+	record check-node {
+		label: string,
+		checked: bool,
+	}
+
+	record slider-node {
+		min: f32,
+		max: f32,
+		step: f32,
+		value: f32,
+	}
+
+	record badge-node {
+		label: string,
+		tone: tone,
+	}
+
+	record tabs-node {
+		labels: list<string>,
+		selected: u32,
+		children: list<u32>,
+	}
+
+	record section-node {
+		title: string,
+		collapsed: bool,
+		children: list<u32>,
+	}
+
+	record embed-card {
+		title: option<string>,
+		description: option<string>,
+		url: option<string>,
+		accent: option<color>,
+		image: option<string>,
+		footer: option<string>,
+	}
+
+	record timestamp-node {
+		unix-ms: s64,
+		style: string,
+	}
+
+	variant node-kind {
+		stack(stack-node),
+		scroll(list<u32>),
+		spacer,
+		divider,
+		text(text-node),
+		markdown(string),
+		image(image-node),
+		icon(icon-node),
+		avatar(avatar-node),
+		emoji(emoji-node),
+		button(button-node),
+		icon-button(icon-button-node),
+		link(link-node),
+		input(input-node),
+		textarea(input-node),
+		select(select-node),
+		toggle(check-node),
+		checkbox(check-node),
+		slider(slider-node),
+		progress(f32),
+		badge(badge-node),
+		tabs(tabs-node),
+		section(section-node),
+		popover(list<u32>),
+		form(list<u32>),
+		embed(embed-card),
+		user-chip(snowflake),
+		channel-chip(snowflake),
+		timestamp(timestamp-node),
+	}
+
+	record view-node {
+		key: option<string>,
+		style: option<style>,
+		kind: node-kind,
+	}
+
+	record view-tree {
+		nodes: list<view-node>,
+		roots: list<u32>,
+	}
+
+	record mount-options {
+		title: string,
+		icon: option<string>,
+		order: s32,
+	}
+
+	record ui-context {
+		guild-id: option<snowflake>,
+		channel-id: option<snowflake>,
+		message-id: option<snowflake>,
+		user-id: option<snowflake>,
+		url: option<string>,
+	}
+
+	variant view-event-kind {
+		click,
+		change(string),
+		submit(list<tuple<string, string>>),
+		toggle(bool),
+		select(string),
+		tab(u32),
+	}
+
+	record view-event {
+		point: string,
+		mount: string,
+		node: string,
+		kind: view-event-kind,
+		context: ui-context,
+	}
+
+	record view-reply {
+		replace: option<view-tree>,
+		close-overlay: bool,
+		toast: option<string>,
+	}
+
+	flags menu-when {
+		in-guild,
+		in-dm,
+		own-message,
+		others-message,
+		has-content,
+		has-attachments,
+		self-user,
+		other-user,
+	}
+
+	record menu-item {
+		key: string,
+		label: string,
+		icon: option<string>,
+		tone: tone,
+		when: menu-when,
+		parent: option<string>,
+	}
+
+	record inline-image {
+		url: string,
+		alt: string,
+		width: u32,
+		height: u32,
+	}
+
+	record styled-span {
+		children: list<u32>,
+		color: option<color>,
+		background: option<color>,
+		mono: bool,
+	}
+
+	variant rich-node {
+		md(md-node),
+		inline-image(inline-image),
+		styled(styled-span),
+	}
+
+	record rich-tree {
+		nodes: list<rich-node>,
+		roots: list<u32>,
+	}
+
+	record attachment-info {
+		id: snowflake,
+		filename: string,
+		content-type: option<string>,
+		size: u64,
+		url: string,
+		width: option<u32>,
+		height: option<u32>,
+	}
+
+	record embed-info {
+		kind: string,
+		title: option<string>,
+		description: option<string>,
+		url: option<string>,
+		color: option<u32>,
+		provider: option<string>,
+		image: option<string>,
+		thumbnail: option<string>,
+	}
+
+	record sticker-info {
+		id: snowflake,
+		name: string,
+		format: u8,
+		guild-id: option<snowflake>,
+	}
+
+	record reaction-info {
+		emoji: emoji-ref,
+		count: u32,
+		me: bool,
+	}
+
+	variant lifecycle {
+		live,
+		edited(list<string>),
+		deleted(s64),
+	}
+
+	record message-full {
+		view: message-view,
+		attachments: list<attachment-info>,
+		embeds: list<embed-info>,
+		stickers: list<sticker-info>,
+		reactions: list<reaction-info>,
+		mentions: list<snowflake>,
+		mine: bool,
+		lifecycle: lifecycle,
+	}
+
+	variant visibility {
+		shown,
+		hidden(string),
+		collapsed(string),
+	}
+
+	record annotation {
+		text: string,
+		icon: option<string>,
+		tone: tone,
+	}
+
+	record decoration {
+		accent: option<color>,
+		background: option<color>,
+		faded: bool,
+		strike: bool,
+	}
+
+	variant embed-action {
+		keep,
+		hide,
+		replace(embed-card),
+	}
+
+	record message-patch {
+		content: option<rich-tree>,
+		visibility: visibility,
+		annotations: list<annotation>,
+		decoration: option<decoration>,
+		embeds: list<embed-action>,
+		extra-embeds: list<embed-card>,
+		hidden-attachments: list<snowflake>,
+		accessory: option<view-tree>,
+		retain: bool,
+	}
+
+	record emoji-info {
+		emoji: emoji-ref,
+		guild-id: option<snowflake>,
+		usable: bool,
+		available: bool,
+	}
+
+	variant pick-verdict {
+		default,
+		insert(string),
+		block(string),
+	}
+}
+
+interface ui {
+	use types.{host-error};
+	use model.{view-tree, mount-options, menu-item};
+
+	mount: func(point: string, key: string, tree: view-tree, options: mount-options) -> result<_, host-error>;
+	update: func(point: string, key: string, tree: view-tree) -> result<_, host-error>;
+	unmount: func(point: string, key: string) -> result<_, host-error>;
+	provide: func(point: string, options: mount-options) -> result<_, host-error>;
+	invalidate: func(point: string) -> result<_, host-error>;
+	set-menu-items: func(menu: string, items: list<menu-item>) -> result<_, host-error>;
+	toast: func(tree: view-tree, ttl-ms: u32) -> result<_, host-error>;
+	open-modal: func(title: string, tree: view-tree) -> result<_, host-error>;
+}
+
+interface client {
+	use types.{snowflake, host-error, outgoing-message};
+	use model.{emoji-ref, emoji-info, sticker-info, message-full};
+
+	set-timer: func(delay-ms: u32, repeat-ms: u32, tag: string) -> result<u64, host-error>;
+	clear-timer: func(id: u64);
+	list-emojis: func(channel-id: option<snowflake>) -> result<list<emoji-info>, host-error>;
+	emoji-url: func(emoji: emoji-ref, size: u32) -> option<string>;
+	list-stickers: func(guild-id: option<snowflake>) -> result<list<sticker-info>, host-error>;
+	sticker-url: func(sticker: sticker-info, size: u32) -> string;
+	composer-insert: func(text: string) -> result<_, host-error>;
+	get-message: func(channel-id: snowflake, message-id: snowflake) -> result<option<message-full>, host-error>;
+	channel-messages-full: func(channel-id: snowflake, limit: u32) -> result<list<message-full>, host-error>;
+	send-as-user: func(msg: outgoing-message) -> result<_, host-error>;
+}
+
+interface hooks {
+	use types.{snowflake};
+	use model.{view-tree, ui-context, view-event, view-reply, message-full, rich-tree, message-patch, emoji-ref, pick-verdict};
+
+	render-view: func(point: string, context: ui-context) -> option<view-tree>;
+	on-view-event: func(event: view-event) -> view-reply;
+	on-menu-item: func(menu: string, key: string, context: ui-context);
+	intercept-message: func(msg: message-full, content: rich-tree) -> message-patch;
+	on-timer: func(id: u64, tag: string);
+	on-emoji-pick: func(emoji: emoji-ref, channel-id: snowflake) -> pick-verdict;
+}
+
 world plugin {
 	import host;
 	export guest;
+}
+
+world plugin-ext {
+	import host;
+	import ui;
+	import client;
+	export guest;
+	export hooks;
 }

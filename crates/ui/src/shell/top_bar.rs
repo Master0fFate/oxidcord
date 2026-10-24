@@ -8,6 +8,8 @@ use gpui::{
 use gpui_component::Sizable as _;
 use gpui_component::input::{Input, InputEvent, InputState};
 
+use plugin_host::ViewContext;
+
 use super::transition::Pairs;
 use crate::components::{Divider, IconButton, StatusDot};
 use crate::i18n::Translate as _;
@@ -42,6 +44,7 @@ pub enum TopBarTitle {
 
 pub struct TopBar {
 	title: TopBarTitle,
+	plugin_context: ViewContext,
 	members_visible: bool,
 	notifications_muted: bool,
 	search: Entity<InputState>,
@@ -76,6 +79,7 @@ impl TopBar {
 		.detach();
 		Self {
 			title,
+			plugin_context: ViewContext::default(),
 			members_visible: true,
 			notifications_muted: false,
 			search,
@@ -87,6 +91,13 @@ impl TopBar {
 	pub fn set_title(&mut self, title: TopBarTitle, cx: &mut Context<Self>) {
 		self.title = title;
 		cx.notify();
+	}
+
+	pub fn set_plugin_context(&mut self, context: ViewContext, cx: &mut Context<Self>) {
+		if self.plugin_context != context {
+			self.plugin_context = context;
+			cx.notify();
+		}
 	}
 
 	pub fn set_members_visible(&mut self, visible: bool, cx: &mut Context<Self>) {
@@ -167,6 +178,17 @@ impl Render for TopBar {
 						.cutout(theme.background_primary),
 				),
 		};
+		let header_items = (!direct)
+			.then(|| super::plugins::contextual("channel-header", self.plugin_context, cx))
+			.filter(|items| !items.is_empty())
+			.map(|items| {
+				div()
+					.flex()
+					.flex_none()
+					.items_center()
+					.gap(theme.space_8)
+					.children(items)
+			});
 		let notifications = if self.notifications_muted {
 			IconKind::BellOff
 		} else {
@@ -207,6 +229,7 @@ impl Render for TopBar {
 			.border_b_1()
 			.border_color(theme.background_tertiary)
 			.child(leading)
+			.children(header_items)
 			.child(
 				div()
 					.flex()

@@ -4,17 +4,18 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-	Anchor, AnyElement, App, Context, Entity, FontWeight, InteractiveElement as _, IntoElement, MouseButton,
-	ParentElement as _, Pixels, Point, Render, Styled as _, Subscription, Task, Window, anchored, deferred,
-	div, px,
+	Anchor, AnyElement, App, Context, Entity, EventEmitter, FontWeight, InteractiveElement as _, IntoElement,
+	MouseButton, ParentElement as _, Pixels, Point, Render, SharedString, Styled as _, Subscription, Task,
+	Window, anchored, deferred, div, px,
 };
-use plugin_host::api::UiTree;
-use plugin_host::{Permission, PluginDebug, SlotEntry};
+use plugin_host::api::model::ViewTree;
+use plugin_host::mounts::Overlay;
+use plugin_host::{Permission, PluginDebug, ViewContext};
 use session::Command;
 use state::Changes;
 
-use super::bridge::PluginBridge;
-use super::slot_renderer::{Scope, render_column};
+use super::bridge::{PluginBridge, Surface};
+use super::view::{Ctx, Scope};
 use crate::components::IconButton;
 use crate::data::{Data, DataEvent};
 use crate::i18n::Translate as _;
@@ -48,15 +49,30 @@ struct PendingGrant {
 struct Toast {
 	id: u64,
 	plugin: Arc<str>,
-	tree: UiTree,
+	tree: Rc<ViewTree>,
+	legacy: bool,
 }
 
-type Shown = Option<(Arc<str>, UiTree)>;
+struct Modal {
+	plugin: Arc<str>,
+	title: SharedString,
+	tree: Rc<ViewTree>,
+}
+
+pub enum PluginUiEvent {
+	Insert(String),
+	PageChanged,
+}
+
+type Shown = Option<(Arc<str>, Rc<ViewTree>)>;
+type Page = (Arc<str>, SharedString);
 
 pub struct PluginUi {
 	data: Entity<Data>,
 	toasts: Vec<Toast>,
-	toast_seen: HashMap<Arc<str>, UiTree>,
+	toast_seen: HashMap<Arc<str>, Rc<ViewTree>>,
+	modal: Option<Modal>,
+	page: Option<Page>,
 	next_toast: u64,
 	dismissed_modal: Shown,
 	dismissed_popover: Shown,
@@ -80,6 +96,8 @@ impl PluginUi {
 			data,
 			toasts: Vec::new(),
 			toast_seen: HashMap::new(),
+			modal: None,
+			page: None,
 			next_toast: 0,
 			dismissed_modal: None,
 			dismissed_popover: None,
@@ -97,6 +115,27 @@ impl PluginUi {
 
 	pub fn right_open(&self) -> bool {
 		self.right_open
+	}
+
+	pub fn page(&self) -> Option<&Page> {
+		self.page.as_ref()
+	}
+
+	pub fn toggle_page(&mut self, target: Page, cx: &mut Context<Self>) {
+		self.page = if self.page.as_ref() == Some(&target) {
+			None
+		} else {
+			Some(target)
+		};
+		cx.emit(PluginUiEvent::PageChanged);
+		cx.notify();
+	}
+
+	pub fn close_page(&mut self, cx: &mut Context<Self>) {
+		if self.page.take().is_some() {
+			cx.emit(PluginUiEvent::PageChanged);
+			cx.notify();
+		}
 	}
 
 	pub fn toggle_right(&mut self, cx: &mut Context<Self>) {
@@ -176,6 +215,10 @@ impl PluginUi {
 	}
 
 	pub fn dismiss_top(&mut self, cx: &mut Context<Self>) -> bool {
+		if self.modal.take().is_some() {
+			cx.notify();
+			return true;
+		}
 		if let Some(entry) = self.visible("modal", &self.dismissed_modal, cx) {
 			self.dismissed_modal = Some((entry.plugin_id, entry.tree));
 		} else if let Some(entry) = self.visible("popover", &self.dismissed_popover, cx) {
@@ -199,9 +242,9 @@ impl PluginUi {
 		cx.notify();
 	}
 
-	fn visible(&self, slot: &str, dismissed: &Shown, cx: &App) -> Option<SlotEntry> {
+	fn visible(&self, slot: &str, dismissed: &Shown, cx: &App) -> Option<Surface> {
 		cx.global::<PluginBridge>()
-			.entries(slot, cx)
+			.slot_entries(slot, cx)
 			.iter()
 			.find(|entry| {
 				dismissed
@@ -219,10 +262,86 @@ impl PluginUi {
 		if changes.plugin_slots {
 			self.sync_toasts(cx);
 			self.sync_dismissed(cx);
+			self.drain_overlays(cx);
+			self.sync_page(cx);
 		}
 		if changes.plugins || changes.plugin_slots {
 			cx.notify();
 		}
+	}
+
+	fn sync_page(&mut self, cx: &mut Context<Self>) {
+		let Some((plugin, key)) = &self.page else {
+			return;
+		};
+		let present = cx
+			.global::<PluginBridge>()
+			.mounts("main-view", cx)
+			.iter()
+			.any(|surface| surface.plugin_id == *plugin && surface.key == *key);
+		if !present {
+			self.close_page(cx);
+		}
+	}
+
+	fn drain_overlays(&mut self, cx: &mut Context<Self>) {
+		let overlays = self.data.read(cx).session().plugin_mounts().take_overlays();
+		for overlay in overlays {
+			match overlay {
+				Overlay::Toast { plugin_id, tree, ttl } => {
+					self.push_toast(plugin_id, Rc::new(tree), false, ttl, cx)
+				}
+				Overlay::Modal {
+					plugin_id,
+					title: Some(title),
+					tree,
+				} => {
+					self.modal = Some(Modal {
+						plugin: plugin_id,
+						title: title.into(),
+						tree: Rc::new(tree),
+					});
+				}
+				Overlay::Modal {
+					plugin_id,
+					title: None,
+					tree,
+				} => {
+					if let Some(modal) = self.modal.as_mut().filter(|modal| modal.plugin == plugin_id) {
+						modal.tree = Rc::new(tree);
+					}
+				}
+				Overlay::Close { plugin_id } => {
+					if self.modal.as_ref().is_some_and(|modal| modal.plugin == plugin_id) {
+						self.modal = None;
+					}
+				}
+				Overlay::Insert { text, .. } => cx.emit(PluginUiEvent::Insert(text)),
+			}
+		}
+	}
+
+	fn push_toast(
+		&mut self,
+		plugin: Arc<str>,
+		tree: Rc<ViewTree>,
+		legacy: bool,
+		ttl: Duration,
+		cx: &mut Context<Self>,
+	) {
+		let id = self.next_toast;
+		self.next_toast += 1;
+		self.toasts.push(Toast {
+			id,
+			plugin,
+			tree,
+			legacy,
+		});
+		cx.spawn(async move |this, cx| {
+			cx.background_executor().timer(ttl).await;
+			this.update(cx, |this, cx| this.dismiss_toast(id, cx)).ok();
+		})
+		.detach();
 	}
 
 	fn sync_dismissed(&mut self, cx: &mut Context<Self>) {
@@ -231,7 +350,7 @@ impl PluginUi {
 			("modal", &mut self.dismissed_modal),
 			("popover", &mut self.dismissed_popover),
 		] {
-			let entries = bridge.entries(slot, cx);
+			let entries = bridge.slot_entries(slot, cx);
 			if shown
 				.as_ref()
 				.is_some_and(|(owner, _)| !entries.iter().any(|entry| entry.plugin_id == *owner))
@@ -242,27 +361,26 @@ impl PluginUi {
 	}
 
 	fn sync_toasts(&mut self, cx: &mut Context<Self>) {
-		let entries = cx.global::<PluginBridge>().entries("toast", cx);
+		let entries = cx.global::<PluginBridge>().slot_entries("toast", cx);
 		self.toast_seen
 			.retain(|plugin, _| entries.iter().any(|entry| entry.plugin_id == *plugin));
 		for entry in entries.iter() {
-			if self.toast_seen.get(&entry.plugin_id) == Some(&entry.tree) {
+			if self
+				.toast_seen
+				.get(&entry.plugin_id)
+				.is_some_and(|seen| *seen == entry.tree)
+			{
 				continue;
 			}
 			self.toast_seen
-				.insert(Arc::clone(&entry.plugin_id), entry.tree.clone());
-			let id = self.next_toast;
-			self.next_toast += 1;
-			self.toasts.push(Toast {
-				id,
-				plugin: Arc::clone(&entry.plugin_id),
-				tree: entry.tree.clone(),
-			});
-			cx.spawn(async move |this, cx| {
-				cx.background_executor().timer(TOAST_LIFETIME).await;
-				this.update(cx, |this, cx| this.dismiss_toast(id, cx)).ok();
-			})
-			.detach();
+				.insert(Arc::clone(&entry.plugin_id), Rc::clone(&entry.tree));
+			self.push_toast(
+				Arc::clone(&entry.plugin_id),
+				Rc::clone(&entry.tree),
+				true,
+				TOAST_LIFETIME,
+				cx,
+			);
 		}
 	}
 
@@ -293,7 +411,7 @@ impl PluginUi {
 		self.pending = waiting;
 	}
 
-	fn panel(theme: &Theme, name: gpui::SharedString) -> gpui::Div {
+	fn panel(theme: &Theme, name: SharedString) -> gpui::Div {
 		div()
 			.flex()
 			.flex_col()
@@ -314,15 +432,18 @@ impl PluginUi {
 	}
 
 	fn modal_layer(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
-		let entry = self.visible("modal", &self.dismissed_modal, cx)?;
-		let name = cx.global::<PluginBridge>().name_of(&entry.plugin_id, cx);
-		let scope = Scope {
-			slot: "modal",
-			plugin: Arc::clone(&entry.plugin_id),
-			payload: gpui::SharedString::default(),
-			compact: None,
+		let (name, body) = match &self.modal {
+			Some(modal) => {
+				let scope = Scope::mount(&modal.plugin, "modal", "", ViewContext::default());
+				(modal.title.clone(), Ctx::new(&modal.tree, scope).column(theme))
+			}
+			None => {
+				let entry = self.visible("modal", &self.dismissed_modal, cx)?;
+				let name = cx.global::<PluginBridge>().name_of(&entry.plugin_id, cx);
+				let scope = Scope::slot(&entry.plugin_id, "modal", "");
+				(name, Ctx::new(&entry.tree, scope).column(theme))
+			}
 		};
-		let body = render_column(&entry.tree, &scope, theme);
 		Some(
 			div()
 				.absolute()
@@ -355,13 +476,8 @@ impl PluginUi {
 		let entry = self.visible("popover", &self.dismissed_popover, cx)?;
 		let at = self.anchor?;
 		let name = cx.global::<PluginBridge>().name_of(&entry.plugin_id, cx);
-		let scope = Scope {
-			slot: "popover",
-			plugin: Arc::clone(&entry.plugin_id),
-			payload: gpui::SharedString::default(),
-			compact: None,
-		};
-		let body = render_column(&entry.tree, &scope, theme);
+		let scope = Scope::slot(&entry.plugin_id, "popover", "");
+		let body = Ctx::new(&entry.tree, scope).column(theme);
 		Some(
 			deferred(
 				anchored()
@@ -395,13 +511,12 @@ impl PluginUi {
 			.map(|toast| {
 				let id = toast.id;
 				let name = cx.global::<PluginBridge>().name_of(&toast.plugin, cx);
-				let scope = Scope {
-					slot: "toast",
-					plugin: Arc::clone(&toast.plugin),
-					payload: gpui::SharedString::default(),
-					compact: None,
+				let scope = if toast.legacy {
+					Scope::slot(&toast.plugin, "toast", "")
+				} else {
+					Scope::mount(&toast.plugin, "toast", "", ViewContext::default())
 				};
-				let body = render_column(&toast.tree, &scope, theme);
+				let body = Ctx::new(&toast.tree, scope).column(theme);
 				Self::panel(theme, name)
 					.w(rem(TOAST_WIDTH))
 					.relative()
@@ -431,6 +546,8 @@ impl PluginUi {
 		)
 	}
 }
+
+impl EventEmitter<PluginUiEvent> for PluginUi {}
 
 impl Render for PluginUi {
 	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {

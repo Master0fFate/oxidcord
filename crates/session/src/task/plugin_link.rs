@@ -183,7 +183,9 @@ impl Core {
 			})
 			.collect();
 		let mut jobs = Vec::new();
+		let intercept = self.flags.intercept;
 		let mut state = self.state.write();
+		let me = state.current_user_id();
 		for (message, mut rendered) in parsed {
 			let channel_id = message.channel_id;
 			let deleted = state
@@ -200,6 +202,8 @@ impl Core {
 					message: Arc::clone(&message),
 					epoch: revision,
 					deleted,
+					mine: me == Some(message.author.id),
+					intercept,
 				});
 			}
 			state.apply(&Event::Local(LocalEvent::MessageRendered {
@@ -527,6 +531,38 @@ impl Core {
 				self.plugin_task("plugin action", true, move |hub| {
 					hub.manager.ui_action(&plugin_id, &id, &payload)?;
 					Ok(())
+				});
+			}
+			Command::PluginViewEvent { plugin_id, event } => {
+				self.plugin_task("plugin view event", true, move |hub| {
+					hub.manager.view_event(&plugin_id, event)?;
+					Ok(())
+				});
+			}
+			Command::PluginMenuItem {
+				plugin_id,
+				menu,
+				key,
+				context,
+			} => self.plugin_task("plugin menu item", true, move |hub| {
+				hub.manager.menu_item(&plugin_id, &menu, &key, context)?;
+				Ok(())
+			}),
+			Command::PluginRenderView { point, context } => {
+				let hub = Arc::clone(&self.hub);
+				let internal = self.internal.clone();
+				self.queue_plugin_job(move || {
+					if hub.manager.render_views(&point, context) {
+						let _ = internal.send(Internal::SlotsChanged);
+					}
+				});
+			}
+			Command::PluginEmojiPick { emoji, channel_id } => {
+				let hub = Arc::clone(&self.hub);
+				let internal = self.internal.clone();
+				self.queue_plugin_job(move || {
+					hub.manager.pick_emoji(&emoji, channel_id.get());
+					let _ = internal.send(Internal::SlotsChanged);
 				});
 			}
 			Command::PluginEnable(id) => self.plugin_task("enable plugin", true, move |hub| {

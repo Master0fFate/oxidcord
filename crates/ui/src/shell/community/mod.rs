@@ -112,6 +112,7 @@ pub struct Community {
 	floating: Option<Floating>,
 	settings: Option<Entity<ServerSettings>>,
 	seen_rejection: u64,
+	plugin_slot: ComposerSlot,
 	_subscriptions: Vec<Subscription>,
 }
 
@@ -194,6 +195,7 @@ impl Community {
 			floating: None,
 			settings: None,
 			seen_rejection: 0,
+			plugin_slot: ComposerSlot::Main,
 			_subscriptions: subscriptions,
 		}
 	}
@@ -234,6 +236,13 @@ impl Community {
 
 	pub fn forum_view(&self, cx: &gpui::App) -> Option<Entity<ForumView>> {
 		self.forum.read(cx).channel().map(|_| self.forum.clone())
+	}
+
+	pub fn plugin_composer(&self, cx: &gpui::App) -> Entity<Composer> {
+		match (self.plugin_slot, self.thread_panel(cx)) {
+			(ComposerSlot::Thread, Some(panel)) => panel.read(cx).composer().clone(),
+			_ => self.main_composer.clone(),
+		}
 	}
 
 	pub fn thread_panel(&self, cx: &gpui::App) -> Option<Entity<ThreadPanel>> {
@@ -458,6 +467,20 @@ impl Community {
 							},
 							cx,
 						),
+					}
+					cx.notify();
+				}
+				PickerEvent::PluginPick { emoji, channel } => {
+					this.floating = None;
+					if let PickerTarget::Composer(slot) = target {
+						this.plugin_slot = slot;
+						this.send(
+							Command::PluginEmojiPick {
+								emoji: emoji.clone(),
+								channel_id: *channel,
+							},
+							cx,
+						);
 					}
 					cx.notify();
 				}

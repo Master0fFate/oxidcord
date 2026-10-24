@@ -15,7 +15,7 @@ use state::State;
 
 use super::community::add_server;
 use super::community::menus::guild_menu_for;
-use super::plugins::PluginMenu as _;
+use super::plugins::{self, MenuTarget, PluginMenu as _};
 use super::transition::Pairs;
 use crate::components::{Divider, MentionBadge, PillState, UnreadPill, tooltip};
 use crate::data::Data;
@@ -399,7 +399,7 @@ impl ServerRail {
 			acronym: acronym(&guild.name),
 		};
 		let menu = guild_menu_for(id)
-			.plugin_items("server-context-menu", id.to_string(), cx)
+			.plugin_items("server-context-menu", MenuTarget::server(id), cx)
 			.build();
 		let target = Target::Guild(id.get());
 		let tile = self
@@ -684,6 +684,8 @@ impl Render for ServerRail {
 				}
 			})
 			.tooltip(tooltip(cx.t("rail-explore")));
+		let page = plugins::open_page(cx);
+		let apps = plugins::app_nav(page.as_ref(), cx);
 		div()
 			.id("server-rail")
 			.flex()
@@ -706,6 +708,15 @@ impl Render for ServerRail {
 			.children(rows)
 			.child(add)
 			.child(explore)
+			.when(!apps.is_empty(), |rail| {
+				rail.child(
+					Divider::horizontal()
+						.thickness(px(2.))
+						.length(theme.space_32)
+						.color(theme.background_primary),
+				)
+				.children(apps)
+			})
 	}
 }
 

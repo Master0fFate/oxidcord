@@ -313,6 +313,10 @@ plugin-panel-toggle = Plugin Panel
 plugin-toast-dismiss = Dismiss
 plugin-via = via { $name }
 plugin-edited-by = Edited by { $name }
+plugin-hidden-by = Hidden by { $name }
+plugin-collapsed-by = Collapsed by { $name }
+plugin-show = Show
+plugin-hide-again = Hide
 plugin-slot-empty = This plugin page is no longer available.
 
 plugin-tab-installed = Installed
@@ -387,6 +391,18 @@ perm-actions-open-url = Open links in your browser.
 perm-storage = Keep its own data on this computer.
 perm-net-fetch = Contact the network hosts listed below.
 perm-ui-slots = Add buttons, panels and commands to the interface.
+perm-ui-mount = Add pages, panels, menu items and notices to the interface.
+perm-message-intercept = Change how received messages look, hide them or add notes under them.
+perm-message-retain = Keep deleted messages visible in the chat.
+perm-composer = Put text into the message box when you pick something.
+perm-context-expressions = Read the emoji and stickers your account can use.
+perm-actions-send-user = Send messages as you without a plugin marker.
+perm-high = High risk
+perm-image-hosts = Image hosts
+perm-low-summary = { $count ->
+    [one] 1 low risk permission
+   *[other] { $count } low risk permissions
+}
 
 themes-builtin = Built In
 themes-from-plugins = From Plugins

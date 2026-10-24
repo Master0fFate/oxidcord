@@ -5,7 +5,7 @@ pub mod pages;
 mod parts;
 mod picker;
 mod profile_data;
-mod rich;
+pub(crate) mod rich;
 mod status;
 
 use gpui::{

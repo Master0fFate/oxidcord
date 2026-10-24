@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use gateway::{Gateway, GatewayConfig, GatewayHandle};
 use plugin_host::catalog::{Catalog, ThemeCatalog};
-use plugin_host::{CommandEntry, Grants, PluginInfo, PluginManager, RuntimeConfig, Slots};
+use plugin_host::{CommandEntry, Grants, Mounts, Patches, PluginInfo, PluginManager, RuntimeConfig, Slots};
 use protocol::Token;
 use rest::{RestClient, RestConfig};
 use state::{SharedState, State};
@@ -170,6 +170,14 @@ impl Session {
 
 	pub fn plugin_slots(&self) -> Arc<Slots> {
 		Arc::clone(self.hub.manager.slots())
+	}
+
+	pub fn plugin_mounts(&self) -> Arc<Mounts> {
+		Arc::clone(self.hub.manager.runtime().mounts())
+	}
+
+	pub fn plugin_patches(&self) -> Arc<Patches> {
+		Arc::clone(self.hub.manager.runtime().patches())
 	}
 
 	pub fn plugin_commands(&self) -> Vec<(String, CommandEntry)> {

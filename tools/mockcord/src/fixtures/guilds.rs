@@ -529,19 +529,24 @@ fn build_members(builder: &mut Builder, index: usize, guild_id: u64, roles: &Rol
 }
 
 fn build_emojis(builder: &mut Builder, owner: &User) -> Vec<Emoji> {
-	[("pepe_ok", false), ("blob_wave", false), ("party_parrot", true)]
-		.into_iter()
-		.map(|(name, animated)| Emoji {
-			id: Some(Snowflake(builder.ids.next())),
-			name: Some(name.to_owned()),
-			roles: Vec::new(),
-			user: Some(owner.clone()),
-			require_colons: Some(true),
-			managed: Some(false),
-			animated: Some(animated),
-			available: Some(true),
-		})
-		.collect()
+	[
+		("pepe_ok", false, true),
+		("blob_wave", false, true),
+		("party_parrot", true, true),
+		("retired_blob", false, false),
+	]
+	.into_iter()
+	.map(|(name, animated, available)| Emoji {
+		id: Some(Snowflake(builder.ids.next())),
+		name: Some(name.to_owned()),
+		roles: Vec::new(),
+		user: Some(owner.clone()),
+		require_colons: Some(true),
+		managed: Some(false),
+		animated: Some(animated),
+		available: Some(available),
+	})
+	.collect()
 }
 
 fn build_presences(builder: &mut Builder, members: &[Member]) -> Vec<Presence> {

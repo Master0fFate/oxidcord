@@ -2,32 +2,29 @@ use std::collections::BTreeSet;
 use std::rc::Rc;
 
 use gpui::{
-	AnyElement, App, AppContext as _, Context, FontWeight, IntoElement, ParentElement as _, Render,
-	Styled as _, Window, div, prelude::FluentBuilder as _,
+	AnyElement, App, AppContext as _, Context, FontWeight, InteractiveElement as _, IntoElement,
+	ParentElement as _, Render, StatefulInteractiveElement as _, Styled as _, Window, div,
+	prelude::FluentBuilder as _,
 };
 use gpui_component::WindowExt as _;
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::checkbox::Checkbox;
-use plugin_host::{Permission, PermissionRequest, Trust};
+use plugin_host::{Permission, PermissionRequest, Tier, Trust};
 
 use super::widgets::{chip, note, section_label};
 use crate::i18n::{ArgValue, Translate as _};
+use crate::icons::{Icon, IconKind};
 use crate::theme::{Theme, rem};
 
 const DIALOG_WIDTH: f32 = 520.;
-const SENSITIVE: [Permission; 5] = [
-	Permission::ContextPrivate,
-	Permission::MessageSend,
-	Permission::ActionsSend,
-	Permission::NetFetch,
-	Permission::MessageFilter,
-];
+const CHEVRON: f32 = 14.;
 
 pub struct PromptSpec {
 	pub name: String,
 	pub version: String,
 	pub permissions: Vec<PermissionRequest>,
 	pub hosts: Vec<String>,
+	pub image_hosts: Vec<String>,
 	pub trust: Option<Trust>,
 }
 
@@ -69,6 +66,7 @@ pub fn open(spec: PromptSpec, on_decide: OnDecide, window: &mut Window, cx: &mut
 struct PermissionPrompt {
 	spec: PromptSpec,
 	choosing: bool,
+	show_low: bool,
 	allowed: BTreeSet<Permission>,
 	allowed_hosts: BTreeSet<String>,
 	on_decide: OnDecide,
@@ -81,10 +79,11 @@ impl PermissionPrompt {
 			.iter()
 			.map(|request| request.permission)
 			.collect();
-		let allowed_hosts = spec.hosts.iter().cloned().collect();
+		let allowed_hosts = spec.hosts.iter().chain(&spec.image_hosts).cloned().collect();
 		Self {
 			spec,
 			choosing: false,
+			show_low: false,
 			allowed,
 			allowed_hosts,
 			on_decide,
@@ -103,6 +102,7 @@ impl PermissionPrompt {
 			.spec
 			.hosts
 			.iter()
+			.chain(&self.spec.image_hosts)
 			.filter(|host| everything || self.allowed_hosts.contains(*host))
 			.cloned()
 			.collect();
@@ -117,7 +117,11 @@ impl PermissionPrompt {
 		cx: &mut Context<Self>,
 	) -> AnyElement {
 		let permission = request.permission;
-		let sensitive = SENSITIVE.contains(&permission);
+		let warning = match permission.tier() {
+			Tier::Sensitive => Some((cx.t("perm-sensitive"), theme.danger)),
+			Tier::High => Some((cx.t("perm-high"), theme.warning)),
+			Tier::Low | Tier::Medium => None,
+		};
 		div()
 			.flex()
 			.items_start()
@@ -155,8 +159,8 @@ impl PermissionPrompt {
 									.text_color(theme.text_normal)
 									.child(cx.t(&format!("perm-{}", permission.as_str()))),
 							)
-							.when(sensitive, |line| {
-								line.child(chip(cx.t("perm-sensitive"), theme.warning, theme))
+							.when_some(warning, |line, (label, color)| {
+								line.child(chip(label, color, theme))
 							}),
 					)
 					.when(!request.reason.is_empty(), |column| {
@@ -209,8 +213,37 @@ impl PermissionPrompt {
 			.into_any_element()
 	}
 
+	fn low_summary(&self, count: usize, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+		let open = self.show_low || self.choosing;
+		div()
+			.id("perm-low")
+			.flex()
+			.items_center()
+			.gap(theme.space_8)
+			.cursor_pointer()
+			.text_size(theme.font_sm)
+			.text_color(theme.text_muted)
+			.on_click(cx.listener(|this, _, _, cx| {
+				this.show_low = !this.show_low;
+				cx.notify();
+			}))
+			.child(
+				Icon::new(if open {
+					IconKind::ChevronDown
+				} else {
+					IconKind::ChevronRight
+				})
+				.size(rem(CHEVRON))
+				.color(theme.text_muted),
+			)
+			.child(cx.t_args("perm-low-summary", &[("count", ArgValue::from(count))]))
+			.into_any_element()
+	}
+
 	fn footer(&self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
-		let asks = !self.spec.permissions.is_empty() || !self.spec.hosts.is_empty();
+		let asks = !self.spec.permissions.is_empty()
+			|| !self.spec.hosts.is_empty()
+			|| !self.spec.image_hosts.is_empty();
 		let cancel = Button::new("perm-cancel")
 			.label(cx.t("action-cancel"))
 			.on_click(|_, window, cx| window.close_dialog(cx));
@@ -267,15 +300,33 @@ impl PermissionPrompt {
 impl Render for PermissionPrompt {
 	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
-		let rows: Vec<AnyElement> = self
-			.spec
-			.permissions
-			.iter()
+		let mut ordered: Vec<&PermissionRequest> = self.spec.permissions.iter().collect();
+		ordered.sort_by_key(|request| std::cmp::Reverse(request.permission.tier()));
+		let (low, raised): (Vec<&PermissionRequest>, Vec<&PermissionRequest>) = ordered
+			.into_iter()
+			.partition(|request| request.permission.tier() == Tier::Low);
+		let mut rows: Vec<AnyElement> = raised
+			.into_iter()
 			.map(|request| self.permission_row(request, &theme, cx))
 			.collect();
+		if !low.is_empty() {
+			rows.push(self.low_summary(low.len(), &theme, cx));
+			if self.show_low || self.choosing {
+				rows.extend(
+					low.into_iter()
+						.map(|request| self.permission_row(request, &theme, cx)),
+				);
+			}
+		}
 		let hosts: Vec<AnyElement> = self
 			.spec
 			.hosts
+			.iter()
+			.map(|host| self.host_row(host, &theme, cx))
+			.collect();
+		let image_hosts: Vec<AnyElement> = self
+			.spec
+			.image_hosts
 			.iter()
 			.map(|host| self.host_row(host, &theme, cx))
 			.collect();
@@ -302,7 +353,7 @@ impl Render for PermissionPrompt {
 							.map(|trust| chip(cx.t(trust_key(trust)), trust_color(trust, &theme), &theme)),
 					),
 			)
-			.child(if rows.is_empty() && hosts.is_empty() {
+			.child(if rows.is_empty() && hosts.is_empty() && image_hosts.is_empty() {
 				note(cx.t("perm-none"), &theme)
 			} else {
 				div()
@@ -321,6 +372,16 @@ impl Render for PermissionPrompt {
 						.gap(theme.space_8)
 						.child(section_label("perm-hosts", &theme, cx))
 						.children(hosts),
+				)
+			})
+			.when(!image_hosts.is_empty(), |body| {
+				body.child(
+					div()
+						.flex()
+						.flex_col()
+						.gap(theme.space_8)
+						.child(section_label("perm-image-hosts", &theme, cx))
+						.children(image_hosts),
 				)
 			})
 			.child(footer)

@@ -11,12 +11,13 @@ use gpui::{
 };
 use gpui_component::input::{Escape, InputEvent, Textarea, TextareaState};
 use media::SizeHint;
+use plugin_host::ViewContext;
 use protocol::{ChannelType, Snowflake};
 use rest::UploadFile;
 use session::Command;
 
 use super::pickers::PickerTab;
-use super::plugins::{command_list, composer_toolbar, parse_command};
+use super::plugins::{self, command_list, composer_toolbar, parse_command};
 use crate::components::{Avatar, IconButton};
 use crate::data::Data;
 use crate::emoji;
@@ -866,6 +867,12 @@ impl Render for Composer {
 		let chips = self.file_chips(&theme, cx);
 		let popup = self.popup(&theme, cx);
 		let reply_bar = self.reply_bar(&theme, cx);
+		let plugin_context = ViewContext {
+			guild_id: self.guild.map(Snowflake::get),
+			channel_id: self.channel.map(Snowflake::get),
+			..ViewContext::default()
+		};
+		let above = plugins::contextual("composer-above", plugin_context, cx);
 		div()
 			.relative()
 			.flex()
@@ -887,6 +894,16 @@ impl Render for Composer {
 				style.bg(with_alpha(cx.global::<Theme>().brand, 0.12))
 			})
 			.children(popup)
+			.when(!above.is_empty(), |composer| {
+				composer.child(
+					div()
+						.flex()
+						.flex_col()
+						.gap(theme.space_4)
+						.pb(theme.space_8)
+						.children(above),
+				)
+			})
 			.child(
 				div().flex().flex_col().child(div().children(reply_bar)).child(
 					div()
@@ -945,7 +962,7 @@ impl Render for Composer {
 										.h(rem(44.))
 										.pr(theme.space_8)
 										.gap(rem(2.))
-										.children(composer_toolbar(cx))
+										.children(composer_toolbar(plugin_context, cx))
 										.child(
 											IconButton::new("composer-gif", IconKind::Gif)
 												.icon_size(rem(24.))

@@ -62,6 +62,10 @@ impl Global for SkinTone {}
 
 pub enum PickerEvent {
 	Emoji(EmojiChoice),
+	PluginPick {
+		emoji: plugin_host::api::model::EmojiRef,
+		channel: Snowflake,
+	},
 	Sent,
 }
 
@@ -71,6 +75,7 @@ pub struct Picker {
 	channel: Snowflake,
 	share_usage: bool,
 	full: bool,
+	plugin_pick: bool,
 	tab: PickerTab,
 	search: Entity<InputState>,
 	query: String,
@@ -110,12 +115,14 @@ impl Picker {
 		let tone = cx
 			.try_global::<SkinTone>()
 			.map_or_else(|| Rc::new(Cell::new(0)), |tone| tone.0.clone());
+		let plugin_pick = data.read(cx).session().plugins().has_emoji_pick();
 		let mut picker = Self {
 			data,
 			guild,
 			channel,
 			share_usage,
 			full,
+			plugin_pick,
 			tab,
 			search,
 			query: String::new(),

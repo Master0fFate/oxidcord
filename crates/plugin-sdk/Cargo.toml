@@ -11,3 +11,6 @@ name = "oxidcord_plugin_sdk"
 
 [dependencies]
 wit-bindgen.workspace = true
+
+[features]
+ext = []

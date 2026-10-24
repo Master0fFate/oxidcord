@@ -92,7 +92,8 @@ impl<'a> Builder<'a> {
 					});
 					self.inline(children, &next);
 				}
-				Node::Spoiler(children) => self.inline(children, style),
+				Node::Spoiler(children) | Node::Styled { children, .. } => self.inline(children, style),
+				Node::InlineImage { alt, .. } => self.current.push(alt, style, false),
 				Node::Code(code) => {
 					let next = merge(style, |next| {
 						next.background_color = Some(with_alpha(self.theme.background_tertiary, 0.6))

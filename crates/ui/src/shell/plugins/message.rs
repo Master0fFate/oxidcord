@@ -1,16 +1,16 @@
-use std::rc::Rc;
-
 use gpui::{
-	AnyElement, App, InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
+	AnyElement, App, Hsla, InteractiveElement as _, IntoElement, ParentElement as _, SharedString,
 	StatefulInteractiveElement as _, Styled as _, div,
 };
-use plugin_host::SlotEntry;
-use plugin_host::api::{UiBox, UiNode, UiTree};
+use plugin_host::ViewContext;
+use plugin_host::api::model::{EmbedAction, EmbedCard, NodeKind, Tone, Visibility};
 use protocol::Snowflake;
 use state::MessageView;
 
-use super::bridge::PluginBridge;
-use super::slot_renderer::{MESSAGE_ACTION, Scope, SlotHost, render_node};
+use super::bridge::{PatchSet, Patched, PluginBridge, Surface};
+use super::chrome::compact_row;
+use super::icon::PluginIcon;
+use super::view::{Ctx, MESSAGE_ACTION, Scope, embed_card, resolve};
 use crate::components::tooltip;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
@@ -22,55 +22,59 @@ const CAPTION_ICON: f32 = 12.;
 
 type Part = (usize, Option<u64>);
 
-fn entries(slot: &str, cx: &App) -> Rc<Vec<SlotEntry>> {
-	cx.global::<PluginBridge>().entries(slot, cx)
-}
-
-pub fn message_actions(message: Snowflake, cx: &App) -> Vec<AnyElement> {
-	let host = SlotHost::new("message-action").compact(MESSAGE_ACTION);
-	if host.entries(cx).is_empty() {
-		return Vec::new();
+pub fn context_of(view: &MessageView) -> ViewContext {
+	let message = &view.message;
+	ViewContext {
+		guild_id: message.guild_id.map(Snowflake::get),
+		channel_id: Some(message.channel_id.get()),
+		message_id: Some(message.id.get()),
+		user_id: Some(message.author.id.get()),
 	}
-	host.payload(message.to_string())
-		.render(cx)
-		.into_iter()
-		.map(|(_, element)| element)
-		.collect()
 }
 
-fn box_of(node: &UiNode) -> Option<&UiBox> {
-	match node {
-		UiNode::Column(layout) | UiNode::Row(layout) => Some(layout),
+pub fn message_actions(view: &MessageView, cx: &App) -> Vec<AnyElement> {
+	let message = view.message.id;
+	compact_row(
+		"message-action",
+		MESSAGE_ACTION,
+		message.to_string().into(),
+		context_of(view),
+		cx,
+	)
+}
+
+fn children_of(kind: &NodeKind) -> Option<&[u32]> {
+	match kind {
+		NodeKind::Stack(stack) => Some(&stack.children),
 		_ => None,
 	}
 }
 
-fn target_of(layout: &UiBox) -> Option<u64> {
-	layout.id.as_deref()?.strip_prefix(TARGET_PREFIX)?.parse().ok()
+fn target_of(surface: &Surface, index: usize) -> Option<u64> {
+	let node = surface.tree.nodes.get(index)?;
+	children_of(&node.kind)?;
+	node.key.as_deref()?.strip_prefix(TARGET_PREFIX)?.parse().ok()
 }
 
-fn parts(tree: &UiTree) -> Vec<Part> {
+fn parts(surface: &Surface) -> Vec<Part> {
+	let tree = &surface.tree;
 	let mut parts = Vec::new();
 	for root in &tree.roots {
 		let index = *root as usize;
-		let Some(layout) = tree.nodes.get(index).and_then(box_of) else {
+		let Some(children) = tree.nodes.get(index).and_then(|node| children_of(&node.kind)) else {
 			parts.push((index, None));
 			continue;
 		};
-		if let Some(target) = target_of(layout) {
+		if let Some(target) = target_of(surface, index) {
 			parts.push((index, Some(target)));
 			continue;
 		}
-		let children: Vec<Part> = layout
-			.children
+		let targeted: Vec<Part> = children
 			.iter()
-			.map(|child| {
-				let child = *child as usize;
-				(child, tree.nodes.get(child).and_then(box_of).and_then(target_of))
-			})
+			.map(|child| (*child as usize, target_of(surface, *child as usize)))
 			.collect();
-		if children.iter().any(|(_, target)| target.is_some()) {
-			parts.extend(children);
+		if targeted.iter().any(|(_, target)| target.is_some()) {
+			parts.extend(targeted);
 		} else {
 			parts.push((index, None));
 		}
@@ -78,27 +82,18 @@ fn parts(tree: &UiTree) -> Vec<Part> {
 	parts
 }
 
-fn accessory_scope(entry: &SlotEntry, message: u64) -> Scope {
-	Scope {
-		slot: ACCESSORY_SLOT,
-		plugin: entry.plugin_id.clone(),
-		payload: message.to_string().into(),
-		compact: None,
-	}
-}
-
-fn accessories(message: Snowflake, theme: &Theme, cx: &App) -> Vec<AnyElement> {
-	let entries = entries(ACCESSORY_SLOT, cx);
+fn legacy_accessories(message: Snowflake, theme: &Theme, cx: &App) -> Vec<AnyElement> {
+	let surfaces = cx.global::<PluginBridge>().slot_entries(ACCESSORY_SLOT, cx);
 	let id = message.get();
 	let mut out = Vec::new();
-	for entry in entries.iter() {
-		for (index, target) in parts(&entry.tree) {
+	for surface in surfaces.iter() {
+		for (index, target) in parts(surface) {
 			if target.is_none_or(|target| target == id) {
-				let scope = accessory_scope(entry, id);
+				let scope = Scope::slot(&surface.plugin_id, ACCESSORY_SLOT, message.to_string());
 				out.push(
 					div()
 						.mt(theme.space_4)
-						.child(render_node(&entry.tree, index, &scope, theme))
+						.child(Ctx::new(&surface.tree, scope).node(index, false, theme))
 						.into_any_element(),
 				);
 			}
@@ -158,8 +153,17 @@ fn attribution(view: &MessageView, theme: &Theme, cx: &App) -> Option<AnyElement
 	)
 }
 
-pub fn extras(view: &MessageView, theme: &Theme, cx: &App) -> Vec<AnyElement> {
-	let mut out = accessories(view.message.id, theme, cx);
+pub fn extras(
+	view: &MessageView,
+	effects: Option<&PatchEffects>,
+	theme: &Theme,
+	cx: &App,
+) -> Vec<AnyElement> {
+	let mut out = legacy_accessories(view.message.id, theme, cx);
+	if let Some(effects) = effects {
+		out.extend(effects.accessories(view, theme));
+		out.extend(effects.annotations(theme, cx));
+	}
 	out.extend(attribution(view, theme, cx));
 	if view.failed
 		&& let Some(reason) = &view.failure_reason
@@ -188,4 +192,199 @@ pub fn author_badge(view: &MessageView, theme: &Theme) -> Option<AnyElement> {
 			.child(badge.clone())
 			.into_any_element(),
 	)
+}
+
+pub struct Veil {
+	pub plugin: SharedString,
+	pub reason: SharedString,
+	pub collapsed: bool,
+}
+
+pub struct PatchEffects {
+	set: Patched,
+}
+
+pub fn effects(message: Snowflake, cx: &App) -> Option<PatchEffects> {
+	if !cx.has_global::<PluginBridge>() {
+		return None;
+	}
+	cx.global::<PluginBridge>()
+		.patches(message.get(), cx)
+		.map(|set| PatchEffects { set })
+}
+
+impl PatchEffects {
+	fn set(&self) -> &PatchSet {
+		&self.set
+	}
+
+	pub fn veil(&self, cx: &App) -> Option<Veil> {
+		self.set().patches.iter().find_map(|patch| {
+			let (reason, collapsed) = match &patch.visibility {
+				Visibility::Shown => return None,
+				Visibility::Hidden(reason) => (reason, false),
+				Visibility::Collapsed(reason) => (reason, true),
+			};
+			Some(Veil {
+				plugin: cx.global::<PluginBridge>().name_of(&patch.plugin_id, cx),
+				reason: reason.clone().into(),
+				collapsed,
+			})
+		})
+	}
+
+	fn decoration<T>(&self, pick: impl Fn(&plugin_host::api::model::Decoration) -> Option<T>) -> Option<T> {
+		self.set()
+			.patches
+			.iter()
+			.filter_map(|patch| patch.decoration.as_ref())
+			.find_map(pick)
+	}
+
+	pub fn accent(&self, theme: &Theme) -> Option<Hsla> {
+		self.decoration(|decoration| decoration.accent.as_ref().and_then(|color| resolve(color, theme)))
+	}
+
+	pub fn background(&self, theme: &Theme) -> Option<Hsla> {
+		self.decoration(|decoration| {
+			decoration
+				.background
+				.as_ref()
+				.and_then(|color| resolve(color, theme))
+		})
+	}
+
+	pub fn faded(&self) -> bool {
+		self.decoration(|decoration| decoration.faded.then_some(()))
+			.is_some()
+	}
+
+	pub fn strike(&self) -> bool {
+		self.decoration(|decoration| decoration.strike.then_some(()))
+			.is_some()
+	}
+
+	pub fn hides_attachment(&self, id: Snowflake) -> bool {
+		self.set()
+			.patches
+			.iter()
+			.any(|patch| patch.hidden_attachments.contains(&id.get()))
+	}
+
+	pub fn touches_media(&self) -> bool {
+		self.set().patches.iter().any(|patch| {
+			!patch.hidden_attachments.is_empty()
+				|| patch.embeds.iter().any(|action| *action != EmbedAction::Keep)
+		})
+	}
+
+	pub fn embed_action(&self, index: usize) -> Option<&EmbedAction> {
+		self.set()
+			.patches
+			.iter()
+			.filter_map(|patch| patch.embeds.get(index))
+			.find(|action| **action != EmbedAction::Keep)
+	}
+
+	pub fn replacement_cards(&self, count: usize) -> Vec<&EmbedCard> {
+		let replaced = (0..count).filter_map(|index| match self.embed_action(index) {
+			Some(EmbedAction::Replace(card)) => Some(card),
+			_ => None,
+		});
+		replaced
+			.chain(
+				self.set()
+					.patches
+					.iter()
+					.flat_map(|patch| patch.extra_embeds.iter()),
+			)
+			.collect()
+	}
+
+	pub fn cards(&self, count: usize, message: Snowflake, theme: &Theme) -> Vec<AnyElement> {
+		self.replacement_cards(count)
+			.into_iter()
+			.enumerate()
+			.map(|(index, card)| {
+				embed_card(
+					card,
+					format!("plugin-embed:{}:{index}", message.get()).into(),
+					theme,
+				)
+			})
+			.collect()
+	}
+
+	fn accessories(&self, view: &MessageView, theme: &Theme) -> Vec<AnyElement> {
+		let set = self.set();
+		set.patches
+			.iter()
+			.zip(&set.accessories)
+			.filter_map(|(patch, tree)| {
+				let tree = tree.as_ref()?;
+				let scope = Scope::mount(
+					&patch.plugin_id,
+					ACCESSORY_SLOT,
+					view.message.id.to_string(),
+					context_of(view),
+				);
+				Some(
+					div()
+						.mt(theme.space_4)
+						.child(Ctx::new(tree, scope).column(theme))
+						.into_any_element(),
+				)
+			})
+			.collect()
+	}
+
+	fn annotations(&self, theme: &Theme, cx: &App) -> Vec<AnyElement> {
+		let bridge = cx.global::<PluginBridge>();
+		self.set()
+			.patches
+			.iter()
+			.flat_map(|patch| {
+				let name = bridge.name_of(&patch.plugin_id, cx);
+				patch
+					.annotations
+					.iter()
+					.map(move |annotation| (name.clone(), annotation))
+			})
+			.map(|(name, annotation)| {
+				let color = match annotation.tone {
+					Tone::Normal | Tone::Muted => theme.text_muted,
+					Tone::Brand => theme.brand,
+					Tone::Success => theme.success,
+					Tone::Warning => theme.warning,
+					Tone::Danger => theme.danger,
+				};
+				let icon = annotation
+					.icon
+					.clone()
+					.map(|icon| {
+						PluginIcon::new(icon)
+							.size(rem(CAPTION_ICON))
+							.color(color)
+							.into_any_element()
+					})
+					.unwrap_or_else(|| {
+						Icon::new(IconKind::Plugins)
+							.size(rem(CAPTION_ICON))
+							.color(color)
+							.into_any_element()
+					});
+				div()
+					.flex()
+					.items_center()
+					.gap(theme.space_4)
+					.mt(rem(2.))
+					.text_size(theme.font_tiny)
+					.text_color(color)
+					.child(icon)
+					.child(annotation.text.clone())
+					.child(div().text_color(theme.text_muted).child(format!("· {name}")))
+					.into_any_element()
+			})
+			.collect()
+	}
 }

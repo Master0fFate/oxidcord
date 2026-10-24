@@ -1,0 +1,21 @@
+id = "dev.oxidcord.notes-panel"
+name = "Notes Panel"
+version = "0.1.0"
+api = "^1.1"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "A notes page in the server rail, a Save to notes message action and a status bar counter."
+entry = "notes_panel.wasm"
+min_host = "0.3.0"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the notes page, its rail icon, the message menu item and the status bar counter."
+
+[[permissions]]
+permission = "storage"
+reason = "Keeps your notes on this device."
+
+[[permissions]]
+permission = "context-timeline"
+reason = "Reads the message you save to notes."

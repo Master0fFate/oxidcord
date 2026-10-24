@@ -71,6 +71,13 @@ macro_rules! tokens {
 				true
 			}
 
+			fn named_color(&self, key: &str) -> Option<Hsla> {
+				match key {
+					$(stringify!($color) => Some(self.$color),)+
+					_ => None,
+				}
+			}
+
 			fn set_size(&mut self, key: &str, value: f32) -> bool {
 				match key {
 					$(stringify!($size) => self.$size = rem(value),)+
@@ -399,6 +406,10 @@ impl Theme {
 		] {
 			*size = *size * factor;
 		}
+	}
+
+	pub fn token(&self, kebab: &str) -> Option<Hsla> {
+		self.named_color(&kebab.replace('-', "_"))
 	}
 
 	pub fn pixels(&self, length: Rems) -> gpui::Pixels {

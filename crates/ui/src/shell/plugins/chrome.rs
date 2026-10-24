@@ -1,11 +1,16 @@
-use gpui::{
-	AnyElement, App, FontWeight, IntoElement, ParentElement as _, RenderOnce, SharedString, Styled as _,
-	Window, div, prelude::FluentBuilder as _,
-};
+use std::rc::Rc;
+use std::sync::Arc;
 
-use super::bridge::PluginBridge;
-use super::slot_renderer::{COMPOSER, STATUS, Scope, SlotHost, TITLE, render_column};
-use crate::components::{IconButton, SectionHeader};
+use gpui::{
+	AnyElement, App, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _, RenderOnce,
+	SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, prelude::FluentBuilder as _,
+};
+use plugin_host::ViewContext;
+
+use super::bridge::{PluginBridge, Surface};
+use super::icon::PluginIcon;
+use super::view::{COMPOSER, Compact, Ctx, STATUS, Scope, TITLE};
+use crate::components::{IconButton, SectionHeader, tooltip};
 use crate::i18n::Translate as _;
 use crate::icons::IconKind;
 use crate::theme::{Theme, rem};
@@ -15,24 +20,84 @@ const SIDEBAR_PANEL_MAX_HEIGHT: f32 = 260.;
 const DEBUG_PANEL_MAX_HEIGHT: f32 = 220.;
 const DEBUG_ROW_HEIGHT: f32 = 24.;
 const DEBUG_NUMBER_WIDTH: f32 = 84.;
+const RAIL_ICON: f32 = 24.;
+const RAIL_TILE: f32 = 48.;
 
-fn elements(items: Vec<(std::sync::Arc<str>, AnyElement)>) -> Vec<AnyElement> {
-	items.into_iter().map(|(_, element)| element).collect()
+pub fn scope_of(
+	surface: &Surface,
+	point: &'static str,
+	payload: SharedString,
+	context: ViewContext,
+) -> Scope {
+	if surface.legacy {
+		Scope::slot(&surface.plugin_id, point, payload)
+	} else {
+		Scope::mount(&surface.plugin_id, point, surface.key.clone(), context)
+	}
 }
 
-pub fn composer_toolbar(cx: &App) -> Vec<AnyElement> {
-	elements(SlotHost::new("composer-toolbar").compact(COMPOSER).render(cx))
+pub fn compact_row(
+	point: &'static str,
+	compact: Compact,
+	payload: SharedString,
+	context: ViewContext,
+	cx: &App,
+) -> Vec<AnyElement> {
+	let theme = cx.global::<Theme>();
+	cx.global::<PluginBridge>()
+		.surfaces(point, cx)
+		.iter()
+		.filter(|surface| !surface.tree.roots.is_empty())
+		.map(|surface| {
+			let scope = scope_of(surface, point, payload.clone(), context).compact(Some(compact));
+			Ctx::new(&surface.tree, scope).row(theme)
+		})
+		.collect()
+}
+
+pub fn composer_toolbar(context: ViewContext, cx: &App) -> Vec<AnyElement> {
+	compact_row("composer-toolbar", COMPOSER, SharedString::default(), context, cx)
 }
 
 pub fn title_items(cx: &App) -> Vec<AnyElement> {
 	if !cx.has_global::<PluginBridge>() {
 		return Vec::new();
 	}
-	elements(SlotHost::new("title-bar").compact(TITLE).render(cx))
+	compact_row(
+		"title-bar",
+		TITLE,
+		SharedString::default(),
+		ViewContext::default(),
+		cx,
+	)
+}
+
+pub fn contextual(point: &'static str, context: ViewContext, cx: &App) -> Vec<AnyElement> {
+	if !cx.has_global::<PluginBridge>() {
+		return Vec::new();
+	}
+	let theme = cx.global::<Theme>();
+	cx.global::<PluginBridge>()
+		.contextual(point, context, cx)
+		.iter()
+		.map(|surface| {
+			Ctx::new(
+				&surface.tree,
+				scope_of(surface, point, SharedString::default(), context),
+			)
+			.column(theme)
+		})
+		.collect()
 }
 
 pub fn status_bar(cx: &App) -> Option<AnyElement> {
-	let items = elements(SlotHost::new("status-bar").compact(STATUS).render(cx));
+	let items = compact_row(
+		"status-bar",
+		STATUS,
+		SharedString::default(),
+		ViewContext::default(),
+		cx,
+	);
 	if items.is_empty() {
 		return None;
 	}
@@ -57,7 +122,7 @@ pub fn status_bar(cx: &App) -> Option<AnyElement> {
 
 pub fn panel_toggle(cx: &App) -> Option<AnyElement> {
 	let bridge = cx.global::<PluginBridge>();
-	if bridge.entries("right-panel", cx).is_empty() {
+	if bridge.surfaces("right-panel", cx).is_empty() {
 		return None;
 	}
 	let open = bridge.ui().read(cx).right_open();
@@ -75,7 +140,118 @@ pub fn panel_toggle(cx: &App) -> Option<AnyElement> {
 
 pub fn right_panel_visible(cx: &App) -> bool {
 	let bridge = cx.global::<PluginBridge>();
-	bridge.ui().read(cx).right_open() && !bridge.entries("right-panel", cx).is_empty()
+	bridge.ui().read(cx).right_open() && !bridge.surfaces("right-panel", cx).is_empty()
+}
+
+pub fn open_page(cx: &App) -> Option<(Arc<str>, SharedString)> {
+	cx.try_global::<PluginBridge>()?.ui().read(cx).page().cloned()
+}
+
+pub fn app_nav(active: Option<&(Arc<str>, SharedString)>, cx: &App) -> Vec<AnyElement> {
+	if !cx.has_global::<PluginBridge>() {
+		return Vec::new();
+	}
+	let theme = cx.global::<Theme>();
+	cx.global::<PluginBridge>()
+		.mounts("app-nav", cx)
+		.iter()
+		.enumerate()
+		.map(|(index, surface)| {
+			let selected =
+				active.is_some_and(|(plugin, key)| *plugin == surface.plugin_id && *key == surface.key);
+			let target = (Arc::clone(&surface.plugin_id), surface.key.clone());
+			let hover = theme.brand;
+			div()
+				.id(("plugin-app-nav", index))
+				.flex()
+				.items_center()
+				.justify_center()
+				.size(rem(RAIL_TILE))
+				.cursor_pointer()
+				.when(selected, |tile| tile.rounded(theme.radius_lg).bg(theme.brand))
+				.when(!selected, |tile| {
+					tile.rounded_full()
+						.bg(theme.background_primary)
+						.hover(move |style| style.rounded(theme.radius_lg).bg(hover))
+				})
+				.tooltip(tooltip(surface.title.clone()))
+				.on_click(move |_, _, cx| {
+					let ui = cx.global::<PluginBridge>().ui().clone();
+					let target = target.clone();
+					ui.update(cx, |ui, cx| ui.toggle_page(target, cx));
+				})
+				.child(
+					PluginIcon::new(surface.icon.clone().unwrap_or_else(|| "puzzle".into()))
+						.size(rem(RAIL_ICON))
+						.color(if selected {
+							theme.text_on_brand
+						} else {
+							theme.interactive_normal
+						}),
+				)
+				.into_any_element()
+		})
+		.collect()
+}
+
+pub fn main_view(target: &(Arc<str>, SharedString), cx: &App) -> Option<AnyElement> {
+	let theme = cx.global::<Theme>();
+	let surfaces = cx.global::<PluginBridge>().mounts("main-view", cx);
+	let surface = surfaces
+		.iter()
+		.find(|surface| surface.plugin_id == target.0 && surface.key == target.1)?;
+	let scope = scope_of(
+		surface,
+		"main-view",
+		SharedString::default(),
+		ViewContext::default(),
+	);
+	Some(
+		div()
+			.id("plugin-main-view")
+			.flex()
+			.flex_col()
+			.flex_1()
+			.min_h_0()
+			.overflow_y_scroll()
+			.children(Ctx::new(&surface.tree, scope).roots(false, theme))
+			.into_any_element(),
+	)
+}
+
+pub fn settings_mounts(plugin: &str, cx: &App) -> Vec<AnyElement> {
+	let theme = cx.global::<Theme>();
+	cx.global::<PluginBridge>()
+		.mounts("settings-page", cx)
+		.iter()
+		.filter(|surface| &*surface.plugin_id == plugin)
+		.map(|surface| {
+			let scope = scope_of(
+				surface,
+				"settings-page",
+				SharedString::default(),
+				ViewContext::default(),
+			);
+			Ctx::new(&surface.tree, scope).column(theme)
+		})
+		.collect()
+}
+
+fn panel_body(surface: &Surface, point: &'static str, theme: &Theme) -> AnyElement {
+	let scope = scope_of(surface, point, SharedString::default(), ViewContext::default());
+	Ctx::new(&surface.tree, scope).column(theme)
+}
+
+fn surface_name(surface: &Surface, cx: &App) -> SharedString {
+	if surface.title.is_empty() {
+		cx.global::<PluginBridge>().name_of(&surface.plugin_id, cx)
+	} else {
+		surface.title.clone()
+	}
+}
+
+fn surfaces(point: &str, cx: &App) -> Rc<Vec<Surface>> {
+	cx.global::<PluginBridge>().surfaces(point, cx)
 }
 
 fn section_label(name: SharedString, theme: &Theme) -> impl IntoElement {
@@ -91,8 +267,7 @@ pub struct SidebarPanel;
 
 impl RenderOnce for SidebarPanel {
 	fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-		let host = SlotHost::new("sidebar-panel");
-		let entries = host.entries(cx);
+		let entries = surfaces("sidebar-panel", cx);
 		if entries.is_empty() {
 			return div().into_any_element();
 		}
@@ -100,11 +275,10 @@ impl RenderOnce for SidebarPanel {
 		let sections: Vec<AnyElement> = entries
 			.iter()
 			.map(|entry| {
-				let key = SharedString::from(format!("plugin-sidebar:{}", entry.plugin_id));
+				let key = SharedString::from(format!("plugin-sidebar:{}:{}", entry.plugin_id, entry.key));
 				let collapsed = window.use_keyed_state(key.clone(), cx, |_, _| false);
 				let is_collapsed = *collapsed.read(cx);
-				let name = cx.global::<PluginBridge>().name_of(&entry.plugin_id, cx);
-				let scope = host.scope(entry);
+				let name = surface_name(entry, cx);
 				let header =
 					SectionHeader::new(key, name)
 						.collapsible(is_collapsed)
@@ -119,7 +293,7 @@ impl RenderOnce for SidebarPanel {
 					.flex_col()
 					.child(header)
 					.when_some(
-						(!is_collapsed).then(|| render_column(&entry.tree, &scope, &theme)),
+						(!is_collapsed).then(|| panel_body(entry, "sidebar-panel", &theme)),
 						|section, body| section.child(div().px(theme.space_8).pb(theme.space_8).child(body)),
 					)
 					.into_any_element()
@@ -145,19 +319,15 @@ pub struct RightPanel;
 impl RenderOnce for RightPanel {
 	fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
 		let theme = cx.global::<Theme>().clone();
-		let host = SlotHost::new("right-panel");
-		let sections: Vec<AnyElement> = host
-			.entries(cx)
+		let sections: Vec<AnyElement> = surfaces("right-panel", cx)
 			.iter()
 			.map(|entry| {
-				let name = cx.global::<PluginBridge>().name_of(&entry.plugin_id, cx);
-				let scope: Scope = host.scope(entry);
 				div()
 					.flex()
 					.flex_col()
 					.gap(theme.space_8)
-					.child(section_label(name, &theme))
-					.child(render_column(&entry.tree, &scope, &theme))
+					.child(section_label(surface_name(entry, cx), &theme))
+					.child(panel_body(entry, "right-panel", &theme))
 					.into_any_element()
 			})
 			.collect();

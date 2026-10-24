@@ -12,9 +12,11 @@ use serde_json::Value;
 use session::Command;
 
 use super::widgets::note;
+use crate::data::DataEvent;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
 use crate::shell::plugins::bridge::{PluginBridge, stored_setting};
+use crate::shell::plugins::chrome::settings_mounts;
 use crate::theme::{Theme, rem};
 
 const INPUT_WIDTH: f32 = 320.;
@@ -108,6 +110,15 @@ impl PluginForm {
 		for (key, spec) in properties.into_iter().flatten() {
 			form.add_field(key, spec, window, cx);
 		}
+		let data = cx.global::<PluginBridge>().data().clone();
+		form._subscriptions
+			.push(cx.subscribe(&data, |_, _, event: &DataEvent, cx| {
+				if let DataEvent::Changed(changes) = event
+					&& changes.plugin_slots
+				{
+					cx.notify();
+				}
+			}));
 		form
 	}
 
@@ -373,7 +384,8 @@ impl PluginForm {
 impl Render for PluginForm {
 	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
-		if self.fields.is_empty() {
+		let mounted = settings_mounts(&self.plugin_id, cx);
+		if self.fields.is_empty() && mounted.is_empty() {
 			return note(cx.t("plugin-form-empty"), &theme);
 		}
 		let fields: Vec<AnyElement> = self
@@ -407,6 +419,7 @@ impl Render for PluginForm {
 			.flex_col()
 			.gap(theme.space_24)
 			.children(fields)
+			.children(mounted)
 			.into_any_element()
 	}
 }

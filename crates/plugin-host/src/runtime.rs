@@ -5,17 +5,29 @@ use std::time::Instant;
 
 use store::Store;
 use tokio::runtime::Handle;
-use wasmtime::component::{Component, HasSelf, Linker};
+use wasmtime::component::{Component, HasSelf, InstancePre, Linker};
 use wasmtime::{Config, Engine, OptLevel};
 
-use crate::bindings::{Plugin, PluginPre};
+use crate::bindings::PluginIndices;
+use crate::bindings::ext::PluginExt;
+use crate::bindings::ext::exports::oxidcord::plugin::hooks::GuestIndices as HookIndices;
 use crate::broker::HostBroker;
 use crate::config::RuntimeConfig;
 use crate::error::{Error, Result};
 use crate::fetch::Fetcher;
 use crate::grants::Grants;
 use crate::host_state::{HostState, Services};
+use crate::mounts::Mounts;
+use crate::patches::Patches;
 use crate::slots::{Commands, Slots};
+use crate::timers::Timers;
+
+#[derive(Clone)]
+pub(crate) struct Prepared {
+	pub(crate) instance: InstancePre<HostState>,
+	pub(crate) guest: PluginIndices,
+	pub(crate) hooks: Option<HookIndices>,
+}
 
 pub struct RuntimeShared {
 	pub engine: Engine,
@@ -26,9 +38,15 @@ pub struct RuntimeShared {
 }
 
 impl RuntimeShared {
-	pub fn instance_pre(&self, component: &Component) -> Result<PluginPre<HostState>> {
-		let pre = self.linker.instantiate_pre(component).map_err(Error::wasm)?;
-		PluginPre::new(pre).map_err(Error::wasm)
+	pub(crate) fn prepare(&self, component: &Component) -> Result<Prepared> {
+		let instance = self.linker.instantiate_pre(component).map_err(Error::wasm)?;
+		let guest = PluginIndices::new(&instance).map_err(Error::wasm)?;
+		let hooks = HookIndices::new(&instance).ok();
+		Ok(Prepared {
+			instance,
+			guest,
+			hooks,
+		})
 	}
 }
 
@@ -62,7 +80,7 @@ impl Runtime {
 
 		let mut linker = Linker::new(&engine);
 		wasmtime_wasi::p2::add_to_linker_sync(&mut linker).map_err(Error::wasm)?;
-		Plugin::add_to_linker::<HostState, HasSelf<HostState>>(&mut linker, |state| state)
+		PluginExt::add_to_linker::<HostState, HasSelf<HostState>>(&mut linker, |state| state)
 			.map_err(Error::wasm)?;
 
 		let services = Arc::new(Services {
@@ -71,6 +89,9 @@ impl Runtime {
 			broker,
 			slots: Arc::new(Slots::default()),
 			commands: Arc::new(Commands::default()),
+			mounts: Arc::new(Mounts::default()),
+			patches: Arc::new(Patches::default()),
+			timers: Timers::spawn().map_err(|error| Error::io("plugin-timers", error))?,
 			fetcher: Fetcher::new(handle),
 		});
 		let stop = Arc::new(AtomicBool::new(false));
@@ -104,6 +125,18 @@ impl Runtime {
 
 	pub fn commands(&self) -> &Arc<Commands> {
 		&self.shared.services.commands
+	}
+
+	pub fn mounts(&self) -> &Arc<Mounts> {
+		&self.shared.services.mounts
+	}
+
+	pub fn patches(&self) -> &Arc<Patches> {
+		&self.shared.services.patches
+	}
+
+	pub(crate) fn timers(&self) -> &Timers {
+		&self.shared.services.timers
 	}
 
 	pub fn compile(&self, wasm: &[u8]) -> Result<Component> {

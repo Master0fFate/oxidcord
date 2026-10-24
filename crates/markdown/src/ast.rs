@@ -47,6 +47,24 @@ pub enum Node {
 		suppress_embed: bool,
 	},
 	LineBreak,
+	InlineImage {
+		src: String,
+		alt: String,
+		width: u32,
+		height: u32,
+	},
+	Styled {
+		children: Vec<Node>,
+		color: Option<Color>,
+		background: Option<Color>,
+		mono: bool,
+	},
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Color {
+	Token(String),
+	Rgba(u32),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -109,6 +127,7 @@ pub(crate) fn for_each<'a>(nodes: &'a [Node], visit: &mut impl FnMut(&'a Node)) 
 			| Node::Quote(children)
 			| Node::Subtext(children)
 			| Node::Heading { children, .. }
+			| Node::Styled { children, .. }
 			| Node::Link {
 				text: Some(children), ..
 			} => for_each(children, visit),

@@ -734,6 +734,10 @@ impl Core {
 			Command::DeclineCall { channel_id } => self.decline_call(channel_id),
 			command @ (Command::RunPluginCommand { .. }
 			| Command::PluginUiAction { .. }
+			| Command::PluginViewEvent { .. }
+			| Command::PluginMenuItem { .. }
+			| Command::PluginRenderView { .. }
+			| Command::PluginEmojiPick { .. }
 			| Command::PluginEnable(_)
 			| Command::PluginDisable(_)
 			| Command::PluginReload(_)
