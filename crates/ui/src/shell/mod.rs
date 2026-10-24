@@ -271,6 +271,7 @@ impl Shell {
 		let mut subscriptions = Vec::new();
 		let plugin_ui = plugins::install(data.clone(), backend.clone(), cx);
 		subscriptions.push(cx.observe(&plugin_ui, |_, _, cx| cx.notify()));
+		updates::UpdatesPage::watch(cx);
 
 		let rail = cx.new(|cx| ServerRail::new(data.clone(), cx));
 		subscriptions.push(cx.subscribe_in(

@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use gpui::{App, AppContext as _, Context, Entity, Global};
 use store::Store;
@@ -7,7 +8,10 @@ use tokio::sync::mpsc::unbounded_channel;
 use updater::{AvailableUpdate, Channel, InstallKind, Staged, Updater, UpdaterConfig, UpdaterError};
 
 const REPOSITORY_HOST: &str = "https://github.com/";
-const BETA_CHANNEL: &str = "beta";
+const RECHECK_INTERVAL: Duration = Duration::from_secs(4 * 60 * 60);
+
+pub const STABLE_CHANNEL: &str = "stable";
+pub const BETA_CHANNEL: &str = "beta";
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum UpdateStatus {
@@ -63,6 +67,16 @@ impl UpdateService {
 		cx.set_global(UpdateHandle(service.clone()));
 		if check_now {
 			service.update(cx, |service, cx| service.check(cx));
+			let weak = service.downgrade();
+			cx.spawn(async move |cx| {
+				loop {
+					cx.background_executor().timer(RECHECK_INTERVAL).await;
+					if weak.update(cx, |service, cx| service.recheck(cx)).is_err() {
+						break;
+					}
+				}
+			})
+			.detach();
 		}
 	}
 
@@ -104,6 +118,27 @@ impl UpdateService {
 				tracing::warn!(%error, "updater is unavailable");
 				None
 			}
+		}
+	}
+
+	fn recheck(&mut self, cx: &mut Context<Self>) {
+		if !matches!(self.status, UpdateStatus::Available { .. }) {
+			self.check(cx);
+		}
+	}
+
+	pub fn act(&mut self, cx: &mut Context<Self>) {
+		match &self.status {
+			UpdateStatus::Available {
+				installable: true, ..
+			} => self.download(cx),
+			UpdateStatus::Available { notes_url, .. } => {
+				if let Err(error) = platform::open::open_url(notes_url) {
+					tracing::warn!(%error, "could not open the release notes");
+				}
+			}
+			UpdateStatus::Ready { .. } => self.restart(cx),
+			_ => {}
 		}
 	}
 

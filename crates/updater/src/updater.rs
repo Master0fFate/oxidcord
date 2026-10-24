@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::path::PathBuf;
 
 use semver::Version;
@@ -125,7 +126,7 @@ impl Updater {
 		verify_manifest(&self.public_key, &manifest_bytes, &signature)?;
 		let manifest = ReleaseManifest::parse(&manifest_bytes)?;
 		let version = manifest.semver()?;
-		if version <= self.config.current_version || !self.accepts(&version) {
+		if !self.is_newer(&version) || !self.accepts(&version) {
 			return Ok(None);
 		}
 		let artifact = self.env.kind.and_then(|kind| {
@@ -161,6 +162,10 @@ impl Updater {
 		self.config.allow_prerelease || self.config.channel == Channel::Beta
 	}
 
+	fn is_newer(&self, version: &Version) -> bool {
+		version.cmp_precedence(&self.config.current_version) == Ordering::Greater
+	}
+
 	fn accepts(&self, version: &Version) -> bool {
 		version.pre.is_empty() || self.includes_prerelease()
 	}
@@ -189,8 +194,8 @@ impl Updater {
 			.into_iter()
 			.filter(|release| !release.draft && (!release.prerelease || self.includes_prerelease()))
 			.filter_map(|release| release.version().map(|version| (version, release)))
-			.filter(|(version, _)| *version > self.config.current_version)
-			.max_by(|(left, _), (right, _)| left.cmp(right))
+			.filter(|(version, _)| self.is_newer(version))
+			.max_by(|(left, _), (right, _)| left.cmp_precedence(right))
 			.map(|(_, release)| release))
 	}
 }

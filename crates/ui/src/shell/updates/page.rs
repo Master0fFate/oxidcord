@@ -1,17 +1,19 @@
 use std::rc::Rc;
 
 use gpui::{
-	AnyElement, App, Context, Entity, FontWeight, IntoElement, ParentElement as _, Render, SharedString,
-	Styled as _, Window, div,
+	AnyElement, App, Context, Entity, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _,
+	Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div,
+	prelude::FluentBuilder as _,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::progress::Progress;
 use gpui_component::switch::Switch;
 use gpui_component::{Disableable as _, Sizable as _};
 
-use super::service::{UpdateHandle, UpdateService, UpdateStatus};
+use super::service::{BETA_CHANNEL, STABLE_CHANNEL, UpdateHandle, UpdateService, UpdateStatus};
 use crate::format::file_size;
 use crate::i18n::{ArgValue, Translate as _};
+use crate::icons::{Icon, IconKind};
 use crate::shell::SettingsBackend;
 use crate::theme::{Theme, rem};
 
@@ -45,6 +47,43 @@ impl UpdatesPage {
 				.child(cx.t("updates-badge"))
 				.into_any_element()
 		})
+	}
+
+	pub fn title_prompt(theme: &Theme, cx: &App) -> Option<AnyElement> {
+		let service = cx.global::<UpdateHandle>().0.clone();
+		let (key, actionable) = match service.read(cx).status() {
+			UpdateStatus::Available { .. } => ("updates-prompt-available", true),
+			UpdateStatus::Downloading { .. } => ("updates-prompt-downloading", false),
+			UpdateStatus::Ready { .. } => ("updates-prompt-ready", true),
+			_ => return None,
+		};
+		Some(
+			div()
+				.id("update-prompt")
+				.flex()
+				.items_center()
+				.gap(theme.space_4)
+				.h(rem(16.))
+				.mr(theme.space_8)
+				.px(theme.space_8)
+				.rounded_full()
+				.bg(theme.success)
+				.text_size(theme.font_tiny)
+				.font_weight(FontWeight::BOLD)
+				.text_color(theme.text_on_brand)
+				.when(actionable, |prompt| {
+					prompt
+						.cursor_pointer()
+						.on_click(move |_, _, cx| service.update(cx, |service, cx| service.act(cx)))
+				})
+				.child(
+					Icon::new(IconKind::Download)
+						.size(rem(10.))
+						.color(theme.text_on_brand),
+				)
+				.child(cx.t(key))
+				.into_any_element(),
+		)
 	}
 
 	fn summary(&self, cx: &App) -> SharedString {
@@ -172,7 +211,9 @@ impl Render for UpdatesPage {
 			Some(sha) => format!("{} ({sha})", info.version),
 			None => info.version.to_owned(),
 		};
-		let check_on_start = (self.backend.read)().updates.check_on_start;
+		let updates = (self.backend.read)().updates;
+		let check_on_start = updates.check_on_start;
+		let development_branch = updates.channel == BETA_CHANNEL;
 		let summary = self.summary(cx);
 		let detail = self.detail(&theme, cx);
 		let actions = self.actions(cx);
@@ -218,6 +259,17 @@ impl Render for UpdatesPage {
 							cx.notify();
 						})),
 				),
+			)
+			.child(
+				Switch::new("updates-development-branch")
+					.checked(development_branch)
+					.label(cx.t("updates-development-branch"))
+					.on_change(cx.listener(|this, checked: &bool, _, cx| {
+						let channel = if *checked { BETA_CHANNEL } else { STABLE_CHANNEL };
+						(this.backend.write)(&move |settings| settings.updates.channel = channel.to_owned());
+						this.service.update(cx, |service, cx| service.check(cx));
+						cx.notify();
+					})),
 			)
 	}
 }

@@ -80,6 +80,7 @@ impl RenderOnce for TitleBar {
 							.child(title),
 					),
 			)
+			.children(super::updates::UpdatesPage::title_prompt(theme, cx))
 			.children(super::plugins::title_items(cx))
 			.when(!cfg!(target_os = "macos"), |bar| {
 				bar.children(controls.into_iter().map(|(id, icon, area, closes)| {
