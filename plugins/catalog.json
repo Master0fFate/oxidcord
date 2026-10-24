@@ -1,7 +1,23 @@
 {
   "version": 1,
-  "generated_at": "2026-10-23T18:08:07Z",
+  "generated_at": "2026-10-24T23:14:55Z",
   "plugins": [
+    {
+      "id": "dev.oxidcord.fake-nitro",
+      "name": "Fake Nitro",
+      "version": "0.1.0",
+      "description": "Sends emoji you cannot use as image links and shows received emoji links inline.",
+      "permissions": [
+        "composer",
+        "context-expressions",
+        "message-send",
+        "message-intercept"
+      ],
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.fake-nitro-0.1.0.oxidcord-plugin",
+      "sha256": "4302a7341e6833aaeea244fa4a2209b3751f627dfb8ad362e8a9949456a4e6bc",
+      "length": 73169,
+      "reviewed": true
+    },
     {
       "id": "dev.oxidcord.hello-timestamps",
       "name": "Hello Timestamps",
@@ -13,8 +29,8 @@
         "actions-clipboard"
       ],
       "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.hello-timestamps-0.1.0.oxidcord-plugin",
-      "sha256": "3782822a20ac305d24d2102a27e46b97f5a68d30faf8bc80813d5f0a4a243b1f",
-      "length": 46683,
+      "sha256": "228f4aa779d5a82ae7f637297b22e3a503e88c21defe3b9307f39cb3b921db85",
+      "length": 46783,
       "reviewed": true
     },
     {
@@ -29,8 +45,8 @@
         "actions-notify"
       ],
       "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.keyword-highlighter-0.1.0.oxidcord-plugin",
-      "sha256": "d81192a184d16e9d3d8a21c8488f071d0da529d669c04f0e11bf6349fd46c287",
-      "length": 53076,
+      "sha256": "9bce6799cff1d22e32e70541a55a98497ff0545e10ef0146083df35d3f4157dd",
+      "length": 53727,
       "reviewed": true
     },
     {
@@ -42,8 +58,8 @@
         "message-send"
       ],
       "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.link-cleaner-0.1.0.oxidcord-plugin",
-      "sha256": "fcaf7a1f27e3b13b317f8294e27d3b16c4f9a672e53dac865ee476e1a944081c",
-      "length": 47217,
+      "sha256": "cce6968c428aa6f98a30c20f29ed5227d01e6f44dfa020c0b6df8920b155e64b",
+      "length": 47218,
       "reviewed": true
     },
     {
@@ -56,8 +72,39 @@
         "ui-slots"
       ],
       "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.local-status-badge-0.1.0.oxidcord-plugin",
-      "sha256": "1c94d40818faad1ea23b5ee03a436c2b2175b1b7e3bb2a15a79670b304d88b6f",
-      "length": 46106,
+      "sha256": "ec0c230eb922455cee79a16be5fbdc6e7a09c8a8d5080e860f976b14ed44d62e",
+      "length": 45880,
+      "reviewed": true
+    },
+    {
+      "id": "dev.oxidcord.message-logger",
+      "name": "Message Logger",
+      "version": "0.2.0",
+      "description": "Keeps deleted messages visible and the earlier versions of edited messages one click away.",
+      "permissions": [
+        "context-timeline",
+        "message-render",
+        "storage",
+        "ui-slots"
+      ],
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.message-logger-0.2.0.oxidcord-plugin",
+      "sha256": "2a2693abddbbd9b6ec835663889d5b978c3cc21b0dc4c59ec791f0e70adef85c",
+      "length": 58361,
+      "reviewed": true
+    },
+    {
+      "id": "dev.oxidcord.notes-panel",
+      "name": "Notes Panel",
+      "version": "0.1.0",
+      "description": "A notes page in the server rail, a Save to notes message action and a status bar counter.",
+      "permissions": [
+        "ui-mount",
+        "storage",
+        "context-timeline"
+      ],
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.notes-panel-0.1.0.oxidcord-plugin",
+      "sha256": "eeea038c74b87fbf71f3f488d9e4274d4bdd84044fa130f63324852b3cf303cf",
+      "length": 88964,
       "reviewed": true
     },
     {
@@ -72,8 +119,8 @@
         "context-basic"
       ],
       "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.quick-replies-0.1.0.oxidcord-plugin",
-      "sha256": "0803098db48d7165e39655cea165e14d469e3e270c0c9f4552bfdd7bc7f37ba1",
-      "length": 54482,
+      "sha256": "dd8c2c49575db7aee6d1a0cdb9baedb4648d6bc956b7092f97cf4cd54d92f7a3",
+      "length": 54097,
       "reviewed": true
     },
     {
@@ -87,8 +134,8 @@
         "storage"
       ],
       "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.spoiler-all-0.1.0.oxidcord-plugin",
-      "sha256": "da03b620beb289313a40826a8f5925b72b13cb4f3a4cd96d6098c2e8e8b7f46d",
-      "length": 47160,
+      "sha256": "7d274546eda1a224c2b9cafeafc48382d6654025e55b8c69e209330766d279f2",
+      "length": 47148,
       "reviewed": true
     },
     {
@@ -102,8 +149,8 @@
         "ui-slots"
       ],
       "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.text-shortcuts-0.1.0.oxidcord-plugin",
-      "sha256": "c062df0cbed5c86b205bea08634a0a6248433c395eb8711e2a5fef01dd0b124e",
-      "length": 63424,
+      "sha256": "b4c607481f0068ee0a2cce8063745de3bf5ca092a77bb0e6801ab248b72c65c4",
+      "length": 63201,
       "reviewed": true
     },
     {
@@ -117,8 +164,8 @@
         "user-display"
       ],
       "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.user-notes-0.1.0.oxidcord-plugin",
-      "sha256": "e456203c9e88b3a84a324779bd92b873bd634c1191e62ad1872bdf0ebbd9afad",
-      "length": 52128,
+      "sha256": "01dcd409857b7b8ea619fe16f5df66fd1d7c2581bcb7ac34082425fcf8c2b7a5",
+      "length": 52484,
       "reviewed": true
     },
     {
@@ -133,8 +180,8 @@
         "context-basic"
       ],
       "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.word-mute-0.1.0.oxidcord-plugin",
-      "sha256": "65356fd60d7a36b82c263ed21ffeb8e2f870a4edd1503d727c34b9d55909b0b4",
-      "length": 59869,
+      "sha256": "0b079bd1c92f3d658e2315bd96d2746b75270eaea588910f77148ee863515940",
+      "length": 59624,
       "reviewed": true
     }
   ]

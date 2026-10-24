@@ -6,7 +6,7 @@ authors = ["fate"]
 license = "MIT OR Apache-2.0"
 description = "Sends emoji you cannot use as image links and shows received emoji links inline."
 entry = "fake_nitro.wasm"
-min_host = "0.3.0"
+min_host = "0.3.1-beta.1"
 
 [[permissions]]
 permission = "composer"

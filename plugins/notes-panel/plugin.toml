@@ -6,7 +6,7 @@ authors = ["fate"]
 license = "MIT OR Apache-2.0"
 description = "A notes page in the server rail, a Save to notes message action and a status bar counter."
 entry = "notes_panel.wasm"
-min_host = "0.3.0"
+min_host = "0.3.1-beta.1"
 
 [[permissions]]
 permission = "ui-mount"
