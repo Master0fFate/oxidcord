@@ -38,17 +38,17 @@
 ## Performance
 
 <p align="center">
-	<img src="assets/performance.png" alt="Oxidcord on gpui-fast and on GPUI against Discord desktop: scroll, idle and resize CPU, memory, threads and disk footprint" width="900">
+	<img src="assets/performance.png" alt="Oxidcord against Discord desktop: scroll, idle and resize CPU, memory, threads and disk footprint" width="900">
 </p>
 
-Measured on one Windows 10 machine with 12 logical cores. Oxidcord runs on [gpui-fast](https://github.com/longbridge/gpui-fast), a GPUI fork with retained rendering and cached scroll layers. Both Oxidcord columns are release builds against the built-in mock server, one on stock GPUI and one on gpui-fast, averaged over two runs. Discord is a live, logged-in session with real servers, so read that column as an order of magnitude, not a lab result.
+Measured on one Windows 10 machine with 12 logical cores. Oxidcord is the 0.2.0-beta.1 release build running against its built-in mock server, averaged over two runs. Discord is a live, logged-in session with real servers, so the workloads differ and the numbers show an order of magnitude, not a lab result.
 
-- Scrolling the message list at 60 wheel ticks a second for 20 seconds: 20.5% of one core on gpui-fast, 34.4% on GPUI, 147.5% for Discord.
-- Idle CPU under 0.1% on gpui-fast, 1.5% on GPUI, 58.1% for Discord. Idle memory 200 MB against 185 MB on GPUI and 2630 MB for Discord.
-- Resizing the window 156 times in 20 seconds: 9.2% of one core against 10.8% on GPUI and 126.6% for Discord, peak memory 219 MB against 191 MB and 2836 MB.
-- Startup to first window: 266 ms median over 5 runs on gpui-fast, 264 ms on GPUI.
+- Scrolling the message list at 60 wheel ticks a second for 20 seconds: 20.5% of one core against 147.5%.
+- Idle memory 200 MB against 2630 MB, idle CPU under 0.1% against 58.1%.
+- Resizing the window 156 times in 20 seconds: 9.2% of one core against 126.6%, peak memory 219 MB against 2836 MB.
+- Startup to first window: 266 ms median over 5 runs (262 to 277 ms).
 
-gpui-fast keeps rendered layers around, which costs about 15 to 30 MB of memory over stock GPUI. Discord startup time was not measured, because that would mean closing a running session.
+Discord startup time was not measured, because that would mean closing a running session.
 
 ## Install
 
