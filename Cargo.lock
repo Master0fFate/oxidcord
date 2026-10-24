@@ -1502,7 +1502,7 @@ dependencies = [
 
 [[package]]
 name = "conformance-probe"
-version = "0.1.0-beta.1"
+version = "0.2.0-beta.1"
 dependencies = [
  "oxidcord-plugin-sdk",
 ]
@@ -2171,7 +2171,7 @@ dependencies = [
 
 [[package]]
 name = "delete-keeper"
-version = "0.1.0-beta.1"
+version = "0.2.0-beta.1"
 dependencies = [
  "oxidcord-plugin-sdk",
 ]
@@ -2516,7 +2516,7 @@ dependencies = [
 
 [[package]]
 name = "edit-history"
-version = "0.1.0-beta.1"
+version = "0.2.0-beta.1"
 dependencies = [
  "oxidcord-plugin-sdk",
 ]
@@ -4303,7 +4303,7 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "hello-timestamps"
-version = "0.1.0-beta.1"
+version = "0.2.0-beta.1"
 dependencies = [
  "oxidcord-plugin-sdk",
 ]
@@ -5141,7 +5141,7 @@ dependencies = [
 
 [[package]]
 name = "keyword-highlighter"
-version = "0.1.0-beta.1"
+version = "0.2.0-beta.1"
 dependencies = [
  "oxidcord-plugin-sdk",
 ]
@@ -5535,7 +5535,7 @@ checksum = "d4a5ff6bcca6c4867b1c4fd4ef63e4db7436ef363e0ad7531d1558856bae64f4"
 
 [[package]]
 name = "link-cleaner"
-version = "0.1.0-beta.1"
+version = "0.2.0-beta.1"
 dependencies = [
  "oxidcord-plugin-sdk",
 ]
@@ -5578,7 +5578,7 @@ checksum = "4744e383959f0db86ede514b809b1c53251889093803c05267acc7d4e7030d70"
 
 [[package]]
 name = "local-status-badge"
-version = "0.1.0-beta.1"
+version = "0.2.0-beta.1"
 dependencies = [
  "oxidcord-plugin-sdk",
 ]
@@ -5968,7 +5968,7 @@ dependencies = [
 
 [[package]]
 name = "mockcord"
-version = "0.1.0-beta.1"
+version = "0.2.0-beta.1"
 dependencies = [
  "aes-gcm 0.11.1",
  "axum",
@@ -7114,7 +7114,7 @@ dependencies = [
 
 [[package]]
 name = "oxidcord"
-version = "0.1.0-beta.1"
+version = "0.2.0-beta.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -7137,7 +7137,7 @@ dependencies = [
 
 [[package]]
 name = "oxidcord-gateway"
-version = "0.1.0-beta.1"
+version = "0.2.0-beta.1"
 dependencies = [
  "bytes",
  "chrono",
@@ -7156,7 +7156,7 @@ dependencies = [
 
 [[package]]
 name = "oxidcord-login"
-version = "0.1.0-beta.1"
+version = "0.2.0-beta.1"
 dependencies = [
  "base64 0.23.1",
  "futures-util",
@@ -7184,11 +7184,11 @@ dependencies = [
 
 [[package]]
 name = "oxidcord-markdown"
-version = "0.1.0-beta.1"
+version = "0.2.0-beta.1"
 
 [[package]]
 name = "oxidcord-media"
-version = "0.1.0-beta.1"
+version = "0.2.0-beta.1"
 dependencies = [
  "base64 0.23.1",
  "blurhash",
@@ -7210,7 +7210,7 @@ dependencies = [
 
 [[package]]
 name = "oxidcord-platform"
-version = "0.1.0-beta.1"
+version = "0.2.0-beta.1"
 dependencies = [
  "arboard",
  "auto-launch",
@@ -7227,7 +7227,7 @@ dependencies = [
 
 [[package]]
 name = "oxidcord-plugin-host"
-version = "0.1.0-beta.1"
+version = "0.2.0-beta.1"
 dependencies = [
  "base64 0.23.1",
  "ed25519-dalek 3.0.0",
@@ -7253,14 +7253,14 @@ dependencies = [
 
 [[package]]
 name = "oxidcord-plugin-sdk"
-version = "0.1.0-beta.1"
+version = "0.2.0-beta.1"
 dependencies = [
  "wit-bindgen 0.63.0",
 ]
 
 [[package]]
 name = "oxidcord-protocol"
-version = "0.1.0-beta.1"
+version = "0.2.0-beta.1"
 dependencies = [
  "base64 0.23.1",
  "bitflags 2.13.2",
@@ -7274,7 +7274,7 @@ dependencies = [
 
 [[package]]
 name = "oxidcord-rest"
-version = "0.1.0-beta.1"
+version = "0.2.0-beta.1"
 dependencies = [
  "base64 0.23.1",
  "bytes",
@@ -7292,7 +7292,7 @@ dependencies = [
 
 [[package]]
 name = "oxidcord-session"
-version = "0.1.0-beta.1"
+version = "0.2.0-beta.1"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -7321,7 +7321,7 @@ dependencies = [
 
 [[package]]
 name = "oxidcord-state"
-version = "0.1.0-beta.1"
+version = "0.2.0-beta.1"
 dependencies = [
  "chrono",
  "indexmap",
@@ -7336,7 +7336,7 @@ dependencies = [
 
 [[package]]
 name = "oxidcord-store"
-version = "0.1.0-beta.1"
+version = "0.2.0-beta.1"
 dependencies = [
  "chacha20poly1305 0.11.0",
  "chrono",
@@ -7356,7 +7356,7 @@ dependencies = [
 
 [[package]]
 name = "oxidcord-ui"
-version = "0.1.0-beta.1"
+version = "0.2.0-beta.1"
 dependencies = [
  "base64 0.23.1",
  "bytes",
@@ -7397,7 +7397,7 @@ dependencies = [
 
 [[package]]
 name = "oxidcord-updater"
-version = "0.1.0-beta.1"
+version = "0.2.0-beta.1"
 dependencies = [
  "ed25519-dalek 3.0.0",
  "futures-util",
@@ -7416,7 +7416,7 @@ dependencies = [
 
 [[package]]
 name = "oxidcord-voice"
-version = "0.1.0-beta.1"
+version = "0.2.0-beta.1"
 dependencies = [
  "aes-gcm 0.11.1",
  "chacha20poly1305 0.11.0",
@@ -8133,7 +8133,7 @@ checksum = "a993555f31e5a609f617c12db6250dedcac1b0a85076912c436e6fc9b2c8e6a3"
 
 [[package]]
 name = "quick-replies"
-version = "0.1.0-beta.1"
+version = "0.2.0-beta.1"
 dependencies = [
  "oxidcord-plugin-sdk",
 ]
@@ -9755,7 +9755,7 @@ dependencies = [
 
 [[package]]
 name = "spoiler-all"
-version = "0.1.0-beta.1"
+version = "0.2.0-beta.1"
 dependencies = [
  "oxidcord-plugin-sdk",
 ]
@@ -10201,7 +10201,7 @@ dependencies = [
 
 [[package]]
 name = "text-shortcuts"
-version = "0.1.0-beta.1"
+version = "0.2.0-beta.1"
 dependencies = [
  "oxidcord-plugin-sdk",
 ]
@@ -10950,7 +10950,7 @@ dependencies = [
 
 [[package]]
 name = "user-notes"
-version = "0.1.0-beta.1"
+version = "0.2.0-beta.1"
 dependencies = [
  "oxidcord-plugin-sdk",
 ]
@@ -12814,7 +12814,7 @@ dependencies = [
 
 [[package]]
 name = "word-mute"
-version = "0.1.0-beta.1"
+version = "0.2.0-beta.1"
 dependencies = [
  "oxidcord-plugin-sdk",
 ]
@@ -12991,7 +12991,7 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 
 [[package]]
 name = "xtask"
-version = "0.1.0-beta.1"
+version = "0.2.0-beta.1"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
