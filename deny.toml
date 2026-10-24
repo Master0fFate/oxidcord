@@ -5,6 +5,7 @@ all-features = false
 version = 2
 ignore = [
 	{ id = "RUSTSEC-2023-0071", reason = "no patched rsa release exists, used only for the one-off QR login key exchange, never as a network oracle" },
+	{ id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5 comes from openmls_rust_crypto 0.6, whose newest release still pins p256 0.13, so 0.7.6 is unreachable; exploiting it needs local timing measurement of the client" },
 ]
 unmaintained = "workspace"
 
@@ -37,3 +38,10 @@ wildcards = "allow"
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
+allow-git = [
+	"https://github.com/longbridge/gpui-fast",
+	"https://github.com/gfx-rs/wgpu",
+	"https://github.com/zed-industries/font-kit",
+	"https://github.com/zed-industries/scap",
+	"https://github.com/zed-industries/wasm_thread",
+]
