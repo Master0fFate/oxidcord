@@ -19,7 +19,7 @@ use crate::theme::{Theme, rem};
 use super::community::access::GuildAccess;
 use super::community::act;
 use super::community::menus::{ChannelFacts, channel_menu, guild_menu};
-use super::plugins::PluginMenu as _;
+use super::plugins::{MenuTarget, PluginMenu as _};
 use super::server_settings::channel as channel_modals;
 use super::voice::{Participant, participant_row, participants};
 
@@ -144,6 +144,7 @@ impl ChannelSidebar {
 			.flex()
 			.items_center()
 			.justify_between()
+			.w_full()
 			.h(theme.guild_header_height)
 			.px(theme.space_16)
 			.text_size(theme.font_md)
@@ -166,7 +167,7 @@ impl ChannelSidebar {
 			&self.access,
 			cx,
 		)
-		.plugin_items("server-context-menu", guild.to_string(), cx);
+		.plugin_items("server-context-menu", MenuTarget::server(guild), cx);
 		let click_menu = guild_menu(
 			guild,
 			self.invite_channel,
@@ -175,19 +176,27 @@ impl ChannelSidebar {
 			&self.access,
 			cx,
 		)
-		.plugin_items("server-context-menu", guild.to_string(), cx);
+		.plugin_items("server-context-menu", MenuTarget::server(guild), cx);
 		div()
 			.id("guild-header")
+			.relative()
 			.flex_none()
-			.border_b_1()
-			.border_color(theme.background_tertiary)
+			.h(theme.guild_header_height)
 			.child(
 				Button::new("guild-header-button")
 					.ghost()
-					.w_full()
-					.h(theme.guild_header_height)
+					.size_full()
 					.child(title)
 					.dropdown_menu(click_menu.build()),
+			)
+			.child(
+				div()
+					.absolute()
+					.left_0()
+					.right_0()
+					.bottom_0()
+					.h(rem(1.))
+					.bg(theme.background_tertiary),
 			)
 			.context_menu(menu.build())
 			.into_any_element()
@@ -304,7 +313,7 @@ impl ChannelSidebar {
 			joined: channel.joined,
 		};
 		let menu = channel_menu(self.guild, facts, self.access)
-			.plugin_items("channel-context-menu", id.to_string(), cx)
+			.plugin_items("channel-context-menu", MenuTarget::channel(self.guild, id), cx)
 			.build();
 		let thread = channel.thread;
 		let hover_background = theme.modifier_hover;
