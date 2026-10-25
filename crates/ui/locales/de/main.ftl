@@ -171,6 +171,7 @@ message-failed = Message failed to send.
 message-retry = Retry
 message-reply-deleted = Original message was deleted
 message-reply-attachment = Click to see attachment
+message-forwarded = Forwarded
 
 attachment-download = Download
 

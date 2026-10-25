@@ -9,7 +9,9 @@ use gpui_component::button::{Button, ButtonVariants as _};
 use markdown::parse;
 use media::SizeHint;
 use media::cdn::{ProxyFormat, attachment_proxy, sticker_url};
-use protocol::{Attachment, Embed, EmbedKind, EmbedMedia, Message, PartialEmoji, Poll, Reaction};
+use protocol::{
+	Attachment, Embed, EmbedKind, EmbedMedia, Message, PartialEmoji, Poll, Reaction, StickerItem,
+};
 
 use super::body::{BodyEnv, render_body};
 use super::reaction_tip;
@@ -99,9 +101,8 @@ fn is_video(attachment: &Attachment) -> bool {
 		.is_some_and(|kind| kind.starts_with("video/"))
 }
 
-pub fn attachments(message: &Message, env: &BodyEnv, inline: bool, cx: &App) -> Vec<AnyElement> {
-	message
-		.attachments
+pub fn attachments(items: &[Attachment], env: &BodyEnv, inline: bool, cx: &App) -> Vec<AnyElement> {
+	items
 		.iter()
 		.map(|attachment| {
 			if inline && is_image(attachment) {
@@ -212,9 +213,8 @@ fn file_card(attachment: &Attachment, video: bool, env: &BodyEnv, cx: &App) -> A
 		.into_any_element()
 }
 
-pub fn stickers(message: &Message, env: &BodyEnv, cx: &App) -> Vec<AnyElement> {
-	message
-		.sticker_items
+pub fn stickers(items: &[StickerItem], env: &BodyEnv, cx: &App) -> Vec<AnyElement> {
+	items
 		.iter()
 		.filter_map(|sticker| {
 			let format = media::cdn::StickerFormat::from(i64::from(sticker.format_type?));
@@ -242,9 +242,8 @@ fn media_url(media: &EmbedMedia) -> Option<&str> {
 	media.proxy_url.as_deref().or(media.url.as_deref())
 }
 
-pub fn embeds(message: &Message, env: &BodyEnv, previews: bool, cx: &App) -> Vec<AnyElement> {
-	message
-		.embeds
+pub fn embeds(items: &[Embed], env: &BodyEnv, previews: bool, cx: &App) -> Vec<AnyElement> {
+	items
 		.iter()
 		.enumerate()
 		.filter(|(_, embed)| {

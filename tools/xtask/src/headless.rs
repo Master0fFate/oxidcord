@@ -565,6 +565,7 @@ async fn scenario(
 			"threads_created": text.threads_created,
 			"moderation_ok": text.moderation_ok,
 			"expressions_ok": text.expressions_ok,
+			"forward_ok": text.forward_ok,
 			"voice_frames_echoed": voice_frames_echoed,
 			"plugins_loaded": plugins_loaded,
 			"plugin_render_ms_p95": (render_p95 * 100.0).round() / 100.0,

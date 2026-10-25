@@ -555,6 +555,9 @@ fn author_color(view: &MessageView, theme: &Theme) -> Hsla {
 fn reply_header(view: &MessageView, env: &RowEnv, cx: &App) -> Option<AnyElement> {
 	let theme = env.theme;
 	let message = &view.message;
+	if message.is_forward() {
+		return None;
+	}
 	message.message_reference.as_ref()?.message_id?;
 	let left = |child: AnyElement| {
 		div()
@@ -634,12 +637,88 @@ fn reply_header(view: &MessageView, env: &RowEnv, cx: &App) -> Option<AnyElement
 	))
 }
 
+fn forward_block(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
+	let theme = env.theme;
+	let message = &view.message;
+	let id = message.id.get();
+	let header = div()
+		.id(("forward-label", id))
+		.flex()
+		.items_center()
+		.gap(theme.space_4)
+		.h(rem(20.))
+		.child(
+			Icon::new(IconKind::Forward)
+				.size(rem(14.))
+				.color(theme.text_muted),
+		)
+		.child(
+			div()
+				.text_size(theme.font_sm)
+				.font_weight(FontWeight::SEMIBOLD)
+				.text_color(theme.header_secondary)
+				.child(cx.t("message-forwarded")),
+		);
+	let Some(source) = message.forwarded_message() else {
+		return header.into_any_element();
+	};
+	let mut lines: Vec<AnyElement> = Vec::new();
+	if !source.content.is_empty() {
+		let document = markdown::parse(&source.content);
+		let body_env = BodyEnv::new(theme, env.lookup, env.dispatch, id, env.revealed, env.prefs)
+			.jumbo(document.is_only_emoji());
+		lines.push(render_body(&document, &body_env, cx));
+	}
+	let body_env = BodyEnv::new(theme, env.lookup, env.dispatch, id, env.revealed, env.prefs);
+	lines.extend(media::attachments(
+		&source.attachments,
+		&body_env,
+		env.prefs.inline_media,
+		cx,
+	));
+	if !source.flags.contains(protocol::MessageFlags::SUPPRESS_EMBEDS) {
+		lines.extend(media::embeds(
+			&source.embeds,
+			&body_env,
+			env.prefs.link_previews,
+			cx,
+		));
+	}
+	lines.extend(media::stickers(&source.sticker_items, &body_env, cx));
+	if lines.is_empty() {
+		return header.into_any_element();
+	}
+	div()
+		.id(("forward", id))
+		.mt(rem(1.))
+		.flex()
+		.flex_col()
+		.child(header)
+		.child(
+			div()
+				.flex()
+				.gap(theme.space_8)
+				.child(
+					div()
+						.flex_none()
+						.w(rem(4.))
+						.rounded_full()
+						.bg(theme.interactive_muted),
+				)
+				.child(div().flex().flex_col().flex_1().min_w_0().children(lines)),
+		)
+		.into_any_element()
+}
+
 fn menu_for(view: &MessageView, env: &RowEnv, cx: &App) -> ContextMenuBuilder {
 	let message = &view.message;
 	let id = message.id;
 	let channel_id = message.channel_id;
 	let guild = message.guild_id;
-	let content = message.content.clone();
+	let content = match message.forwarded_message() {
+		Some(source) => source.content.clone(),
+		None => message.content.clone(),
+	};
 	let mine = Some(message.author.id) == env.me;
 	let reply = env.dispatch.clone();
 	let edit = env.dispatch.clone();
@@ -956,6 +1035,8 @@ fn content_column(
 	);
 	if let Some(editing) = env.editing.filter(|editing| editing.message == message.id) {
 		out.push(editor(editing, env, cx));
+	} else if message.is_forward() {
+		out.push(forward_block(view, env, cx));
 	} else if !message.content.is_empty() {
 		let document = document_of(env, view);
 		let trailer = if view.deleted {
@@ -989,14 +1070,14 @@ fn content_column(
 	let filtered = media_source(message, effects);
 	let media_message = filtered.as_ref().unwrap_or(message);
 	out.extend(media::attachments(
-		media_message,
+		&media_message.attachments,
 		&body_env,
 		env.prefs.inline_media,
 		cx,
 	));
 	if !message.flags.contains(protocol::MessageFlags::SUPPRESS_EMBEDS) {
 		out.extend(media::embeds(
-			media_message,
+			&media_message.embeds,
 			&body_env,
 			env.prefs.link_previews,
 			cx,
@@ -1005,7 +1086,7 @@ fn content_column(
 	if let Some(effects) = effects {
 		out.extend(effects.cards(message.embeds.len(), message.id, theme));
 	}
-	out.extend(media::stickers(message, &body_env, cx));
+	out.extend(media::stickers(&message.sticker_items, &body_env, cx));
 	out.extend(thread_chip(message, env, cx));
 	out.extend(super::community::invites::cards(
 		&message.content,

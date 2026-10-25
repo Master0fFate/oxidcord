@@ -135,7 +135,11 @@ impl Shared {
 	}
 
 	pub fn post_message(&self, channel_id: u64, author: &User, draft: Draft) -> Result<Value, ApiError> {
-		if draft.content.is_empty() && draft.files.is_empty() && draft.sticker_ids.is_empty() {
+		let forwarding = draft
+			.reference
+			.as_ref()
+			.is_some_and(|reference| reference.kind == Some(MessageReferenceKind::Forward));
+		if draft.content.is_empty() && draft.files.is_empty() && draft.sticker_ids.is_empty() && !forwarding {
 			return Err(ApiError::empty_message());
 		}
 		let mut store = self.store.lock();

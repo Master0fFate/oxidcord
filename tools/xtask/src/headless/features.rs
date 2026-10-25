@@ -2,9 +2,10 @@ use anyhow::{Context, Result, ensure};
 use mockcord::Fixtures;
 use protocol::{ChannelType, Message, Snowflake};
 use session::{Command, ScreenSource, ScreenTarget, ScreenTargetKind, VideoQuality};
-use state::{MemberListRow, State};
+use state::{MemberListRow, MessageRow, State};
 
 use super::Harness;
+use serde_json::Value;
 
 const THREAD_NAME: &str = "headless thread";
 const KICK_REASON: &str = "headless";
@@ -20,12 +21,15 @@ const UNICODE_CATEGORIES: usize = 8;
 const STICKER_NAME: &str = "headless_sticker";
 const STICKER_FILE: &str = "headless.png";
 const STICKER_PNG: [u8; 8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+const FORWARD_PAGES: usize = 8;
+const FORWARD_REFERENCE: i64 = 1;
 
 pub(super) struct TextOutcome {
 	pub(super) threads_created: usize,
 	pub(super) groups_created: usize,
 	pub(super) moderation_ok: bool,
 	pub(super) expressions_ok: bool,
+	pub(super) forward_ok: bool,
 }
 
 impl Harness {
@@ -72,11 +76,13 @@ impl Harness {
 		let moderation_ok = self.kick_and_audit(guild_id).await?;
 		let groups_created = self.group_dm(fixtures).await?;
 		let expressions_ok = self.expression_features(guild_id, channel_id).await?;
+		let forward_ok = self.forward_message(fixtures).await?;
 		Ok(TextOutcome {
 			threads_created: 1,
 			groups_created,
 			moderation_ok,
 			expressions_ok,
+			forward_ok,
 		})
 	}
 
@@ -278,6 +284,125 @@ impl Harness {
 		Ok(1)
 	}
 
+	async fn forward_message(&self, fixtures: &Fixtures) -> Result<bool> {
+		let forward = forward_in(fixtures).context("the fixtures do not contain a forwarded message")?;
+		let guild_id = self.state.read().channel_guild(forward.channel_id);
+		self.session.send(Command::SelectChannel {
+			guild_id,
+			channel_id: forward.channel_id,
+		});
+		self.until("the forwarded channel history to load", |state| {
+			state
+				.messages(forward.channel_id)
+				.is_some_and(|cache| !cache.ordered.is_empty())
+		})
+		.await?;
+		let mut pages = 0;
+		while pages < FORWARD_PAGES && !self.loaded(forward.channel_id, forward.message_id) {
+			let cached = self.cached(forward.channel_id);
+			self.session.send(Command::LoadOlder {
+				channel_id: forward.channel_id,
+			});
+			self.until("older history to load around the forwarded message", |state| {
+				state
+					.messages(forward.channel_id)
+					.is_some_and(|cache| cache.ordered.len() > cached)
+			})
+			.await?;
+			pages += 1;
+		}
+		ensure!(
+			self.loaded(forward.channel_id, forward.message_id),
+			"the forwarded message never showed up in the cache"
+		);
+		let source = {
+			let state = self.state.read();
+			let message = state
+				.messages(forward.channel_id)
+				.and_then(|cache| cache.by_id.get(&forward.message_id).cloned())
+				.context("the forwarded message is missing from the cache")?;
+			ensure!(
+				message.is_forward(),
+				"the forwarded message is not marked as forwarded"
+			);
+			ensure!(
+				message.referenced_message.is_none(),
+				"the forwarded message was parsed as a reply"
+			);
+			let snapshot = message
+				.forwarded_message()
+				.context("the forwarded message carries no snapshot to render")?;
+			ensure!(
+				!snapshot.content.is_empty() && snapshot.content == forward.content,
+				"the forwarded snapshot lost its content"
+			);
+			let view = state
+				.channel_rows(forward.channel_id)
+				.into_iter()
+				.find_map(|row| match row {
+					MessageRow::Message(view) if view.message.id == forward.message_id => Some(view),
+					_ => None,
+				})
+				.context("the forwarded message has no row")?;
+			ensure!(
+				!view.grouped_with_previous,
+				"the forwarded message was merged into the previous row"
+			);
+			ensure!(
+				view.message
+					.forwarded_message()
+					.is_some_and(|snapshot| !snapshot.content.is_empty()),
+				"the forwarded row has nothing to render"
+			);
+			state
+				.messages(forward.channel_id)
+				.and_then(|cache| {
+					cache
+						.ordered
+						.iter()
+						.find(|message| !message.is_forward() && !message.content.is_empty())
+						.cloned()
+				})
+				.context("no plain message to forward")?
+		};
+		self.session.send(Command::ForwardMessage {
+			channel_id: forward.channel_id,
+			message_id: source.id,
+			to_channel_id: forward.channel_id,
+		});
+		self.until("the forwarded copy to arrive", |state| {
+			state.messages(forward.channel_id).is_some_and(|cache| {
+				cache.ordered.iter().any(|message| {
+					message.is_forward()
+						&& message
+							.message_reference
+							.as_ref()
+							.and_then(|reference| reference.message_id)
+							== Some(source.id)
+						&& message
+							.forwarded_message()
+							.is_some_and(|snapshot| snapshot.content == source.content)
+				})
+			})
+		})
+		.await?;
+		Ok(true)
+	}
+
+	fn cached(&self, channel_id: Snowflake) -> usize {
+		self.state
+			.read()
+			.messages(channel_id)
+			.map_or(0, |cache| cache.ordered.len())
+	}
+
+	fn loaded(&self, channel_id: Snowflake, message_id: Snowflake) -> bool {
+		self.state
+			.read()
+			.messages(channel_id)
+			.is_some_and(|cache| cache.by_id.contains_key(&message_id))
+	}
+
 	async fn echoed_message(
 		&self,
 		what: &str,
@@ -387,4 +512,34 @@ impl Harness {
 		self.until("the sticker to disappear", |state| count(state) == Some(before))
 			.await
 	}
+}
+
+struct ForwardFixture {
+	channel_id: Snowflake,
+	message_id: Snowflake,
+	content: String,
+}
+
+fn forward_in(fixtures: &Fixtures) -> Option<ForwardFixture> {
+	fixtures.messages.iter().find_map(|(channel_id, messages)| {
+		messages.iter().find_map(|(id, value)| {
+			let reference = value.get("message_reference")?;
+			if reference.get("type").and_then(Value::as_i64) != Some(FORWARD_REFERENCE) {
+				return None;
+			}
+			let content = value
+				.get("message_snapshots")?
+				.as_array()?
+				.first()?
+				.get("message")?
+				.get("content")?
+				.as_str()?
+				.to_owned();
+			(!content.is_empty()).then_some(ForwardFixture {
+				channel_id: Snowflake(*channel_id),
+				message_id: Snowflake(*id),
+				content,
+			})
+		})
+	})
 }

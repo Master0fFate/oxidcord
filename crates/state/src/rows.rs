@@ -35,7 +35,7 @@ fn local_day(message: &Message) -> NaiveDate {
 }
 
 fn is_plain(message: &Message) -> bool {
-	message.kind == MessageType::Default && message.referenced_message.is_none()
+	message.kind == MessageType::Default && message.referenced_message.is_none() && !message.is_forward()
 }
 
 fn groups_with(previous: &Message, message: &Message) -> bool {

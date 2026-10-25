@@ -382,6 +382,19 @@ pub struct Message {
 	pub call: Option<CallInfo>,
 }
 
+impl Message {
+	pub fn is_forward(&self) -> bool {
+		self.message_reference
+			.as_ref()
+			.is_some_and(|reference| reference.kind == Some(MessageReferenceKind::Forward))
+			|| !self.message_snapshots.is_empty()
+	}
+
+	pub fn forwarded_message(&self) -> Option<&PartialMessage> {
+		self.message_snapshots.first().map(|snapshot| &snapshot.message)
+	}
+}
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct MessageUpdate {
