@@ -2,7 +2,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::LazyLock;
 
 use protocol::{
-	Emoji, EmojiCategory, Gif, GifTrending, GuildStickersUpdate, Permissions, PremiumType, Snowflake,
+	Emoji, EmojiCategory, Gif, GifCategory, GuildStickersUpdate, Permissions, PremiumType, Snowflake,
 	Sticker, StickerPack, UnicodeEmoji, unicode_emoji_list,
 };
 use serde::{Deserialize, Serialize};
@@ -109,7 +109,10 @@ impl<T> QueryCache<T> {
 
 #[derive(Debug, Default)]
 pub(crate) struct Expressions {
-	pub(crate) gif_trending: Option<GifTrending>,
+	pub(crate) gif_trending: Vec<Gif>,
+	pub(crate) gif_trending_complete: bool,
+	pub(crate) gif_categories: Option<Vec<GifCategory>>,
+	pub(crate) gif_favorites: Option<Vec<Gif>>,
 	pub(crate) gif_searches: QueryCache<Vec<Gif>>,
 	pub(crate) gif_suggestions: QueryCache<Vec<String>>,
 	pub(crate) sticker_packs: Option<Vec<StickerPack>>,
@@ -154,8 +157,20 @@ fn catalog_emoji(
 }
 
 impl State {
-	pub fn gif_trending(&self) -> Option<&GifTrending> {
-		self.lazy.expressions.gif_trending.as_ref()
+	pub fn gif_trending(&self) -> &[Gif] {
+		&self.lazy.expressions.gif_trending
+	}
+
+	pub fn gif_trending_complete(&self) -> bool {
+		self.lazy.expressions.gif_trending_complete
+	}
+
+	pub fn gif_categories(&self) -> Option<&[GifCategory]> {
+		self.lazy.expressions.gif_categories.as_deref()
+	}
+
+	pub fn gif_favorites(&self) -> Option<&[Gif]> {
+		self.lazy.expressions.gif_favorites.as_deref()
 	}
 
 	pub fn gif_search(&self, query: &str) -> Option<&[Gif]> {

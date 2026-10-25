@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -17,6 +17,7 @@ use crate::types::Decoded;
 
 const SHRINK_THRESHOLD: u32 = 2;
 const FAILURE_RETRY_DELAY: Duration = Duration::from_secs(60);
+const MAX_IN_FLIGHT: usize = 6;
 
 type ReadyCallback = Arc<dyn Fn() + Send + Sync>;
 
@@ -32,6 +33,8 @@ struct ServiceInner {
 	limits: Limits,
 	pending: Mutex<HashSet<u64>>,
 	failed: Mutex<HashMap<u64, Instant>>,
+	in_flight: Mutex<usize>,
+	queued: Mutex<VecDeque<(u64, String, SizeHint)>>,
 	on_ready: RwLock<Option<ReadyCallback>>,
 	runtime: Handle,
 }
@@ -46,6 +49,8 @@ impl MediaService {
 				limits,
 				pending: Mutex::new(HashSet::new()),
 				failed: Mutex::new(HashMap::new()),
+				in_flight: Mutex::new(0),
+				queued: Mutex::new(VecDeque::new()),
 				on_ready: RwLock::new(None),
 				runtime: Handle::current(),
 			}),
@@ -73,21 +78,57 @@ impl MediaService {
 			return;
 		}
 		let key = memory_key(url, hint);
-		if self.recently_failed(key) || !self.inner.pending.lock().insert(key) {
+		if self.recently_failed(key) {
 			return;
 		}
+		let inner = &self.inner;
+		if !inner.pending.lock().insert(key) {
+			return;
+		}
+		let mut in_flight = inner.in_flight.lock();
+		if *in_flight < MAX_IN_FLIGHT {
+			*in_flight += 1;
+			drop(in_flight);
+			self.start_load(key, url.to_owned(), hint);
+		} else {
+			inner.queued.lock().push_back((key, url.to_owned(), hint));
+		}
+	}
+
+	fn start_load(&self, key: u64, url: String, hint: SizeHint) {
 		let service = self.clone();
-		let url = url.to_owned();
 		self.inner.runtime.spawn(async move {
-			match service.load(&url, hint).await {
-				Ok(_) => service.notify_ready(),
+			let succeeded = match service.load(&url, hint).await {
+				Ok(_) => true,
 				Err(error) => {
 					tracing::debug!(url = redact_url(&url), %error, "media load failed");
-					service.inner.failed.lock().insert(key, Instant::now());
+					false
 				}
+			};
+			if succeeded {
+				service.notify_ready();
 			}
-			service.inner.pending.lock().remove(&key);
+			service.finish(key, succeeded);
 		});
+	}
+
+	fn finish(&self, key: u64, succeeded: bool) {
+		let inner = &self.inner;
+		inner.pending.lock().remove(&key);
+		if !succeeded {
+			inner.failed.lock().insert(key, Instant::now());
+		}
+		let mut in_flight = inner.in_flight.lock();
+		*in_flight -= 1;
+		let next = if *in_flight < MAX_IN_FLIGHT {
+			inner.queued.lock().pop_front()
+		} else {
+			None
+		};
+		if let Some((next_key, next_url, next_hint)) = next {
+			*in_flight += 1;
+			self.start_load(next_key, next_url, next_hint);
+		}
 	}
 
 	pub async fn load(&self, url: &str, hint: SizeHint) -> Result<Arc<Decoded>> {

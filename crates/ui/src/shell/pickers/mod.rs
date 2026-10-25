@@ -154,7 +154,10 @@ impl Picker {
 			state.focus(window, cx);
 		});
 		match tab {
-			PickerTab::Gif => self.load_gifs(cx),
+			PickerTab::Gif => {
+				self.reset_gifs();
+				self.load_gifs(cx);
+			}
 			PickerTab::Sticker => self.load_stickers(cx),
 			PickerTab::Emoji => {}
 		}

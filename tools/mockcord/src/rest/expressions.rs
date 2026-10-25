@@ -3,7 +3,7 @@ use std::sync::{Arc, LazyLock};
 
 use axum::extract::{Multipart, Path, Query, State};
 use axum::http::StatusCode;
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use parking_lot::Mutex;
 use protocol::{LenientVec, Snowflake, Sticker, StickerFormat, StickerKind, StickerPack};
@@ -101,6 +101,11 @@ pub fn routes() -> Router<Arc<Shared>> {
 		.route("/gifs/suggest", get(gifs_suggest))
 		.route("/gifs/trending-search", get(gifs_trending_search))
 		.route("/gifs/select", post(gif_select))
+		.route(
+			"/users/@me/gifs/favorites",
+			get(gif_favorites_list).post(gif_favorites_add),
+		)
+		.route("/users/@me/gifs/favorites/{id}", delete(gif_favorites_remove))
 		.route("/sticker-packs", get(sticker_packs))
 		.route("/sticker-packs/{id}", get(sticker_pack))
 		.route("/stickers/{id}", get(sticker))
@@ -198,6 +203,43 @@ async fn gifs_trending_search() -> ApiResult {
 
 async fn gif_select(Json(_): Json<Value>) -> StatusCode {
 	StatusCode::NO_CONTENT
+}
+
+async fn gif_favorites_list(State(shared): Mock) -> ApiResult {
+	let gifs = shared.store.lock().gif_favorites.clone();
+	Ok(Json(Value::Array(gifs)))
+}
+
+async fn gif_favorites_add(State(shared): Mock, Json(body): Json<Value>) -> Result<StatusCode, ApiError> {
+	let id = body["id"]
+		.as_str()
+		.ok_or_else(|| ApiError::invalid_body("id is required"))?;
+	let base = media_base(&shared);
+	let gif = gifs_matching(base, "", None)
+		.into_iter()
+		.find(|gif| gif["id"].as_str() == Some(id))
+		.ok_or_else(ApiError::not_found)?;
+	let mut store = shared.store.lock();
+	if !store
+		.gif_favorites
+		.iter()
+		.any(|entry| entry["id"].as_str() == Some(id))
+	{
+		store.gif_favorites.push(gif);
+	}
+	Ok(StatusCode::NO_CONTENT)
+}
+
+async fn gif_favorites_remove(State(shared): Mock, Path(id): Path<String>) -> Result<StatusCode, ApiError> {
+	let mut store = shared.store.lock();
+	let before = store.gif_favorites.len();
+	store
+		.gif_favorites
+		.retain(|gif| gif["id"].as_str() != Some(id.as_str()));
+	if store.gif_favorites.len() == before {
+		return Err(ApiError::not_found());
+	}
+	Ok(StatusCode::NO_CONTENT)
 }
 
 fn pack_sticker(pack_index: usize, index: usize, pack_id: Snowflake) -> Sticker {

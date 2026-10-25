@@ -63,6 +63,20 @@ impl RestClient {
 		self.send_empty(request).await
 	}
 
+	pub async fn gif_favorites(&self) -> Result<LenientVec<Gif>> {
+		self.send(Request::get("/users/@me/gifs/favorites")).await
+	}
+
+	pub async fn gif_favorite_add(&self, id: &str) -> Result<()> {
+		self.send_empty(Request::post("/users/@me/gifs/favorites").json(&json!({ "id": id })))
+			.await
+	}
+
+	pub async fn gif_favorite_remove(&self, id: &str) -> Result<()> {
+		self.send_empty(Request::delete(format!("/users/@me/gifs/favorites/{id}")))
+			.await
+	}
+
 	pub async fn sticker_packs(&self) -> Result<StickerPacks> {
 		self.send(Request::get("/sticker-packs")).await
 	}

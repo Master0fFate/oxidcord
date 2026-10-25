@@ -4,7 +4,7 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use protocol::lenient::timestamp;
 use protocol::{
-	Channel, Gif, GifTrending, LenientVec, Member, Message, Snowflake, Sticker, StickerPack, ThreadMember,
+	Channel, Gif, GifCategory, LenientVec, Member, Message, Snowflake, Sticker, StickerPack, ThreadMember,
 	User,
 };
 use serde::Deserialize;
@@ -62,7 +62,12 @@ pub enum Loaded {
 		emoji: String,
 		users: Vec<User>,
 	},
-	GifTrending(GifTrending),
+	GifTrending {
+		gifs: Vec<Gif>,
+		complete: bool,
+	},
+	GifCategories(Vec<GifCategory>),
+	GifFavorites(Vec<Gif>),
 	GifSearch {
 		query: String,
 		gifs: Vec<Gif>,
@@ -535,8 +540,17 @@ impl State {
 					.insert((*message_id, emoji.clone()), users.clone());
 				changes.loaded.insert(*message_id);
 			}
-			Loaded::GifTrending(trending) => {
-				self.lazy.expressions.gif_trending = Some(trending.clone());
+			Loaded::GifTrending { gifs, complete } => {
+				self.lazy.expressions.gif_trending.clone_from(gifs);
+				self.lazy.expressions.gif_trending_complete = *complete;
+				changes.loaded.insert(EXPRESSIONS_KEY);
+			}
+			Loaded::GifCategories(categories) => {
+				self.lazy.expressions.gif_categories = Some(categories.clone());
+				changes.loaded.insert(EXPRESSIONS_KEY);
+			}
+			Loaded::GifFavorites(gifs) => {
+				self.lazy.expressions.gif_favorites = Some(gifs.clone());
 				changes.loaded.insert(EXPRESSIONS_KEY);
 			}
 			Loaded::GifSearch { query, gifs } => {

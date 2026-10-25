@@ -44,6 +44,7 @@ pub struct Store {
 	pub audit: HashMap<u64, Vec<Value>>,
 	pub joined_threads: BTreeSet<u64>,
 	pub created_guilds: HashMap<u64, Value>,
+	pub gif_favorites: Vec<Value>,
 	last_id: u64,
 }
 
@@ -116,6 +117,7 @@ impl Store {
 			left_guilds: BTreeSet::new(),
 			audit: crate::admin::seed_audit(fixtures),
 			joined_threads: BTreeSet::new(),
+			gif_favorites: Vec::new(),
 			last_id,
 		}
 	}
