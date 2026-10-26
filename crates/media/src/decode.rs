@@ -12,6 +12,7 @@ use crate::types::{Animation, Decoded, DecodedImage, Frame};
 
 const MIN_FRAME_DELAY_MS: u32 = 20;
 const DEFAULT_FRAME_DELAY_MS: u32 = 100;
+const BYTES_PER_PIXEL: u64 = 4;
 const ALLOC_FACTOR: u64 = 8;
 
 #[derive(Debug, Clone)]
@@ -19,7 +20,8 @@ pub struct Limits {
 	pub max_pixels: u64,
 	pub max_frames: u32,
 	pub max_bytes: usize,
-	pub max_total_frame_pixels: u64,
+	pub max_animation_bytes: usize,
+	pub first_frame_only: bool,
 }
 
 impl Default for Limits {
@@ -28,7 +30,8 @@ impl Default for Limits {
 			max_pixels: 32 * 1024 * 1024,
 			max_frames: 500,
 			max_bytes: 64 * 1024 * 1024,
-			max_total_frame_pixels: 64 * 1024 * 1024,
+			max_animation_bytes: 32 * 1024 * 1024,
+			first_frame_only: false,
 		}
 	}
 }
@@ -108,28 +111,48 @@ fn collect_frames<'a>(
 		LoopCount::Infinite => None,
 		LoopCount::Finite(count) => Some(count.get()),
 	};
-	let frame_pixels = u64::from(width) * u64::from(height);
+	let frame_bytes = u64::from(width) * u64::from(height) * BYTES_PER_PIXEL;
+	let max_kept = (limits.max_animation_bytes as u64 / frame_bytes.max(1)).max(1) as usize;
 	let mut frames: Vec<Frame> = Vec::new();
 	for frame in decoder.into_frames() {
 		let frame = frame?;
-		let next_total = (frames.len() as u64 + 1) * frame_pixels;
-		if frames.len() >= limits.max_frames as usize || next_total > limits.max_total_frame_pixels {
-			return Err(MediaError::Limit(format!(
-				"animation exceeds {} frames or {} total pixels",
-				limits.max_frames, limits.max_total_frame_pixels
-			)));
+		if frames.len() >= limits.max_frames as usize {
+			break;
 		}
 		let delay_ms = frame_delay_ms(frame.delay().into());
 		frames.push(Frame {
 			image: into_decoded(frame.into_buffer()),
 			delay_ms,
 		});
+		if limits.first_frame_only {
+			break;
+		}
+		if frames.len() >= max_kept.saturating_mul(2) {
+			decimate(&mut frames);
+		}
+	}
+	if !limits.first_frame_only {
+		while frames.len() > max_kept {
+			decimate(&mut frames);
+		}
 	}
 	match frames.len() {
 		0 => Err(MediaError::Decode("animation has no frames".to_owned())),
 		1 => Ok(Decoded::Still(frames.remove(0).image)),
 		_ => Ok(Decoded::Animated(Animation { frames, loops })),
 	}
+}
+
+fn decimate(frames: &mut Vec<Frame>) {
+	let mut kept: Vec<Frame> = Vec::with_capacity(frames.len() / 2 + 1);
+	for (index, frame) in std::mem::take(frames).into_iter().enumerate() {
+		if index % 2 == 0 {
+			kept.push(frame);
+		} else if let Some(last) = kept.last_mut() {
+			last.delay_ms = last.delay_ms.saturating_add(frame.delay_ms);
+		}
+	}
+	*frames = kept;
 }
 
 fn frame_delay_ms(delay: Duration) -> u32 {

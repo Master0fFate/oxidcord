@@ -15,7 +15,6 @@ use crate::fetch::MediaFetcher;
 use crate::resize::resize_decoded;
 use crate::types::Decoded;
 
-const SHRINK_THRESHOLD: u32 = 2;
 const FAILURE_RETRY_DELAY: Duration = Duration::from_secs(60);
 const MAX_IN_FLIGHT: usize = 6;
 
@@ -34,7 +33,7 @@ struct ServiceInner {
 	pending: Mutex<HashSet<u64>>,
 	failed: Mutex<HashMap<u64, Instant>>,
 	in_flight: Mutex<usize>,
-	queued: Mutex<VecDeque<(u64, String, SizeHint)>>,
+	queued: Mutex<VecDeque<(u64, String, SizeHint, bool)>>,
 	on_ready: RwLock<Option<ReadyCallback>>,
 	runtime: Handle,
 }
@@ -69,15 +68,15 @@ impl MediaService {
 		&self.inner.disk
 	}
 
-	pub fn peek(&self, url: &str, hint: SizeHint) -> Option<Arc<Decoded>> {
-		self.inner.memory.lock().get(url, hint)
+	pub fn peek(&self, url: &str, hint: SizeHint, still: bool) -> Option<Arc<Decoded>> {
+		self.inner.memory.lock().get(url, hint, still)
 	}
 
-	pub fn request(&self, url: &str, hint: SizeHint) {
-		if self.peek(url, hint).is_some() {
+	pub fn request(&self, url: &str, hint: SizeHint, still: bool) {
+		if self.peek(url, hint, still).is_some() {
 			return;
 		}
-		let key = memory_key(url, hint);
+		let key = memory_key(url, hint, still);
 		if self.recently_failed(key) {
 			return;
 		}
@@ -89,16 +88,18 @@ impl MediaService {
 		if *in_flight < MAX_IN_FLIGHT {
 			*in_flight += 1;
 			drop(in_flight);
-			self.start_load(key, url.to_owned(), hint);
+			self.start_load(key, url.to_owned(), hint, still);
+		} else if still {
+			inner.queued.lock().push_back((key, url.to_owned(), hint, still));
 		} else {
-			inner.queued.lock().push_back((key, url.to_owned(), hint));
+			inner.queued.lock().push_front((key, url.to_owned(), hint, still));
 		}
 	}
 
-	fn start_load(&self, key: u64, url: String, hint: SizeHint) {
+	fn start_load(&self, key: u64, url: String, hint: SizeHint, still: bool) {
 		let service = self.clone();
 		self.inner.runtime.spawn(async move {
-			let succeeded = match service.load(&url, hint).await {
+			let succeeded = match service.load(&url, hint, still).await {
 				Ok(_) => true,
 				Err(error) => {
 					tracing::debug!(url = redact_url(&url), %error, "media load failed");
@@ -125,18 +126,19 @@ impl MediaService {
 		} else {
 			None
 		};
-		if let Some((next_key, next_url, next_hint)) = next {
+		if let Some((next_key, next_url, next_hint, next_still)) = next {
 			*in_flight += 1;
-			self.start_load(next_key, next_url, next_hint);
+			self.start_load(next_key, next_url, next_hint, next_still);
 		}
 	}
 
-	pub async fn load(&self, url: &str, hint: SizeHint) -> Result<Arc<Decoded>> {
-		if let Some(hit) = self.peek(url, hint) {
+	pub async fn load(&self, url: &str, hint: SizeHint, still: bool) -> Result<Arc<Decoded>> {
+		if let Some(hit) = self.peek(url, hint, still) {
 			return Ok(hit);
 		}
 		let (bytes, from_disk) = self.raw_bytes(url).await?;
-		let limits = self.inner.limits.clone();
+		let mut limits = self.inner.limits.clone();
+		limits.first_frame_only = still;
 		let source = bytes.clone();
 		let decoded =
 			spawn_blocking(move || decode(&source, &limits).map(|decoded| shrink_to_hint(decoded, hint)))
@@ -146,7 +148,7 @@ impl MediaService {
 			self.store_on_disk(url, bytes).await;
 		}
 		let decoded = Arc::new(decoded);
-		self.inner.memory.lock().insert(url, hint, decoded.clone());
+		self.inner.memory.lock().insert(url, hint, still, decoded.clone());
 		Ok(decoded)
 	}
 
@@ -198,9 +200,8 @@ fn shrink_to_hint(decoded: Decoded, hint: SizeHint) -> Decoded {
 		return decoded;
 	}
 	let (width, height) = decoded.dimensions();
-	if width > hint.width * SHRINK_THRESHOLD || height > hint.height * SHRINK_THRESHOLD {
-		resize_decoded(decoded, hint.width, hint.height)
-	} else {
-		decoded
+	if width <= hint.width && height <= hint.height {
+		return decoded;
 	}
+	resize_decoded(decoded, hint.width, hint.height)
 }

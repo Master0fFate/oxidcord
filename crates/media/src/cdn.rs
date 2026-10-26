@@ -8,6 +8,11 @@ const PROXY_HOSTS: [&str; 3] = [
 	"images-ext-1.discordapp.net",
 	"images-ext-2.discordapp.net",
 ];
+const TENOR_HOST: &str = "media.tenor.com";
+const TENOR_PREVIEW: &str = "AAAAe";
+const TENOR_TINY_GIF: &str = "AAAAM";
+const TENOR_CODE_LEN: usize = 5;
+const VIDEO_EXTENSIONS: [&str; 5] = ["mp4", "m4v", "webm", "mov", "mkv"];
 const MIN_SIZE: u32 = 16;
 const MAX_SIZE: u32 = 4096;
 const STICKER_SIZE: u32 = 320;
@@ -140,9 +145,17 @@ pub fn avatar_decoration_url(asset: &str, size: u32) -> String {
 }
 
 pub fn attachment_proxy(url: &str, width: u32, height: u32, format: ProxyFormat) -> String {
-	let Ok(mut parsed) = Url::parse(url) else {
-		return url.to_owned();
-	};
+	proxy_rewrite(url, width, height, format, None).unwrap_or_else(|| url.to_owned())
+}
+
+fn proxy_rewrite(
+	url: &str,
+	width: u32,
+	height: u32,
+	format: ProxyFormat,
+	animated: Option<bool>,
+) -> Option<String> {
+	let mut parsed = Url::parse(url).ok()?;
 	let host = parsed.host_str().unwrap_or_default().to_owned();
 	let rewritable = if host == CDN_HOST {
 		parsed.path().starts_with("/attachments/") && parsed.set_host(Some("media.discordapp.net")).is_ok()
@@ -150,11 +163,14 @@ pub fn attachment_proxy(url: &str, width: u32, height: u32, format: ProxyFormat)
 		PROXY_HOSTS.contains(&host.as_str())
 	};
 	if !rewritable {
-		return url.to_owned();
+		return None;
 	}
 	let kept: Vec<(String, String)> = parsed
 		.query_pairs()
-		.filter(|(key, _)| !matches!(key.as_ref(), "width" | "height" | "format"))
+		.filter(|(key, _)| {
+			!matches!(key.as_ref(), "width" | "height" | "format")
+				&& !(animated.is_some() && key == "animated")
+		})
 		.map(|(key, value)| (key.into_owned(), value.into_owned()))
 		.collect();
 	{
@@ -169,8 +185,85 @@ pub fn attachment_proxy(url: &str, width: u32, height: u32, format: ProxyFormat)
 		if height > 0 {
 			query.append_pair("height", &height.to_string());
 		}
+		if animated == Some(true) {
+			query.append_pair("animated", "true");
+		}
 	}
-	parsed.into()
+	Some(parsed.into())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TenorRendition {
+	Preview,
+	TinyGif,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GifTile {
+	pub still: String,
+	pub animated: Option<String>,
+}
+
+pub fn is_video(url: &str) -> bool {
+	let url = url.split('#').next().unwrap_or_default();
+	let (path, query) = url.split_once('?').unwrap_or((url, ""));
+	let Some((_, extension)) = path.rsplit_once('.') else {
+		return false;
+	};
+	VIDEO_EXTENSIONS
+		.iter()
+		.any(|known| extension.eq_ignore_ascii_case(known))
+		&& !query.split('&').any(|pair| pair.starts_with("format="))
+}
+
+pub fn gif_tile(source: &str, preview: &str, width: u32, height: u32) -> GifTile {
+	if let Some(still) = tenor_rendition(source, TenorRendition::Preview) {
+		return GifTile {
+			still,
+			animated: tenor_rendition(source, TenorRendition::TinyGif),
+		};
+	}
+	if let Some(still) = proxy_rewrite(source, width, height, ProxyFormat::Webp, Some(false)) {
+		return GifTile {
+			still,
+			animated: (!is_video(source))
+				.then(|| proxy_rewrite(source, width, height, ProxyFormat::Webp, Some(true)))
+				.flatten(),
+		};
+	}
+	GifTile {
+		still: if preview.is_empty() { source } else { preview }.to_owned(),
+		animated: (!source.is_empty() && !is_video(source)).then(|| source.to_owned()),
+	}
+}
+
+fn tenor_path(url: &str) -> Option<String> {
+	let parsed = Url::parse(url).ok()?;
+	let host = parsed.host_str()?;
+	if host == TENOR_HOST {
+		return Some(parsed.path().to_owned());
+	}
+	if !PROXY_HOSTS.contains(&host) {
+		return None;
+	}
+	let proxied = parsed.path().strip_prefix("/external/")?;
+	let (_, target) = proxied.split_once('/')?;
+	target.strip_prefix("https/media.tenor.com").map(str::to_owned)
+}
+
+fn tenor_rendition(url: &str, rendition: TenorRendition) -> Option<String> {
+	let path = tenor_path(url)?;
+	let (asset, file) = path.trim_start_matches('/').split_once('/')?;
+	let id = asset.get(..asset.len().checked_sub(TENOR_CODE_LEN)?)?;
+	let (slug, _) = file.rsplit_once('.')?;
+	if id.is_empty() || slug.is_empty() {
+		return None;
+	}
+	let (code, extension) = match rendition {
+		TenorRendition::Preview => (TENOR_PREVIEW, "png"),
+		TenorRendition::TinyGif => (TENOR_TINY_GIF, "gif"),
+	};
+	Some(format!("https://{TENOR_HOST}/{id}{code}/{slug}.{extension}"))
 }
 
 pub fn guild_member_avatar_url(guild_id: u64, user_id: u64, hash: &str, size: u32) -> String {

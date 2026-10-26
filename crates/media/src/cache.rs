@@ -50,6 +50,7 @@ impl SizeHint {
 struct MemoryEntry {
 	url: Box<str>,
 	hint: SizeHint,
+	still: bool,
 	value: Arc<Decoded>,
 	bytes: usize,
 }
@@ -69,12 +70,12 @@ impl MemoryCache {
 		}
 	}
 
-	pub fn get(&mut self, url: &str, hint: SizeHint) -> Option<Arc<Decoded>> {
-		let entry = self.entries.get(&memory_key(url, hint))?;
-		(&*entry.url == url && entry.hint == hint).then(|| entry.value.clone())
+	pub fn get(&mut self, url: &str, hint: SizeHint, still: bool) -> Option<Arc<Decoded>> {
+		let entry = self.entries.get(&memory_key(url, hint, still))?;
+		(&*entry.url == url && entry.hint == hint && entry.still == still).then(|| entry.value.clone())
 	}
 
-	pub fn insert(&mut self, url: &str, hint: SizeHint, value: Arc<Decoded>) {
+	pub fn insert(&mut self, url: &str, hint: SizeHint, still: bool, value: Arc<Decoded>) {
 		let bytes = value.byte_len();
 		if bytes > self.limit {
 			return;
@@ -82,10 +83,11 @@ impl MemoryCache {
 		let entry = MemoryEntry {
 			url: url.into(),
 			hint,
+			still,
 			value,
 			bytes,
 		};
-		if let Some(replaced) = self.entries.put(memory_key(url, hint), entry) {
+		if let Some(replaced) = self.entries.put(memory_key(url, hint, still), entry) {
 			self.bytes -= replaced.bytes;
 		}
 		self.bytes += bytes;
@@ -119,10 +121,11 @@ impl MemoryCache {
 	}
 }
 
-pub(crate) fn memory_key(url: &str, hint: SizeHint) -> u64 {
+pub(crate) fn memory_key(url: &str, hint: SizeHint, still: bool) -> u64 {
 	let mut hasher = DefaultHasher::new();
 	url.hash(&mut hasher);
 	hint.hash(&mut hasher);
+	still.hash(&mut hasher);
 	hasher.finish()
 }
 

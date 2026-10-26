@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
@@ -13,6 +13,7 @@ use smallvec::SmallVec;
 use url::Url;
 
 const RENDERED_CAPACITY: usize = 512;
+const RENDERED_BUDGET_BYTES: usize = 128 * 1024 * 1024;
 const PLACEHOLDER_CAPACITY: usize = 256;
 
 static UI_SCALE: AtomicU32 = AtomicU32::new(1.0f32.to_bits());
@@ -38,15 +39,23 @@ fn scaled_hint(hint: SizeHint) -> SizeHint {
 	}
 }
 
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct RenderedKey {
+	url: String,
+	hint: SizeHint,
+	still: bool,
+}
+
 struct Rendered {
-	source: Arc<Decoded>,
 	image: Arc<RenderImage>,
+	bytes: usize,
 }
 
 pub struct Images {
 	media: MediaService,
 	mock_origin: Option<Url>,
-	rendered: RefCell<LruCache<(String, SizeHint), Rendered>>,
+	rendered: RefCell<LruCache<RenderedKey, Rendered>>,
+	retained: Cell<usize>,
 	placeholders: RefCell<LruCache<String, Arc<RenderImage>>>,
 }
 
@@ -64,19 +73,24 @@ fn bgra(image: &DecodedImage) -> Option<RgbaImage> {
 	Some(buffer)
 }
 
-fn render_image(decoded: &Decoded) -> Option<Arc<RenderImage>> {
+fn render_image(decoded: &Decoded, still: bool) -> Option<(Arc<RenderImage>, usize)> {
 	let frames: SmallVec<[Frame; 1]> = match decoded {
 		Decoded::Still(image) => smallvec::smallvec![Frame::new(bgra(image)?)],
 		Decoded::Animated(animation) => animation
 			.frames
 			.iter()
+			.take(if still { 1 } else { usize::MAX })
 			.filter_map(|frame| {
 				let delay = Delay::from_saturating_duration(Duration::from_millis(u64::from(frame.delay_ms)));
 				Some(Frame::from_parts(bgra(&frame.image)?, 0, 0, delay))
 			})
 			.collect(),
 	};
-	(!frames.is_empty()).then(|| Arc::new(RenderImage::new(frames)))
+	let bytes = frames
+		.iter()
+		.map(|frame| frame.buffer().as_raw().len())
+		.sum::<usize>();
+	(!frames.is_empty()).then(|| (Arc::new(RenderImage::new(frames)), bytes))
 }
 
 impl Images {
@@ -85,33 +99,57 @@ impl Images {
 			media,
 			mock_origin,
 			rendered: RefCell::new(LruCache::new(capacity(RENDERED_CAPACITY))),
+			retained: Cell::new(0),
 			placeholders: RefCell::new(LruCache::new(capacity(PLACEHOLDER_CAPACITY))),
 		}
 	}
 
 	pub fn get(&self, url: &str, hint: SizeHint) -> Option<Arc<RenderImage>> {
+		self.rendered_image(url, hint, false)
+	}
+
+	pub fn get_still(&self, url: &str, hint: SizeHint) -> Option<Arc<RenderImage>> {
+		self.rendered_image(url, hint, true)
+	}
+
+	fn rendered_image(&self, url: &str, hint: SizeHint, still: bool) -> Option<Arc<RenderImage>> {
 		let hint = scaled_hint(hint);
 		let url = self.resolve(url);
-		let Some(decoded) = self.media.peek(&url, hint) else {
-			self.media.request(&url, hint);
+		let key = RenderedKey { url, hint, still };
+		let cached = self
+			.rendered
+			.borrow_mut()
+			.get(&key)
+			.map(|entry| entry.image.clone());
+		if cached.is_some() {
+			return cached;
+		}
+		if media::cdn::is_video(&key.url) {
+			return None;
+		}
+		let Some(decoded) = self.media.peek(&key.url, hint, still) else {
+			self.media.request(&key.url, hint, still);
 			return None;
 		};
-		let mut rendered = self.rendered.borrow_mut();
-		let key = (url, hint);
-		if let Some(entry) = rendered.get(&key)
-			&& Arc::ptr_eq(&entry.source, &decoded)
-		{
-			return Some(entry.image.clone());
-		}
-		let image = render_image(&decoded)?;
-		rendered.put(
-			key,
-			Rendered {
-				source: decoded,
-				image: image.clone(),
-			},
-		);
+		let (image, bytes) = render_image(&decoded, still)?;
+		self.store(key, image.clone(), bytes);
 		Some(image)
+	}
+
+	fn store(&self, key: RenderedKey, image: Arc<RenderImage>, bytes: usize) {
+		let mut rendered = self.rendered.borrow_mut();
+		if let Some(old) = rendered.put(key, Rendered { image, bytes }) {
+			self.retained.set(self.retained.get().saturating_sub(old.bytes));
+		}
+		self.retained.set(self.retained.get() + bytes);
+		let mut retained = self.retained.get();
+		while retained > RENDERED_BUDGET_BYTES && rendered.len() > 1 {
+			let Some((_, old)) = rendered.pop_lru() else {
+				break;
+			};
+			retained = retained.saturating_sub(old.bytes);
+		}
+		self.retained.set(retained);
 	}
 
 	pub fn placeholder(&self, hash: &str, width: u32, height: u32) -> Option<Arc<RenderImage>> {
@@ -120,7 +158,7 @@ impl Images {
 			return Some(image.clone());
 		}
 		let decoded = media::placeholder_from_discord(hash, width, height).ok()?;
-		let image = render_image(&Decoded::Still(decoded))?;
+		let (image, _) = render_image(&Decoded::Still(decoded), true)?;
 		placeholders.put(hash.to_owned(), image.clone());
 		Some(image)
 	}
