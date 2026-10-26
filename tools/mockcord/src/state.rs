@@ -3,8 +3,8 @@ use std::time::Instant;
 
 use parking_lot::Mutex;
 use protocol::{
-	Channel, Emoji, GuildProperties, Member, Presence, ReadState, Relationship, Role, Snowflake, StatusKind,
-	User, UserGuildSettings,
+	Channel, Emoji, GuildProperties, Member, Presence, ProtoFrecencySettings, ReadState, Relationship, Role,
+	Snowflake, StatusKind, User, UserGuildSettings,
 };
 use serde_json::Value;
 use tokio::sync::watch;
@@ -44,7 +44,7 @@ pub struct Store {
 	pub audit: HashMap<u64, Vec<Value>>,
 	pub joined_threads: BTreeSet<u64>,
 	pub created_guilds: HashMap<u64, Value>,
-	pub gif_favorites: Vec<Value>,
+	pub frecency: ProtoFrecencySettings,
 	last_id: u64,
 }
 
@@ -117,7 +117,10 @@ impl Store {
 			left_guilds: BTreeSet::new(),
 			audit: crate::admin::seed_audit(fixtures),
 			joined_threads: BTreeSet::new(),
-			gif_favorites: Vec::new(),
+			frecency: ProtoFrecencySettings {
+				data_version: 1,
+				..ProtoFrecencySettings::default()
+			},
 			last_id,
 		}
 	}

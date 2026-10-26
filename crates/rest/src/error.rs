@@ -29,6 +29,10 @@ pub enum RestError {
 	TooLarge,
 	#[error("invalid request")]
 	InvalidRequest,
+	#[error("invalid settings payload")]
+	InvalidSettings,
+	#[error("settings changed while updating")]
+	OutOfDate,
 }
 
 pub(crate) fn network_error(error: reqwest::Error) -> RestError {

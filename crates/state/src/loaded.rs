@@ -4,8 +4,8 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use protocol::lenient::timestamp;
 use protocol::{
-	Channel, Gif, GifCategory, LenientVec, Member, Message, Snowflake, Sticker, StickerPack, ThreadMember,
-	User,
+	Channel, Gif, GifFavorites, GifTrending, LenientVec, Member, Message, Snowflake, Sticker, StickerPack,
+	ThreadMember, User,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -62,12 +62,8 @@ pub enum Loaded {
 		emoji: String,
 		users: Vec<User>,
 	},
-	GifTrending {
-		gifs: Vec<Gif>,
-		complete: bool,
-	},
-	GifCategories(Vec<GifCategory>),
-	GifFavorites(Vec<Gif>),
+	GifTrending(GifTrending),
+	GifFavorites(GifFavorites),
 	GifSearch {
 		query: String,
 		gifs: Vec<Gif>,
@@ -540,21 +536,25 @@ impl State {
 					.insert((*message_id, emoji.clone()), users.clone());
 				changes.loaded.insert(*message_id);
 			}
-			Loaded::GifTrending { gifs, complete } => {
-				self.lazy.expressions.gif_trending.clone_from(gifs);
-				self.lazy.expressions.gif_trending_complete = *complete;
+			Loaded::GifTrending(trending) => {
+				self.lazy.expressions.gif_trending = Some(Arc::new(trending.clone()));
 				changes.loaded.insert(EXPRESSIONS_KEY);
 			}
-			Loaded::GifCategories(categories) => {
-				self.lazy.expressions.gif_categories = Some(categories.clone());
-				changes.loaded.insert(EXPRESSIONS_KEY);
-			}
-			Loaded::GifFavorites(gifs) => {
-				self.lazy.expressions.gif_favorites = Some(gifs.clone());
+			Loaded::GifFavorites(favorites) => {
+				let current = &self.lazy.expressions.gif_favorites;
+				if current
+					.as_ref()
+					.is_none_or(|known| known.version <= favorites.version)
+				{
+					self.lazy.expressions.gif_favorites = Some(favorites.into());
+				}
 				changes.loaded.insert(EXPRESSIONS_KEY);
 			}
 			Loaded::GifSearch { query, gifs } => {
-				self.lazy.expressions.gif_searches.put(query, gifs.clone());
+				self.lazy
+					.expressions
+					.gif_searches
+					.put(query, gifs.as_slice().into());
 				changes.loaded.insert(EXPRESSIONS_KEY);
 			}
 			Loaded::GifSuggestions { query, terms } => {

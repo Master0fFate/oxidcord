@@ -525,13 +525,12 @@ pub enum Command {
 		sticker_id: Snowflake,
 	},
 	LoadGifTrending,
-	LoadGifCategories,
 	LoadGifFavorites,
 	FavoriteGif {
-		id: String,
+		gif: Gif,
 	},
 	UnfavoriteGif {
-		id: String,
+		url: String,
 	},
 	SearchGifs {
 		query: String,

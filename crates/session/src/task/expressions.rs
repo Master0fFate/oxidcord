@@ -1,18 +1,16 @@
 use std::time::Duration;
 
-use protocol::{CreateMessage, Gif, Permissions, Snowflake, Sticker, unicode_emoji_list};
+use protocol::{CreateMessage, Gif, GifTrending, Permissions, Snowflake, Sticker, unicode_emoji_list};
 use rest::UploadFile;
 use serde::Serialize;
 use state::{EmojiRef, Loaded, RECENT_CAP};
 
-use super::{Command, Core, Internal};
+use super::{Command, Core};
 use crate::persist::{self, Job};
 
 const GIF_MEDIA_FORMAT: &str = "gif";
 const GIF_PAGE: u16 = 50;
 const GIF_SUGGESTIONS: u8 = 10;
-const GIF_TRENDING_BATCH: usize = 25;
-const GIF_TRENDING_TOTAL: usize = 100;
 const STICKER_CONTENT_TYPE: &str = "image/png";
 const RECENT_LOAD_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -81,42 +79,19 @@ impl Core {
 	pub(super) fn on_expression_command(&mut self, command: Command) {
 		match command {
 			Command::LoadGifTrending => {
-				if !self.state.read().gif_trending().is_empty() {
+				if self.state.read().gif_trending().is_some() {
 					return;
 				}
 				let locale = self.locale.clone();
-				let rest = self.rest.clone();
-				let internal = self.internal.clone();
-				self.runtime.spawn(async move {
-					let mut limit = 0;
-					while limit < GIF_TRENDING_TOTAL {
-						limit += GIF_TRENDING_BATCH;
-						let Ok(gifs) = rest
-							.gifs_trending_gifs(&locale, GIF_MEDIA_FORMAT, limit as u16)
-							.await
-						else {
-							break;
-						};
-						let gifs = gifs.into_vec();
-						if gifs.is_empty() {
-							break;
-						}
-						let complete = limit >= GIF_TRENDING_TOTAL || gifs.len() < limit;
-						let _ = internal.send(Internal::Loaded(Loaded::GifTrending { gifs, complete }));
-						if complete {
-							break;
-						}
-					}
-				});
-			}
-			Command::LoadGifCategories => {
-				if self.state.read().gif_categories().is_some() {
-					return;
-				}
-				let locale = self.locale.clone();
-				self.spawn_load("gif categories", move |rest| async move {
-					let trending = rest.gifs_trending(&locale, GIF_MEDIA_FORMAT).await?;
-					Ok(Loaded::GifCategories(trending.categories.into_vec()))
+				self.spawn_load("gif trending", move |rest| async move {
+					let (trending, gifs) = tokio::join!(
+						rest.gifs_trending(&locale, GIF_MEDIA_FORMAT),
+						rest.gifs_trending_gifs(&locale, GIF_MEDIA_FORMAT, GIF_PAGE),
+					);
+					Ok(Loaded::GifTrending(GifTrending {
+						gifs: gifs?,
+						..trending?
+					}))
 				});
 			}
 			Command::LoadGifFavorites => {
@@ -124,16 +99,14 @@ impl Core {
 					return;
 				}
 				self.spawn_load("gif favorites", move |rest| async move {
-					Ok(Loaded::GifFavorites(rest.gif_favorites().await?.into_vec()))
+					Ok(Loaded::GifFavorites(rest.gif_favorites().await?))
 				});
 			}
-			Command::FavoriteGif { id } => self.spawn_load("favorite gif", move |rest| async move {
-				rest.gif_favorite_add(&id).await?;
-				Ok(Loaded::GifFavorites(rest.gif_favorites().await?.into_vec()))
+			Command::FavoriteGif { gif } => self.spawn_load("favorite gif", move |rest| async move {
+				Ok(Loaded::GifFavorites(rest.favorite_gif(&gif).await?))
 			}),
-			Command::UnfavoriteGif { id } => self.spawn_load("unfavorite gif", move |rest| async move {
-				rest.gif_favorite_remove(&id).await?;
-				Ok(Loaded::GifFavorites(rest.gif_favorites().await?.into_vec()))
+			Command::UnfavoriteGif { url } => self.spawn_load("unfavorite gif", move |rest| async move {
+				Ok(Loaded::GifFavorites(rest.unfavorite_gif(&url).await?))
 			}),
 			Command::SearchGifs { query } => {
 				let locale = self.locale.clone();

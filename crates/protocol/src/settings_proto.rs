@@ -1,5 +1,6 @@
 use base64::Engine;
 use base64::alphabet::STANDARD as STANDARD_ALPHABET;
+use base64::engine::general_purpose::STANDARD;
 use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
 
 use crate::snowflake::Snowflake;
@@ -14,6 +15,18 @@ const FOLDER_ID: u32 = 2;
 const FOLDER_NAME: u32 = 3;
 const FOLDER_COLOR: u32 = 4;
 const WRAPPED_VALUE: u32 = 1;
+const FRECENCY_VERSIONS: u32 = 1;
+const FRECENCY_DATA_VERSION: u32 = 3;
+const FRECENCY_FAVORITE_GIFS: u32 = 2;
+const FAVORITES_ENTRIES: u32 = 1;
+const FAVORITES_HIDE_TOOLTIP: u32 = 2;
+const FAVORITE_KEY: u32 = 1;
+const FAVORITE_VALUE: u32 = 2;
+const FAVORITE_FORMAT: u32 = 1;
+const FAVORITE_SRC: u32 = 2;
+const FAVORITE_WIDTH: u32 = 3;
+const FAVORITE_HEIGHT: u32 = 4;
+const FAVORITE_ORDER: u32 = 5;
 
 const LENIENT: GeneralPurpose = GeneralPurpose::new(
 	&STANDARD_ALPHABET,
@@ -38,6 +51,28 @@ pub struct ProtoGuildFolders {
 pub struct ProtoSettings {
 	pub status: Option<String>,
 	pub guild_folders: Option<ProtoGuildFolders>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ProtoFavoriteGif {
+	pub url: String,
+	pub format: u32,
+	pub src: String,
+	pub width: u32,
+	pub height: u32,
+	pub order: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ProtoGifFavorites {
+	pub gifs: Vec<ProtoFavoriteGif>,
+	pub hide_tooltip: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ProtoFrecencySettings {
+	pub data_version: u32,
+	pub favorites: ProtoGifFavorites,
 }
 
 #[derive(Clone, Copy)]
@@ -183,4 +218,160 @@ pub fn decode_settings(encoded: &str) -> Option<ProtoSettings> {
 		}
 	}
 	Some(settings)
+}
+
+fn decode_favorite(bytes: &[u8]) -> Option<ProtoFavoriteGif> {
+	let mut gif = ProtoFavoriteGif::default();
+	for (number, wire) in Fields::new(bytes) {
+		match (number, wire) {
+			(FAVORITE_FORMAT, Wire::Varint(format)) => gif.format = u32::try_from(format).unwrap_or_default(),
+			(FAVORITE_SRC, Wire::Bytes(src)) => gif.src = String::from_utf8_lossy(src).into_owned(),
+			(FAVORITE_WIDTH, Wire::Varint(width)) => gif.width = u32::try_from(width).unwrap_or_default(),
+			(FAVORITE_HEIGHT, Wire::Varint(height)) => gif.height = u32::try_from(height).unwrap_or_default(),
+			(FAVORITE_ORDER, Wire::Varint(order)) => gif.order = u32::try_from(order).unwrap_or_default(),
+			_ => {}
+		}
+	}
+	Some(gif).filter(|gif| !gif.src.is_empty())
+}
+
+fn decode_favorite_entry(bytes: &[u8]) -> Option<ProtoFavoriteGif> {
+	let mut url = String::new();
+	let mut gif = None;
+	for (number, wire) in Fields::new(bytes) {
+		match (number, wire) {
+			(FAVORITE_KEY, Wire::Bytes(key)) => url = String::from_utf8_lossy(key).into_owned(),
+			(FAVORITE_VALUE, Wire::Bytes(value)) => gif = decode_favorite(value),
+			_ => {}
+		}
+	}
+	Some(gif?.with_url(url)).filter(|gif| !gif.url.is_empty())
+}
+
+impl ProtoFavoriteGif {
+	fn with_url(mut self, url: String) -> Self {
+		self.url = url;
+		self
+	}
+}
+
+fn decode_favorites(bytes: &[u8]) -> ProtoGifFavorites {
+	let mut favorites = ProtoGifFavorites::default();
+	for (number, wire) in Fields::new(bytes) {
+		match (number, wire) {
+			(FAVORITES_ENTRIES, Wire::Bytes(entry)) => {
+				let Some(gif) = decode_favorite_entry(entry) else {
+					continue;
+				};
+				match favorites.gifs.iter_mut().find(|known| known.url == gif.url) {
+					Some(known) => *known = gif,
+					None => favorites.gifs.push(gif),
+				}
+			}
+			(FAVORITES_HIDE_TOOLTIP, Wire::Varint(hidden)) => favorites.hide_tooltip = hidden != 0,
+			_ => {}
+		}
+	}
+	favorites
+}
+
+pub fn decode_frecency_settings(encoded: &str) -> Option<ProtoFrecencySettings> {
+	let bytes = LENIENT.decode(encoded.trim()).ok()?;
+	let mut settings = ProtoFrecencySettings::default();
+	for (number, wire) in Fields::new(&bytes) {
+		match (number, wire) {
+			(FRECENCY_VERSIONS, Wire::Bytes(inner)) => {
+				for (number, wire) in Fields::new(inner) {
+					if let (FRECENCY_DATA_VERSION, Wire::Varint(version)) = (number, wire) {
+						settings.data_version = u32::try_from(version).unwrap_or_default();
+					}
+				}
+			}
+			(FRECENCY_FAVORITE_GIFS, Wire::Bytes(inner)) => settings.favorites = decode_favorites(inner),
+			_ => {}
+		}
+	}
+	Some(settings)
+}
+
+fn put_varint(out: &mut Vec<u8>, mut value: u64) {
+	while value >= 0x80 {
+		out.push((value as u8) | 0x80);
+		value >>= 7;
+	}
+	out.push(value as u8);
+}
+
+fn put_tag(out: &mut Vec<u8>, number: u32, wire: u8) {
+	put_varint(out, (u64::from(number) << 3) | u64::from(wire));
+}
+
+fn put_uint(out: &mut Vec<u8>, number: u32, value: u64) {
+	if value != 0 {
+		put_tag(out, number, 0);
+		put_varint(out, value);
+	}
+}
+
+fn put_bytes(out: &mut Vec<u8>, number: u32, bytes: &[u8]) {
+	put_tag(out, number, 2);
+	put_varint(out, bytes.len() as u64);
+	out.extend_from_slice(bytes);
+}
+
+fn put_string(out: &mut Vec<u8>, number: u32, text: &str) {
+	if !text.is_empty() {
+		put_bytes(out, number, text.as_bytes());
+	}
+}
+
+fn encode_favorite(gif: &ProtoFavoriteGif) -> Vec<u8> {
+	let mut out = Vec::new();
+	put_uint(&mut out, FAVORITE_FORMAT, u64::from(gif.format));
+	put_string(&mut out, FAVORITE_SRC, &gif.src);
+	put_uint(&mut out, FAVORITE_WIDTH, u64::from(gif.width));
+	put_uint(&mut out, FAVORITE_HEIGHT, u64::from(gif.height));
+	put_uint(&mut out, FAVORITE_ORDER, u64::from(gif.order));
+	out
+}
+
+fn encode_favorite_entry(gif: &ProtoFavoriteGif) -> Vec<u8> {
+	let mut out = Vec::new();
+	put_string(&mut out, FAVORITE_KEY, &gif.url);
+	put_bytes(&mut out, FAVORITE_VALUE, &encode_favorite(gif));
+	out
+}
+
+fn encode_favorites(favorites: &ProtoGifFavorites) -> Vec<u8> {
+	let mut out = Vec::new();
+	for gif in &favorites.gifs {
+		put_bytes(&mut out, FAVORITES_ENTRIES, &encode_favorite_entry(gif));
+	}
+	if favorites.hide_tooltip {
+		put_uint(&mut out, FAVORITES_HIDE_TOOLTIP, 1);
+	}
+	out
+}
+
+pub fn encode_frecency_favorites(favorites: &ProtoGifFavorites) -> String {
+	let mut out = Vec::new();
+	put_bytes(&mut out, FRECENCY_FAVORITE_GIFS, &encode_favorites(favorites));
+	STANDARD.encode(out)
+}
+
+pub fn encode_frecency_settings(settings: &ProtoFrecencySettings) -> String {
+	let mut out = Vec::new();
+	let mut versions = Vec::new();
+	put_uint(
+		&mut versions,
+		FRECENCY_DATA_VERSION,
+		u64::from(settings.data_version),
+	);
+	put_bytes(&mut out, FRECENCY_VERSIONS, &versions);
+	put_bytes(
+		&mut out,
+		FRECENCY_FAVORITE_GIFS,
+		&encode_favorites(&settings.favorites),
+	);
+	STANDARD.encode(out)
 }

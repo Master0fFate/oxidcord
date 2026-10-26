@@ -41,6 +41,7 @@ struct Inner {
 	max_body: usize,
 	token: Arc<RwLock<Option<Token>>>,
 	limiter: RateLimiter,
+	frecency: tokio::sync::Mutex<()>,
 }
 
 fn default_headers(config: &RestConfig) -> HeaderMap {
@@ -174,6 +175,7 @@ impl RestClient {
 				max_body: config.max_body,
 				token: Arc::default(),
 				limiter: RateLimiter::default(),
+				frecency: tokio::sync::Mutex::new(()),
 			}),
 		}
 	}
@@ -184,6 +186,10 @@ impl RestClient {
 
 	pub fn clear_token(&self) {
 		*self.inner.token.write() = None;
+	}
+
+	pub(crate) async fn frecency_guard(&self) -> tokio::sync::MutexGuard<'_, ()> {
+		self.inner.frecency.lock().await
 	}
 
 	pub async fn send<T: DeserializeOwned>(&self, request: Request) -> Result<T> {

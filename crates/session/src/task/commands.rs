@@ -80,7 +80,6 @@ impl Core {
 			| Command::EndPoll { .. }) => self.on_text_command(command),
 			command @ (Command::SendSticker { .. }
 			| Command::LoadGifTrending
-			| Command::LoadGifCategories
 			| Command::LoadGifFavorites
 			| Command::FavoriteGif { .. }
 			| Command::UnfavoriteGif { .. }

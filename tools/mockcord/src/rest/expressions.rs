@@ -3,10 +3,13 @@ use std::sync::{Arc, LazyLock};
 
 use axum::extract::{Multipart, Path, Query, State};
 use axum::http::StatusCode;
-use axum::routing::{delete, get, post};
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use parking_lot::Mutex;
-use protocol::{LenientVec, Snowflake, Sticker, StickerFormat, StickerKind, StickerPack};
+use protocol::{
+	LenientVec, Snowflake, Sticker, StickerFormat, StickerKind, StickerPack, decode_frecency_settings,
+	encode_frecency_settings,
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -102,10 +105,9 @@ pub fn routes() -> Router<Arc<Shared>> {
 		.route("/gifs/trending-search", get(gifs_trending_search))
 		.route("/gifs/select", post(gif_select))
 		.route(
-			"/users/@me/gifs/favorites",
-			get(gif_favorites_list).post(gif_favorites_add),
+			"/users/@me/settings-proto/2",
+			get(frecency_settings).patch(patch_frecency_settings),
 		)
-		.route("/users/@me/gifs/favorites/{id}", delete(gif_favorites_remove))
 		.route("/sticker-packs", get(sticker_packs))
 		.route("/sticker-packs/{id}", get(sticker_pack))
 		.route("/stickers/{id}", get(sticker))
@@ -205,41 +207,35 @@ async fn gif_select(Json(_): Json<Value>) -> StatusCode {
 	StatusCode::NO_CONTENT
 }
 
-async fn gif_favorites_list(State(shared): Mock) -> ApiResult {
-	let gifs = shared.store.lock().gif_favorites.clone();
-	Ok(Json(Value::Array(gifs)))
+async fn frecency_settings(State(shared): Mock) -> ApiResult {
+	let settings = shared.store.lock().frecency.clone();
+	Ok(Json(json!({
+		"settings": encode_frecency_settings(&settings),
+		"required_data_version": settings.data_version,
+	})))
 }
 
-async fn gif_favorites_add(State(shared): Mock, Json(body): Json<Value>) -> Result<StatusCode, ApiError> {
-	let id = body["id"]
+async fn patch_frecency_settings(
+	State(shared): Mock,
+	Json(body): Json<Value>,
+) -> Result<Json<Value>, ApiError> {
+	let encoded = body["settings"]
 		.as_str()
-		.ok_or_else(|| ApiError::invalid_body("id is required"))?;
-	let base = media_base(&shared);
-	let gif = gifs_matching(base, "", None)
-		.into_iter()
-		.find(|gif| gif["id"].as_str() == Some(id))
-		.ok_or_else(ApiError::not_found)?;
+		.ok_or_else(|| ApiError::invalid_body("settings is required"))?;
+	let incoming =
+		decode_frecency_settings(encoded).ok_or_else(|| ApiError::invalid_body("settings is not valid"))?;
+	let required = body["required_data_version"].as_u64().unwrap_or_default();
 	let mut store = shared.store.lock();
-	if !store
-		.gif_favorites
-		.iter()
-		.any(|entry| entry["id"].as_str() == Some(id))
-	{
-		store.gif_favorites.push(gif);
+	if required != u64::from(store.frecency.data_version) {
+		return Ok(Json(json!({ "out_of_date": true })));
 	}
-	Ok(StatusCode::NO_CONTENT)
-}
-
-async fn gif_favorites_remove(State(shared): Mock, Path(id): Path<String>) -> Result<StatusCode, ApiError> {
-	let mut store = shared.store.lock();
-	let before = store.gif_favorites.len();
-	store
-		.gif_favorites
-		.retain(|gif| gif["id"].as_str() != Some(id.as_str()));
-	if store.gif_favorites.len() == before {
-		return Err(ApiError::not_found());
-	}
-	Ok(StatusCode::NO_CONTENT)
+	store.frecency.favorites = incoming.favorites;
+	store.frecency.data_version += 1;
+	let settings = store.frecency.clone();
+	Ok(Json(json!({
+		"settings": encode_frecency_settings(&settings),
+		"required_data_version": settings.data_version,
+	})))
 }
 
 fn pack_sticker(pack_index: usize, index: usize, pack_id: Snowflake) -> Sticker {

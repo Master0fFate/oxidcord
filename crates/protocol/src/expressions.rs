@@ -85,6 +85,12 @@ pub struct GifTrending {
 	pub gifs: LenientVec<Gif>,
 }
 
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct GifFavorites {
+	pub gifs: Vec<Gif>,
+	pub version: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct StickerPack {

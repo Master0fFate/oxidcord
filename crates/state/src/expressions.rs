@@ -1,9 +1,9 @@
 use std::collections::{HashMap, VecDeque};
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 
 use protocol::{
-	Emoji, EmojiCategory, Gif, GifCategory, GuildStickersUpdate, Permissions, PremiumType, Snowflake,
-	Sticker, StickerPack, UnicodeEmoji, unicode_emoji_list,
+	Emoji, EmojiCategory, Gif, GifFavorites, GifTrending, GuildStickersUpdate, Permissions, PremiumType,
+	Snowflake, Sticker, StickerPack, UnicodeEmoji, unicode_emoji_list,
 };
 use serde::{Deserialize, Serialize};
 
@@ -107,13 +107,26 @@ impl<T> QueryCache<T> {
 	}
 }
 
+#[derive(Debug)]
+pub(crate) struct FavoriteGifs {
+	pub(crate) version: u32,
+	pub(crate) gifs: Arc<[Gif]>,
+}
+
+impl From<&GifFavorites> for FavoriteGifs {
+	fn from(favorites: &GifFavorites) -> Self {
+		Self {
+			version: favorites.version,
+			gifs: favorites.gifs.as_slice().into(),
+		}
+	}
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct Expressions {
-	pub(crate) gif_trending: Vec<Gif>,
-	pub(crate) gif_trending_complete: bool,
-	pub(crate) gif_categories: Option<Vec<GifCategory>>,
-	pub(crate) gif_favorites: Option<Vec<Gif>>,
-	pub(crate) gif_searches: QueryCache<Vec<Gif>>,
+	pub(crate) gif_trending: Option<Arc<GifTrending>>,
+	pub(crate) gif_favorites: Option<FavoriteGifs>,
+	pub(crate) gif_searches: QueryCache<Arc<[Gif]>>,
 	pub(crate) gif_suggestions: QueryCache<Vec<String>>,
 	pub(crate) sticker_packs: Option<Vec<StickerPack>>,
 	pub(crate) guild_stickers: HashMap<Snowflake, Vec<Sticker>>,
@@ -157,24 +170,20 @@ fn catalog_emoji(
 }
 
 impl State {
-	pub fn gif_trending(&self) -> &[Gif] {
-		&self.lazy.expressions.gif_trending
+	pub fn gif_trending(&self) -> Option<&Arc<GifTrending>> {
+		self.lazy.expressions.gif_trending.as_ref()
 	}
 
-	pub fn gif_trending_complete(&self) -> bool {
-		self.lazy.expressions.gif_trending_complete
+	pub fn gif_favorites(&self) -> Option<&Arc<[Gif]>> {
+		self.lazy
+			.expressions
+			.gif_favorites
+			.as_ref()
+			.map(|favorites| &favorites.gifs)
 	}
 
-	pub fn gif_categories(&self) -> Option<&[GifCategory]> {
-		self.lazy.expressions.gif_categories.as_deref()
-	}
-
-	pub fn gif_favorites(&self) -> Option<&[Gif]> {
-		self.lazy.expressions.gif_favorites.as_deref()
-	}
-
-	pub fn gif_search(&self, query: &str) -> Option<&[Gif]> {
-		self.lazy.expressions.gif_searches.get(query).map(Vec::as_slice)
+	pub fn gif_search(&self, query: &str) -> Option<&Arc<[Gif]>> {
+		self.lazy.expressions.gif_searches.get(query)
 	}
 
 	pub fn gif_suggestions(&self, query: &str) -> Option<&[String]> {
