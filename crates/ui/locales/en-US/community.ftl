@@ -362,7 +362,6 @@ picker-gif-trending = Trending GIFs
 picker-gif-empty = No GIFs found. Try another search.
 picker-gif-favorites = Favorites
 picker-gif-favorites-empty = Nothing here yet. Hover a GIF and tap the star.
-picker-gif-show-categories = Browse categories
 picker-gif-loading = Loading…
 picker-gif-favorite = Add to favorites
 picker-gif-unfavorite = Remove from favorites

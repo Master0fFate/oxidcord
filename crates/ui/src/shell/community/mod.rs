@@ -608,6 +608,11 @@ impl Community {
 			panel.timeline().update(cx, |_, cx| cx.notify());
 			panel.composer().update(cx, |_, cx| cx.notify());
 		});
+		if let Some(floating) = &self.floating
+			&& let Content::Picker(picker) = &floating.content
+		{
+			picker.update(cx, |picker, cx| picker.refresh(cx));
+		}
 		cx.notify();
 	}
 

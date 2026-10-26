@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::collections::HashSet;
 
 use gpui::{
 	AnyElement, Context, FontWeight, InteractiveElement as _, IntoElement, ObjectFit, ParentElement as _,
@@ -6,6 +6,7 @@ use gpui::{
 	prelude::FluentBuilder as _,
 };
 use gpui_component::scroll::ScrollableElement as _;
+use media::cdn::{GifTile, gif_tile};
 use protocol::{Gif, GifCategory};
 use session::Command;
 
@@ -13,8 +14,9 @@ use super::{Picker, PickerEvent};
 use crate::components::tooltip;
 use crate::i18n::Translate as _;
 use crate::icons::{Icon, IconKind};
-use crate::shell::community::art::cover;
-use crate::theme::{Theme, rem, with_alpha};
+use crate::images::scaled_pixels;
+use crate::shell::community::art::{cover_animated, cover_still};
+use crate::theme::{Theme, rem, rem_to_pixels, with_alpha};
 
 const MIN_TILE: f32 = 64.;
 const MAX_TILE: f32 = 240.;
@@ -22,24 +24,24 @@ const CATEGORY_HEIGHT: f32 = 104.;
 const MIN_SUGGEST: usize = 2;
 const STAR_SIZE: f32 = 26.;
 
-type ChipHandler = Rc<dyn Fn(&mut Picker, &mut Window, &mut Context<Picker>)>;
-
-#[derive(Default, Clone, Copy, PartialEq, Eq)]
-enum GifView {
-	#[default]
-	Trending,
-	Favorites,
-}
-
 #[derive(Default)]
 pub struct GifState {
 	active: Option<String>,
 	hovered: Option<String>,
-	view: GifView,
-	categories_open: bool,
-	categories_pending: bool,
-	favorites_pending: bool,
-	search_pending: bool,
+	favorites: bool,
+}
+
+fn pixels(measure: Rems) -> u32 {
+	scaled_pixels(rem_to_pixels(measure).round() as u32)
+}
+
+fn tile_media(gif: &Gif, width: Rems, height: Rems) -> GifTile {
+	let source = if gif.gif_src.is_empty() {
+		&gif.src
+	} else {
+		&gif.gif_src
+	};
+	gif_tile(source, &gif.preview, pixels(width), pixels(height))
 }
 
 fn tile_height(gif: &Gif, column: Rems) -> Rems {
@@ -53,56 +55,47 @@ fn tile_height(gif: &Gif, column: Rems) -> Rems {
 
 impl Picker {
 	pub(super) fn load_gifs(&mut self, cx: &mut Context<Self>) {
-		let missing = self.data.read(cx).state().gif_trending().is_empty();
-		if missing {
+		if self.data.read(cx).state().gif_trending().is_none() {
 			self.send(Command::LoadGifTrending, cx);
 		}
+		self.load_favorites(cx);
 	}
 
 	pub(super) fn reset_gifs(&mut self) {
 		self.gif.active = None;
-		self.gif.view = GifView::Trending;
 		self.gif.hovered = None;
-		self.gif.categories_pending = false;
-		self.gif.favorites_pending = false;
-		self.gif.search_pending = false;
+		self.gif.favorites = false;
 	}
 
-	pub(super) fn open_categories(&mut self, cx: &mut Context<Self>) {
-		self.gif.categories_open = true;
-		if !self.gif.categories_pending && self.data.read(cx).state().gif_categories().is_none() {
-			self.gif.categories_pending = true;
-			self.send(Command::LoadGifCategories, cx);
-		}
-		cx.notify();
-	}
-
-	pub(super) fn open_favorites(&mut self, cx: &mut Context<Self>) {
-		self.gif.view = GifView::Favorites;
-		self.gif.active = None;
-		if !self.gif.favorites_pending && self.data.read(cx).state().gif_favorites().is_none() {
-			self.gif.favorites_pending = true;
+	fn load_favorites(&mut self, cx: &mut Context<Self>) {
+		if self.data.read(cx).state().gif_favorites().is_none() {
 			self.send(Command::LoadGifFavorites, cx);
 		}
+	}
+
+	fn open_favorites(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+		self.gif.favorites = true;
+		self.gif.active = None;
+		self.set_query(String::new(), window, cx);
+		self.load_favorites(cx);
 		cx.notify();
 	}
 
-	pub(super) fn back_to_trending(&mut self, cx: &mut Context<Self>) {
-		self.gif.view = GifView::Trending;
-		cx.notify();
+	fn toggle_favorites(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+		if self.gif.favorites {
+			self.gif.favorites = false;
+			self.set_query(String::new(), window, cx);
+			cx.notify();
+		} else {
+			self.open_favorites(window, cx);
+		}
 	}
 
 	pub(super) fn toggle_favorite(&mut self, gif: Gif, cx: &mut Context<Self>) {
-		let favorited = self
-			.data
-			.read(cx)
-			.state()
-			.gif_favorites()
-			.is_some_and(|favorites| favorites.iter().any(|favorite| favorite.id == gif.id));
-		if favorited {
-			self.send(Command::UnfavoriteGif { id: gif.id.clone() }, cx);
+		if self.is_favorited(&gif, cx) {
+			self.send(Command::UnfavoriteGif { url: gif.url }, cx);
 		} else {
-			self.send(Command::FavoriteGif { id: gif.id.clone() }, cx);
+			self.send(Command::FavoriteGif { gif }, cx);
 		}
 	}
 
@@ -132,7 +125,6 @@ impl Picker {
 			return;
 		}
 		let known = self.data.read(cx).state().gif_search(&query).is_some();
-		self.gif.search_pending = !known;
 		if !known {
 			self.send(Command::SearchGifs { query: query.clone() }, cx);
 		}
@@ -141,7 +133,7 @@ impl Picker {
 	}
 
 	fn pick_gif(&mut self, gif: Gif, cx: &mut Context<Self>) {
-		if self.share_usage {
+		if self.share_usage && gif.id != gif.url {
 			self.send(
 				Command::SelectGif {
 					id: gif.id.clone(),
@@ -165,29 +157,26 @@ impl Picker {
 			.read(cx)
 			.state()
 			.gif_favorites()
-			.is_some_and(|favorites| favorites.iter().any(|favorite| favorite.id == gif.id))
+			.is_some_and(|favorites| favorites.iter().any(|favorite| favorite.url == gif.url))
 	}
 
-	fn gif_tile(&self, gif: &Gif, width: Rems, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
-		let height = tile_height(gif, width);
+	fn gif_tile(
+		&self,
+		gif: &Gif,
+		width: Rems,
+		height: Rems,
+		favorited: bool,
+		theme: &Theme,
+		cx: &mut Context<Self>,
+	) -> AnyElement {
 		let hovered = self.gif.hovered.as_deref() == Some(gif.id.as_str());
-		let still = if gif.preview.is_empty() {
-			&gif.gif_src
-		} else {
-			&gif.preview
-		};
-		let url = if hovered && !gif.gif_src.is_empty() {
-			&gif.gif_src
-		} else {
-			still
-		};
+		let media = tile_media(gif, width, height);
 		let id = gif.id.clone();
 		let hover_id = gif.id.clone();
 		let picked = gif.clone();
 		let star = gif.clone();
-		let favorited = self.is_favorited(gif, cx);
-		let tile = div()
-			.id(gpui::SharedString::from(format!("gif-{}", gif.id)))
+		div()
+			.id(SharedString::from(format!("gif-{}", gif.id)))
 			.relative()
 			.flex_none()
 			.w(width)
@@ -206,8 +195,11 @@ impl Picker {
 				cx.notify();
 			}))
 			.on_click(cx.listener(move |this, _, _, cx| this.pick_gif(picked.clone(), cx)))
-			.child(cover(url, width, height, ObjectFit::Cover, cx))
-			.when(hovered, |tile| {
+			.child(match media.animated.as_deref().filter(|_| hovered) {
+				Some(animated) => cover_animated(animated, &media.still, width, height, ObjectFit::Cover, cx),
+				None => cover_still(&media.still, width, height, ObjectFit::Cover, cx),
+			})
+			.when(hovered || favorited, |tile| {
 				tile.child(
 					div()
 						.id(format!("gif-star-{}", gif.id))
@@ -226,24 +218,41 @@ impl Picker {
 						} else {
 							"picker-gif-favorite"
 						})))
-						.on_click(cx.listener(move |this, _, _, cx| this.toggle_favorite(star.clone(), cx)))
+						.on_click(cx.listener(move |this, _, _, cx| {
+							cx.stop_propagation();
+							this.toggle_favorite(star.clone(), cx);
+						}))
 						.child(Icon::new(IconKind::Star).size(rem(14.)).color(if favorited {
 							theme.warning
 						} else {
 							theme.interactive_muted
 						})),
 				)
-			});
-		tile.into_any_element()
+			})
+			.into_any_element()
 	}
 
-	fn masonry(&self, gifs: &[Gif], column: Rems, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+	fn masonry(
+		&self,
+		gifs: &[Gif],
+		favorited: &HashSet<&str>,
+		column: Rems,
+		theme: &Theme,
+		cx: &mut Context<Self>,
+	) -> AnyElement {
 		let mut left: Vec<AnyElement> = Vec::new();
 		let mut right: Vec<AnyElement> = Vec::new();
 		let (mut left_height, mut right_height) = (0_f32, 0_f32);
 		for gif in gifs {
 			let height = tile_height(gif, column);
-			let tile = self.gif_tile(gif, column, theme, cx);
+			let tile = self.gif_tile(
+				gif,
+				column,
+				height,
+				favorited.contains(gif.url.as_str()),
+				theme,
+				cx,
+			);
 			if left_height <= right_height {
 				left.push(tile);
 				left_height += height.0 + theme.gif_gap.0;
@@ -257,6 +266,40 @@ impl Picker {
 			.gap(theme.gif_gap)
 			.child(div().flex().flex_col().gap(theme.gif_gap).children(left))
 			.child(div().flex().flex_col().gap(theme.gif_gap).children(right))
+			.into_any_element()
+	}
+
+	fn favorites_tile(&self, width: Rems, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+		let active = self.gif.favorites;
+		div()
+			.id("gif-favorites-category")
+			.relative()
+			.flex_none()
+			.w(width)
+			.h(rem(CATEGORY_HEIGHT))
+			.rounded(theme.radius_sm)
+			.overflow_hidden()
+			.cursor_pointer()
+			.bg(theme.background_secondary)
+			.when(active, |tile| tile.border_2().border_color(theme.brand))
+			.hover(|style| style.bg(theme.modifier_selected))
+			.flex()
+			.items_center()
+			.justify_center()
+			.gap(theme.space_8)
+			.on_click(cx.listener(|this, _, window, cx| this.toggle_favorites(window, cx)))
+			.child(Icon::new(IconKind::Star).size(theme.icon_md).color(if active {
+				theme.warning
+			} else {
+				theme.interactive_muted
+			}))
+			.child(
+				div()
+					.text_size(theme.font_md)
+					.font_weight(FontWeight::BOLD)
+					.text_color(theme.header_primary)
+					.child(cx.t("picker-gif-favorites")),
+			)
 			.into_any_element()
 	}
 
@@ -282,8 +325,8 @@ impl Picker {
 				this.set_query(name.to_lowercase(), window, cx);
 				this.submit_gif_search(name.to_lowercase(), cx);
 			}))
-			.child(cover(
-				&category.src,
+			.child(cover_still(
+				&gif_tile(&category.src, "", pixels(width), pixels(rem(CATEGORY_HEIGHT))).still,
 				width,
 				rem(CATEGORY_HEIGHT),
 				ObjectFit::Cover,
@@ -333,32 +376,6 @@ impl Picker {
 			.into_any_element()
 	}
 
-	fn chip(
-		&self,
-		id: &str,
-		label: SharedString,
-		handler: ChipHandler,
-		theme: &Theme,
-		cx: &mut Context<Self>,
-	) -> AnyElement {
-		let handler = handler.clone();
-		div()
-			.id(format!("{}-{}", id, label))
-			.flex()
-			.items_center()
-			.h(rem(28.))
-			.px(theme.space_12)
-			.rounded_full()
-			.cursor_pointer()
-			.bg(theme.background_secondary)
-			.hover(|style| style.bg(theme.modifier_selected))
-			.text_size(theme.font_sm)
-			.text_color(theme.interactive_normal)
-			.on_click(cx.listener(move |this, _, window, cx| handler(this, window, cx)))
-			.child(label)
-			.into_any_element()
-	}
-
 	fn heading(&self, text: SharedString, theme: &Theme) -> AnyElement {
 		div()
 			.pt(theme.space_8)
@@ -399,166 +416,110 @@ impl Picker {
 			.into_any_element()
 	}
 
-	fn categories_chip(&self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
-		self.chip(
-			"gif-show-categories",
-			cx.t("picker-gif-show-categories"),
-			Rc::new(move |this, _, cx| this.open_categories(cx)),
-			theme,
-			cx,
-		)
-	}
-
-	fn categories_grid(
-		&self,
-		categories: &[GifCategory],
-		column: Rems,
-		theme: &Theme,
-		cx: &mut Context<Self>,
-	) -> Option<AnyElement> {
-		if !self.gif.categories_open {
-			return None;
-		}
-		let body = if categories.is_empty() {
-			self.loading_caption(cx.t("picker-gif-loading"), theme)
-		} else {
-			let tiles: Vec<AnyElement> = categories
-				.iter()
-				.enumerate()
-				.map(|(index, category)| self.category_tile(index, category, column, theme, cx))
-				.collect();
-			div()
-				.flex()
-				.flex_wrap()
-				.gap(theme.gif_gap)
-				.children(tiles)
-				.into_any_element()
-		};
-		Some(
-			div()
-				.flex()
-				.flex_col()
-				.gap(theme.space_8)
-				.child(self.heading(cx.t("picker-gif-categories"), theme))
-				.child(body)
-				.into_any_element(),
-		)
-	}
-
 	fn masonry_or_empty(
 		&self,
 		gifs: &[Gif],
+		favorited: &HashSet<&str>,
 		empty_text: SharedString,
 		column: Rems,
 		theme: &Theme,
 		cx: &mut Context<Self>,
 	) -> AnyElement {
+		if gifs.is_empty() {
+			return self.empty_state(empty_text, theme);
+		}
+		self.masonry(gifs, favorited, column, theme, cx)
+	}
+
+	fn tile_row(&self, tiles: Vec<AnyElement>, theme: &Theme) -> AnyElement {
 		div()
 			.flex()
-			.flex_col()
-			.gap(theme.space_8)
-			.child(self.masonry(gifs, column, theme, cx))
-			.when(gifs.is_empty(), |view| {
-				view.child(self.empty_state(empty_text, theme))
-			})
+			.flex_wrap()
+			.gap(theme.gif_gap)
+			.children(tiles)
 			.into_any_element()
 	}
 
 	pub(super) fn gif_body(&mut self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
-		{
-			let state = self.data.read(cx).state();
-			if state.gif_categories().is_some() {
-				self.gif.categories_pending = false;
-			}
-			if state.gif_favorites().is_some() {
-				self.gif.favorites_pending = false;
-			}
-			if let Some(query) = self.gif.active.as_deref()
-				&& state.gif_search(query).is_some()
-			{
-				self.gif.search_pending = false;
-			}
-		}
 		let column = (theme.picker_width - theme.space_12 * 2. - theme.space_8 - theme.gif_gap) / 2.;
-		let (categories, trending, favorites, results, suggestions) = {
-			let data = self.data.read(cx);
-			let state = data.state();
+		let (trending, favorites, results, suggestions) = {
+			let state = self.data.read(cx).state();
 			(
-				state.gif_categories().map(<[_]>::to_vec).unwrap_or_default(),
-				state.gif_trending().to_vec(),
-				state.gif_favorites().map(<[_]>::to_vec),
+				state.gif_trending().cloned(),
+				state.gif_favorites().cloned(),
 				self.gif
 					.active
 					.as_deref()
-					.and_then(|query| state.gif_search(query).map(<[Gif]>::to_vec)),
-				state.gif_suggestions(&self.query).map(<[String]>::to_vec),
+					.map(|query| state.gif_search(query).cloned()),
+				state
+					.gif_suggestions(&self.query)
+					.filter(|_| !self.query.is_empty())
+					.map(<[String]>::to_vec),
 			)
 		};
-		let content: AnyElement = if let Some(found) = results {
-			self.masonry_or_empty(&found, cx.t("picker-gif-empty"), column, theme, cx)
-		} else if self.gif.active.is_some() {
-			self.loading_caption(cx.t("picker-gif-loading"), theme)
-		} else if self.gif.view == GifView::Favorites {
-			let body = match favorites {
-				Some(gifs) => {
-					self.masonry_or_empty(&gifs, cx.t("picker-gif-favorites-empty"), column, theme, cx)
-				}
-				None => self.loading_caption(cx.t("picker-gif-loading"), theme),
-			};
-			div()
-				.flex()
-				.flex_col()
-				.gap(theme.space_8)
-				.child(self.chip(
-					"gif-back-trending",
-					cx.t("picker-gif-trending"),
-					Rc::new(move |this, _, cx| this.back_to_trending(cx)),
-					theme,
-					cx,
-				))
-				.child(self.heading(cx.t("picker-gif-favorites"), theme))
-				.child(body)
-				.into_any_element()
-		} else {
-			let suggestions_view = suggestions
-				.as_ref()
-				.filter(|_| !self.query.is_empty())
-				.map(|terms| self.suggestion_chips(terms, theme, cx));
-			let mut parts: Vec<AnyElement> = Vec::new();
-			if let Some(view) = suggestions_view {
-				parts.push(view);
+		let favorited: HashSet<&str> = favorites
+			.iter()
+			.flat_map(|gifs| gifs.iter())
+			.map(|gif| gif.url.as_str())
+			.collect();
+		let content = match results {
+			Some(Some(found)) => {
+				self.masonry_or_empty(&found, &favorited, cx.t("picker-gif-empty"), column, theme, cx)
 			}
-			parts.push(
-				div()
-					.flex()
-					.flex_row()
-					.items_center()
-					.gap(theme.space_8)
-					.child(self.categories_chip(theme, cx))
-					.child(self.chip(
-						"gif-favorites",
-						cx.t("picker-gif-favorites"),
-						Rc::new(move |this, _, cx| this.open_favorites(cx)),
+			Some(None) => self.loading_caption(cx.t("picker-gif-loading"), theme),
+			None if self.gif.favorites => {
+				let body = match &favorites {
+					Some(gifs) => self.masonry_or_empty(
+						gifs,
+						&favorited,
+						cx.t("picker-gif-favorites-empty"),
+						column,
 						theme,
 						cx,
-					))
-					.into_any_element(),
-			);
-			if let Some(grid) = self.categories_grid(&categories, column, theme, cx) {
-				parts.push(grid);
+					),
+					None => self.loading_caption(cx.t("picker-gif-loading"), theme),
+				};
+				let row = self.tile_row(vec![self.favorites_tile(column, theme, cx)], theme);
+				div()
+					.flex()
+					.flex_col()
+					.gap(theme.space_8)
+					.child(row)
+					.child(self.heading(cx.t("picker-gif-favorites"), theme))
+					.child(body)
+					.into_any_element()
 			}
-			parts.push(self.heading(cx.t("picker-gif-trending"), theme));
-			parts.push(if trending.is_empty() {
-				self.loading_caption(cx.t("picker-gif-loading"), theme)
-			} else {
-				self.masonry_or_empty(&trending, cx.t("picker-gif-empty"), column, theme, cx)
-			});
-			div()
-				.flex()
-				.flex_col()
-				.gap(theme.space_8)
-				.children(parts)
-				.into_any_element()
+			None => {
+				let mut tiles = vec![self.favorites_tile(column, theme, cx)];
+				let gifs =
+					match &trending {
+						Some(trending) => {
+							tiles.extend(trending.categories.iter().enumerate().map(|(index, category)| {
+								self.category_tile(index, category, column, theme, cx)
+							}));
+							self.masonry_or_empty(
+								&trending.gifs,
+								&favorited,
+								cx.t("picker-gif-empty"),
+								column,
+								theme,
+								cx,
+							)
+						}
+						None => self.loading_caption(cx.t("picker-gif-loading"), theme),
+					};
+				let row = self.tile_row(tiles, theme);
+				div()
+					.flex()
+					.flex_col()
+					.gap(theme.space_8)
+					.children(suggestions.map(|terms| self.suggestion_chips(&terms, theme, cx)))
+					.child(self.heading(cx.t("picker-gif-categories"), theme))
+					.child(row)
+					.child(self.heading(cx.t("picker-gif-trending"), theme))
+					.child(gifs)
+					.into_any_element()
+			}
 		};
 		div()
 			.flex()

@@ -14,6 +14,10 @@ pub fn rem(pixels: f32) -> Rems {
 	rems(pixels / BASE_REM)
 }
 
+pub fn rem_to_pixels(measure: Rems) -> f32 {
+	measure.0 * BASE_REM
+}
+
 pub fn rem_pixels(scale: f32) -> gpui::Pixels {
 	px(BASE_REM * scale)
 }

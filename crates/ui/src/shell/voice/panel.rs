@@ -90,6 +90,7 @@ impl VoicePanel {
 		let (target, error, camera, screen, me) = {
 			let data = self.data.read(cx);
 			let state = data.state();
+			let me = state.current_user_id();
 			match state.voice() {
 				Some(voice) => {
 					let error = match &voice.status {
@@ -101,10 +102,10 @@ impl VoicePanel {
 						error,
 						voice.camera_on,
 						voice.screen_share.is_some(),
-						data.me(),
+						me,
 					)
 				}
-				None => (None, None, false, false, data.me()),
+				None => (None, None, false, false, me),
 			}
 		};
 		if target != self.titled {

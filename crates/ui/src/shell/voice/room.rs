@@ -76,6 +76,8 @@ enum TileSize {
 }
 
 fn snapshot(data: &Data) -> Option<Snapshot> {
+	let self_mute = data.self_mute();
+	let self_deaf = data.self_deaf();
 	let state = data.state();
 	let selected = state.selected()?;
 	let channel = selected.channel_id;
@@ -87,8 +89,8 @@ fn snapshot(data: &Data) -> Option<Snapshot> {
 		channel,
 		stage_channel: kind == Some(ChannelType::GuildStageVoice),
 		status: session.map(|voice| voice.status.clone()),
-		self_mute: data.self_mute(),
-		self_deaf: data.self_deaf(),
+		self_mute,
+		self_deaf,
 		camera_on: session.is_some_and(|voice| voice.camera_on),
 		screen_on: session.is_some_and(|voice| voice.screen_share.is_some()),
 		watching: session.and_then(|voice| voice.watching.clone()),

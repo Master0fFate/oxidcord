@@ -164,7 +164,8 @@ impl SharePicker {
 		let quality = self.preset.quality(Some((target.width, target.height)));
 		let (connected, me) = {
 			let data = self.data.read(cx);
-			(data.state().voice().is_some(), data.me())
+			let state = data.state();
+			(state.voice().is_some(), state.current_user_id())
 		};
 		self.data.read(cx).send(Command::StartScreenShare {
 			target: target.clone(),
