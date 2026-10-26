@@ -419,42 +419,36 @@ impl Harness {
 
 	async fn expression_features(&self, guild_id: Snowflake, channel_id: Snowflake) -> Result<bool> {
 		self.session.send(Command::LoadGifTrending);
-		self.until("trending gifs to load", |state| !state.gif_trending().is_empty())
-			.await?;
-		self.session.send(Command::LoadGifCategories);
-		self.until("gif categories to load", |state| {
+		self.until("trending gifs and categories to load", |state| {
 			state
-				.gif_categories()
-				.is_some_and(|categories| !categories.is_empty())
+				.gif_trending()
+				.is_some_and(|trending| trending.gifs.len() > 1 && !trending.categories.is_empty())
 		})
 		.await?;
 		self.session.send(Command::LoadGifFavorites);
 		self.until("gif favorites to load", |state| state.gif_favorites().is_some())
 			.await?;
-		let favorite_id = self
+		let favorite = self
 			.state
 			.read()
 			.gif_trending()
-			.first()
-			.cloned()
-			.context("no trending gif to favorite")?
-			.id;
-		self.session.send(Command::FavoriteGif {
-			id: favorite_id.clone(),
-		});
+			.and_then(|trending| trending.gifs.first().cloned())
+			.context("no trending gif to favorite")?;
+		let favorite_url = favorite.url.clone();
+		self.session.send(Command::FavoriteGif { gif: favorite });
 		self.until("the gif to be favorited", |state| {
 			state
 				.gif_favorites()
-				.is_some_and(|favorites| favorites.iter().any(|gif| gif.id == favorite_id))
+				.is_some_and(|favorites| favorites.iter().any(|gif| gif.url == favorite_url))
 		})
 		.await?;
 		self.session.send(Command::UnfavoriteGif {
-			id: favorite_id.clone(),
+			url: favorite_url.clone(),
 		});
 		self.until("the gif to be unfavorited", |state| {
 			state
 				.gif_favorites()
-				.is_some_and(|favorites| !favorites.iter().any(|gif| gif.id == favorite_id))
+				.is_some_and(|favorites| !favorites.iter().any(|gif| gif.url == favorite_url))
 		})
 		.await?;
 		self.session.send(Command::SearchGifs {

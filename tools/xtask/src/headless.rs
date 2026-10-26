@@ -10,7 +10,6 @@ use anyhow::{Context, Result, bail, ensure};
 use markdown::Node;
 use mockcord::{FixtureSummary, MockConfig, Server};
 use plugin_host::{Grants, MANIFEST_FILE, Package};
-use protocol::gateway::{CHROME_VERSION, FALLBACK_BUILD_NUMBER};
 use protocol::{Channel, ChannelType, IdentifyProperties, Snowflake, Token};
 use serde_json::json;
 use session::{Command, PluginState, Session, SessionConfig, VoiceIo};
@@ -27,6 +26,7 @@ use tracing_subscriber::{Layer, fmt as subscriber_fmt};
 use url::Url;
 
 mod features;
+mod live;
 
 const RUNTIME_GRACE: Duration = Duration::from_secs(2);
 const MOCK_TOKEN: &str = "mock-token";
@@ -52,8 +52,10 @@ const TIMESTAMP_PREFIX: &str = "sent ";
 
 #[derive(clap::Args)]
 pub struct Args {
-	#[arg(long)]
+	#[arg(long, conflicts_with = "live")]
 	mock: bool,
+	#[arg(long)]
+	live: bool,
 	#[arg(long, default_value_t = 1)]
 	seed: u64,
 	#[arg(long)]
@@ -206,17 +208,25 @@ impl Harness {
 		Ok((echoed, screen_share_started))
 	}
 
-	fn start(store: Arc<Store>, rest_base: &str, gateway_url: &str) -> Result<Self> {
+	fn start(store: Arc<Store>, rest_base: &str, gateway_url: &str, token: &str) -> Result<Self> {
 		let wake = Arc::new(Notify::new());
 		let notifier = wake.clone();
+		let (locale, build_number, chrome_version) = {
+			let settings = store.settings.read();
+			(
+				settings.locale.clone(),
+				settings.client.build_number,
+				settings.client.chrome_version.clone(),
+			)
+		};
 		let session = Session::start_with(
 			SessionConfig {
 				store,
 				rest_base: Url::parse(rest_base).context("rest url is invalid")?,
 				gateway_url: gateway_url.to_owned(),
-				token: Token::new(MOCK_TOKEN),
-				identify: IdentifyProperties::web_client("en-US", FALLBACK_BUILD_NUMBER, CHROME_VERSION),
-				locale: "en-US".to_owned(),
+				token: Token::new(token),
+				identify: IdentifyProperties::web_client(&locale, build_number, &chrome_version),
+				locale,
 				runtime: None,
 				notify: Arc::new(move |_| notifier.notify_one()),
 			},
@@ -360,7 +370,7 @@ fn init_tracing() -> Arc<AtomicU64> {
 }
 
 pub fn run(args: Args) -> Result<()> {
-	ensure!(args.mock, "only the mock server is supported, pass --mock");
+	ensure!(args.mock || args.live, "pass --mock or --live");
 	let retries = init_tracing();
 	let runtime = tokio::runtime::Builder::new_multi_thread()
 		.worker_threads(2)
@@ -368,7 +378,11 @@ pub fn run(args: Args) -> Result<()> {
 		.build()
 		.context("could not start the async runtime")?;
 	let root = scratch_dir()?;
-	let outcome = runtime.block_on(mock_run(args, &root, retries));
+	let outcome = if args.live {
+		runtime.block_on(live::run(&root))
+	} else {
+		runtime.block_on(mock_run(args, &root, retries))
+	};
 	runtime.shutdown_timeout(RUNTIME_GRACE);
 	plugin_host::conformance::remove_scratch(&root);
 	outcome
@@ -402,7 +416,12 @@ async fn scenario(
 		settings.storage.plaintext_token = true;
 	})?;
 	install_plugins(&store).await?;
-	let harness = Harness::start(store.clone(), server.rest_base_url(), server.gateway_url())?;
+	let harness = Harness::start(
+		store.clone(),
+		server.rest_base_url(),
+		server.gateway_url(),
+		MOCK_TOKEN,
+	)?;
 
 	harness
 		.until("the gateway to become ready", |state| {
@@ -608,7 +627,7 @@ async fn cached_start(
 	channel_id: Snowflake,
 	guilds: usize,
 ) -> Result<()> {
-	let offline = Harness::start(store.clone(), UNREACHABLE_REST, UNREACHABLE_GATEWAY)?;
+	let offline = Harness::start(store.clone(), UNREACHABLE_REST, UNREACHABLE_GATEWAY, MOCK_TOKEN)?;
 	offline
 		.until("cached guilds to load", |state| state.guilds().count() == guilds)
 		.await?;
