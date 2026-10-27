@@ -14,6 +14,7 @@ gpui.workspace = true
 gpui-platform.workspace = true
 updater.workspace = true
 gpui-component.workspace = true
+gpui-base.workspace = true
 gpui-kit-assets.workspace = true
 markdown.workspace = true
 media.workspace = true
