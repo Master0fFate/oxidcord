@@ -1,5 +1,5 @@
 use std::sync::OnceLock;
-use std::sync::mpsc::{Sender, channel};
+use std::sync::mpsc::Sender;
 
 static SPEAKER: OnceLock<Option<Sender<String>>> = OnceLock::new();
 
@@ -22,7 +22,7 @@ fn start() -> Option<Sender<String>> {
 	use windows::Win32::System::Com::{CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx};
 	use windows::core::HSTRING;
 
-	let (sender, receiver) = channel::<String>();
+	let (sender, receiver) = std::sync::mpsc::channel::<String>();
 	let spawned = std::thread::Builder::new().name("speech".into()).spawn(move || {
 		if let Err(error) = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }.ok() {
 			tracing::warn!(%error, "could not start COM for speech");
