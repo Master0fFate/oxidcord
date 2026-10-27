@@ -1,0 +1,575 @@
+action-done = Gotovo
+
+thread-list-title = Niti
+thread-create = Stvori
+thread-empty = Još nema niti. Pokrenite je iz bilo koje poruke.
+thread-entry-detail = { $owner } - { $count ->
+    [one] { $count } poruka
+    [few] { $count } poruke
+   *[other] { $count } poruka
+} - { $when }
+thread-tab-active = Aktivne
+thread-tab-archived = Arhivirane
+thread-join = Pridruži se niti
+thread-leave = Napusti nit
+thread-unarchive = Vrati iz arhive
+thread-close = Zatvori nit
+thread-reopen = Ponovno otvori nit
+thread-lock = Zaključaj nit
+thread-unlock = Otključaj nit
+thread-edit = Uredi nit
+thread-delete = Izbriši nit
+thread-delete-title = Izbrisati „{ $name }”?
+thread-delete-body = Jeste li sigurni da želite izbrisati ovu nit? To se ne može poništiti.
+thread-search = Pretraži
+thread-pins = Prikvačeno
+thread-open-full-view = Otvori u punom prikazu
+thread-close-full-view = Zatvori puni prikaz
+forum-follow-post = Prati objavu
+forum-unfollow-post = Prestani pratiti objavu
+forum-edit-post = Uredi objavu
+forum-close-post = Zatvori objavu
+forum-reopen-post = Ponovno otvori objavu
+forum-lock-post = Zaključaj objavu
+forum-unlock-post = Otključaj objavu
+forum-delete-post = Izbriši objavu
+forum-delete-post-body = Jeste li sigurni da želite izbrisati ovu objavu? To se ne može poništiti.
+thread-archived-notice = Ova nit je arhivirana.
+thread-join-notice = Pridružite se niti { $name } kako biste sudjelovali u razgovoru.
+thread-create-title = Stvori nit
+thread-name = Naziv niti
+thread-name-placeholder = Nova nit
+thread-starter = Početna poruka
+thread-auto-archive = Sakrij nakon neaktivnosti
+thread-archive-hour = 1 sat
+thread-archive-day = 24 sata
+thread-archive-three-days = 3 dana
+thread-archive-week = 1 tjedan
+thread-create-confirm = Stvori nit
+thread-chip-count = { $count ->
+    [one] { $count } poruka
+    [few] { $count } poruke
+   *[other] { $count } poruka
+}
+
+pins-title = Prikvačene poruke
+pins-empty = Ovaj kanal još nema prikvačenih poruka.
+pin-jump = Skoči
+pin-title = Prikvačiti ovu poruku?
+pin-body = Poruka će biti prikvačena u ovaj kanal i vidljiva svima.
+pin-confirm = Prikvači
+unpin-title = Otkvačiti ovu poruku?
+unpin-body = Poruka više neće biti prikvačena u ovom kanalu.
+unpin-confirm = Otkvači
+menu-unpin = Otkvači poruku
+
+forum-new-post = Nova objava
+forum-sort-activity = Nedavno aktivne
+forum-sort-creation = Datum objave
+forum-layout-list = Prikaz popisa
+forum-layout-gallery = Prikaz galerije
+forum-tags = Oznake
+forum-replies = { $count ->
+    [one] { $count } odgovor
+    [few] { $count } odgovora
+   *[other] { $count } odgovora
+}
+forum-empty = Još nema objava. Budite prvi koji će započeti razgovor.
+forum-post-title = Stvori objavu
+forum-post-name = Naslov
+forum-post-name-placeholder = Dajte objavi naslov
+forum-post-body = Poruka
+forum-post-body-placeholder = Napišite prvu poruku svoje objave
+forum-post-files = Privici
+forum-post-tags = Oznake
+forum-post-tags-required = Oznake (odaberite barem jednu)
+forum-post-submit = Objavi
+
+menu-create-thread = Stvori nit
+menu-select-message = Odaberi poruku
+menu-deselect-message = Poništi odabir poruke
+menu-delete-selected = Izbriši odabrano ({ $count })
+menu-report = Prijavi poruku
+menu-invite-channel = Pozovi u kanal
+menu-edit-channel = Uredi kanal
+menu-delete-channel = Izbriši kanal
+timeline-selected = Odabrano: { $count }
+
+mute-channel = Utišaj kanal
+mute-server = Utišaj poslužitelj
+unmute-channel = Poništi utišavanje kanala
+unmute-server = Poništi utišavanje poslužitelja
+mute-thread = Utišaj nit
+mute-post = Utišaj objavu
+unmute-thread = Poništi utišavanje niti
+unmute-post = Poništi utišavanje objave
+mute-15-minutes = Na 15 minuta
+mute-1-hour = Na 1 sat
+mute-8-hours = Na 8 sati
+mute-24-hours = Na 24 sata
+mute-forever = Dok to ne isključim
+notify-all = Sve poruke
+notify-mentions = Samo @spominjanja
+notify-nothing = Ništa
+notify-inherit = Koristi zadano za kategoriju
+notify-guild-title = Postavke obavijesti
+notify-suppress-everyone = Zanemari @everyone i @here
+notify-suppress-roles = Zanemari sva @spominjanja uloga
+notify-mobile-push = Push obavijesti na mobitelu
+
+channel-edit-title = Uredi #{ $name }
+channel-tab-overview = Pregled
+channel-tab-permissions = Dopuštenja
+channel-name = Naziv kanala
+channel-topic = Tema kanala
+channel-topic-placeholder = Recite svima kako koristiti ovaj kanal
+channel-slowmode = Spori način
+channel-nsfw = Kanal s dobnim ograničenjem
+channel-nsfw-hint = Korisnici moraju potvrditi da su punoljetni kako bi vidjeli ovaj kanal.
+channel-category = Kategorija
+channel-no-category = Bez kategorije
+channel-perm-add = Dodaj uloge ili članove
+channel-perm-add-role = Uloga
+channel-perm-add-member = Član
+channel-perm-remove = Ukloni posebna dopuštenja
+channel-create-title = Stvori kanal
+channel-kind = Vrsta kanala
+channel-kind-text = Tekstualni
+channel-kind-voice = Glasovni
+channel-kind-announcement = Najave
+channel-kind-forum = Forum
+channel-kind-stage = Pozornica
+channel-create-name-placeholder = novi-kanal
+channel-create-confirm = Stvori kanal
+channel-delete = Izbriši kanal
+channel-delete-title = Izbrisati #{ $name }?
+channel-delete-body = To se ne može poništiti. Kanal i njegove poruke bit će uklonjeni za sve.
+slowmode-off = Isključeno
+slowmode-5s = 5 s
+slowmode-10s = 10 s
+slowmode-15s = 15 s
+slowmode-30s = 30 s
+slowmode-1m = 1 min
+slowmode-2m = 2 min
+slowmode-5m = 5 min
+slowmode-10m = 10 min
+slowmode-15m = 15 min
+slowmode-30m = 30 min
+slowmode-1h = 1 h
+slowmode-2h = 2 h
+slowmode-6h = 6 h
+
+invite-create-title = Pozovi ljude
+invite-expire-after = Istječe nakon
+invite-max-uses = Najveći broj korištenja
+invite-age-30-minutes = 30 minuta
+invite-age-1-hour = 1 sat
+invite-age-6-hours = 6 sati
+invite-age-12-hours = 12 sati
+invite-age-1-day = 1 dan
+invite-age-7-days = 7 dana
+invite-age-never = Nikad
+invite-uses-unlimited = Bez ograničenja
+invite-uses-1 = 1 korištenje
+invite-uses-5 = 5 korištenja
+invite-uses-10 = 10 korištenja
+invite-uses-25 = 25 korištenja
+invite-uses-50 = 50 korištenja
+invite-uses-100 = 100 korištenja
+invite-temporary-title = Dodijeli privremeno članstvo
+invite-temporary-hint = Članovi kojima nije dodijeljena uloga uklanjaju se kada prekinu vezu.
+invite-temporary = Privremeno
+invite-link = Poveznica pozivnice
+invite-copy = Kopiraj
+invite-generate = Stvori poveznicu
+invite-regenerate = Stvori novu poveznicu
+invites-count = { $count ->
+    [one] { $count } pozivnica
+    [few] { $count } pozivnice
+   *[other] { $count } pozivnica
+}
+invites-empty = Nema aktivnih pozivnica.
+invite-card-caption = Pozvani ste da se pridružite poslužitelju
+invite-card-joined-caption = Pridružili ste se ovom poslužitelju
+invite-card-join = Pridruži se
+invite-card-joined = Pridruženo
+invite-card-online = Na mreži: { $count }
+invite-card-members = Članova: { $count }
+
+server-settings-group-server = Poslužitelj
+server-settings-group-expression = Izražavanje
+server-settings-group-people = Ljudi
+server-settings-group-moderation = Moderiranje
+server-settings-overview = Pregled
+server-settings-roles = Uloge
+server-settings-emoji = Emojiji
+server-settings-stickers = Naljepnice
+server-settings-members = Članovi
+server-settings-invites = Pozivnice
+server-settings-bans = Zabrane
+server-settings-audit-log = Zapisnik promjena
+settings-unsaved = Pažljivo, imate nespremljene promjene
+settings-reset = Vrati
+settings-save = Spremi promjene
+server-overview-name = Naziv poslužitelja
+server-overview-description = Opis
+server-overview-description-placeholder = Recite ljudima o čemu je ovaj poslužitelj
+server-overview-upload-icon = Učitaj ikonu
+server-overview-icon-hint = Najmanje 128 × 128. Najbolje je kvadratna slika.
+
+roles-create = Stvori ulogu
+roles-count = { $count ->
+    [one] { $count } uloga
+    [few] { $count } uloge
+   *[other] { $count } uloga
+}
+roles-back = Natrag na uloge
+roles-name = Naziv uloge
+roles-color = Boja uloge
+roles-hoist = Prikaži članove s ovom ulogom zasebno
+roles-hoist-hint = Članovi s ovom ulogom prikazuju se u vlastitoj skupini na popisu članova.
+roles-mentionable = Dopusti svima da @spomenu ovu ulogu
+roles-mentionable-hint = Članovi mogu obavijestiti sve koji imaju ovu ulogu.
+roles-tab-display = Prikaz
+roles-tab-permissions = Dopuštenja
+roles-delete = Izbriši ulogu
+roles-delete-title = Izbrisati ovu ulogu?
+roles-delete-body = Članovi gube ovu ulogu i dopuštenja koja uz nju idu.
+roles-everyone = @everyone
+roles-move-up = Pomakni gore
+roles-move-down = Pomakni dolje
+roles-search-permissions = Pretraži dopuštenja
+
+emoji-slots-static = { $used } od { $total } statičnih emojija
+emoji-slots-animated = { $used } od { $total } animiranih emojija
+emoji-upload = Učitaj emoji
+emoji-upload-submit = Učitaj
+emoji-empty = Ovaj poslužitelj još nema prilagođenih emojija.
+emoji-delete-title = Izbrisati emoji?
+emoji-delete-body = :{ $name }: bit će uklonjen s ovog poslužitelja.
+stickers-slots = Iskorišteno { $used } od { $total } mjesta za naljepnice
+stickers-upload = Učitaj naljepnicu
+stickers-upload-submit = Učitaj
+stickers-name = Naziv
+stickers-description = Opis
+stickers-description-placeholder = Što prikazuje ova naljepnica?
+stickers-tags = Povezani emoji ili oznake
+stickers-tags-placeholder = mahanje, bok
+stickers-empty = Ovaj poslužitelj još nema naljepnica.
+stickers-delete-title = Izbrisati naljepnicu?
+stickers-delete-body = { $name } bit će uklonjena s ovog poslužitelja.
+
+bans-search = Traži po korisničkom imenu ili ID-u
+bans-count = { $count ->
+    [one] { $count } zabrana
+    [few] { $count } zabrane
+   *[other] { $count } zabrana
+}
+bans-empty = Nitko nema zabranu na ovom poslužitelju.
+bans-unban = Ukini zabranu
+bans-unban-title = Ukinuti zabranu za { $name }?
+bans-unban-body = Moći će se ponovno pridružiti poslužitelju s novom pozivnicom.
+bans-no-reason = Razlog nije naveden
+
+audit-filter-all = Sve radnje
+audit-empty = Nema unosa koji odgovaraju ovom filtru.
+audit-load-more = Učitaj još
+audit-reason = Razlog: { $reason }
+audit-action-unknown = { $actor } je nešto napravio/la
+audit-filter-1 = Ažuriranje poslužitelja
+audit-filter-10 = Stvaranje kanala
+audit-filter-11 = Ažuriranje kanala
+audit-filter-12 = Brisanje kanala
+audit-filter-20 = Izbacivanje člana
+audit-filter-22 = Zabrana člana
+audit-filter-23 = Ukidanje zabrane
+audit-filter-24 = Ažuriranje člana
+audit-filter-25 = Promjena uloga člana
+audit-filter-30 = Stvaranje uloge
+audit-filter-31 = Ažuriranje uloge
+audit-filter-32 = Brisanje uloge
+audit-filter-40 = Stvaranje pozivnice
+audit-filter-42 = Brisanje pozivnice
+audit-filter-60 = Stvaranje emojija
+audit-filter-61 = Ažuriranje emojija
+audit-filter-62 = Brisanje emojija
+audit-filter-72 = Brisanje poruke
+audit-filter-74 = Prikvačivanje poruke
+audit-filter-75 = Otkvačivanje poruke
+audit-filter-110 = Stvaranje niti
+audit-action-1 = { $actor } je promijenio/la postavke poslužitelja
+audit-action-10 = { $actor } je stvorio/la kanal { $target }
+audit-action-11 = { $actor } je ažurirao/la kanal { $target }
+audit-action-12 = { $actor } je izbrisao/la kanal { $target }
+audit-action-13 = { $actor } je dodao/la posebna dopuštenja na { $target }
+audit-action-14 = { $actor } je ažurirao/la posebna dopuštenja na { $target }
+audit-action-15 = { $actor } je uklonio/la posebna dopuštenja s { $target }
+audit-action-20 = { $actor } je izbacio/la korisnika { $target }
+audit-action-21 = { $actor } je očistio/la neaktivne članove
+audit-action-22 = { $actor } je zabranio/la pristup korisniku { $target }
+audit-action-23 = { $actor } je ukinuo/la zabranu korisniku { $target }
+audit-action-24 = { $actor } je ažurirao/la korisnika { $target }
+audit-action-25 = { $actor } je promijenio/la uloge korisnika { $target }
+audit-action-26 = { $actor } je premjestio/la korisnika { $target } u drugi glasovni kanal
+audit-action-27 = { $actor } je isključio/la korisnika { $target } iz glasovnog kanala
+audit-action-30 = { $actor } je stvorio/la ulogu { $target }
+audit-action-31 = { $actor } je ažurirao/la ulogu { $target }
+audit-action-32 = { $actor } je izbrisao/la ulogu { $target }
+audit-action-40 = { $actor } je stvorio/la pozivnicu { $target }
+audit-action-41 = { $actor } je ažurirao/la pozivnicu { $target }
+audit-action-42 = { $actor } je izbrisao/la pozivnicu { $target }
+audit-action-50 = { $actor } je stvorio/la webhook
+audit-action-51 = { $actor } je ažurirao/la webhook
+audit-action-52 = { $actor } je izbrisao/la webhook
+audit-action-60 = { $actor } je stvorio/la emoji { $target }
+audit-action-61 = { $actor } je ažurirao/la emoji { $target }
+audit-action-62 = { $actor } je izbrisao/la emoji { $target }
+audit-action-72 = { $actor } je izbrisao/la poruku korisnika { $target }
+audit-action-73 = { $actor } je izbrisao/la više poruka
+audit-action-74 = { $actor } je prikvačio/la poruku korisnika { $target }
+audit-action-75 = { $actor } je otkvačio/la poruku korisnika { $target }
+audit-action-110 = { $actor } je stvorio/la nit { $target }
+audit-action-111 = { $actor } je ažurirao/la nit { $target }
+audit-action-112 = { $actor } je izbrisao/la nit { $target }
+
+members-search = Pretraži članove
+members-search-clear = Očisti pretragu
+members-count = { $count ->
+    [one] { $count } član
+    [few] { $count } člana
+   *[other] { $count } članova
+}
+members-empty = Nijedan član ne odgovara pretrazi.
+
+mod-change-nickname = Promijeni nadimak
+mod-nickname = Nadimak
+mod-nickname-placeholder = Bez nadimka
+mod-nickname-hint = Ostavite prazno za uklanjanje nadimka.
+mod-roles = Uloge
+mod-move-to = Premjesti u
+mod-disconnect = Prekini vezu
+mod-server-mute = Utišaj na poslužitelju
+mod-server-unmute = Poništi utišavanje na poslužitelju
+mod-server-deafen = Isključi zvuk na poslužitelju
+mod-server-undeafen = Uključi zvuk na poslužitelju
+mod-timeout = Privremeno ograniči
+mod-remove-timeout = Ukloni ograničenje
+mod-timeout-title = Privremeno ograniči korisnika { $name }
+mod-timeout-body = { $name } neće moći slati poruke, reagirati ni ulaziti u glasovne kanale tijekom odabranog vremena.
+mod-timeout-duration = Trajanje
+mod-timeout-60s = 60 sekundi
+mod-timeout-5m = 5 minuta
+mod-timeout-10m = 10 minuta
+mod-timeout-1h = 1 sat
+mod-timeout-1d = 1 dan
+mod-timeout-1w = 1 tjedan
+mod-kick = Izbaci
+mod-kick-title = Izbaci korisnika { $name }
+mod-kick-body = { $name } bit će uklonjen/a s poslužitelja, ali se može vratiti s novom pozivnicom.
+mod-ban = Zabrani pristup
+mod-ban-title = Zabrani pristup korisniku { $name }
+mod-ban-body = { $name } bit će uklonjen/a i neće se moći vratiti dok se zabrana ne ukine.
+mod-ban-history = Izbriši povijest poruka
+mod-history-none = Ne briši ništa
+mod-history-1h = Zadnji sat
+mod-history-6h = Zadnjih 6 sati
+mod-history-12h = Zadnjih 12 sati
+mod-history-24h = Zadnja 24 sata
+mod-history-3d = Zadnja 3 dana
+mod-history-7d = Zadnjih 7 dana
+mod-reason = Razlog
+mod-reason-placeholder = Neobavezan razlog
+mod-bulk-title = Izbrisati poruke ({ $count })?
+mod-bulk-body = Odabrane poruke bit će uklonjene za sve. To se ne može poništiti.
+
+picker-tab-gif = GIF-ovi
+picker-tab-sticker = Naljepnice
+picker-tab-emoji = Emoji
+picker-search-gif = Traži GIF-ove
+picker-search-sticker = Pronađi savršenu naljepnicu
+picker-search-emoji = Pronađi savršeni emoji
+picker-gif-categories = Kategorije
+picker-gif-trending = Popularni GIF-ovi
+picker-gif-empty = Nema GIF-ova. Pokušajte s drugom pretragom.
+picker-gif-favorites = Favoriti
+picker-gif-favorites-empty = Ovdje još nema ničega. Prijeđite mišem preko GIF-a i kliknite zvjezdicu.
+picker-gif-loading = Učitavanje…
+picker-gif-favorite = Dodaj u favorite
+picker-gif-unfavorite = Ukloni iz favorita
+picker-results = Rezultati pretrage
+picker-sticker-empty = Ovdje još nema naljepnica.
+picker-sticker-lottie = Animirana naljepnica, pregled nije dostupan
+picker-emoji-recent = Često korišteno
+picker-emoji-locked = Nabavite Nitro za korištenje ovog emojija posvuda
+picker-emoji-plugin = Pošalji putem dodatka
+picker-emoji-tone = Boja kože
+picker-emoji-from = s poslužitelja { $name }
+picker-emoji-people = Smajlići i ljudi
+picker-emoji-nature = Životinje i priroda
+picker-emoji-food = Hrana i piće
+picker-emoji-activities = Aktivnosti
+picker-emoji-travel = Putovanja i mjesta
+picker-emoji-objects = Predmeti
+picker-emoji-symbols = Simboli
+picker-emoji-flags = Zastave
+
+settings-gif-usage = Korištenje GIF-ova
+settings-gif-usage-switch = Javi Discordu koje GIF-ove odabirem
+settings-gif-usage-hint = Šalje odabrani GIF Discordu radi boljih rezultata pretrage. Zadano isključeno.
+timeline-delete-selected = Izbriši
+right-group-general = Opća dopuštenja poslužitelja
+right-view-channels = Pregled kanala
+right-view-channels-hint = Članovi prema zadanim postavkama mogu vidjeti kanale (osim privatnih).
+right-manage-channels = Upravljanje kanalima
+right-manage-channels-hint = Stvaranje, uređivanje i brisanje kanala.
+right-manage-roles = Upravljanje ulogama
+right-manage-roles-hint = Stvaranje novih uloga te uređivanje i brisanje uloga nižih od vlastite najviše uloge.
+right-create-expressions = Stvaranje izraza
+right-create-expressions-hint = Dodavanje prilagođenih emojija, naljepnica i zvukova na ovaj poslužitelj.
+right-manage-expressions = Upravljanje izrazima
+right-manage-expressions-hint = Uređivanje i uklanjanje prilagođenih emojija, naljepnica i zvukova na ovom poslužitelju.
+right-view-audit-log = Pregled zapisnika promjena
+right-view-audit-log-hint = Članovi mogu vidjeti tko je što promijenio na ovom poslužitelju.
+right-manage-webhooks = Upravljanje webhookovima
+right-manage-webhooks-hint = Stvaranje, uređivanje i brisanje webhookova.
+right-manage-server = Upravljanje poslužiteljem
+right-manage-server-hint = Promjena naziva, regije, ikone i drugih postavki poslužitelja.
+right-group-membership = Dopuštenja članstva
+right-create-invite = Stvaranje pozivnica
+right-create-invite-hint = Pozivanje novih ljudi na ovaj poslužitelj.
+right-change-nickname = Promjena nadimka
+right-change-nickname-hint = Promjena vlastitog nadimka.
+right-manage-nicknames = Upravljanje nadimcima
+right-manage-nicknames-hint = Promjena nadimaka drugih članova.
+right-kick-members = Izbacivanje članova
+right-kick-members-hint = Uklanjanje drugih članova s ovog poslužitelja.
+right-ban-members = Zabrana članovima
+right-ban-members-hint = Trajna zabrana pristupa drugim članovima.
+right-timeout-members = Privremeno ograničavanje članova
+right-timeout-members-hint = Sprječavanje članova da neko vrijeme šalju poruke, reagiraju ili govore.
+right-group-text = Dopuštenja tekstualnih kanala
+right-send-messages = Slanje poruka
+right-send-messages-hint = Slanje poruka u tekstualnim kanalima.
+right-send-in-threads = Slanje poruka u nitima
+right-send-in-threads-hint = Slanje poruka u nitima.
+right-create-public-threads = Stvaranje javnih niti
+right-create-public-threads-hint = Stvaranje niti koje mogu vidjeti svi u kanalu.
+right-create-private-threads = Stvaranje privatnih niti
+right-create-private-threads-hint = Stvaranje niti samo uz pozivnicu.
+right-embed-links = Ugrađivanje poveznica
+right-embed-links-hint = Poveznice koje članovi dijele prikazuju pregled.
+right-attach-files = Prilaganje datoteka
+right-attach-files-hint = Učitavanje datoteka i medija.
+right-add-reactions = Dodavanje reakcija
+right-add-reactions-hint = Dodavanje novih reakcija na poruke.
+right-use-external-emoji = Korištenje vanjskih emojija
+right-use-external-emoji-hint = Korištenje emojija s drugih poslužitelja.
+right-use-external-stickers = Korištenje vanjskih naljepnica
+right-use-external-stickers-hint = Korištenje naljepnica s drugih poslužitelja.
+right-mention-everyone = Spominjanje @everyone, @here i svih uloga
+right-mention-everyone-hint = Obavještavanje svih putem @everyone, @here ili bilo koje uloge.
+right-manage-messages = Upravljanje porukama
+right-manage-messages-hint = Brisanje poruka drugih članova.
+right-pin-messages = Prikvačivanje poruka
+right-pin-messages-hint = Prikvačivanje i otkvačivanje poruka u tekstualnim kanalima.
+right-bypass-slowmode = Zaobilaženje sporog načina
+right-bypass-slowmode-hint = Slanje poruka i stvaranje niti bez čekanja sporog načina.
+right-manage-threads = Upravljanje nitima
+right-manage-threads-hint = Preimenovanje, brisanje i zatvaranje niti te uključivanje sporog načina.
+right-read-history = Čitanje povijesti poruka
+right-read-history-hint = Čitanje ranijih poruka u kanalima.
+right-send-tts = Slanje poruka za čitanje naglas
+right-send-tts-hint = Slanje poruka koje se čitaju naglas.
+right-send-voice-messages = Slanje glasovnih poruka
+right-send-voice-messages-hint = Slanje glasovnih poruka.
+right-create-polls = Stvaranje anketa
+right-create-polls-hint = Stvaranje anketa.
+right-group-voice = Dopuštenja glasovnih kanala
+right-connect = Povezivanje
+right-connect-hint = Ulazak u glasovne kanale.
+right-speak = Govor
+right-speak-hint = Govor u glasovnim kanalima.
+right-video = Video
+right-video-hint = Dijeljenje videa ili zaslona.
+right-use-soundboard = Korištenje zvučne ploče
+right-use-soundboard-hint = Puštanje zvukova sa zvučne ploče poslužitelja.
+right-use-external-sounds = Korištenje vanjskih zvukova
+right-use-external-sounds-hint = Korištenje zvukova s drugih poslužitelja.
+right-voice-activity = Korištenje glasovne aktivnosti
+right-voice-activity-hint = Govor bez tipke „pritisni za govor”.
+right-priority-speaker = Prioritetni govornik
+right-priority-speaker-hint = Jasnije se čuje dok govori.
+right-mute-members = Utišavanje članova
+right-mute-members-hint = Utišavanje drugih članova u glasovnim kanalima.
+right-deafen-members = Isključivanje zvuka članovima
+right-deafen-members-hint = Isključivanje zvuka drugim članovima u glasovnim kanalima.
+right-move-members = Premještanje članova
+right-move-members-hint = Premještanje članova između glasovnih kanala.
+right-group-apps = Dopuštenja aplikacija
+right-use-commands = Korištenje naredbi aplikacija
+right-use-commands-hint = Korištenje naredbi aplikacija.
+right-use-activities = Korištenje aktivnosti
+right-use-activities-hint = Korištenje aktivnosti u glasovnim kanalima.
+right-use-external-apps = Korištenje vanjskih aplikacija
+right-use-external-apps-hint = Korištenje aplikacija koje nisu instalirane na ovom poslužitelju.
+right-group-stage = Dopuštenja pozornice
+right-request-to-speak = Traženje riječi
+right-request-to-speak-hint = Traženje riječi na pozornici.
+right-group-events = Dopuštenja događaja
+right-create-events = Stvaranje događaja
+right-create-events-hint = Stvaranje događaja.
+right-manage-events = Upravljanje događajima
+right-manage-events-hint = Uređivanje i otkazivanje događaja.
+right-group-advanced = Napredna dopuštenja
+right-administrator = Administrator
+right-administrator-hint = Članovi s ovim dopuštenjem imaju sva dopuštenja i zaobilaze posebna dopuštenja kanala.
+
+add-server-title = Dodaj poslužitelj
+add-server-join = Pridruži se poslužitelju
+add-server-create = Stvori vlastiti
+add-server-code = Poveznica ili kod pozivnice
+add-server-code-placeholder = https://discord.gg/hTKzmak
+add-server-code-hint = Zalijepite poveznicu pozivnice ili upišite kod.
+add-server-find = Pronađi poslužitelj
+add-server-join-confirm = Pridruži se poslužitelju
+add-server-create-confirm = Stvori poslužitelj
+add-server-default-name = Poslužitelj korisnika { $name }
+
+leave-server-title = Napustiti { $name }?
+leave-server-body = Nećete se moći vratiti na ovaj poslužitelj dok vas netko ponovno ne pozove.
+
+reaction-loading = Učitavanje...
+reaction-more = i još { $count }
+
+poll-select-one = Odaberite jedan odgovor
+poll-select-multiple = Odaberite jedan ili više odgovora
+poll-closed = Anketa je zatvorena
+poll-vote = Glasaj
+poll-end = Završi anketu
+
+menu-forward = Proslijedi
+forward-title = Proslijedi u
+forward-placeholder = Pretraži kanale i izravne poruke
+
+timeline-jump-present = Skoči na sadašnjost
+
+guild-nav-customize = Prilagodi
+guild-nav-browse = Pregledaj kanale
+guild-nav-guide = Vodič poslužitelja
+guild-nav-linked-roles = Povezane uloge
+
+members-search-results = Rezultati pretrage - { $count }
+
+picker-emoji-get-nitro = Nabavi Nitro
+
+invite-revoke = Opozovi pozivnicu
+invite-revoke-title = Opozvati ovu pozivnicu?
+invite-revoke-body = Pozivnica { $code } prestat će raditi za sve.
+
+stickers-edit = Uredi
+stickers-edit-title = Uredi naljepnicu
+stickers-edit-save = Spremi
+
+inbox-title = Spominjanja
+inbox-empty = Nema nedavnih spominjanja.
+inbox-loading = Učitavanje spominjanja...

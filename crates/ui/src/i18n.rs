@@ -44,6 +44,13 @@ const LOCALES: &[(&str, &[&str])] = &[
 		],
 	),
 	(
+		"hr",
+		&[
+			include_str!("../locales/hr/main.ftl"),
+			include_str!("../locales/hr/community.ftl"),
+		],
+	),
+	(
 		"ja",
 		&[
 			include_str!("../locales/ja/main.ftl"),
