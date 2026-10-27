@@ -18,6 +18,7 @@ use tracing_subscriber::EnvFilter;
 use ui::{AppFlags, LaunchConfig, StartSession};
 use url::Url;
 
+const MOCK_PROFILE: &str = "mock-profile";
 const BUILD_REFRESH_INTERVAL_SECS: i64 = 24 * 60 * 60;
 const BUILD_REFRESH_TIMEOUT: Duration = Duration::from_secs(10);
 const MOCK_QR_GATEWAY: &str = "ws://127.0.0.1:9/";
@@ -123,9 +124,10 @@ fn main() -> anyhow::Result<()> {
 	let cli = Cli::parse();
 	init_tracing(&cli.log);
 
-	let paths = match &cli.data_dir {
-		Some(dir) => Paths::at(dir),
-		None => Paths::discover(),
+	let paths = match (&cli.data_dir, cli.mock) {
+		(Some(dir), _) => Paths::at(dir),
+		(None, true) => Paths::discover().and_then(|live| Paths::at(live.data_dir().join(MOCK_PROFILE))),
+		(None, false) => Paths::discover(),
 	}
 	.context("prepare data directories")?;
 	match updater::apply_pending_on_start(paths.data_dir()) {

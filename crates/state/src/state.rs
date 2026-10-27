@@ -419,6 +419,10 @@ impl State {
 				});
 				changes.selection = true;
 			}
+			LocalEvent::SelectionCleared => {
+				self.selected = None;
+				changes.selection = true;
+			}
 			LocalEvent::CategoryCollapsed {
 				channel_id,
 				collapsed,

@@ -46,6 +46,12 @@ pub(crate) use video::SharedVideo;
 pub(crate) use voice_link::SharedVoice;
 use voice_link::VoiceLink;
 
+#[derive(serde::Serialize, serde::Deserialize)]
+struct SavedSelection {
+	guild_id: Option<Snowflake>,
+	channel_id: Snowflake,
+}
+
 const PAGE_SIZE: u8 = 50;
 const TYPING_THROTTLE: Duration = Duration::from_secs(9);
 const TYPING_EXPIRY_SLACK: Duration = Duration::from_millis(100);
@@ -182,6 +188,7 @@ pub(crate) struct Core {
 	typing_sent: HashMap<Snowflake, StdInstant>,
 	loading: HashSet<(Snowflake, Page)>,
 	selected_guild: Option<Snowflake>,
+	command_scopes: HashSet<Snowflake>,
 	typing_expiry: Option<Instant>,
 	nonce_sequence: u64,
 	voice: VoiceLink,
@@ -250,6 +257,7 @@ impl Core {
 			typing_sent: HashMap::new(),
 			loading: HashSet::new(),
 			selected_guild: None,
+			command_scopes: HashSet::new(),
 			typing_expiry: None,
 			nonce_sequence: 0,
 			voice: VoiceLink::new(parts.voice_io, parts.shared_voice),
@@ -326,6 +334,15 @@ impl Core {
 		let Ok((Some(mut ready), read_states)) = cached else {
 			return;
 		};
+		if self
+			.store
+			.accounts
+			.current()
+			.is_some_and(|current| current != ready.user.id)
+		{
+			persist::clear_cache(&self.store);
+			return;
+		}
 		ready.session_id.clear();
 		ready.resume_gateway_url = None;
 		self.apply(Event::Ready(&ready));
@@ -340,7 +357,35 @@ impl Core {
 				mention_count: Some(i64::from(read_state.mention_count)),
 			}));
 		}
+		self.restore_selection();
 		self.apply_local(LocalEvent::ConnectionChanged { connected: false });
+	}
+
+	fn restore_selection(&mut self) {
+		let Some(saved) = persist::load_value::<SavedSelection>(&self.store, persist::LAST_SELECTION_KEY)
+		else {
+			return;
+		};
+		let reachable = {
+			let state = self.state.read();
+			state.channel(saved.channel_id).is_some()
+				&& state.channel_guild(saved.channel_id) == saved.guild_id
+				&& (saved.guild_id.is_none() || state.can_view(saved.channel_id))
+		};
+		if reachable {
+			self.selected_guild = saved.guild_id;
+			self.select_channel(saved.guild_id, saved.channel_id);
+		}
+	}
+
+	fn remember_selection(&self, guild_id: Option<Snowflake>, channel_id: Snowflake) {
+		match serde_json::to_vec(&SavedSelection { guild_id, channel_id }) {
+			Ok(json) => self.persist.submit(Job::Recent {
+				key: persist::LAST_SELECTION_KEY,
+				json,
+			}),
+			Err(error) => tracing::warn!(%error, "could not encode the last selection"),
+		}
 	}
 
 	fn apply(&mut self, event: Event<'_>) {
@@ -396,6 +441,18 @@ impl Core {
 			GatewayEvent::Hello { .. } => {}
 			GatewayEvent::Ready(ready) => {
 				self.apply(Event::Ready(&ready));
+				let stale = {
+					let state = self.state.read();
+					state
+						.selected()
+						.is_some_and(|selected| state.channel(selected.channel_id).is_none())
+				};
+				if stale {
+					self.apply_local(LocalEvent::SelectionCleared);
+				}
+				if self.state.read().selected().is_none() {
+					self.restore_selection();
+				}
 				self.remember_account();
 				self.subscribe_selected();
 				self.resend_voice_state();
@@ -779,6 +836,8 @@ impl Core {
 
 	fn select_channel(&mut self, guild_id: Option<Snowflake>, channel_id: Snowflake) {
 		self.apply_local(LocalEvent::ChannelSelected { guild_id, channel_id });
+		self.remember_selection(guild_id, channel_id);
+		self.load_commands(guild_id, channel_id);
 		self.render_worker.select(channel_id);
 		self.rerender_stale(channel_id);
 		self.forward_channel_switch(guild_id, channel_id);

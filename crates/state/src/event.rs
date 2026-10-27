@@ -54,6 +54,7 @@ pub enum LocalEvent {
 		guild_id: Option<Snowflake>,
 		channel_id: Snowflake,
 	},
+	SelectionCleared,
 	CategoryCollapsed {
 		channel_id: Snowflake,
 		collapsed: bool,

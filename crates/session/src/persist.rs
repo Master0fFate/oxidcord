@@ -14,6 +14,7 @@ const BATCH_LIMIT: usize = 256;
 const READY_KEY: &str = "session.ready";
 pub(crate) const CACHED_MESSAGES: u32 = 50;
 pub(crate) const RECENT_EMOJI_KEY: &str = "expressions.recent.emoji";
+pub(crate) const LAST_SELECTION_KEY: &str = "navigation.last_selection";
 pub(crate) const RECENT_GIFS_KEY: &str = "expressions.recent.gifs";
 pub(crate) const RECENT_STICKERS_KEY: &str = "expressions.recent.stickers";
 
@@ -196,6 +197,11 @@ pub(crate) fn load_messages(store: &Store, channel_id: Snowflake) -> Vec<Message
 
 pub(crate) fn load_draft(store: &Store, channel_id: Snowflake) -> Option<String> {
 	store.db.get_draft(channel_id.get()).ok().flatten()
+}
+
+pub(crate) fn load_value<T: DeserializeOwned>(store: &Store, key: &str) -> Option<T> {
+	let bytes = store.db.kv_get(key).ok().flatten()?;
+	serde_json::from_slice(&bytes).ok()
 }
 
 pub(crate) fn load_recent<T: DeserializeOwned>(store: &Store, key: &str) -> Vec<T> {
