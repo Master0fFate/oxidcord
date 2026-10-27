@@ -237,6 +237,26 @@ pub async fn typing(State(shared): State<Arc<Shared>>, Path(id): Path<u64>) -> R
 	Ok(StatusCode::NO_CONTENT)
 }
 
+pub async fn save_message(
+	State(shared): State<Arc<Shared>>,
+	Path((id, _)): Path<(u64, u64)>,
+) -> Result<StatusCode, ApiError> {
+	require_channel(&shared.store.lock(), id)?;
+	Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn interaction(
+	State(shared): State<Arc<Shared>>,
+	Json(body): Json<Value>,
+) -> Result<StatusCode, ApiError> {
+	let channel = parse_id(&body["channel_id"]).unwrap_or_default();
+	require_channel(&shared.store.lock(), channel)?;
+	if super::apps::is_command(&body) {
+		super::apps::run_command(&shared, &body)?;
+	}
+	Ok(StatusCode::NO_CONTENT)
+}
+
 pub async fn call_signal(
 	State(shared): State<Arc<Shared>>,
 	Path(id): Path<u64>,

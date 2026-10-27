@@ -1,5 +1,6 @@
 mod channel;
 mod command;
+mod component;
 mod emoji;
 mod error;
 pub mod expressions;
@@ -21,6 +22,7 @@ mod voice;
 
 pub use channel::*;
 pub use command::*;
+pub use component::*;
 pub use emoji::*;
 pub use error::*;
 pub use expressions::*;

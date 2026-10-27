@@ -9,10 +9,11 @@ use protocol::{
 };
 use rand::Rng;
 use rand::rngs::StdRng;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use super::corpus::{self, pick};
 use super::media::thumbhash;
+use super::previews;
 use crate::forward::snapshot_of;
 use crate::ids::snowflake_at;
 use crate::json::to_json;
@@ -79,6 +80,7 @@ enum Special {
 	Sticker,
 	Unknown,
 	Malformed,
+	Components,
 	ThreadCreated(usize),
 }
 
@@ -178,6 +180,7 @@ fn special_list(spec: &ChannelSpec) -> Vec<Special> {
 		VoiceMessage,
 		GifFile,
 		WebmFile,
+		Components,
 		MentionMe,
 	];
 	if spec.emojis.is_empty() {
@@ -287,7 +290,11 @@ impl<'a> Generator<'a, '_> {
 				pick(self.rng, corpus::SHORT_REPLIES),
 				pick(self.rng, corpus::UNICODE_EMOJI)
 			),
-			78..83 => format!("look at this {}", pick(self.rng, corpus::LINKS)),
+			78..83 => {
+				let link = pick(self.rng, corpus::LINKS);
+				message.embeds = LenientVec::from(previews::embeds_for(link));
+				format!("look at this {link}")
+			}
 			83..88 => {
 				let other = self.other_author(author);
 				message.mentions = LenientVec::from(vec![other.clone()]);
@@ -609,6 +616,7 @@ impl<'a> Generator<'a, '_> {
 				message.content = "one attachment on this message is broken on purpose".to_owned();
 				message.attachments = LenientVec::from(vec![self.image_attachment(message.id.0, 0)]);
 			}
+			Special::Components => self.components(message, author),
 			Special::ThreadCreated(index) => {
 				let thread = &spec.threads[index];
 				message.kind = MessageType::ThreadCreated;
@@ -622,6 +630,70 @@ impl<'a> Generator<'a, '_> {
 				});
 			}
 		}
+	}
+
+	fn components(&mut self, message: &mut Message, author: &User) {
+		let images: Vec<Attachment> = (1..=3)
+			.map(|index| self.image_attachment(message.id.0, index))
+			.collect();
+		let notes = self.file_attachment(message.id.0, "release-notes.txt", "text/plain", None);
+		let media = |attachment: &Attachment| {
+			json!({
+				"url": attachment.url,
+				"proxy_url": attachment.proxy_url,
+				"width": attachment.width,
+				"height": attachment.height,
+				"content_type": attachment.content_type,
+				"attachment_id": attachment.id,
+			})
+		};
+		let components = json!([{
+			"type": 17,
+			"accent_color": 0x5865f2,
+			"components": [
+				{ "type": 10, "content": "## Release notes
+		Oxidcord **0.4** ships the new look 🎉" },
+				{
+					"type": 9,
+					"components": [
+						{ "type": 10, "content": "Twemoji everywhere 😀 🔥 👍🏽 🏳️‍🌈 🇯🇵" },
+						{ "type": 10, "content": "-# tap a button below, it sends a real interaction" }
+					],
+					"accessory": { "type": 11, "media": media(&images[0]) }
+				},
+				{ "type": 14, "divider": true, "spacing": 1 },
+				{ "type": 12, "items": images.iter().map(|image| json!({ "media": media(image) })).collect::<Vec<_>>() },
+				{ "type": 13, "file": media(&notes), "name": notes.filename, "size": notes.size },
+				{ "type": 14, "divider": false, "spacing": 2 },
+				{
+					"type": 1,
+					"components": [
+						{ "type": 2, "style": 1, "label": "Upgrade", "custom_id": "upgrade" },
+						{ "type": 2, "style": 2, "label": "Later", "custom_id": "later", "emoji": { "name": "🕒" } },
+						{ "type": 2, "style": 3, "label": "Love it", "custom_id": "love" },
+						{ "type": 2, "style": 4, "label": "Uninstall", "custom_id": "uninstall", "disabled": true },
+						{ "type": 2, "style": 5, "label": "Changelog", "url": "https://example.com/changelog" }
+					]
+				},
+				{
+					"type": 1,
+					"components": [{
+						"type": 3,
+						"custom_id": "theme",
+						"placeholder": "Pick a theme",
+						"options": [
+							{ "label": "Dark", "value": "dark", "description": "Easy on the eyes at night", "emoji": { "name": "🌙" } },
+							{ "label": "Light", "value": "light", "emoji": { "name": "☀️" } },
+							{ "label": "AMOLED", "value": "amoled" }
+						]
+					}]
+				}
+			]
+		}]);
+		message.flags = MessageFlags::IS_COMPONENTS_V2;
+		message.application_id = Some(author.id);
+		message.attachments = LenientVec::from(images.into_iter().chain([notes]).collect::<Vec<_>>());
+		message.components = serde_json::from_value(components).unwrap_or_default();
 	}
 
 	fn mentions(&mut self, message: &mut Message, author: &User) {

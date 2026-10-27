@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::component::ComponentType;
 use crate::message::{MessageFlags, MessageReference};
 use crate::snowflake::Snowflake;
 
@@ -33,6 +34,31 @@ pub struct AllowedMentions {
 	pub users: Option<Vec<Snowflake>>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub replied_user: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ComponentInteraction {
+	#[serde(rename = "type")]
+	pub kind: u8,
+	pub nonce: String,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub guild_id: Option<Snowflake>,
+	pub channel_id: Snowflake,
+	pub message_flags: MessageFlags,
+	pub message_id: Snowflake,
+	pub application_id: Snowflake,
+	pub session_id: String,
+	pub data: ComponentInteractionData,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ComponentInteractionData {
+	pub component_type: ComponentType,
+	pub custom_id: String,
+	#[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+	pub select_type: Option<ComponentType>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub values: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]

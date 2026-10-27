@@ -1,14 +1,19 @@
+use protocol::rest::{ComponentInteraction, ComponentInteractionData};
 use protocol::{
-	CreateMessage, DispatchEvent, MessageAck, MessageReference, MessageReferenceKind, Permissions, Snowflake,
-	StatusKind,
+	ApplicationCommand, CreateMessage, DispatchEvent, MessageAck, MessageReference, MessageReferenceKind,
+	Permissions, Snowflake, StatusKind,
 };
 use rest::UploadFile;
 use rest::api::image_data_uri;
 use serde_json::{Value, json};
-use state::{Loaded, LocalEvent, guild_folders_settings};
+use state::{Loaded, LocalEvent, USER_COMMANDS, guild_folders_settings};
 
 use super::actions::{mute_config, object, some, timestamp};
 use super::{Command, Core, CustomStatus, Internal};
+use crate::command::ComponentUse;
+
+const COMPONENT_INTERACTION: u8 = 3;
+const APPLICATION_COMMAND_INTERACTION: u8 = 2;
 
 const PNG: &str = "image/png";
 const DEFAULT_ARCHIVE_MINUTES: u32 = 1440;
@@ -79,7 +84,11 @@ impl Core {
 			| Command::LoadReactionUsers { .. }
 			| Command::ForwardMessage { .. }
 			| Command::VotePoll { .. }
-			| Command::EndPoll { .. }) => self.on_text_command(command),
+			| Command::EndPoll { .. }
+			| Command::UseComponent(_)
+			| Command::RunMessageCommand { .. }
+			| Command::SaveMessage { .. }
+			| Command::PublishMessage { .. }) => self.on_text_command(command),
 			command @ (Command::SendSticker { .. }
 			| Command::LoadGifTrending
 			| Command::LoadGifFavorites
@@ -220,7 +229,7 @@ impl Core {
 				channel_id,
 				message_id,
 			} => {
-				if self.channel_allows(channel_id, Permissions::MANAGE_MESSAGES, "Manage Messages") {
+				if self.channel_allows(channel_id, Permissions::PIN_MESSAGES, "Pin Messages") {
 					self.spawn_action("pin message", move |rest| async move {
 						rest.pin_message(channel_id, message_id).await
 					});
@@ -230,7 +239,7 @@ impl Core {
 				channel_id,
 				message_id,
 			} => {
-				if self.channel_allows(channel_id, Permissions::MANAGE_MESSAGES, "Manage Messages") {
+				if self.channel_allows(channel_id, Permissions::PIN_MESSAGES, "Pin Messages") {
 					self.spawn_action("unpin message", move |rest| async move {
 						rest.unpin_message(channel_id, message_id).await
 					});
@@ -314,6 +323,27 @@ impl Core {
 				message_id,
 			} => self.spawn_action("end poll", move |rest| async move {
 				rest.end_poll(channel_id, message_id).await.map(drop)
+			}),
+			Command::UseComponent(used) => self.use_component(used),
+			Command::RunMessageCommand {
+				guild_id,
+				channel_id,
+				message_id,
+				command,
+			} => self.run_message_command(guild_id, channel_id, message_id, *command),
+			Command::SaveMessage {
+				channel_id,
+				message_id,
+				due_at,
+			} => self.spawn_action("bookmark message", move |rest| async move {
+				let due_at = due_at.map(|due| due.to_rfc3339());
+				rest.save_message(channel_id, message_id, due_at).await
+			}),
+			Command::PublishMessage {
+				channel_id,
+				message_id,
+			} => self.spawn_action("publish message", move |rest| async move {
+				rest.crosspost_message(channel_id, message_id).await
 			}),
 			_ => {}
 		}
@@ -537,6 +567,82 @@ impl Core {
 			}
 			_ => {}
 		}
+	}
+
+	fn run_message_command(
+		&mut self,
+		guild_id: Option<Snowflake>,
+		channel_id: Snowflake,
+		message_id: Snowflake,
+		command: ApplicationCommand,
+	) {
+		let body = json!({
+			"type": APPLICATION_COMMAND_INTERACTION,
+			"application_id": command.application_id,
+			"guild_id": guild_id,
+			"channel_id": channel_id,
+			"session_id": self.state.read().session().session_id.clone(),
+			"nonce": self.next_nonce().0,
+			"data": {
+				"version": command.version,
+				"id": command.id,
+				"name": command.name,
+				"type": command.kind,
+				"target_id": message_id,
+				"application_command": command,
+				"options": [],
+				"attachments": [],
+			},
+		});
+		self.spawn_action("run app command", move |rest| async move {
+			rest.create_interaction(&body).await
+		});
+	}
+
+	pub(super) fn load_commands(&mut self, guild_id: Option<Snowflake>, channel_id: Snowflake) {
+		let scope = guild_id.unwrap_or(channel_id);
+		for scope in [scope, USER_COMMANDS] {
+			if !self.command_scopes.insert(scope) {
+				continue;
+			}
+			let rest = self.rest.clone();
+			let internal = self.internal.clone();
+			self.runtime.spawn(async move {
+				let index = match (scope == USER_COMMANDS, guild_id) {
+					(true, _) => rest.user_command_index().await,
+					(false, Some(guild_id)) => rest.guild_command_index(guild_id).await,
+					(false, None) => rest.channel_command_index(channel_id).await,
+				};
+				match index {
+					Ok(index) => {
+						let _ = internal.send(Internal::Loaded(Loaded::CommandIndex { scope, index }));
+					}
+					Err(error) => tracing::debug!(%error, "app commands are not available here"),
+				}
+			});
+		}
+	}
+
+	fn use_component(&mut self, used: ComponentUse) {
+		let body = ComponentInteraction {
+			kind: COMPONENT_INTERACTION,
+			nonce: self.next_nonce().0,
+			guild_id: used.guild_id,
+			channel_id: used.channel_id,
+			message_flags: used.message_flags,
+			message_id: used.message_id,
+			application_id: used.application_id,
+			session_id: self.state.read().session().session_id.clone(),
+			data: ComponentInteractionData {
+				component_type: used.component_type,
+				custom_id: used.custom_id,
+				select_type: used.values.is_some().then_some(used.component_type),
+				values: used.values,
+			},
+		};
+		self.spawn_action("use component", move |rest| async move {
+			rest.component_interaction(&body).await
+		});
 	}
 
 	fn mark_unread(&mut self, channel_id: Snowflake, message_id: Snowflake) {

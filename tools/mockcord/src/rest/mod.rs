@@ -1,4 +1,5 @@
 mod admin;
+mod apps;
 mod channels;
 mod expressions;
 mod guilds;
@@ -37,6 +38,10 @@ pub fn router(shared: Arc<Shared>) -> Router {
 		.route("/users/@me/settings", patch(admin::patch_settings))
 		.route("/users/@me/guilds", get(users::my_guilds))
 		.route("/users/@me/mentions", get(users::my_mentions))
+		.route(
+			"/users/@me/saved-messages/{id}/{mid}",
+			put(channels::save_message).delete(channels::save_message),
+		)
 		.route("/guilds", post(admin::create_guild))
 		.route("/auth/sessions", get(admin::auth_sessions))
 		.route("/auth/sessions/logout", post(admin::logout_sessions))
@@ -113,6 +118,7 @@ pub fn router(shared: Arc<Shared>) -> Router {
 		)
 		.route("/channels/{id}/messages/search", get(channels::search_messages))
 		.route("/channels/{id}/messages/bulk-delete", post(admin::bulk_delete))
+		.route("/channels/{id}/messages/{mid}/crosspost", post(channels::message))
 		.route(
 			"/channels/{id}/messages/{mid}",
 			get(channels::message)
@@ -151,6 +157,13 @@ pub fn router(shared: Arc<Shared>) -> Router {
 		.route("/channels/{id}/polls/{mid}/expire", post(admin::expire_poll))
 		.route("/channels/{id}/typing", post(channels::typing))
 		.route("/channels/{id}/call/ring", post(channels::call_signal))
+		.route("/interactions", post(channels::interaction))
+		.route("/guilds/{id}/application-command-index", get(apps::guild_index))
+		.route(
+			"/channels/{id}/application-command-index",
+			get(apps::channel_index),
+		)
+		.route("/users/@me/application-command-index", get(apps::user_index))
 		.route("/channels/{id}/call/stop-ringing", post(channels::call_signal))
 		.route("/channels/{id}/threads", post(channels::create_thread))
 		.route(

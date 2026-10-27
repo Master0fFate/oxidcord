@@ -4,13 +4,26 @@ use chrono::{DateTime, Utc};
 use plugin_host::api::model::{EmojiRef, UiContext, ViewEvent};
 use plugin_host::{Permission, ViewContext};
 use protocol::{
-	ChannelType, Gif, NotificationLevel, PermissionOverwriteKind, Permissions, Snowflake, StatusKind,
+	ApplicationCommand, ChannelType, ComponentType, Gif, MessageFlags, NotificationLevel,
+	PermissionOverwriteKind, Permissions, Snowflake, StatusKind,
 };
 use rest::UploadFile;
 use rest::api::SearchQuery;
 use serde_json::Value;
 use voice::video::VideoQuality;
 use voice::video::capture::ScreenTarget;
+
+#[derive(Debug, Clone)]
+pub struct ComponentUse {
+	pub guild_id: Option<Snowflake>,
+	pub channel_id: Snowflake,
+	pub message_id: Snowflake,
+	pub message_flags: MessageFlags,
+	pub application_id: Snowflake,
+	pub component_type: ComponentType,
+	pub custom_id: String,
+	pub values: Option<Vec<String>>,
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct ReplyTarget {
@@ -524,6 +537,22 @@ pub enum Command {
 		answer_ids: Vec<i64>,
 	},
 	EndPoll {
+		channel_id: Snowflake,
+		message_id: Snowflake,
+	},
+	UseComponent(ComponentUse),
+	RunMessageCommand {
+		guild_id: Option<Snowflake>,
+		channel_id: Snowflake,
+		message_id: Snowflake,
+		command: Box<ApplicationCommand>,
+	},
+	SaveMessage {
+		channel_id: Snowflake,
+		message_id: Snowflake,
+		due_at: Option<DateTime<Utc>>,
+	},
+	PublishMessage {
 		channel_id: Snowflake,
 		message_id: Snowflake,
 	},

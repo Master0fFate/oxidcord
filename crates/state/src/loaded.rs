@@ -4,7 +4,8 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use protocol::lenient::timestamp;
 use protocol::{
-	Channel, Gif, GifFavorites, GifTrending, LenientVec, Member, Message, Snowflake, Sticker, StickerPack,
+	ApplicationCommand, ApplicationCommandType, Channel, CommandIndex, Gif, GifFavorites, GifTrending,
+	InteractionContext, LenientVec, Member, Message, Permissions, Snowflake, Sticker, StickerPack,
 	ThreadMember, User,
 };
 use serde::Deserialize;
@@ -19,6 +20,10 @@ pub const INBOX_KEY: Snowflake = Snowflake(1);
 #[derive(Debug, Clone)]
 pub enum Loaded {
 	Mentions(Vec<Message>),
+	CommandIndex {
+		scope: Snowflake,
+		index: CommandIndex,
+	},
 	Pins {
 		channel_id: Snowflake,
 		messages: Vec<Message>,
@@ -190,6 +195,35 @@ pub(crate) struct ArchivedThreads {
 	pub(crate) has_more: bool,
 }
 
+pub const USER_COMMANDS: Snowflake = Snowflake(0);
+
+#[derive(Debug, Clone)]
+pub struct MessageCommand {
+	pub application_name: String,
+	pub command: ApplicationCommand,
+}
+
+fn context_allows(command: &ApplicationCommand, in_guild: bool) -> bool {
+	command.contexts.as_ref().is_none_or(|contexts| {
+		contexts.iter().any(|context| match context {
+			InteractionContext::Guild => in_guild,
+			InteractionContext::BotDm | InteractionContext::PrivateChannel => !in_guild,
+			InteractionContext::Unknown(_) => false,
+		})
+	})
+}
+
+fn member_allows(command: &ApplicationCommand, permissions: Permissions) -> bool {
+	match command
+		.default_member_permissions
+		.as_deref()
+		.and_then(|bits| bits.parse::<u64>().ok())
+	{
+		None => true,
+		Some(0) => permissions.contains(Permissions::ADMINISTRATOR),
+		Some(bits) => permissions.contains(Permissions::from_bits_truncate(bits)),
+	}
+}
 #[derive(Debug, Default)]
 pub(crate) struct Lazy {
 	pub(crate) mentions: Option<Vec<Arc<Message>>>,
@@ -204,6 +238,7 @@ pub(crate) struct Lazy {
 	pub(crate) auth_sessions: Option<Vec<AuthSession>>,
 	pub(crate) reaction_users: HashMap<(Snowflake, String), Vec<User>>,
 	pub(crate) expressions: Expressions,
+	pub(crate) command_indexes: HashMap<Snowflake, CommandIndex>,
 }
 
 #[derive(Deserialize, Default)]
@@ -408,6 +443,10 @@ impl State {
 					.collect();
 				self.lazy.mentions = Some(shared);
 				changes.loaded.insert(INBOX_KEY);
+			}
+			Loaded::CommandIndex { scope, index } => {
+				self.lazy.command_indexes.insert(*scope, index.clone());
+				changes.loaded.insert(*scope);
 			}
 			Loaded::Pins { channel_id, messages } => {
 				let guild_id = self.channel_guild(*channel_id);
@@ -690,6 +729,53 @@ impl State {
 
 	pub fn mentions(&self) -> Option<&[Arc<Message>]> {
 		self.lazy.mentions.as_deref()
+	}
+
+	pub fn message_commands(
+		&self,
+		guild_id: Option<Snowflake>,
+		channel_id: Snowflake,
+	) -> Vec<MessageCommand> {
+		let permissions = self.my_permissions(channel_id);
+		let scopes = [
+			(
+				guild_id.unwrap_or(channel_id),
+				Permissions::USE_APPLICATION_COMMANDS,
+			),
+			(USER_COMMANDS, Permissions::USE_EXTERNAL_APPS),
+		];
+		let mut found: Vec<MessageCommand> = Vec::new();
+		for (scope, needed) in scopes {
+			if guild_id.is_some() && !permissions.contains(needed) {
+				continue;
+			}
+			let Some(index) = self.lazy.command_indexes.get(&scope) else {
+				continue;
+			};
+			for command in index.application_commands.iter() {
+				let usable = command.kind == ApplicationCommandType::Message
+					&& !found.iter().any(|known| known.command.id == command.id)
+					&& context_allows(command, guild_id.is_some())
+					&& guild_id.is_none_or(|_| member_allows(command, permissions));
+				if !usable {
+					continue;
+				}
+				let application = index
+					.applications
+					.iter()
+					.find(|application| application.id == command.application_id);
+				found.push(MessageCommand {
+					application_name: application
+						.map(|application| application.name.clone())
+						.unwrap_or_default(),
+					command: command.clone(),
+				});
+			}
+		}
+		found.sort_by(|left, right| {
+			(&left.application_name, &left.command.name).cmp(&(&right.application_name, &right.command.name))
+		});
+		found
 	}
 
 	pub fn pins(&self, channel_id: Snowflake) -> Option<&[Arc<Message>]> {

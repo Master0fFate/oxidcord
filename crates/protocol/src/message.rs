@@ -7,6 +7,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 
 use crate::channel::{Channel, ChannelType};
+use crate::component::Component;
 use crate::emoji::{PartialEmoji, StickerItem};
 use crate::lenient::{LenientVec, flags_serde, int_enum, str_enum, timestamp};
 use crate::member::Member;
@@ -332,7 +333,7 @@ pub struct PartialMessage {
 	pub embeds: LenientVec<Embed>,
 	pub sticker_items: LenientVec<StickerItem>,
 	pub flags: MessageFlags,
-	pub components: Vec<Value>,
+	pub components: LenientVec<Component>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -376,7 +377,7 @@ pub struct Message {
 	pub message_snapshots: LenientVec<MessageSnapshot>,
 	pub interaction_metadata: Value,
 	pub thread: Option<Box<Channel>>,
-	pub components: Vec<Value>,
+	pub components: LenientVec<Component>,
 	pub sticker_items: LenientVec<StickerItem>,
 	pub position: Option<i64>,
 	pub poll: Option<Poll>,
@@ -425,7 +426,7 @@ pub struct MessageUpdate {
 	pub flags: Option<MessageFlags>,
 	pub message_reference: Option<MessageReference>,
 	pub referenced_message: Option<Box<Message>>,
-	pub components: Option<Vec<Value>>,
+	pub components: Option<LenientVec<Component>>,
 	pub sticker_items: Option<LenientVec<StickerItem>>,
 	pub poll: Option<Poll>,
 }

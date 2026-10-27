@@ -85,6 +85,7 @@ fn base_permissions() -> Permissions {
 		| Permissions::CREATE_PUBLIC_THREADS
 		| Permissions::SEND_MESSAGES_IN_THREADS
 		| Permissions::USE_APPLICATION_COMMANDS
+		| Permissions::USE_EXTERNAL_APPS
 }
 
 fn role(id: u64, name: &str, color: i64, hoist: bool, position: i64, permissions: Permissions) -> Role {

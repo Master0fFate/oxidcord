@@ -1,5 +1,5 @@
-use protocol::rest::{AttachmentDescriptor, CreateMessage, EditMessage, MessagesQuery};
-use protocol::{Channel, LenientVec, Message, Snowflake, ThreadMember, User};
+use protocol::rest::{AttachmentDescriptor, ComponentInteraction, CreateMessage, EditMessage, MessagesQuery};
+use protocol::{Channel, CommandIndex, LenientVec, Message, Snowflake, ThreadMember, User};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -19,6 +19,9 @@ pub struct SearchQuery {
 	pub before: Option<Snowflake>,
 	pub after: Option<Snowflake>,
 	pub offset: Option<u32>,
+	pub channel_ids: Vec<Snowflake>,
+	pub pinned: Option<bool>,
+	pub author_types: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -67,9 +70,16 @@ fn search_pairs(query: SearchQuery, channel_id: Option<Snowflake>) -> Vec<(&'sta
 	if let Some(offset) = query.offset {
 		pairs.push(("offset", offset.to_string()));
 	}
-	if let Some(channel_id) = channel_id {
-		pairs.push(("channel_id", channel_id.to_string()));
+	if let Some(pinned) = query.pinned {
+		pairs.push(("pinned", pinned.to_string()));
 	}
+	pairs.extend(query.author_types.into_iter().map(|kind| ("author_type", kind)));
+	pairs.extend(
+		channel_id
+			.into_iter()
+			.chain(query.channel_ids)
+			.map(|id| ("channel_id", id.to_string())),
+	);
 	pairs
 }
 
@@ -352,6 +362,52 @@ impl RestClient {
 		let request = Request::put(format!("/channels/{channel_id}/polls/{message_id}/answers/@me"))
 			.json(&json!({ "answer_ids": answer_ids }));
 		self.send_empty(request).await
+	}
+
+	pub async fn save_message(
+		&self,
+		channel_id: Snowflake,
+		message_id: Snowflake,
+		due_at: Option<String>,
+	) -> Result<()> {
+		let request = Request::put(format!("/users/@me/saved-messages/{channel_id}/{message_id}"))
+			.json(&json!({ "due_at": due_at }));
+		self.send_empty(request).await
+	}
+
+	pub async fn crosspost_message(&self, channel_id: Snowflake, message_id: Snowflake) -> Result<()> {
+		self.send(Request::post(format!(
+			"/channels/{channel_id}/messages/{message_id}/crosspost"
+		)))
+		.await
+		.map(|_: Message| ())
+	}
+
+	pub async fn guild_command_index(&self, guild_id: Snowflake) -> Result<CommandIndex> {
+		self.send(Request::get(format!(
+			"/guilds/{guild_id}/application-command-index"
+		)))
+		.await
+	}
+
+	pub async fn channel_command_index(&self, channel_id: Snowflake) -> Result<CommandIndex> {
+		self.send(Request::get(format!(
+			"/channels/{channel_id}/application-command-index"
+		)))
+		.await
+	}
+
+	pub async fn user_command_index(&self) -> Result<CommandIndex> {
+		self.send(Request::get("/users/@me/application-command-index"))
+			.await
+	}
+
+	pub async fn create_interaction(&self, body: &Value) -> Result<()> {
+		self.send_empty(Request::post("/interactions").json(body)).await
+	}
+
+	pub async fn component_interaction(&self, body: &ComponentInteraction) -> Result<()> {
+		self.send_empty(Request::post("/interactions").json(body)).await
 	}
 
 	pub async fn end_poll(&self, channel_id: Snowflake, message_id: Snowflake) -> Result<Message> {
