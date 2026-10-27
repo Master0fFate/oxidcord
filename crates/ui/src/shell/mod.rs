@@ -871,7 +871,7 @@ impl Shell {
 			self.timeline
 				.update(cx, |timeline, cx| timeline.on_plugin_slots(cx));
 			self.composer.update(cx, |_, cx| cx.notify());
-			self.channel_sidebar.update(cx, |_, cx| cx.notify());
+			self.channel_sidebar.update(cx, |sidebar, cx| sidebar.refresh(cx));
 			self.member_list.update(cx, |_, cx| cx.notify());
 			self.top_bar.update(cx, |_, cx| cx.notify());
 			cx.notify();

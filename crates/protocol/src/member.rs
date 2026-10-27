@@ -10,6 +10,7 @@ use crate::user::{AvatarDecorationData, User};
 #[serde(default)]
 pub struct Member {
 	pub user: Option<User>,
+	pub user_id: Option<Snowflake>,
 	pub nick: Option<String>,
 	pub avatar: Option<String>,
 	pub banner: Option<String>,
@@ -27,4 +28,10 @@ pub struct Member {
 	pub communication_disabled_until: Option<DateTime<Utc>>,
 	pub avatar_decoration_data: Option<AvatarDecorationData>,
 	pub guild_id: Option<Snowflake>,
+}
+
+impl Member {
+	pub fn id(&self) -> Option<Snowflake> {
+		self.user.as_ref().map(|user| user.id).or(self.user_id)
+	}
 }

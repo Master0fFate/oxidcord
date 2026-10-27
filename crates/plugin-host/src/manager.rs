@@ -485,6 +485,10 @@ impl PluginManager {
 		!self.interceptors().is_empty()
 	}
 
+	pub fn reveals_hidden_channels(&self) -> bool {
+		!self.active(Permission::ChannelsHidden).is_empty()
+	}
+
 	pub fn has_emoji_pick(&self) -> bool {
 		self.active(Permission::Composer)
 			.iter()

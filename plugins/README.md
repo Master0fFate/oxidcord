@@ -17,6 +17,7 @@ Since API 1.1, `send-message` only works while the plugin handles a user action 
 | `notes-panel` | Notes page in the server rail with tabs and a form, Save to notes message menu item, status bar counter (API 1.1) | `ui-mount`, `storage`, `context-timeline` |
 | `user-notes` | Private notes on users, shown as a badge | `ui-slots`, `storage`, `user-display` |
 | `local-status-badge` | Status bar item with the channel id and a color cycling badge | `context-basic`, `ui-slots` |
+| `see-hidden-channels` | Shows channels you cannot open in the channel list, dimmed with a lock | `channels-hidden` |
 | `word-mute` | Hides messages containing words or phrases you muted | `message-filter`, `storage`, `ui-slots`, `context-basic` |
 | `conformance-probe` | Test fixture the conformance runner pushes to its limits, not for users | none |
 

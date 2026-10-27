@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-10-24T23:14:55Z",
+  "generated_at": "2026-10-27T03:51:48Z",
   "plugins": [
     {
       "id": "dev.oxidcord.fake-nitro",
@@ -121,6 +121,19 @@
       "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.quick-replies-0.1.0.oxidcord-plugin",
       "sha256": "dd8c2c49575db7aee6d1a0cdb9baedb4648d6bc956b7092f97cf4cd54d92f7a3",
       "length": 54097,
+      "reviewed": true
+    },
+    {
+      "id": "dev.oxidcord.see-hidden-channels",
+      "name": "See Hidden Channels",
+      "version": "0.1.0",
+      "description": "Shows channels you cannot open in the channel list, dimmed with a lock.",
+      "permissions": [
+        "channels-hidden"
+      ],
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.see-hidden-channels-0.1.0.oxidcord-plugin",
+      "sha256": "bfa941e0798c91c567387b5b0ca68e4fb241b9749a1c477ce21f5d6c6ef054d3",
+      "length": 36134,
       "reviewed": true
     },
     {

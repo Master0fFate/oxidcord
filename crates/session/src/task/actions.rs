@@ -70,6 +70,19 @@ impl Core {
 		allowed
 	}
 
+	pub(super) fn may_send(&self, channel_id: Snowflake) -> bool {
+		let state = self.state.read();
+		state.channel_guild(channel_id).is_none() || state.can_send(channel_id)
+	}
+
+	pub(super) fn send_allowed(&mut self, channel_id: Snowflake) -> bool {
+		let allowed = self.may_send(channel_id);
+		if !allowed {
+			self.reject("You can't send messages in this channel");
+		}
+		allowed
+	}
+
 	pub(super) fn channel_guild_allows(
 		&mut self,
 		channel_id: Snowflake,

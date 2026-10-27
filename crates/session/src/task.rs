@@ -958,6 +958,9 @@ impl Core {
 		files: Vec<UploadFile>,
 		by_plugin: Option<String>,
 	) {
+		if !self.send_allowed(channel_id) {
+			return;
+		}
 		let Some(author) = self.current_user() else {
 			tracing::warn!("message not sent, no signed in user");
 			return;
@@ -1024,6 +1027,9 @@ impl Core {
 	}
 
 	fn typing(&mut self, channel_id: Snowflake) {
+		if !self.may_send(channel_id) {
+			return;
+		}
 		let now = StdInstant::now();
 		if self
 			.typing_sent

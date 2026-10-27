@@ -115,6 +115,7 @@ The consent dialog groups permissions by tier. Low tier permissions are collapse
 | `ui-mount` | low | The `ui` interface |
 | `actions-navigate` | low | `open-channel` |
 | `actions-notify` | low | `notify` |
+| `channels-hidden` | low | Channels the account cannot open stay in the channel list, dimmed and locked |
 | `context-timeline` | medium | Message, reaction and typing events, `channel-messages`, `get-message`, `channel-messages-full` |
 | `context-directory` | medium | `list-guilds`, `list-channels`, `list-members` |
 | `context-members` | medium | `display-name` |

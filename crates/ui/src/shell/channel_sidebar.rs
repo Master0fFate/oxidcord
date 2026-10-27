@@ -110,7 +110,10 @@ impl ChannelSidebar {
 			.guild(guild)
 			.map(|guild| guild.name.clone().into())
 			.unwrap_or_default();
-		let nodes = state.guild_channel_tree(guild);
+		let mut nodes = state.guild_channel_tree(guild);
+		if !data.session().plugins().reveals_hidden_channels() {
+			nodes.retain_mut(drop_hidden);
+		}
 		self.categories = nodes
 			.iter()
 			.map(|node| category_item(node, guild, &state))
@@ -453,6 +456,15 @@ fn channel_item(row: &ChannelRow, guild: Snowflake, state: &state::State) -> Cha
 			Vec::new()
 		},
 	}
+}
+
+fn drop_hidden(node: &mut ChannelTreeNode) -> bool {
+	if node.category.as_ref().is_some_and(|category| category.locked) {
+		return false;
+	}
+	let had_children = !node.children.is_empty();
+	node.children.retain(|row| !row.locked);
+	!had_children || !node.children.is_empty()
 }
 
 fn category_item(node: &ChannelTreeNode, guild: Snowflake, state: &state::State) -> CategoryItem {

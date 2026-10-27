@@ -188,6 +188,8 @@ pub enum RowAction {
 
 #[derive(Clone, Copy, Default)]
 pub struct MessageAccess {
+	pub send: bool,
+	pub react: bool,
 	pub manage_messages: bool,
 	pub create_threads: bool,
 	pub in_thread: bool,
@@ -725,10 +727,12 @@ fn menu_for(view: &MessageView, env: &RowEnv, cx: &App) -> ContextMenuBuilder {
 	let reply = env.dispatch.clone();
 	let edit = env.dispatch.clone();
 	let delete = env.dispatch.clone();
-	let mut menu =
-		ContextMenuBuilder::new().item(cx.t("message-reply"), Some(IconKind::Reply), move |window, cx| {
+	let mut menu = ContextMenuBuilder::new();
+	if env.access.send {
+		menu = menu.item(cx.t("message-reply"), Some(IconKind::Reply), move |window, cx| {
 			reply(RowAction::Reply(id), window, cx)
 		});
+	}
 	if mine {
 		menu = menu.item(cx.t("message-edit"), Some(IconKind::Edit), move |window, cx| {
 			edit(RowAction::StartEdit(id), window, cx)
@@ -860,31 +864,35 @@ fn toolbar(view: &MessageView, group: SharedString, env: &RowEnv, cx: &App) -> A
 		.border_1()
 		.border_color(theme.divider)
 		.bg(theme.background_primary)
-		.child(
-			IconButton::new(("message-react", key), IconKind::Emoji)
-				.filled_hover()
-				.hit_size(rem(28.))
-				.icon_size(rem(18.))
-				.tooltip(cx.t("message-react"))
-				.on_click(move |event: &ClickEvent, window, cx| {
-					react(
-						RowAction::OpenEmoji {
-							message_id: id,
-							at: event.position(),
-						},
-						window,
-						cx,
-					)
-				}),
-		)
-		.child(
-			IconButton::new(("message-reply", key), IconKind::Reply)
-				.filled_hover()
-				.hit_size(rem(28.))
-				.icon_size(rem(18.))
-				.tooltip(cx.t("message-reply"))
-				.on_click(move |_, window, cx| reply(RowAction::Reply(id), window, cx)),
-		)
+		.when(env.access.react, |bar| {
+			bar.child(
+				IconButton::new(("message-react", key), IconKind::Emoji)
+					.filled_hover()
+					.hit_size(rem(28.))
+					.icon_size(rem(18.))
+					.tooltip(cx.t("message-react"))
+					.on_click(move |event: &ClickEvent, window, cx| {
+						react(
+							RowAction::OpenEmoji {
+								message_id: id,
+								at: event.position(),
+							},
+							window,
+							cx,
+						)
+					}),
+			)
+		})
+		.when(env.access.send, |bar| {
+			bar.child(
+				IconButton::new(("message-reply", key), IconKind::Reply)
+					.filled_hover()
+					.hit_size(rem(28.))
+					.icon_size(rem(18.))
+					.tooltip(cx.t("message-reply"))
+					.on_click(move |_, window, cx| reply(RowAction::Reply(id), window, cx)),
+			)
+		})
 		.when(mine, |bar| {
 			bar.child(
 				IconButton::new(("message-edit", key), IconKind::Edit)

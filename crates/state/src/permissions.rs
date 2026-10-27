@@ -140,6 +140,13 @@ impl State {
 			.contains(Permissions::VIEW_CHANNEL | needed)
 	}
 
+	pub fn can_attach(&self, channel_id: Snowflake) -> bool {
+		self.can_send(channel_id)
+			&& self
+				.my_permissions(channel_id)
+				.contains(Permissions::ATTACH_FILES)
+	}
+
 	pub fn can_react(&self, channel_id: Snowflake) -> bool {
 		self.my_permissions(channel_id).contains(
 			Permissions::VIEW_CHANNEL | Permissions::READ_MESSAGE_HISTORY | Permissions::ADD_REACTIONS,

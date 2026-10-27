@@ -19,7 +19,7 @@ use session::{Command, ReplyTarget};
 use super::pickers::PickerTab;
 use super::plugins::{self, command_list, composer_toolbar, parse_command};
 use crate::components::{Avatar, Divider, IconButton};
-use crate::data::Data;
+use crate::data::{Data, DataEvent};
 use crate::emoji;
 use crate::format;
 use crate::i18n::{ArgValue, Translate as _};
@@ -39,6 +39,12 @@ const EMOJI_PIXELS: u32 = 48;
 pub enum ComposerEvent {
 	OpenPicker { tab: PickerTab, at: Point<Pixels> },
 	Sent,
+}
+
+#[derive(Clone, Copy, PartialEq, Default)]
+struct SendAccess {
+	send: bool,
+	attach: bool,
 }
 
 struct ReplyTo {
@@ -89,6 +95,7 @@ pub struct Composer {
 	channel: Option<Snowflake>,
 	name: SharedString,
 	direct: bool,
+	access: SendAccess,
 	reply: Option<ReplyTo>,
 	files: Vec<Attached>,
 	typing: Vec<SharedString>,
@@ -163,6 +170,16 @@ impl Composer {
 				cx.stop_propagation();
 			}
 		});
+		let changes = cx.subscribe_in(&data, window, |this, _, event: &DataEvent, window, cx| {
+			if let DataEvent::Changed(changes) = event
+				&& (changes.guild_list
+					|| this
+						.guild
+						.is_some_and(|guild| changes.channel_lists.contains(guild)))
+			{
+				this.refresh_access(window, cx);
+			}
+		});
 		Self {
 			data,
 			input,
@@ -170,6 +187,7 @@ impl Composer {
 			channel: None,
 			name: SharedString::default(),
 			direct: false,
+			access: SendAccess::default(),
 			reply: None,
 			files: Vec::new(),
 			typing: Vec::new(),
@@ -177,7 +195,7 @@ impl Composer {
 			draft_task: None,
 			last_typing: None,
 			awaiting_draft: false,
-			_subscriptions: vec![change, keys],
+			_subscriptions: vec![change, keys, changes],
 		}
 	}
 
@@ -201,6 +219,7 @@ impl Composer {
 		self.channel = channel;
 		self.name = name;
 		self.direct = direct;
+		self.access = self.read_access(cx);
 		self.reply = None;
 		self.files.clear();
 		self.autocomplete = None;
@@ -262,7 +281,47 @@ impl Composer {
 		});
 	}
 
+	fn read_access(&self, cx: &Context<Self>) -> SendAccess {
+		let Some(channel) = self.channel else {
+			return SendAccess::default();
+		};
+		if self.guild.is_none() {
+			return SendAccess {
+				send: true,
+				attach: true,
+			};
+		}
+		let data = self.data.read(cx);
+		let state = data.state();
+		SendAccess {
+			send: state.can_send(channel),
+			attach: state.can_attach(channel),
+		}
+	}
+
+	fn refresh_access(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+		let access = self.read_access(cx);
+		if access == self.access {
+			return;
+		}
+		self.access = access;
+		if !access.attach {
+			self.files.clear();
+		}
+		if !access.send {
+			self.reply = None;
+			self.autocomplete = None;
+		}
+		let placeholder = self.placeholder(cx);
+		self.input
+			.update(cx, |state, cx| state.set_placeholder(placeholder, window, cx));
+		cx.notify();
+	}
+
 	fn placeholder(&self, cx: &Context<Self>) -> SharedString {
+		if !self.access.send {
+			return cx.t("composer-no-permission");
+		}
 		let key = if self.direct {
 			"composer-placeholder-direct"
 		} else {
@@ -533,7 +592,7 @@ impl Composer {
 	}
 
 	fn send(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-		let Some(channel) = self.channel else {
+		let Some(channel) = self.channel.filter(|_| self.access.send) else {
 			return;
 		};
 		let text = self.input.read(cx).value().trim().to_owned();
@@ -582,7 +641,7 @@ impl Composer {
 	}
 
 	fn add_file(&mut self, name: String, bytes: Vec<u8>, cx: &mut Context<Self>) {
-		if self.files.len() >= MAX_FILES {
+		if !self.access.attach || self.files.len() >= MAX_FILES {
 			return;
 		}
 		self.files.push(Attached {
@@ -640,6 +699,9 @@ impl Composer {
 	}
 
 	fn paste_image(&mut self, cx: &mut Context<Self>) -> bool {
+		if !self.access.attach {
+			return false;
+		}
 		let image = match platform::clipboard::read_image() {
 			Ok(Some(image)) => image,
 			Ok(None) => return false,
@@ -924,6 +986,7 @@ impl Render for Composer {
 			..ViewContext::default()
 		};
 		let above = plugins::contextual("composer-above", plugin_context, cx);
+		let access = self.access;
 		div()
 			.relative()
 			.flex()
@@ -977,13 +1040,17 @@ impl Render for Composer {
 										.justify_center()
 										.w(rem(56.))
 										.h(rem(44.))
-										.child(
-											IconButton::new("composer-attach", IconKind::Plus)
-												.icon_size(rem(24.))
-												.hit_size(rem(32.))
-												.tooltip(cx.t("composer-attach"))
-												.on_click(cx.listener(|this, _, _, cx| this.pick_files(cx))),
-										),
+										.when(access.attach, |slot| {
+											slot.child(
+												IconButton::new("composer-attach", IconKind::Plus)
+													.icon_size(rem(24.))
+													.hit_size(rem(32.))
+													.tooltip(cx.t("composer-attach"))
+													.on_click(
+														cx.listener(|this, _, _, cx| this.pick_files(cx)),
+													),
+											)
+										}),
 								)
 								.child(
 									div()
@@ -997,6 +1064,7 @@ impl Render for Composer {
 											Textarea::new(&self.input)
 												.appearance(false)
 												.bordered(false)
+												.disabled(!access.send)
 												.p_0()
 												.w_full()
 												.on_paste(move |_, _, cx| {
@@ -1005,52 +1073,54 @@ impl Render for Composer {
 												}),
 										),
 								)
-								.child(
-									div()
-										.flex()
-										.flex_none()
-										.items_center()
-										.h(rem(44.))
-										.pr(theme.space_8)
-										.gap(rem(2.))
-										.children(composer_toolbar(plugin_context, cx))
-										.child(
-											IconButton::new("composer-gif", IconKind::Gif)
-												.icon_size(rem(24.))
-												.hit_size(rem(32.))
-												.tooltip(cx.t("composer-gif"))
-												.on_click(cx.listener(|_, event: &ClickEvent, _, cx| {
-													cx.emit(ComposerEvent::OpenPicker {
-														tab: PickerTab::Gif,
-														at: event.position(),
-													})
-												})),
-										)
-										.child(
-											IconButton::new("composer-sticker", IconKind::Sticker)
-												.icon_size(rem(24.))
-												.hit_size(rem(32.))
-												.tooltip(cx.t("composer-sticker"))
-												.on_click(cx.listener(|_, event: &ClickEvent, _, cx| {
-													cx.emit(ComposerEvent::OpenPicker {
-														tab: PickerTab::Sticker,
-														at: event.position(),
-													})
-												})),
-										)
-										.child(
-											IconButton::new("composer-emoji", IconKind::Emoji)
-												.icon_size(rem(24.))
-												.hit_size(rem(32.))
-												.tooltip(cx.t("composer-emoji"))
-												.on_click(cx.listener(|_, event: &ClickEvent, _, cx| {
-													cx.emit(ComposerEvent::OpenPicker {
-														tab: PickerTab::Emoji,
-														at: event.position(),
-													})
-												})),
-										),
-								),
+								.when(access.send, |row| {
+									row.child(
+										div()
+											.flex()
+											.flex_none()
+											.items_center()
+											.h(rem(44.))
+											.pr(theme.space_8)
+											.gap(rem(2.))
+											.children(composer_toolbar(plugin_context, cx))
+											.child(
+												IconButton::new("composer-gif", IconKind::Gif)
+													.icon_size(rem(24.))
+													.hit_size(rem(32.))
+													.tooltip(cx.t("composer-gif"))
+													.on_click(cx.listener(|_, event: &ClickEvent, _, cx| {
+														cx.emit(ComposerEvent::OpenPicker {
+															tab: PickerTab::Gif,
+															at: event.position(),
+														})
+													})),
+											)
+											.child(
+												IconButton::new("composer-sticker", IconKind::Sticker)
+													.icon_size(rem(24.))
+													.hit_size(rem(32.))
+													.tooltip(cx.t("composer-sticker"))
+													.on_click(cx.listener(|_, event: &ClickEvent, _, cx| {
+														cx.emit(ComposerEvent::OpenPicker {
+															tab: PickerTab::Sticker,
+															at: event.position(),
+														})
+													})),
+											)
+											.child(
+												IconButton::new("composer-emoji", IconKind::Emoji)
+													.icon_size(rem(24.))
+													.hit_size(rem(32.))
+													.tooltip(cx.t("composer-emoji"))
+													.on_click(cx.listener(|_, event: &ClickEvent, _, cx| {
+														cx.emit(ComposerEvent::OpenPicker {
+															tab: PickerTab::Emoji,
+															at: event.position(),
+														})
+													})),
+											),
+									)
+								}),
 						),
 				),
 			)

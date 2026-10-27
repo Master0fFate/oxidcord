@@ -30,6 +30,7 @@ pub enum Permission {
 	Composer,
 	ContextExpressions,
 	ActionsSendUser,
+	ChannelsHidden,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -41,7 +42,7 @@ pub enum Tier {
 }
 
 impl Permission {
-	pub const ALL: [Permission; 25] = [
+	pub const ALL: [Permission; 26] = [
 		Self::ContextBasic,
 		Self::ContextTimeline,
 		Self::ContextDirectory,
@@ -67,6 +68,7 @@ impl Permission {
 		Self::Composer,
 		Self::ContextExpressions,
 		Self::ActionsSendUser,
+		Self::ChannelsHidden,
 	];
 
 	pub fn as_str(self) -> &'static str {
@@ -96,6 +98,7 @@ impl Permission {
 			Self::Composer => "composer",
 			Self::ContextExpressions => "context-expressions",
 			Self::ActionsSendUser => "actions-send-user",
+			Self::ChannelsHidden => "channels-hidden",
 		}
 	}
 
@@ -107,7 +110,8 @@ impl Permission {
 			| Self::UiSlots
 			| Self::UiMount
 			| Self::ActionsNavigate
-			| Self::ActionsNotify => Tier::Low,
+			| Self::ActionsNotify
+			| Self::ChannelsHidden => Tier::Low,
 			Self::ContextTimeline
 			| Self::ContextDirectory
 			| Self::ContextMembers
@@ -161,7 +165,8 @@ impl Permission {
 			| Self::MessageRetain
 			| Self::Composer
 			| Self::ContextExpressions
-			| Self::ActionsSendUser => return None,
+			| Self::ActionsSendUser
+			| Self::ChannelsHidden => return None,
 		})
 	}
 }

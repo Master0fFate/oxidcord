@@ -49,12 +49,17 @@ pub(crate) fn channel_muted(
 	channel: &Channel,
 	now: DateTime<Utc>,
 ) -> bool {
+	guild_muted(settings, now) || channel_override_muted(settings, channel, now)
+}
+
+fn channel_override_muted(
+	settings: Option<&UserGuildSettings>,
+	channel: &Channel,
+	now: DateTime<Utc>,
+) -> bool {
 	let Some(settings) = settings else {
 		return false;
 	};
-	if mute_active(settings.muted, settings.mute_config.as_ref(), now) {
-		return true;
-	}
 	[Some(channel.id), channel.parent_id]
 		.into_iter()
 		.flatten()
@@ -186,7 +191,7 @@ impl State {
 		viewable: bool,
 		now: DateTime<Utc>,
 	) -> ChannelStatus {
-		let muted = channel_muted(settings, channel, now);
+		let muted = channel_override_muted(settings, channel, now);
 		if !viewable || channel.kind == ChannelType::GuildCategory {
 			return ChannelStatus {
 				muted,

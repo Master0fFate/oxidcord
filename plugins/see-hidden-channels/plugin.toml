@@ -1,0 +1,13 @@
+id = "dev.oxidcord.see-hidden-channels"
+name = "See Hidden Channels"
+version = "0.1.0"
+api = "^1.0"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Shows channels you cannot open in the channel list, dimmed with a lock."
+entry = "see_hidden_channels.wasm"
+min_host = "0.1.0"
+
+[[permissions]]
+permission = "channels-hidden"
+reason = "Keeps channels you have no access to in the channel list."

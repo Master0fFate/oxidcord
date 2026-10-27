@@ -45,6 +45,7 @@ pub fn is_voice(kind: ChannelType) -> bool {
 pub fn stripped_member(member: &Member) -> Member {
 	Member {
 		user: None,
+		user_id: None,
 		nick: member.nick.clone(),
 		avatar: member.avatar.clone(),
 		banner: member.banner.clone(),

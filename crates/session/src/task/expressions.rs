@@ -135,6 +135,9 @@ impl Core {
 				channel_id,
 				sticker_id,
 			} => {
+				if !self.send_allowed(channel_id) {
+					return;
+				}
 				let known = self.state.read().find_sticker(sticker_id).cloned();
 				if let Some(sticker) = known {
 					self.remember_sticker(sticker);

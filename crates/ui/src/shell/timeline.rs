@@ -544,7 +544,10 @@ impl Timeline {
 		let data = self.data.read(cx);
 		let state = data.state();
 		let permissions = state.my_permissions(channel);
+		let direct = self.guild.is_none();
 		MessageAccess {
+			send: direct || state.can_send(channel),
+			react: direct || state.can_react(channel),
 			manage_messages: self.guild.is_some() && state.can_manage_messages(channel),
 			create_threads: self.guild.is_some()
 				&& permissions.contains(protocol::Permissions::CREATE_PUBLIC_THREADS),

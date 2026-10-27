@@ -188,12 +188,14 @@ impl State {
 			});
 			grouped.entry(parent).or_default().push(channel);
 		}
+		let selected = self.selected.map(|selection| selection.channel_id);
 		let mut threads: HashMap<Snowflake, Vec<&Channel>> = HashMap::new();
 		for thread in guild.threads.values().filter(|thread| {
-			thread
-				.thread_metadata
-				.as_ref()
-				.is_none_or(|metadata| !metadata.archived)
+			(thread.member.is_some() || Some(thread.id) == selected)
+				&& thread
+					.thread_metadata
+					.as_ref()
+					.is_none_or(|metadata| !metadata.archived)
 		}) {
 			let Some(parent_id) = thread.parent_id else {
 				continue;

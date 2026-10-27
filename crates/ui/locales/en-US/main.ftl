@@ -63,6 +63,7 @@ message-more = More
 
 composer-placeholder = Message #{ $name }
 composer-placeholder-direct = Message @{ $name }
+composer-no-permission = You do not have permission to send messages in this channel.
 composer-attach = Upload a File
 composer-gift = Send a gift
 composer-gif = Open GIF picker
@@ -408,6 +409,7 @@ perm-message-retain = Keep deleted messages visible in the chat.
 perm-composer = Put text into the message box when you pick something.
 perm-context-expressions = Read the emoji and stickers your account can use.
 perm-actions-send-user = Send messages as you without a plugin marker.
+perm-channels-hidden = Show channels you cannot open in the channel list.
 perm-high = High risk
 perm-image-hosts = Image hosts
 perm-low-summary = { $count ->

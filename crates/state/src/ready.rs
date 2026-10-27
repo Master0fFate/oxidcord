@@ -125,7 +125,9 @@ impl State {
 		for member in guild.members.iter() {
 			if let Some(user) = &member.user {
 				intern_user(&mut self.users, user);
-				state.members.insert(user.id, stripped_member(member));
+			}
+			if let Some(user_id) = member.id() {
+				state.members.insert(user_id, stripped_member(member));
 			}
 		}
 		for voice in guild
@@ -154,7 +156,9 @@ impl State {
 		for member in members {
 			if let Some(user) = &member.user {
 				intern_user(&mut self.users, user);
-				guild.members.insert(user.id, stripped_member(member));
+			}
+			if let Some(user_id) = member.id() {
+				guild.members.insert(user_id, stripped_member(member));
 			}
 		}
 	}
