@@ -8,6 +8,7 @@ use serde_json::{Value, json};
 
 use crate::error::ApiError;
 use crate::fixtures::CURRENT_USER_ID;
+use crate::fixtures::previews;
 use crate::forward::snapshot_of;
 use crate::json::{author_id, parse_id, to_json};
 use crate::state::{Shared, Store};
@@ -244,7 +245,28 @@ impl Shared {
 		let gateway = self.gateway_message(&store, &value);
 		drop(store);
 		self.hub.broadcast("MESSAGE_CREATE", &gateway);
+		self.unfurl(channel_id, id, guild_id, &message);
 		Ok(value)
+	}
+
+	fn unfurl(&self, channel_id: u64, id: u64, guild_id: Option<Snowflake>, message: &Message) {
+		if message.flags.contains(MessageFlags::SUPPRESS_EMBEDS) {
+			return;
+		}
+		let embeds = previews::embeds_for(&message.content);
+		if embeds.is_empty() {
+			return;
+		}
+		let embeds = to_json(&embeds);
+		if let Some(stored) = self.store.lock().message_mut(channel_id, id) {
+			stored["embeds"] = embeds.clone();
+		}
+		let mut update =
+			json!({ "id": id.to_string(), "channel_id": channel_id.to_string(), "embeds": embeds });
+		if let Some(guild_id) = guild_id {
+			update["guild_id"] = json!(guild_id.to_string());
+		}
+		self.hub.broadcast("MESSAGE_UPDATE", &update);
 	}
 
 	pub fn edit_message(&self, channel_id: u64, id: u64, edit: EditMessage) -> Result<Value, ApiError> {

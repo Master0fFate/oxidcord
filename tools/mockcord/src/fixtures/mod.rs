@@ -3,6 +3,7 @@ mod guilds;
 mod media;
 mod messages;
 mod people;
+pub(crate) mod previews;
 
 use std::collections::BTreeMap;
 
