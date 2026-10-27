@@ -3,7 +3,7 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use protocol::{
 	Channel, ChannelType, DefaultMessageNotifications, Message, MuteConfig, NotificationLevel, Permissions,
-	ReadState, Snowflake, StatusKind, UserGuildSettings,
+	ReadState, Snowflake, StatusKind, ThreadMember, UserGuildSettings,
 };
 
 use crate::guild::GuildState;
@@ -57,6 +57,13 @@ fn channel_override_muted(
 	channel: &Channel,
 	now: DateTime<Utc>,
 ) -> bool {
+	if channel
+		.member
+		.as_ref()
+		.is_some_and(|member| mute_active(member.muted, member.mute_config.as_ref(), now))
+	{
+		return true;
+	}
 	let Some(settings) = settings else {
 		return false;
 	};
@@ -107,6 +114,12 @@ impl State {
 		self.alert_count
 	}
 
+	pub fn thread_muted(&self, thread_id: Snowflake) -> bool {
+		self.channel(thread_id)
+			.and_then(|thread| thread.member.as_ref())
+			.is_some_and(|member| mute_active(member.muted, member.mute_config.as_ref(), Utc::now()))
+	}
+
 	pub fn notification_level(
 		&self,
 		guild_id: Option<Snowflake>,
@@ -117,11 +130,17 @@ impl State {
 		};
 		let settings = self.guild_settings.get(&guild_id);
 		let channel = channel_id.and_then(|id| self.channel(id));
-		let overridden = channel
-			.into_iter()
-			.flat_map(|channel| [Some(channel.id), channel.parent_id])
-			.flatten()
-			.find_map(|id| override_level(settings, id));
+		let followed = channel
+			.and_then(|channel| channel.member.as_ref())
+			.map(ThreadMember::notification_level)
+			.filter(|level| *level != NotificationLevel::Inherit);
+		let overridden = followed.or_else(|| {
+			channel
+				.into_iter()
+				.flat_map(|channel| [Some(channel.id), channel.parent_id])
+				.flatten()
+				.find_map(|id| override_level(settings, id))
+		});
 		let chosen = settings
 			.and_then(|settings| settings.message_notifications)
 			.filter(|level| *level != NotificationLevel::Inherit);

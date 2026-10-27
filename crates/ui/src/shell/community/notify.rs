@@ -38,6 +38,10 @@ pub enum Scope {
 		channel: Snowflake,
 	},
 	Guild(Snowflake),
+	Thread {
+		thread: Snowflake,
+		post: bool,
+	},
 }
 
 fn until(minutes: Option<i64>) -> Option<DateTime<Utc>> {
@@ -48,6 +52,7 @@ pub fn current_level(data: &Data, scope: Scope) -> NotificationLevel {
 	let state = data.state();
 	match scope {
 		Scope::Guild(guild) => state.notification_level(Some(guild), None),
+		Scope::Thread { thread, .. } => state.notification_level(state.channel_guild(thread), Some(thread)),
 		Scope::Channel { guild, channel } => state
 			.guild_settings(guild)
 			.and_then(|settings| {
@@ -68,7 +73,9 @@ pub fn mark_read_item(menu: ContextMenuBuilder, scope: Scope, unread: bool, cx: 
 	}
 	menu.item(label, Some(IconKind::Check), move |_, cx| {
 		let command = match scope {
-			Scope::Channel { channel, .. } => Command::MarkChannelRead { channel_id: channel },
+			Scope::Channel { channel, .. } | Scope::Thread { thread: channel, .. } => {
+				Command::MarkChannelRead { channel_id: channel }
+			}
 			Scope::Guild(guild) => Command::MarkGuildRead { guild_id: guild },
 		};
 		data_handle(cx).read(cx).send(command);
@@ -76,15 +83,19 @@ pub fn mark_read_item(menu: ContextMenuBuilder, scope: Scope, unread: bool, cx: 
 }
 
 pub fn mute_items(menu: ContextMenuBuilder, scope: Scope, muted: bool, cx: &App) -> ContextMenuBuilder {
-	let noun = match scope {
-		Scope::Channel { .. } => cx.t("mute-channel"),
-		Scope::Guild(_) => cx.t("mute-server"),
-	};
+	let noun = cx.t(match scope {
+		Scope::Channel { .. } => "mute-channel",
+		Scope::Guild(_) => "mute-server",
+		Scope::Thread { post: true, .. } => "mute-post",
+		Scope::Thread { post: false, .. } => "mute-thread",
+	});
 	if muted {
-		let label = match scope {
-			Scope::Channel { .. } => cx.t("unmute-channel"),
-			Scope::Guild(_) => cx.t("unmute-server"),
-		};
+		let label = cx.t(match scope {
+			Scope::Channel { .. } => "unmute-channel",
+			Scope::Guild(_) => "unmute-server",
+			Scope::Thread { post: true, .. } => "unmute-post",
+			Scope::Thread { post: false, .. } => "unmute-thread",
+		});
 		return menu.item(label, Some(IconKind::Bell), move |_, cx| {
 			let command = match scope {
 				Scope::Channel { guild, channel } => Command::UnmuteChannel {
@@ -92,6 +103,7 @@ pub fn mute_items(menu: ContextMenuBuilder, scope: Scope, muted: bool, cx: &App)
 					guild_id: guild,
 				},
 				Scope::Guild(guild) => Command::UnmuteGuild { guild_id: guild },
+				Scope::Thread { thread, .. } => Command::UnmuteThread { thread_id: thread },
 			};
 			data_handle(cx).read(cx).send(command);
 		});
@@ -110,6 +122,10 @@ pub fn mute_items(menu: ContextMenuBuilder, scope: Scope, muted: bool, cx: &App)
 					},
 					Scope::Guild(guild) => Command::MuteGuild {
 						guild_id: guild,
+						until: end,
+					},
+					Scope::Thread { thread, .. } => Command::MuteThread {
+						thread_id: thread,
 						until: end,
 					},
 				};
@@ -139,6 +155,10 @@ pub fn level_items(menu: ContextMenuBuilder, scope: Scope, cx: &App) -> ContextM
 						suppress_everyone: false,
 						suppress_roles: false,
 						mobile_push: true,
+					}),
+					Scope::Thread { thread, .. } => data.read(cx).send(Command::SetThreadNotifications {
+						thread_id: thread,
+						level,
 					}),
 				}
 			})

@@ -1,8 +1,10 @@
+use std::collections::HashSet;
 use std::rc::Rc;
+use std::time::Duration;
 
 use gpui::{
 	Context, Entity, EventEmitter, FontWeight, IntoElement, ParentElement as _, Render, Styled as _,
-	Subscription, Window, div, prelude::FluentBuilder as _,
+	Subscription, Task, Window, div, prelude::FluentBuilder as _,
 };
 use gpui_component::Sizable as _;
 use gpui_component::button::{Button, ButtonVariants as _};
@@ -17,6 +19,8 @@ use crate::format;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::theme::Theme;
 
+const TICK: Duration = Duration::from_secs(1);
+
 pub enum ProfileEvent {
 	Close,
 	OpenFull {
@@ -29,7 +33,10 @@ pub struct ProfileCard {
 	data: Entity<Data>,
 	user: Snowflake,
 	guild: Option<Snowflake>,
+	requested_icons: HashSet<Snowflake>,
+	ticking: bool,
 	_subscription: Subscription,
+	_ticker: Task<()>,
 }
 
 impl EventEmitter<ProfileEvent> for ProfileCard {}
@@ -41,25 +48,51 @@ impl ProfileCard {
 		guild: Option<Snowflake>,
 		cx: &mut Context<Self>,
 	) -> Self {
-		data.read(cx).send(Command::LoadProfile {
-			user_id: user,
-			guild_id: guild,
-		});
-		let subscription = cx.subscribe(&data, move |_, _, event: &DataEvent, cx| {
+		{
+			let data = data.read(cx);
+			data.send(Command::LoadProfile {
+				user_id: user,
+				guild_id: guild,
+			});
+			if data.state().current_user_id() != Some(user) {
+				data.send(Command::RefreshPresence {
+					user_id: user,
+					guild_id: guild,
+				});
+			}
+		}
+		let subscription = cx.subscribe(&data, move |this, _, event: &DataEvent, cx| {
 			if let DataEvent::Changed(changes) = event
 				&& (changes.loaded.contains(user)
 					|| changes.relationships
 					|| changes.plugin_slots
-					|| !changes.presence.is_empty())
+					|| changes.presence.contains(user)
+					|| this.requested_icons.iter().any(|id| changes.loaded.contains(*id)))
 			{
 				cx.notify();
+			}
+		});
+		let ticker = cx.spawn(async move |this, cx| {
+			loop {
+				cx.background_executor().timer(TICK).await;
+				let alive = this.update(cx, |this, cx| {
+					if this.ticking {
+						cx.notify();
+					}
+				});
+				if alive.is_err() {
+					return;
+				}
 			}
 		});
 		Self {
 			data,
 			user,
 			guild,
+			requested_icons: HashSet::new(),
+			ticking: false,
 			_subscription: subscription,
+			_ticker: ticker,
 		}
 	}
 }
@@ -67,10 +100,27 @@ impl ProfileCard {
 impl Render for ProfileCard {
 	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
-		let profile = {
+		let (profile, activities) = {
 			let data = self.data.read(cx);
-			ProfileData::load(&data.state(), self.user, self.guild)
+			let state = data.state();
+			(
+				ProfileData::load(&state, self.user, self.guild),
+				account::activities(&state, self.user),
+			)
 		};
+		for application_id in activities.iter().filter_map(|activity| activity.missing_icon) {
+			if self.requested_icons.insert(application_id) {
+				self.data
+					.read(cx)
+					.send(Command::LoadApplicationIcon { application_id });
+			}
+		}
+		self.ticking = activities.iter().any(|activity| activity.is_timed());
+		let now = chrono::Utc::now().timestamp_millis();
+		let activity_cards: Vec<_> = activities
+			.iter()
+			.map(|activity| account::activity_card(activity, now, &theme, cx))
+			.collect();
 		let Some(profile) = profile else {
 			return div().into_any_element();
 		};
@@ -162,6 +212,7 @@ impl Render for ProfileCard {
 							),
 					)
 					.child(Divider::horizontal())
+					.children(activity_cards)
 					.when_some(bio, |card, bio| {
 						card.child(
 							div()

@@ -13,6 +13,7 @@ use crate::theme::{Theme, rem};
 const MENU_WIDTH: f32 = 220.;
 const ROW_HEIGHT: f32 = 28.;
 const ICON_SIZE: f32 = 20.;
+const TRAILING_ICON_SIZE: f32 = 18.;
 const ITEM_INSET_X: f32 = 8.;
 const ITEM_INSET_Y: f32 = 4.;
 const PANEL_PADDING: f32 = 4.;
@@ -25,6 +26,7 @@ pub enum MenuEntry {
 	Item {
 		label: SharedString,
 		icon: Option<IconKind>,
+		trailing: Option<IconKind>,
 		danger: bool,
 		disabled: bool,
 		checked: Option<bool>,
@@ -66,6 +68,7 @@ impl ContextMenuBuilder {
 		self.entries.push(MenuEntry::Item {
 			label: label.into(),
 			icon,
+			trailing: None,
 			danger: false,
 			disabled: true,
 			checked: None,
@@ -81,6 +84,24 @@ impl ContextMenuBuilder {
 		on_select: impl Fn(&mut Window, &mut App) + 'static,
 	) -> Self {
 		self.entry(label, icon, true, on_select)
+	}
+
+	pub fn external_item(
+		mut self,
+		label: impl Into<SharedString>,
+		icon: Option<IconKind>,
+		on_select: impl Fn(&mut Window, &mut App) + 'static,
+	) -> Self {
+		self.entries.push(MenuEntry::Item {
+			label: label.into(),
+			icon,
+			trailing: Some(IconKind::ExternalLink),
+			danger: false,
+			disabled: false,
+			checked: None,
+			on_select: Rc::new(on_select),
+		});
+		self
 	}
 
 	pub fn separator(mut self) -> Self {
@@ -117,6 +138,7 @@ impl ContextMenuBuilder {
 		self.entries.push(MenuEntry::Item {
 			label: label.into(),
 			icon: None,
+			trailing: None,
 			danger: false,
 			disabled: false,
 			checked: Some(checked),
@@ -169,6 +191,7 @@ impl ContextMenuBuilder {
 		self.entries.push(MenuEntry::Item {
 			label: label.into(),
 			icon,
+			trailing: None,
 			danger,
 			disabled: false,
 			checked: None,
@@ -197,6 +220,7 @@ fn populate(menu: PopupMenu, entries: &[MenuEntry], cx: &mut Context<PopupMenu>)
 			let row = Row {
 				label: label.clone(),
 				icon: *icon,
+				trailing: None,
 				danger: false,
 				disabled: false,
 				checked: false,
@@ -210,6 +234,7 @@ fn populate(menu: PopupMenu, entries: &[MenuEntry], cx: &mut Context<PopupMenu>)
 		MenuEntry::Item {
 			label,
 			icon,
+			trailing,
 			danger,
 			disabled,
 			checked,
@@ -219,6 +244,7 @@ fn populate(menu: PopupMenu, entries: &[MenuEntry], cx: &mut Context<PopupMenu>)
 			let row = Row {
 				label: label.clone(),
 				icon: *icon,
+				trailing: *trailing,
 				danger: *danger,
 				disabled: *disabled,
 				checked: checked.unwrap_or(false),
@@ -235,6 +261,7 @@ fn populate(menu: PopupMenu, entries: &[MenuEntry], cx: &mut Context<PopupMenu>)
 struct Row {
 	label: SharedString,
 	icon: Option<IconKind>,
+	trailing: Option<IconKind>,
 	danger: bool,
 	disabled: bool,
 	checked: bool,
@@ -264,6 +291,10 @@ impl Row {
 					.map(|kind| Icon::new(kind).size(rem(ICON_SIZE)).color(color)),
 			)
 			.child(div().flex_1().min_w_0().truncate().child(self.label.clone()))
+			.children(
+				self.trailing
+					.map(|kind| Icon::new(kind).size(rem(TRAILING_ICON_SIZE)).color(color)),
+			)
 			.when(self.checked, |row| {
 				row.child(Icon::new(IconKind::Check).size(rem(18.)).color(theme.brand))
 			})
@@ -373,6 +404,7 @@ fn collect_rows(entries: &[MenuEntry], rows: &mut Vec<AnyElement>, window: &mut 
 				let row = Row {
 					label: label.clone(),
 					icon: *icon,
+					trailing: None,
 					danger: false,
 					disabled: false,
 					checked: false,
@@ -388,6 +420,7 @@ fn collect_rows(entries: &[MenuEntry], rows: &mut Vec<AnyElement>, window: &mut 
 			MenuEntry::Item {
 				label,
 				icon,
+				trailing,
 				danger,
 				disabled,
 				checked,
@@ -396,6 +429,7 @@ fn collect_rows(entries: &[MenuEntry], rows: &mut Vec<AnyElement>, window: &mut 
 				let row = Row {
 					label: label.clone(),
 					icon: *icon,
+					trailing: *trailing,
 					danger: *danger,
 					disabled: *disabled,
 					checked: checked.unwrap_or(false),

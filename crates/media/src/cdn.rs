@@ -149,6 +149,34 @@ pub fn role_icon_url(role_id: u64, hash: &str, size: u32) -> String {
 	format!("{CDN}/role-icons/{role_id}/{hash}.webp?size={}", clamp_size(size))
 }
 
+pub fn application_icon_url(application_id: u64, hash: &str, size: u32) -> String {
+	format!(
+		"{CDN}/app-icons/{application_id}/{hash}.webp?size={}",
+		clamp_size(size)
+	)
+}
+
+pub fn activity_asset_url(application_id: Option<u64>, asset: &str, size: u32) -> Option<String> {
+	if let Some(path) = asset.strip_prefix("mp:") {
+		return (!path.contains("..")).then(|| format!("{MEDIA_PROXY}/{path}"));
+	}
+	if let Some(image) = asset.strip_prefix("spotify:") {
+		return image
+			.bytes()
+			.all(|byte| byte.is_ascii_alphanumeric())
+			.then(|| format!("https://i.scdn.co/image/{image}"));
+	}
+	if !asset.bytes().all(|byte| byte.is_ascii_digit()) {
+		return None;
+	}
+	application_id.map(|application_id| {
+		format!(
+			"{CDN}/app-assets/{application_id}/{asset}.webp?size={}",
+			clamp_size(size)
+		)
+	})
+}
+
 pub fn avatar_decoration_url(asset: &str, size: u32) -> String {
 	let passthrough = if is_animated(asset) {
 		"&passthrough=true"

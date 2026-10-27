@@ -16,7 +16,7 @@ use crate::components::{Avatar, IconButton};
 use crate::data::Data;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::IconKind;
-use crate::images::Images;
+use crate::images::{Images, frame_id};
 use crate::lookup::avatar_for;
 use crate::shell::community::files::{Picked, pick_image};
 use crate::theme::Theme;
@@ -173,7 +173,12 @@ impl EmojiPage {
 		let image = cx
 			.global::<Images>()
 			.get(&url, SizeHint::square(THUMB_PIXELS))
-			.map(|image| img(image).size_full().object_fit(ObjectFit::Contain));
+			.map(|image| {
+				img(image)
+					.id(frame_id(&url))
+					.size_full()
+					.object_fit(ObjectFit::Contain)
+			});
 		let (uploader, avatar) = {
 			let state = self.data.read(cx).state();
 			match &emoji.user {

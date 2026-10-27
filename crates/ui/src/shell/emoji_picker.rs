@@ -11,7 +11,7 @@ use media::SizeHint;
 use crate::components::unicode_emoji;
 use crate::emoji::{self, CATEGORIES};
 use crate::i18n::Translate as _;
-use crate::images::Images;
+use crate::images::{Images, frame_id};
 use crate::theme::{Theme, rem};
 
 const WIDTH: f32 = 352.;
@@ -129,11 +129,12 @@ impl EmojiPicker {
 			.cursor_pointer()
 			.hover(|style| style.bg(theme.modifier_selected))
 			.on_click(cx.listener(move |this, _, _, cx| this.pick(choice.clone(), cx)))
-			.child(
-				div()
-					.size(rem(CELL - 12.))
-					.children(image.map(|image| img(image).size_full().object_fit(ObjectFit::Contain))),
-			)
+			.child(div().size(rem(CELL - 12.)).children(image.map(|image| {
+				img(image)
+					.id(frame_id(&url))
+					.size_full()
+					.object_fit(ObjectFit::Contain)
+			})))
 			.into_any_element()
 	}
 

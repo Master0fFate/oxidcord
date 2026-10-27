@@ -43,6 +43,16 @@ pub fn file_size(bytes: u64) -> String {
 	}
 }
 
+pub fn elapsed_clock(seconds: i64) -> String {
+	let total = seconds.max(0);
+	let (hours, minutes, seconds) = (total / 3600, total / 60 % 60, total % 60);
+	if hours > 0 {
+		format!("{hours}:{minutes:02}:{seconds:02}")
+	} else {
+		format!("{minutes}:{seconds:02}")
+	}
+}
+
 pub fn duration_label(seconds: f64) -> String {
 	let total = seconds.max(0.) as u64;
 	format!("{}:{:02}", total / 60, total % 60)

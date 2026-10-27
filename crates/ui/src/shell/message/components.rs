@@ -21,7 +21,7 @@ use super::{ImageTarget, RowAction, point_media};
 use crate::components::{ContextMenuBuilder, unicode_emoji};
 use crate::i18n::Translate as _;
 use crate::icons::{Icon, IconKind};
-use crate::images::Images;
+use crate::images::{Images, frame_id};
 use crate::model::role_color;
 use crate::theme::{Theme, rem, with_alpha};
 
@@ -211,7 +211,9 @@ impl Builder<'_> {
 					div()
 						.flex_none()
 						.size(rem(size))
-						.when_some(image, |slot, image| slot.child(gpui::img(image).size_full()))
+						.when_some(image, |slot, image| {
+							slot.child(gpui::img(image).id(frame_id(&url)).size_full())
+						})
 						.into_any_element(),
 				)
 			}
@@ -560,7 +562,9 @@ fn option_row(option: &SelectOption) -> impl Fn(&mut gpui::Window, &mut App) -> 
 						div()
 							.flex_none()
 							.size(rem(OPTION_EMOJI))
-							.when_some(image, |slot, image| slot.child(gpui::img(image).size_full()))
+							.when_some(image, |slot, image| {
+								slot.child(gpui::img(image).id(frame_id(&url)).size_full())
+							})
 							.into_any_element(),
 					)
 				}

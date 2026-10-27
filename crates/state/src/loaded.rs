@@ -40,9 +40,14 @@ pub enum Loaded {
 		threads: Vec<Channel>,
 		members: Vec<ThreadMember>,
 	},
+	ThreadMember(Box<ThreadMember>),
 	Profile {
 		user_id: Snowflake,
 		raw: Value,
+	},
+	ApplicationIcon {
+		application_id: Snowflake,
+		icon: Option<String>,
 	},
 	InviteCreated {
 		channel_id: Snowflake,
@@ -230,6 +235,7 @@ pub(crate) struct Lazy {
 	pub(crate) pins: HashMap<Snowflake, Vec<Arc<Message>>>,
 	pub(crate) archived: HashMap<Snowflake, ArchivedThreads>,
 	pub(crate) profiles: HashMap<Snowflake, UserProfile>,
+	pub(crate) application_icons: HashMap<Snowflake, Option<String>>,
 	pub(crate) invites_created: HashMap<Snowflake, InviteInfo>,
 	pub(crate) invite_previews: HashMap<String, InvitePreview>,
 	pub(crate) guild_invites: HashMap<Snowflake, Vec<InviteInfo>>,
@@ -484,6 +490,11 @@ impl State {
 			} => {
 				self.store_threads(Some(*guild_id), threads, members, &mut changes);
 				changes.loaded.insert(*guild_id);
+			}
+			Loaded::ThreadMember(member) => self.set_thread_member(member, &mut changes),
+			Loaded::ApplicationIcon { application_id, icon } => {
+				self.lazy.application_icons.insert(*application_id, icon.clone());
+				changes.loaded.insert(*application_id);
 			}
 			Loaded::Profile { user_id, raw } => {
 				if let Some(profile) = self.parse_profile(raw) {
@@ -798,6 +809,31 @@ impl State {
 
 	pub fn profile(&self, user_id: Snowflake) -> Option<&UserProfile> {
 		self.lazy.profiles.get(&user_id)
+	}
+
+	pub fn application_icon(&self, application_id: Snowflake) -> Option<Option<&str>> {
+		self.lazy
+			.application_icons
+			.get(&application_id)
+			.map(Option::as_deref)
+	}
+
+	pub fn shared_guild(&self, user_id: Snowflake, preferred: Option<Snowflake>) -> Option<Snowflake> {
+		let has_member = |guild_id: &Snowflake| {
+			self.guilds
+				.get(guild_id)
+				.is_some_and(|guild| guild.members.contains_key(&user_id))
+		};
+		preferred
+			.filter(|guild_id| self.guilds.contains_key(guild_id))
+			.or_else(|| {
+				self.profile(user_id)?
+					.mutual_guilds
+					.iter()
+					.copied()
+					.find(|guild_id| self.guilds.contains_key(guild_id))
+			})
+			.or_else(|| self.guilds.keys().copied().find(has_member))
 	}
 
 	pub fn invite_created(&self, channel_id: Snowflake) -> Option<&InviteInfo> {

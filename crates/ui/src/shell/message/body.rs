@@ -4,8 +4,8 @@ use std::ops::Range;
 
 use chrono::{DateTime, Local};
 use gpui::{
-	AnyElement, App, ElementId, FontStyle, FontWeight, HighlightStyle, IntoElement, ParentElement as _,
-	SharedString, StrikethroughStyle, Styled as _, StyledText, UnderlineStyle, div, img,
+	AnyElement, App, ElementId, FontStyle, FontWeight, HighlightStyle, InteractiveElement as _, IntoElement,
+	ParentElement as _, SharedString, StrikethroughStyle, Styled as _, StyledText, UnderlineStyle, div, img,
 	prelude::FluentBuilder as _, px,
 };
 use markdown::highlight::{TokenKind, highlight};
@@ -17,7 +17,7 @@ use super::selectable::SelectableRun;
 use super::{Dispatch, Prefs, RowAction};
 use crate::format;
 use crate::i18n::Translate as _;
-use crate::images::Images;
+use crate::images::{Images, frame_id};
 use crate::lookup::Lookup;
 use crate::theme::{Theme, rem, with_alpha};
 
@@ -351,7 +351,9 @@ fn emoji_element(id: u64, animated: bool, size: f32, cx: &App) -> AnyElement {
 		.flex_none()
 		.size(rem(size))
 		.mx(rem(1.))
-		.when_some(image, |slot, image| slot.child(img(image).size_full()))
+		.when_some(image, |slot, image| {
+			slot.child(img(image).id(frame_id(&url)).size_full())
+		})
 		.into_any_element()
 }
 
@@ -375,7 +377,9 @@ fn image_element(url: &SharedString, width: f32, height: f32, cx: &App) -> AnyEl
 		.w(rem(width))
 		.h(rem(height))
 		.mx(rem(1.))
-		.when_some(image, |slot, image| slot.child(img(image).size_full()))
+		.when_some(image, |slot, image| {
+			slot.child(img(image).id(frame_id(url)).size_full())
+		})
 		.into_any_element()
 }
 

@@ -15,6 +15,7 @@ use protocol::Snowflake;
 use session::Command;
 
 use self::emoji::EmojiState;
+pub use self::emoji::toned;
 use self::gif::GifState;
 use self::sticker::StickerState;
 use crate::components::{PickHandler, segmented};

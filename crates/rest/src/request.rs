@@ -7,6 +7,7 @@ pub struct UploadFile {
 	pub name: String,
 	pub bytes: Bytes,
 	pub content_type: String,
+	pub description: Option<String>,
 }
 
 pub(crate) enum Body {

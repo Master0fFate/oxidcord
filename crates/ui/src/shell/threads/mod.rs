@@ -1,7 +1,9 @@
 pub mod create;
+pub mod edit;
 pub mod forum;
 pub mod inbox;
 pub mod list;
+pub mod menu;
 pub mod panel;
 pub mod pins;
 pub mod post;

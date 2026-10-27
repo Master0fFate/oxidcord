@@ -1,4 +1,3 @@
-use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;
 
 use gpui::{
@@ -7,7 +6,7 @@ use gpui::{
 };
 use media::SizeHint;
 
-use crate::images::Images;
+use crate::images::{Images, frame_id};
 use crate::theme::{Theme, rem_to_pixels};
 
 fn hint(width: Rems, height: Rems) -> SizeHint {
@@ -15,12 +14,6 @@ fn hint(width: Rems, height: Rems) -> SizeHint {
 		rem_to_pixels(width).round() as u32,
 		rem_to_pixels(height).round() as u32,
 	)
-}
-
-fn frame_id(url: &str) -> (&'static str, usize) {
-	let mut hasher = DefaultHasher::new();
-	url.hash(&mut hasher);
-	("cover-image", hasher.finish() as usize)
 }
 
 fn framed(image: Option<Arc<RenderImage>>, url: &str, fit: ObjectFit, cx: &App) -> AnyElement {

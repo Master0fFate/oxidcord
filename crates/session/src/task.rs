@@ -15,7 +15,7 @@ use protocol::{
 };
 use rest::api::SearchQuery;
 use rest::{RestClient, UploadFile};
-use serde_json::json;
+use serde_json::{Value, json};
 use state::{Changes, Event, LoadDirection, Loaded, LocalEvent, SharedState, TYPING_TIMEOUT, UserOverride};
 use store::Store;
 use tokio::runtime::Handle;
@@ -753,6 +753,19 @@ impl Core {
 					tracing::warn!(%error, "member search was not sent");
 				}
 			}
+			Command::RefreshPresence { user_id, guild_id } => self.refresh_presence(user_id, guild_id),
+			Command::LoadApplicationIcon { application_id } => {
+				self.spawn_load("application icon", move |rest| async move {
+					let icon = match rest.application_rpc(application_id).await {
+						Ok(raw) => raw.get("icon").and_then(Value::as_str).map(str::to_owned),
+						Err(error) => {
+							tracing::debug!(%error, "application has no public icon");
+							None
+						}
+					};
+					Ok(Loaded::ApplicationIcon { application_id, icon })
+				});
+			}
 			Command::OpenDm { user_id } => self.open_dm(user_id),
 			Command::Search {
 				guild_id,
@@ -1168,6 +1181,16 @@ impl Core {
 			&& let Some(guild_id) = selected.guild_id
 		{
 			self.subscribe(guild_id, Some(selected.channel_id));
+		}
+	}
+
+	fn refresh_presence(&self, user_id: Snowflake, preferred: Option<Snowflake>) {
+		let guild_id = self.state.read().shared_guild(user_id, preferred);
+		let Some(guild_id) = guild_id else {
+			return;
+		};
+		if let Err(error) = self.gateway.request_members(guild_id, "", 1, vec![user_id]) {
+			tracing::warn!(%error, "presence refresh was not sent");
 		}
 	}
 

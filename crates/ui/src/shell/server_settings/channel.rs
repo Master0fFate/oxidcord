@@ -28,7 +28,7 @@ use crate::theme::Theme;
 
 type Named = Vec<(Snowflake, String)>;
 
-const SLOWMODES: [(&str, u32); 14] = [
+pub const SLOWMODES: [(&str, u32); 14] = [
 	("slowmode-off", 0),
 	("slowmode-5s", 5),
 	("slowmode-10s", 10),

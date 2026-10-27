@@ -1,4 +1,5 @@
 mod account;
+mod attachments;
 mod channel_sidebar;
 mod community;
 mod composer;
@@ -6,6 +7,7 @@ mod dm_sidebar;
 mod emoji_picker;
 mod friends;
 mod history;
+mod inline_emoji;
 mod lightbox;
 mod links;
 mod login;
@@ -410,11 +412,11 @@ impl Shell {
 		let community =
 			cx.new(|cx| Community::new(data.clone(), backend.clone(), composer.clone(), window, cx));
 		Community::install(&community, data.clone(), cx);
-		subscriptions.push(
-			cx.subscribe_in(
-				&community,
-				window,
-				|this, _, event: &CommunityEvent, _, cx| match event {
+		subscriptions.push(cx.subscribe_in(
+			&community,
+			window,
+			|this, _, event: &CommunityEvent, window, cx| {
+				match event {
 					CommunityEvent::OpenImage(target) => {
 						this.overlay = Some(Overlay::Lightbox(target.clone()));
 						cx.notify();
@@ -423,9 +425,13 @@ impl Shell {
 						this.open_profile(*user, *at, Anchor::TopLeft, cx)
 					}
 					CommunityEvent::Jump { channel, message } => this.jump_to(*channel, *message, cx),
-				},
-			),
-		);
+					CommunityEvent::SearchIn(channel) => this
+						.top_bar
+						.update(cx, |bar, cx| bar.search_in(*channel, window, cx)),
+					CommunityEvent::Layout => cx.notify(),
+				}
+			},
+		));
 
 		let voice_panel = cx.new(|cx| VoicePanel::new(data.clone(), backend.clone(), window, cx));
 		let voice_room = cx.new(|cx| {
@@ -1443,6 +1449,9 @@ impl Render for Shell {
 		let status_bar = plugins::status_bar(cx);
 		let forum = self.community.read(cx).forum_view(cx);
 		let thread_panel = self.community.read(cx).thread_panel(cx);
+		let thread_full = thread_panel
+			.as_ref()
+			.is_some_and(|panel| panel.read(cx).is_full());
 		let show_members = in_guild
 			&& !room && thread_panel.is_none()
 			&& !show_plugin_panel
@@ -1575,23 +1584,27 @@ impl Render for Shell {
 									.flex()
 									.flex_1()
 									.min_h_0()
-									.child(
-										div()
-											.flex()
-											.flex_col()
-											.flex_1()
-											.min_w_0()
-											.min_h_0()
-											.when(room, |column| column.child(self.voice_room.clone()))
-											.when(!room, |column| match (plugin_page, forum) {
-												(Some(page), _) => column.child(page).children(status_bar),
-												(None, Some(forum)) => column.child(forum),
-												(None, None) => column
-													.child(self.timeline.clone())
-													.child(self.composer.clone())
-													.children(status_bar),
-											}),
-									)
+									.when(!thread_full, |main| {
+										main.child(
+											div()
+												.flex()
+												.flex_col()
+												.flex_1()
+												.min_w_0()
+												.min_h_0()
+												.when(room, |column| column.child(self.voice_room.clone()))
+												.when(!room, |column| match (plugin_page, forum) {
+													(Some(page), _) => {
+														column.child(page).children(status_bar)
+													}
+													(None, Some(forum)) => column.child(forum),
+													(None, None) => column
+														.child(self.timeline.clone())
+														.child(self.composer.clone())
+														.children(status_bar),
+												}),
+										)
+									})
 									.children(thread_panel)
 									.when(show_members, |main| main.child(self.member_list.clone()))
 									.when(show_group_members, |main| main.child(self.groups.members.clone()))

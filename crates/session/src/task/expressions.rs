@@ -167,6 +167,7 @@ impl Core {
 						name: filename,
 						bytes: file_png_or_apng.into(),
 						content_type: STICKER_CONTENT_TYPE.to_owned(),
+						description: None,
 					};
 					self.spawn_action("create sticker", move |rest| async move {
 						rest.create_guild_sticker(guild_id, &name, &description, &tags, file)

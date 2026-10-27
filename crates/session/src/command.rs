@@ -96,6 +96,13 @@ pub enum Command {
 		guild_id: Snowflake,
 		query: String,
 	},
+	RefreshPresence {
+		user_id: Snowflake,
+		guild_id: Option<Snowflake>,
+	},
+	LoadApplicationIcon {
+		application_id: Snowflake,
+	},
 	OpenDm {
 		user_id: Snowflake,
 	},
@@ -239,6 +246,30 @@ pub enum Command {
 	ArchiveThread {
 		thread_id: Snowflake,
 		archived: bool,
+	},
+	LockThread {
+		thread_id: Snowflake,
+		locked: bool,
+	},
+	EditThread {
+		thread_id: Snowflake,
+		name: String,
+		slowmode: u32,
+		auto_archive_minutes: u32,
+	},
+	DeleteThread {
+		thread_id: Snowflake,
+	},
+	MuteThread {
+		thread_id: Snowflake,
+		until: Option<DateTime<Utc>>,
+	},
+	UnmuteThread {
+		thread_id: Snowflake,
+	},
+	SetThreadNotifications {
+		thread_id: Snowflake,
+		level: NotificationLevel,
 	},
 	LoadArchivedThreads {
 		channel_id: Snowflake,

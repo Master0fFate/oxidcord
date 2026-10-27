@@ -12,19 +12,20 @@ use gpui::{
 use gpui_component::input::{Escape, InputEvent, Textarea, TextareaState};
 use media::SizeHint;
 use plugin_host::ViewContext;
+use protocol::expressions::unicode::search_unicode;
 use protocol::{ChannelType, Snowflake};
 use rest::UploadFile;
 use session::{Command, ReplyTarget};
 
-use super::pickers::PickerTab;
+use super::attachments::{self, CardAction, Edit, Pending};
+use super::inline_emoji::{self, EmojiTokens};
+use super::pickers::{PickerTab, SkinTone, toned};
 use super::plugins::{self, command_list, composer_toolbar, parse_command};
-use crate::components::{Avatar, Divider, IconButton};
+use crate::components::{Avatar, Divider, IconButton, unicode_emoji};
 use crate::data::{Data, DataEvent};
-use crate::emoji;
-use crate::format;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
-use crate::images::Images;
+use crate::images::{Images, frame_id};
 use crate::lookup::avatar_for;
 use crate::theme::{Theme, rem, with_alpha};
 
@@ -51,12 +52,6 @@ struct ReplyTo {
 	message: Snowflake,
 	name: SharedString,
 	mention: bool,
-}
-
-struct Attached {
-	name: String,
-	content_type: &'static str,
-	bytes: Bytes,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -97,9 +92,11 @@ pub struct Composer {
 	direct: bool,
 	access: SendAccess,
 	reply: Option<ReplyTo>,
-	files: Vec<Attached>,
+	files: Vec<Pending>,
+	next_file: u64,
 	typing: Vec<SharedString>,
 	autocomplete: Option<Autocomplete>,
+	emoji_tokens: EmojiTokens,
 	draft_task: Option<Task<()>>,
 	last_typing: Option<Instant>,
 	awaiting_draft: bool,
@@ -150,7 +147,7 @@ impl Composer {
 			&input,
 			window,
 			|this, _, event: &InputEvent, window, cx| match event {
-				InputEvent::Change => this.on_change(cx),
+				InputEvent::Change => this.on_change(window, cx),
 				InputEvent::PressEnter {
 					secondary: false,
 					shift: false,
@@ -190,8 +187,10 @@ impl Composer {
 			access: SendAccess::default(),
 			reply: None,
 			files: Vec::new(),
+			next_file: 0,
 			typing: Vec::new(),
 			autocomplete: None,
+			emoji_tokens: EmojiTokens::default(),
 			draft_task: None,
 			last_typing: None,
 			awaiting_draft: false,
@@ -231,7 +230,7 @@ impl Composer {
 		self.awaiting_draft = draft.is_empty();
 		self.input.update(cx, |state, cx| {
 			state.set_placeholder(placeholder, window, cx);
-			state.set_value(draft, window, cx);
+			state.set_value(inline_emoji::content(draft), window, cx);
 		});
 		cx.notify();
 	}
@@ -246,8 +245,9 @@ impl Composer {
 		let draft = self.data.read(cx).state().draft(channel).map(str::to_owned);
 		if let Some(draft) = draft {
 			self.awaiting_draft = false;
-			self.input
-				.update(cx, |state, cx| state.set_value(draft, window, cx));
+			self.input.update(cx, |state, cx| {
+				state.set_value(inline_emoji::content(draft), window, cx)
+			});
 		}
 	}
 
@@ -276,7 +276,7 @@ impl Composer {
 
 	pub fn insert(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
 		self.input.update(cx, |state, cx| {
-			state.insert(text.to_owned(), window, cx);
+			inline_emoji::insert(state, text, window, cx);
 			state.focus(window, cx);
 		});
 	}
@@ -347,8 +347,9 @@ impl Composer {
 		});
 	}
 
-	fn on_change(&mut self, cx: &mut Context<Self>) {
+	fn on_change(&mut self, window: &mut Window, cx: &mut Context<Self>) {
 		self.awaiting_draft = false;
+		self.emoji_tokens.sync(&self.input, window, cx);
 		let text = self.input.read(cx).value();
 		if !text.is_empty()
 			&& let Some(channel) = self.channel
@@ -367,10 +368,10 @@ impl Composer {
 			})
 			.ok();
 		}));
-		self.update_autocomplete(&text, cx);
+		self.update_autocomplete(&text, window, cx);
 	}
 
-	fn update_autocomplete(&mut self, text: &str, cx: &mut Context<Self>) {
+	fn update_autocomplete(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
 		let mut cursor = self.input.read(cx).cursor().min(text.len());
 		while !text.is_char_boundary(cursor) {
 			cursor -= 1;
@@ -388,6 +389,18 @@ impl Composer {
 			Some(_) => true,
 			None => false,
 		};
+		if trigger == Some(Trigger::Emoji)
+			&& let Some(item) = self.shortcode(query, cx)
+		{
+			self.autocomplete = Some(Autocomplete {
+				start,
+				cursor,
+				items: vec![item],
+				selected: 0,
+			});
+			self.apply(0, window, cx);
+			return;
+		}
 		let items = match trigger {
 			Some(trigger) if usable => self.suggestions(trigger, &query.to_lowercase(), cx),
 			_ => Vec::new(),
@@ -399,6 +412,20 @@ impl Composer {
 			selected: 0,
 		});
 		cx.notify();
+	}
+
+	fn shortcode(&self, query: &str, cx: &Context<Self>) -> Option<Suggestion> {
+		let name = query
+			.strip_suffix(':')
+			.filter(|name| !name.is_empty() && !name.contains(':'))?
+			.to_lowercase();
+		let label = format!(":{name}:");
+		let mut item = self
+			.suggestions(Trigger::Emoji, &name, cx)
+			.into_iter()
+			.find(|item| item.label.eq_ignore_ascii_case(&label))?;
+		item.insert.truncate(item.insert.trim_end().len());
+		Some(item)
 	}
 
 	fn suggestions(&self, trigger: Trigger, query: &str, cx: &Context<Self>) -> Vec<Suggestion> {
@@ -499,42 +526,45 @@ impl Composer {
 				}
 			}
 			Trigger::Emoji => {
-				if let Some(guild) = self.guild.and_then(|id| state.guild(id)) {
-					for custom in &guild.emojis {
-						let (Some(id), Some(name)) = (custom.id, custom.name.as_deref()) else {
+				let unlocked = data.session().plugins().has_emoji_pick();
+				for section in state.emoji_catalog(self.guild).guilds {
+					let detail = (Some(section.guild_id) != self.guild).then_some(section.name);
+					for custom in section.emojis.iter().filter(|custom| custom.usable || unlocked) {
+						let Some(hit) = rank(&custom.name) else {
 							continue;
 						};
-						if let Some(hit) = rank(name) {
-							let animated = custom.animated == Some(true);
-							let prefix = if animated { "a" } else { "" };
-							found.push((
-								hit,
-								Suggestion {
-									label: format!(":{name}:"),
-									detail: None,
-									insert: format!("<{prefix}:{name}:{id}> "),
-									visual: Visual::Image(media::cdn::emoji_url(
-										id.get(),
-										animated,
-										EMOJI_PIXELS,
-									)),
-								},
-							));
-						}
-					}
-				}
-				for (name, glyph) in emoji::all() {
-					if let Some(hit) = rank(name) {
+						let prefix = if custom.animated { "a" } else { "" };
 						found.push((
 							hit,
 							Suggestion {
-								label: format!(":{name}:"),
-								detail: None,
-								insert: format!("{glyph} "),
-								visual: Visual::Glyph(glyph.to_owned()),
+								label: format!(":{}:", custom.name),
+								detail: detail.clone(),
+								insert: format!("<{prefix}:{}:{}> ", custom.name, custom.id),
+								visual: Visual::Image(media::cdn::emoji_url(
+									custom.id.get(),
+									custom.animated,
+									EMOJI_PIXELS,
+								)),
 							},
 						));
 					}
+				}
+				let tone = cx.try_global::<SkinTone>().map_or(0, |tone| tone.0.get());
+				for entry in search_unicode(query).into_iter().take(MAX_SUGGESTIONS) {
+					let glyph = if entry.skin_tone_capable {
+						toned(entry.emoji, tone)
+					} else {
+						entry.emoji.to_owned()
+					};
+					found.push((
+						rank(entry.shortcode).unwrap_or(2),
+						Suggestion {
+							label: format!(":{}:", entry.shortcode),
+							detail: None,
+							insert: format!("{glyph} "),
+							visual: Visual::Glyph(glyph),
+						},
+					));
 				}
 			}
 		}
@@ -585,7 +615,7 @@ impl Composer {
 		let range = popup.start..popup.cursor;
 		self.input.update(cx, |state, cx| {
 			state.set_selected_range(range, cx);
-			state.replace(insert, window, cx);
+			inline_emoji::insert(state, &insert, window, cx);
 			state.focus(window, cx);
 		});
 		cx.notify();
@@ -601,11 +631,7 @@ impl Composer {
 		}
 		let files: Vec<UploadFile> = std::mem::take(&mut self.files)
 			.into_iter()
-			.map(|file| UploadFile {
-				name: file.name,
-				bytes: file.bytes,
-				content_type: file.content_type.to_owned(),
-			})
+			.map(Pending::upload)
 			.collect();
 		let direct = self.direct;
 		let reply_to = self.reply.take().map(|reply| ReplyTarget {
@@ -644,11 +670,27 @@ impl Composer {
 		if !self.access.attach || self.files.len() >= MAX_FILES {
 			return;
 		}
-		self.files.push(Attached {
-			content_type: content_type(&name),
-			name,
-			bytes: Bytes::from(bytes),
-		});
+		let id = self.next_file;
+		self.next_file += 1;
+		let file = Pending::new(id, name, Bytes::from(bytes));
+		if file.is_image() {
+			let bytes = file.bytes.clone();
+			cx.spawn(async move |this, cx| {
+				let decoded = cx
+					.background_executor()
+					.spawn(async move { attachments::decode_preview(&bytes) })
+					.await;
+				this.update(cx, |this, cx| {
+					if let Some(file) = this.files.iter_mut().find(|file| file.id == id) {
+						file.preview = decoded.and_then(attachments::preview);
+						cx.notify();
+					}
+				})
+				.ok();
+			})
+			.detach();
+		}
+		self.files.push(file);
 		cx.notify();
 	}
 
@@ -757,12 +799,17 @@ impl Composer {
 				.size(rem(24.))
 				.url(url.clone())
 				.into_any_element(),
-			Visual::Glyph(glyph) => div().text_size(rem(20.)).child(glyph.clone()).into_any_element(),
+			Visual::Glyph(glyph) => unicode_emoji(glyph, rem(24.), cx),
 			Visual::Image(url) => {
 				let image = cx.global::<Images>().get(url, SizeHint::square(EMOJI_PIXELS));
 				div()
 					.size(rem(24.))
-					.children(image.map(|image| img(image).size_full().object_fit(ObjectFit::Contain)))
+					.children(image.map(|image| {
+						img(image)
+							.id(frame_id(url))
+							.size_full()
+							.object_fit(ObjectFit::Contain)
+					}))
 					.into_any_element()
 			}
 			Visual::Channel(icon) => Icon::new(*icon)
@@ -835,66 +882,104 @@ impl Composer {
 		)
 	}
 
-	fn file_chips(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
+	fn file_cards(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
 		if self.files.is_empty() {
 			return None;
 		}
+		let cards = self.files.iter().map(|file| {
+			let weak = cx.weak_entity();
+			let id = file.id;
+			attachments::card(
+				file,
+				move |action, window, cx| {
+					weak.update(cx, |this, cx| this.on_card(id, action, window, cx))
+						.ok();
+				},
+				theme,
+				cx,
+			)
+		});
 		Some(
 			div()
+				.id("composer-attachments")
 				.flex()
-				.flex_wrap()
-				.gap(theme.space_8)
-				.p(theme.space_8)
-				.children(self.files.iter().enumerate().map(|(index, file)| {
-					div()
-						.flex()
-						.items_center()
-						.gap(theme.space_8)
-						.max_w(rem(240.))
-						.h(rem(36.))
-						.pl(theme.space_8)
-						.pr(theme.space_4)
-						.rounded(theme.radius_sm)
-						.bg(theme.background_secondary)
-						.child(
-							Icon::new(IconKind::File)
-								.size(rem(20.))
-								.color(theme.interactive_normal),
-						)
-						.child(
-							div()
-								.flex()
-								.flex_col()
-								.min_w_0()
-								.child(
-									div()
-										.truncate()
-										.text_size(theme.font_sm)
-										.text_color(theme.text_normal)
-										.child(file.name.clone()),
-								)
-								.child(
-									div()
-										.text_size(theme.font_tiny)
-										.text_color(theme.text_muted)
-										.child(format::file_size(file.bytes.len() as u64)),
-								),
-						)
-						.child(
-							IconButton::new(("file-remove", index), IconKind::Close)
-								.icon_size(rem(16.))
-								.hit_size(rem(24.))
-								.tooltip(cx.t("composer-remove-file"))
-								.on_click(cx.listener(move |this, _, _, cx| {
-									if index < this.files.len() {
-										this.files.remove(index);
-										cx.notify();
-									}
-								})),
-						)
-				}))
+				.gap(theme.space_16)
+				.px(theme.space_16)
+				.pt(theme.space_24)
+				.pb(theme.space_12)
+				.border_b_1()
+				.border_color(theme.divider)
+				.children(cards)
+				.overflow_x_scroll()
 				.into_any_element(),
 		)
+	}
+
+	fn on_card(&mut self, id: u64, action: CardAction, window: &mut Window, cx: &mut Context<Self>) {
+		let Some(index) = self.files.iter().position(|file| file.id == id) else {
+			return;
+		};
+		match action {
+			CardAction::Spoiler => {
+				let file = &mut self.files[index];
+				file.spoiler = !file.spoiler;
+			}
+			CardAction::Remove => {
+				self.files.remove(index);
+			}
+			CardAction::View => {
+				let file = &self.files[index];
+				if let Some(preview) = file.preview.clone() {
+					attachments::open_full_view(window, cx, file.name.clone(), preview);
+				}
+			}
+			CardAction::Modify => {
+				let weak = cx.weak_entity();
+				attachments::open_modify(window, cx, &self.files[index], move |edit, cx| {
+					weak.update(cx, |this, cx| this.apply_edit(id, edit, cx)).ok();
+				});
+			}
+		}
+		cx.notify();
+	}
+
+	fn apply_edit(&mut self, id: u64, edit: Edit, cx: &mut Context<Self>) {
+		let Some(file) = self.files.iter_mut().find(|file| file.id == id) else {
+			return;
+		};
+		file.name = edit.name;
+		file.content_type = content_type(&file.name);
+		file.description = edit.description;
+		file.spoiler = edit.spoiler;
+		cx.notify();
+		let Some(rect) = edit.crop else {
+			return;
+		};
+		let (bytes, name) = (file.bytes.clone(), file.name.clone());
+		cx.spawn(async move |this, cx| {
+			let processed = cx
+				.background_executor()
+				.spawn(async move {
+					let cropped = attachments::crop(&bytes, &name, rect)?;
+					let preview = attachments::decode_preview(&cropped.bytes);
+					Some((cropped, preview))
+				})
+				.await;
+			let Some((cropped, preview)) = processed else {
+				return;
+			};
+			this.update(cx, |this, cx| {
+				if let Some(file) = this.files.iter_mut().find(|file| file.id == id) {
+					file.content_type = content_type(&cropped.name);
+					file.name = cropped.name;
+					file.bytes = Bytes::from(cropped.bytes);
+					file.preview = preview.and_then(attachments::preview);
+					cx.notify();
+				}
+			})
+			.ok();
+		})
+		.detach();
 	}
 
 	fn reply_bar(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
@@ -980,7 +1065,7 @@ impl Render for Composer {
 		let typing = self.typing_line(cx);
 		let weak = cx.weak_entity();
 		let has_reply = self.reply.is_some();
-		let chips = self.file_chips(&theme, cx);
+		let chips = self.file_cards(&theme, cx);
 		let popup = self.popup(&theme, cx);
 		let reply_bar = self.reply_bar(&theme, cx);
 		let plugin_context = ViewContext {
@@ -1067,6 +1152,7 @@ impl Render for Composer {
 										.py(rem(2.))
 										.child(
 											Textarea::new(&self.input)
+												.token(inline_emoji::render)
 												.appearance(false)
 												.bordered(false)
 												.disabled(!access.send)

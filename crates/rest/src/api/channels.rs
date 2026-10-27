@@ -126,6 +126,7 @@ impl RestClient {
 				.map(|(index, file)| AttachmentDescriptor {
 					id: Snowflake(index as u64),
 					filename: Some(file.name.clone()),
+					description: file.description.clone(),
 					..AttachmentDescriptor::default()
 				})
 				.collect();
@@ -297,6 +298,17 @@ impl RestClient {
 	pub async fn join_thread(&self, channel_id: Snowflake) -> Result<()> {
 		self.send_empty(Request::put(format!("/channels/{channel_id}/thread-members/@me")))
 			.await
+	}
+
+	pub async fn update_thread_settings(
+		&self,
+		channel_id: Snowflake,
+		settings: Value,
+	) -> Result<ThreadMember> {
+		self.send(
+			Request::patch(format!("/channels/{channel_id}/thread-members/@me/settings")).json(&settings),
+		)
+		.await
 	}
 
 	pub async fn leave_thread(&self, channel_id: Snowflake) -> Result<()> {

@@ -25,7 +25,7 @@ use crate::components::{IconButton, unicode_emoji};
 use crate::format;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
-use crate::images::Images;
+use crate::images::{Images, frame_id};
 use crate::model::role_color;
 use crate::playback::MediaKey;
 use crate::theme::{Theme, rem, with_alpha};
@@ -44,6 +44,9 @@ const PLACEHOLDER_SIDE: u32 = 32;
 const REACTION_EMOJI: f32 = 16.;
 const ANIMATED_FLAG: u64 = 1 << 5;
 const EMBED_ITEM: u64 = 1 << 62;
+const SPOILER_FLAG: u64 = 1 << 3;
+const SPOILER_ITEM: usize = 1 << 40;
+const SPOILER_PREFIX: &str = "SPOILER_";
 
 pub fn fit(width: f32, height: f32, max_width: f32, max_height: f32) -> (f32, f32) {
 	let scale = (max_width / width).min(max_height / height).min(1.);
@@ -70,7 +73,13 @@ pub(super) fn picture(
 	let hint = SizeHint::new((width * 2.) as u32, (height * 2.) as u32);
 	let shown = images
 		.get(url, hint)
-		.map(|image| img(image).size_full().object_fit(fit_mode).into_any_element())
+		.map(|image| {
+			img(image)
+				.id(frame_id(url))
+				.size_full()
+				.object_fit(fit_mode)
+				.into_any_element()
+		})
 		.or_else(|| {
 			let hash = placeholder?;
 			let image = images.placeholder(hash, PLACEHOLDER_SIDE, PLACEHOLDER_SIDE)?;
@@ -130,16 +139,75 @@ fn is_image(attachment: &Attachment) -> bool {
 		.any(|extension| name.ends_with(&format!(".{extension}")))
 }
 
+fn is_spoiler(attachment: &Attachment) -> bool {
+	attachment.filename.starts_with(SPOILER_PREFIX)
+		|| attachment.flags.is_some_and(|flags| flags & SPOILER_FLAG != 0)
+}
+
+fn veiled(content: AnyElement, index: usize, env: &BodyEnv, cx: &App) -> AnyElement {
+	let theme = env.theme;
+	let dispatch = env.dispatch.clone();
+	let message = env.message_id;
+	div()
+		.relative()
+		.self_start()
+		.child(content)
+		.child(
+			div()
+				.id(("attachment-veil", index))
+				.absolute()
+				.top(theme.space_4)
+				.left_0()
+				.right_0()
+				.bottom_0()
+				.flex()
+				.items_center()
+				.justify_center()
+				.rounded(theme.radius_md)
+				.bg(theme.background_tertiary)
+				.occlude()
+				.cursor_pointer()
+				.on_click(move |_, window, cx| {
+					cx.stop_propagation();
+					dispatch(
+						RowAction::ToggleSpoiler(message, SPOILER_ITEM | index),
+						window,
+						cx,
+					)
+				})
+				.child(
+					div()
+						.px(theme.space_12)
+						.py(theme.space_4)
+						.rounded_full()
+						.bg(theme.background_floating)
+						.text_size(theme.font_sm)
+						.font_weight(FontWeight::BOLD)
+						.text_color(theme.header_primary)
+						.child(cx.t("attachment-spoiler-tag")),
+				),
+		)
+		.into_any_element()
+}
+
 pub fn attachments(items: &[Attachment], env: &BodyEnv, inline: bool, cx: &App) -> Vec<AnyElement> {
 	items
 		.iter()
-		.map(|attachment| {
+		.enumerate()
+		.map(|(index, attachment)| {
 			let kind = playable(attachment.content_type.as_deref(), &attachment.filename);
-			match (inline, kind) {
+			let content = match (inline, kind) {
 				(true, _) if is_image(attachment) => image_attachment(attachment, env, cx),
 				(true, Some(Playable::Video)) => video_attachment(attachment, env, cx),
 				(true, Some(Playable::Audio)) => audio_attachment(attachment, env, cx),
 				_ => file_card(attachment, kind == Some(Playable::Video), env, cx),
+			};
+			let hidden =
+				is_spoiler(attachment) && !env.revealed.contains(&(env.message_id, SPOILER_ITEM | index));
+			if hidden {
+				veiled(content, index, env, cx)
+			} else {
+				content
 			}
 		})
 		.collect()
@@ -873,7 +941,7 @@ fn reaction_chip(
 			div()
 				.flex_none()
 				.size(rem(REACTION_EMOJI))
-				.children(image.map(|image| img(image).size_full()))
+				.children(image.map(|image| img(image).id(frame_id(&url)).size_full()))
 				.into_any_element()
 		}
 		None => unicode_emoji(

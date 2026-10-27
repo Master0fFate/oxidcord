@@ -180,6 +180,14 @@ impl Core {
 		});
 	}
 
+	pub(super) fn patch_thread_settings(&self, thread_id: Snowflake, settings: Value) {
+		self.spawn_load("thread settings", move |rest| async move {
+			let mut member = rest.update_thread_settings(thread_id, settings).await?;
+			member.id = Some(thread_id);
+			Ok(Loaded::ThreadMember(Box::new(member)))
+		});
+	}
+
 	pub(super) fn patch_guild_mute(
 		&self,
 		guild_id: Option<Snowflake>,

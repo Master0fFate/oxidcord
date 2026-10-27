@@ -144,6 +144,7 @@ impl NewPost {
 				content_type: content_type(&file.name).to_owned(),
 				name: file.name,
 				bytes: file.bytes,
+				description: None,
 			})
 			.collect();
 		let mut tags: Vec<Snowflake> = self.chosen.iter().copied().collect();

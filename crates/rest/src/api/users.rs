@@ -26,6 +26,10 @@ impl RestClient {
 		self.send(request).await
 	}
 
+	pub async fn application_rpc(&self, id: Snowflake) -> Result<Value> {
+		self.send(Request::get(format!("/applications/{id}/rpc"))).await
+	}
+
 	pub async fn mentions(&self, limit: u8) -> Result<LenientVec<Message>> {
 		let request = Request::get("/users/@me/mentions").query(&[
 			("limit", limit.to_string().as_str()),

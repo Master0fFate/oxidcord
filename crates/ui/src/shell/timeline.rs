@@ -20,6 +20,7 @@ use session::{Command, ReplyTarget};
 use state::{Changes, MessageRow};
 
 use super::community::act;
+use super::inline_emoji::{self, EmojiTokens};
 use super::message::{
 	Dispatch, DocumentCache, Editing, ImageTarget, MessageAccess, Prefs, RowAction, RowEnv, Welcome,
 	render_row,
@@ -692,31 +693,42 @@ impl Timeline {
 				.submit_on_enter(true)
 		});
 		input.update(cx, |state, cx| {
-			state.set_value(content, window, cx);
+			state.set_value(inline_emoji::content(content), window, cx);
 			state.focus(window, cx);
 		});
-		let subscription = cx.subscribe_in(&input, window, move |this, input, event: &InputEvent, _, cx| {
-			let InputEvent::PressEnter {
-				secondary: false,
-				shift: false,
-			} = event
-			else {
-				return;
-			};
-			let text = input.read(cx).value().trim().to_owned();
-			if !text.is_empty() {
-				this.data.read(cx).send(Command::EditMessage {
-					channel_id: channel,
-					message_id,
-					content: text,
-				});
-			}
-			this.stop_editing(cx);
-		});
+		let subscription = cx.subscribe_in(
+			&input,
+			window,
+			move |this, input, event: &InputEvent, window, cx| {
+				if let InputEvent::Change = event {
+					if let Some(editing) = &mut this.editing {
+						editing.tokens.sync(input, window, cx);
+					}
+					return;
+				}
+				let InputEvent::PressEnter {
+					secondary: false,
+					shift: false,
+				} = event
+				else {
+					return;
+				};
+				let text = input.read(cx).value().trim().to_owned();
+				if !text.is_empty() {
+					this.data.read(cx).send(Command::EditMessage {
+						channel_id: channel,
+						message_id,
+						content: text,
+					});
+				}
+				this.stop_editing(cx);
+			},
+		);
 		self._subscriptions.push(subscription);
 		self.editing = Some(Editing {
 			message: message_id,
 			input,
+			tokens: EmojiTokens::default(),
 		});
 		self.remeasure(message_id, cx);
 		cx.notify();

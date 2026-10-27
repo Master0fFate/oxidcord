@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
-use gpui::{Global, RenderImage};
+use gpui::{ElementId, Global, RenderImage};
 use image::{Delay, Frame, RgbaImage};
 use lru::LruCache;
 use media::{Decoded, DecodedImage, MediaService, SizeHint};
@@ -73,7 +73,7 @@ fn bgra(image: &DecodedImage) -> Option<RgbaImage> {
 	Some(buffer)
 }
 
-fn render_image(decoded: &Decoded, still: bool) -> Option<(Arc<RenderImage>, usize)> {
+pub fn render_image(decoded: &Decoded, still: bool) -> Option<(Arc<RenderImage>, usize)> {
 	let frames: SmallVec<[Frame; 1]> = match decoded {
 		Decoded::Still(image) => smallvec::smallvec![Frame::new(bgra(image)?)],
 		Decoded::Animated(animation) => animation
@@ -240,6 +240,12 @@ pub fn mock_url(origin: &Url, url: &str) -> String {
 		Some(file) => format!("{}media/{:016x}-{file}", origin, hasher.finish()),
 		None => format!("{}media/{:016x}.png", origin, hasher.finish()),
 	}
+}
+
+pub fn frame_id(url: &str) -> ElementId {
+	let mut hasher = DefaultHasher::new();
+	url.hash(&mut hasher);
+	ElementId::NamedInteger("frame".into(), hasher.finish())
 }
 
 pub fn from_rgba(mut buffer: RgbaImage) -> Arc<RenderImage> {

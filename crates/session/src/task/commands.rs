@@ -1,7 +1,7 @@
 use protocol::rest::{ComponentInteraction, ComponentInteractionData};
 use protocol::{
 	ApplicationCommand, CreateMessage, DispatchEvent, MessageAck, MessageReference, MessageReferenceKind,
-	Permissions, Snowflake, StatusKind,
+	Permissions, Snowflake, StatusKind, ThreadMember,
 };
 use rest::UploadFile;
 use rest::api::image_data_uri;
@@ -70,6 +70,12 @@ impl Core {
 			| Command::JoinThread { .. }
 			| Command::LeaveThread { .. }
 			| Command::ArchiveThread { .. }
+			| Command::LockThread { .. }
+			| Command::EditThread { .. }
+			| Command::DeleteThread { .. }
+			| Command::MuteThread { .. }
+			| Command::UnmuteThread { .. }
+			| Command::SetThreadNotifications { .. }
 			| Command::LoadArchivedThreads { .. }
 			| Command::LoadActiveThreads { .. }
 			| Command::CreateForumPost { .. }
@@ -168,6 +174,45 @@ impl Core {
 						.await
 						.map(drop)
 				});
+			}
+			Command::LockThread { thread_id, locked } => {
+				if self.channel_allows(thread_id, Permissions::MANAGE_THREADS, "Manage Threads") {
+					self.spawn_action("lock thread", move |rest| async move {
+						rest.modify_channel(thread_id, json!({ "locked": locked }))
+							.await
+							.map(drop)
+					});
+				}
+			}
+			Command::EditThread {
+				thread_id,
+				name,
+				slowmode,
+				auto_archive_minutes,
+			} => self.spawn_action("edit thread", move |rest| async move {
+				let body = json!({
+					"name": name,
+					"rate_limit_per_user": slowmode,
+					"auto_archive_duration": auto_archive_minutes,
+				});
+				rest.modify_channel(thread_id, body).await.map(drop)
+			}),
+			Command::DeleteThread { thread_id } => {
+				if self.channel_allows(thread_id, Permissions::MANAGE_THREADS, "Manage Threads") {
+					self.spawn_action("delete thread", move |rest| async move {
+						rest.delete_channel(thread_id).await.map(drop)
+					});
+				}
+			}
+			Command::MuteThread { thread_id, until } => self.patch_thread_settings(
+				thread_id,
+				json!({ "muted": true, "mute_config": mute_config(true, until) }),
+			),
+			Command::UnmuteThread { thread_id } => {
+				self.patch_thread_settings(thread_id, json!({ "muted": false, "mute_config": null }));
+			}
+			Command::SetThreadNotifications { thread_id, level } => {
+				self.patch_thread_settings(thread_id, json!({ "flags": ThreadMember::level_flag(level) }))
 			}
 			Command::LoadArchivedThreads { channel_id } => {
 				let before = {

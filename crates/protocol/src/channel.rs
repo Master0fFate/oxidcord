@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::lenient::{LenientVec, flags_serde, int_enum, timestamp};
 use crate::member::Member;
 use crate::permissions::Permissions;
+use crate::settings::{MuteConfig, NotificationLevel};
 use crate::snowflake::Snowflake;
 use crate::user::User;
 
@@ -94,7 +95,37 @@ pub struct ThreadMember {
 	#[serde(deserialize_with = "timestamp")]
 	pub join_timestamp: Option<DateTime<Utc>>,
 	pub flags: Option<u64>,
+	pub muted: bool,
+	pub mute_config: Option<MuteConfig>,
 	pub member: Option<Member>,
+}
+
+impl ThreadMember {
+	pub const ALL_MESSAGES: u64 = 1 << 1;
+	pub const ONLY_MENTIONS: u64 = 1 << 2;
+	pub const NO_MESSAGES: u64 = 1 << 3;
+
+	pub fn notification_level(&self) -> NotificationLevel {
+		let flags = self.flags.unwrap_or(0);
+		if flags & Self::ALL_MESSAGES != 0 {
+			NotificationLevel::AllMessages
+		} else if flags & Self::ONLY_MENTIONS != 0 {
+			NotificationLevel::OnlyMentions
+		} else if flags & Self::NO_MESSAGES != 0 {
+			NotificationLevel::NoMessages
+		} else {
+			NotificationLevel::Inherit
+		}
+	}
+
+	pub fn level_flag(level: NotificationLevel) -> u64 {
+		match level {
+			NotificationLevel::AllMessages => Self::ALL_MESSAGES,
+			NotificationLevel::OnlyMentions => Self::ONLY_MENTIONS,
+			NotificationLevel::NoMessages => Self::NO_MESSAGES,
+			_ => 0,
+		}
+	}
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]

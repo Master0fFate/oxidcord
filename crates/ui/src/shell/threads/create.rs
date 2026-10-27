@@ -15,8 +15,8 @@ use crate::shell::community::modal::{self, Close};
 use crate::theme::Theme;
 
 const NAME_LIMIT: usize = 100;
-const ARCHIVE_MINUTES: [u32; 4] = [60, 1440, 4320, 10080];
-const ARCHIVE_KEYS: [&str; 4] = [
+pub(super) const ARCHIVE_MINUTES: [u32; 4] = [60, 1440, 4320, 10080];
+pub(super) const ARCHIVE_KEYS: [&str; 4] = [
 	"thread-archive-hour",
 	"thread-archive-day",
 	"thread-archive-three-days",

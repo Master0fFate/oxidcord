@@ -28,7 +28,7 @@ use super::bridge::{PluginBridge, act, flush_inputs, forget_input, note_input, r
 use super::icon::{self, PluginIcon};
 use crate::components::{Avatar, Divider, SectionHeader, tooltip};
 use crate::format;
-use crate::images::Images;
+use crate::images::{Images, frame_id};
 use crate::lookup::avatar_for;
 use crate::shell::account::rich::markdown_text;
 use crate::shell::links;
@@ -964,7 +964,12 @@ impl RenderOnce for PluginImage {
 			.overflow_hidden()
 			.when(round, |frame| frame.rounded_full())
 			.when(!round, |frame| frame.rounded(theme.radius_sm))
-			.children(image.map(|image| img(image).size_full().object_fit(ObjectFit::Contain)))
+			.children(image.map(|image| {
+				img(image)
+					.id(frame_id(&url))
+					.size_full()
+					.object_fit(ObjectFit::Contain)
+			}))
 			.into_any_element()
 	}
 }

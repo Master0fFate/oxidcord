@@ -96,7 +96,7 @@ impl GatewayHandle {
 		let data = if user_ids.is_empty() {
 			json!({ "guild_id": guild_id, "query": query, "limit": limit })
 		} else {
-			json!({ "guild_id": guild_id, "user_ids": user_ids, "limit": limit })
+			json!({ "guild_id": guild_id, "user_ids": user_ids, "limit": limit, "presences": true })
 		};
 		self.queue(Opcode::RequestGuildMembers, data)
 	}

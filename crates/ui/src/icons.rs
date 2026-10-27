@@ -107,6 +107,8 @@ pub enum IconKind {
 	GridLayout,
 	ListLayout,
 	Eye,
+	Gamepad,
+	EyeOff,
 	AuditLog,
 	UserX,
 	Mail,
@@ -144,6 +146,8 @@ pub enum IconKind {
 	Travel,
 	Objects,
 	Symbols,
+	Code,
+	Id,
 }
 
 impl IconKind {
@@ -199,6 +203,8 @@ impl IconKind {
 			Self::Travel => "oxidcord/icons/travel.svg",
 			Self::Objects => "oxidcord/icons/objects.svg",
 			Self::Symbols => "oxidcord/icons/symbols.svg",
+			Self::Code => "oxidcord/icons/code.svg",
+			Self::Id => "oxidcord/icons/id.svg",
 			_ => return None,
 		})
 	}
@@ -305,6 +311,8 @@ impl IconKind {
 			Self::GridLayout => IconName::LayoutGrid,
 			Self::ListLayout => IconName::LayoutList,
 			Self::Eye => IconName::Eye,
+			Self::Gamepad => IconName::Gamepad2,
+			Self::EyeOff => IconName::EyeOff,
 			Self::AuditLog => IconName::ScrollText,
 			Self::UserX => IconName::UserX,
 			Self::Mail => IconName::Mail,
@@ -342,6 +350,8 @@ impl IconKind {
 			Self::Travel => IconName::Car,
 			Self::Objects => IconName::Lightbulb,
 			Self::Symbols => IconName::Heart,
+			Self::Code => IconName::Code,
+			Self::Id => IconName::IdCard,
 		}
 	}
 }

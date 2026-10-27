@@ -127,6 +127,10 @@ impl TopBar {
 		cx.emit(TopBarEvent::Search(query));
 	}
 
+	pub fn search_in(&mut self, channel: Snowflake, window: &mut Window, cx: &mut Context<Self>) {
+		self.set_query(format!("in:<#{channel}> "), window, cx);
+	}
+
 	fn set_query(&mut self, text: String, window: &mut Window, cx: &mut Context<Self>) {
 		self.search
 			.update(cx, |input, cx| input.set_value(text, window, cx));

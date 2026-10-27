@@ -63,7 +63,7 @@ pub struct EmojiState {
 	hovered: Option<Hover>,
 }
 
-fn toned(glyph: &str, tone: usize) -> String {
+pub fn toned(glyph: &str, tone: usize) -> String {
 	if tone == 0 {
 		return glyph.to_owned();
 	}

@@ -84,9 +84,19 @@ fn count_of(value: i64) -> u32 {
 }
 
 fn activity_text(presence: &Presence) -> Option<String> {
-	let activity = presence.activities.first()?;
+	let custom = presence
+		.activities
+		.iter()
+		.filter(|activity| activity.kind == ActivityKind::Custom)
+		.find_map(|activity| activity.state.clone().filter(|state| !state.is_empty()));
+	if custom.is_some() {
+		return custom;
+	}
+	let activity = presence
+		.activities
+		.iter()
+		.find(|activity| activity.kind != ActivityKind::Custom)?;
 	let text = match activity.kind {
-		ActivityKind::Custom => return activity.state.clone().filter(|state| !state.is_empty()),
 		ActivityKind::Playing => format!("Playing {}", activity.name),
 		ActivityKind::Streaming => format!("Streaming {}", activity.name),
 		ActivityKind::Listening => format!("Listening to {}", activity.name),

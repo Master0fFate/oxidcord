@@ -17,10 +17,10 @@ use state::{MemberListRow, State};
 use super::community::developer_mode;
 use super::moderation;
 use super::plugins::{MenuTarget, PluginMenu as _};
-use crate::components::{Avatar, ContextMenuBuilder};
+use crate::components::{Avatar, ContextMenuBuilder, IconButton};
 use crate::data::Data;
 use crate::i18n::{ArgValue, Translate as _};
-use crate::icons::IconKind;
+use crate::icons::{Icon, IconKind};
 use crate::lookup::avatar_for;
 use crate::model::{Status, role_color, status_of};
 use crate::theme::{Theme, rem};
@@ -29,6 +29,7 @@ const AVATAR_PIXELS: u32 = 64;
 const SEARCH_LIMIT: usize = 100;
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(350);
 const SEARCH_GROUP: &str = "search";
+const SEARCH_HEIGHT: f32 = 30.;
 
 pub enum MemberListEvent {
 	OpenProfile { user: Snowflake, at: Point<Pixels> },
@@ -172,6 +173,66 @@ impl MemberList {
 			}));
 		self.input = Some(input.clone());
 		input
+	}
+
+	fn clear_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+		if let Some(input) = &self.input {
+			input.update(cx, |state, cx| {
+				state.set_value("", window, cx);
+				state.focus(window, cx);
+			});
+		}
+		self.on_search(String::new(), cx);
+	}
+
+	fn search_box(&self, search: &Entity<InputState>, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+		let trailing = if self.query.is_empty() {
+			Icon::new(IconKind::Search)
+				.size(theme.glyph_sm)
+				.color(theme.text_muted)
+				.into_any_element()
+		} else {
+			IconButton::new("member-search-clear", IconKind::Close)
+				.icon_size(theme.glyph_sm)
+				.hit_size(rem(SEARCH_HEIGHT - 6.))
+				.tooltip(cx.t("members-search-clear"))
+				.on_click(cx.listener(|this, _, window, cx| this.clear_search(window, cx)))
+				.into_any_element()
+		};
+		div()
+			.flex_none()
+			.px(theme.space_8)
+			.pt(theme.space_12)
+			.child(
+				div()
+					.flex()
+					.items_center()
+					.h(rem(SEARCH_HEIGHT))
+					.pl(theme.space_4)
+					.pr(theme.space_4)
+					.rounded(theme.radius_md)
+					.border_1()
+					.border_color(theme.divider)
+					.bg(theme.background_tertiary)
+					.child(
+						Input::new(search)
+							.appearance(false)
+							.bordered(false)
+							.focus_bordered(false)
+							.small()
+							.flex_1(),
+					)
+					.child(
+						div()
+							.flex()
+							.flex_none()
+							.items_center()
+							.justify_center()
+							.size(rem(SEARCH_HEIGHT - 6.))
+							.child(trailing),
+					),
+			)
+			.into_any_element()
 	}
 
 	fn row(
@@ -421,13 +482,7 @@ impl Render for MemberList {
 			.bg(theme.background_primary)
 			.border_l_1()
 			.border_color(theme.divider)
-			.child(
-				div()
-					.flex_none()
-					.px(theme.space_8)
-					.pt(theme.space_8)
-					.child(Input::new(&search).small()),
-			)
+			.child(self.search_box(&search, &theme, cx))
 			.when(!plugin_sections.is_empty(), |list| {
 				list.child(
 					div()

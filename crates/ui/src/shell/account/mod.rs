@@ -1,3 +1,4 @@
+mod activity;
 mod custom_status;
 mod full_profile;
 mod groups;
@@ -15,6 +16,7 @@ use gpui::{
 use protocol::Snowflake;
 use session::Command;
 
+pub use self::activity::{activities, activity_card};
 use self::full_profile::{FullProfile, FullTab};
 pub use self::groups::{GroupEvent, Groups};
 pub use self::pages::{AccountPages, DataDir, Note, PageEvent, Target, chat_page, note_page, streamer_page};

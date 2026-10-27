@@ -7,6 +7,7 @@ pub mod invites;
 pub mod menus;
 pub mod modal;
 pub mod notify;
+pub mod raw;
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -76,6 +77,8 @@ pub enum CommunityEvent {
 	OpenImage(ImageTarget),
 	OpenProfile { user: Snowflake, at: Point<Pixels> },
 	Jump { channel: Snowflake, message: Snowflake },
+	SearchIn(Snowflake),
+	Layout,
 }
 
 #[derive(Clone, Copy)]
@@ -147,10 +150,14 @@ impl Community {
 		let forum = cx.new(|_| ForumView::new(data.clone()));
 		let mut subscriptions = Vec::new();
 		subscriptions.push(
-			cx.subscribe_in(&panel, window, |this, _, event: &ThreadPanelEvent, _, cx| {
-				let ThreadPanelEvent::Close = event;
-				this.close_thread(cx);
-			}),
+			cx.subscribe_in(
+				&panel,
+				window,
+				|this, _, event: &ThreadPanelEvent, _, cx| match event {
+					ThreadPanelEvent::Close => this.close_thread(cx),
+					ThreadPanelEvent::Layout => cx.emit(CommunityEvent::Layout),
+				},
+			),
 		);
 		let thread_composer = panel.read(cx).composer().clone();
 		subscriptions.push(cx.subscribe_in(
@@ -358,6 +365,10 @@ impl Community {
 			},
 		));
 		self.float(Content::Threads(list), at, window, cx);
+	}
+
+	pub fn search_in(&mut self, channel: Snowflake, cx: &mut Context<Self>) {
+		cx.emit(CommunityEvent::SearchIn(channel));
 	}
 
 	pub fn open_pins(&mut self, at: Point<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
