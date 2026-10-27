@@ -71,6 +71,8 @@ const TEXT_ONLY: Permissions = Permissions::SEND_MESSAGES
 	.union(Permissions::USE_EXTERNAL_STICKERS)
 	.union(Permissions::MENTION_EVERYONE)
 	.union(Permissions::MANAGE_MESSAGES)
+	.union(Permissions::PIN_MESSAGES)
+	.union(Permissions::BYPASS_SLOWMODE)
 	.union(Permissions::MANAGE_THREADS)
 	.union(Permissions::READ_MESSAGE_HISTORY)
 	.union(Permissions::SEND_TTS_MESSAGES)
@@ -104,6 +106,7 @@ fn applicable(kind: ChannelType) -> Permissions {
 				| Permissions::READ_MESSAGE_HISTORY
 				| Permissions::USE_EXTERNAL_EMOJIS
 				| Permissions::MANAGE_MESSAGES
+				| Permissions::BYPASS_SLOWMODE
 		}
 		ChannelType::GuildCategory => GENERAL | TEXT_ONLY | VOICE_ONLY,
 		_ => GENERAL | TEXT_ONLY,

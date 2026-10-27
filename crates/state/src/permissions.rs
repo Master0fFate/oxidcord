@@ -153,6 +153,11 @@ impl State {
 		)
 	}
 
+	pub fn can_pin(&self, channel_id: Snowflake) -> bool {
+		self.my_permissions(channel_id)
+			.contains(Permissions::VIEW_CHANNEL | Permissions::PIN_MESSAGES)
+	}
+
 	pub fn can_manage_messages(&self, channel_id: Snowflake) -> bool {
 		self.my_permissions(channel_id)
 			.contains(Permissions::VIEW_CHANNEL | Permissions::MANAGE_MESSAGES)

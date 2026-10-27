@@ -4,8 +4,8 @@ use std::ops::Range;
 
 use chrono::{DateTime, Local};
 use gpui::{
-	AnyElement, App, ElementId, FontStyle, FontWeight, HighlightStyle, InteractiveText, IntoElement,
-	ParentElement as _, SharedString, StrikethroughStyle, Styled as _, StyledText, UnderlineStyle, div, img,
+	AnyElement, App, ElementId, FontStyle, FontWeight, HighlightStyle, IntoElement, ParentElement as _,
+	SharedString, StrikethroughStyle, Styled as _, StyledText, UnderlineStyle, div, img,
 	prelude::FluentBuilder as _, px,
 };
 use markdown::highlight::{TokenKind, highlight};
@@ -13,6 +13,7 @@ use markdown::{Color, Document, GuildNavKind, Node, TimestampStyle};
 use media::SizeHint;
 use protocol::Snowflake;
 
+use super::selectable::SelectableRun;
 use super::{Dispatch, Prefs, RowAction};
 use crate::format;
 use crate::i18n::Translate as _;
@@ -23,6 +24,10 @@ use crate::theme::{Theme, rem, with_alpha};
 const EMOJI_SIZE: f32 = 22.;
 const JUMBO_EMOJI_SIZE: f32 = 48.;
 const JUMBO_TEXT_SIZE: f32 = 40.;
+const SNOWFLAKE_TIME_SHIFT: u32 = 22;
+const RUN_INDEX_BITS: u32 = 20;
+const RUN_INDEX_MASK: u64 = (1 << RUN_INDEX_BITS) - 1;
+const SELECTION_ALPHA: f32 = 0.35;
 
 pub struct BodyEnv<'a> {
 	pub theme: &'a Theme,
@@ -88,16 +93,29 @@ impl<'a> BodyEnv<'a> {
 		size * self.prefs.font_scale
 	}
 
-	fn next_spoiler(&self) -> usize {
+	pub(super) fn next_spoiler(&self) -> usize {
 		let index = self.spoilers.get();
 		self.spoilers.set(index + 1);
 		index
 	}
 
-	fn next_paragraph(&self) -> ElementId {
+	fn next_paragraph(&self) -> (ElementId, u64) {
 		let index = self.paragraphs.get();
 		self.paragraphs.set(index + 1);
-		SharedString::from(format!("md-{}-{index}", self.message_id)).into()
+		let id = SharedString::from(format!("md-{}-{index}", self.message_id)).into();
+		let order = ((self.message_id >> SNOWFLAKE_TIME_SHIFT) << RUN_INDEX_BITS) | (index & RUN_INDEX_MASK);
+		(id, order)
+	}
+
+	fn selectable(&self, text: SharedString, styled: StyledText) -> SelectableRun {
+		let (id, order) = self.next_paragraph();
+		SelectableRun::new(
+			id,
+			text,
+			styled,
+			order,
+			with_alpha(self.theme.brand, SELECTION_ALPHA),
+		)
 	}
 }
 
@@ -142,6 +160,7 @@ enum Glyph {
 		width: f32,
 		height: f32,
 	},
+	Unicode(String),
 }
 
 #[derive(Clone)]
@@ -193,6 +212,23 @@ impl Inline {
 		}
 	}
 
+	fn push_text(&mut self, text: &str, style: &Style) {
+		if style.spoiler.is_some() {
+			self.push(text, style);
+			return;
+		}
+		let mut cursor = 0;
+		for (range, url) in media::twemoji::find(text) {
+			self.push(&text[cursor..range.start], style);
+			self.emoji.push(EmojiAt {
+				at: self.text.len(),
+				glyph: Glyph::Unicode(url),
+			});
+			cursor = range.end;
+		}
+		self.push(&text[cursor..], style);
+	}
+
 	fn is_empty(&self) -> bool {
 		self.text.is_empty() && self.emoji.is_empty()
 	}
@@ -221,29 +257,30 @@ impl Inline {
 
 	fn text_element(self, env: &BodyEnv) -> AnyElement {
 		let code_font = env.theme.code_font.clone();
-		let styled = StyledText::new(self.text)
+		let text = SharedString::from(self.text);
+		let styled = StyledText::new(text.clone())
 			.with_highlights(self.runs)
 			.with_font_family_overrides(self.codes.into_iter().map(|range| (range, code_font.clone())));
+		let run = env.selectable(text, styled);
 		if self.clicks.is_empty() {
-			return styled.into_any_element();
+			return run.into_any_element();
 		}
 		let ranges: Vec<Range<usize>> = self.clicks.iter().map(|(range, _)| range.clone()).collect();
 		let targets: Vec<Click> = self.clicks.into_iter().map(|(_, click)| click).collect();
 		let dispatch = env.dispatch.clone();
 		let message_id = env.message_id;
-		InteractiveText::new(env.next_paragraph(), styled)
-			.on_click(ranges, move |index, window, cx| {
-				let action = match &targets[index] {
-					Click::Link(url) => RowAction::OpenLink(url.clone()),
-					Click::Spoiler(spoiler) => RowAction::ToggleSpoiler(message_id, *spoiler),
-					Click::User(user) => RowAction::OpenProfile {
-						user: *user,
-						at: window.mouse_position(),
-					},
-				};
-				dispatch(action, window, cx);
-			})
-			.into_any_element()
+		run.on_click(ranges, move |index, window, cx| {
+			let action = match &targets[index] {
+				Click::Link(url) => RowAction::OpenLink(url.clone()),
+				Click::Spoiler(spoiler) => RowAction::ToggleSpoiler(message_id, *spoiler),
+				Click::User(user) => RowAction::OpenProfile {
+					user: *user,
+					at: window.mouse_position(),
+				},
+			};
+			dispatch(action, window, cx);
+		})
+		.into_any_element()
 	}
 
 	fn into_element(self, env: &BodyEnv, cx: &App) -> AnyElement {
@@ -262,6 +299,7 @@ impl Inline {
 			children.push(match &emoji.glyph {
 				Glyph::Emoji { id, animated } => emoji_element(*id, *animated, size, cx),
 				Glyph::Image { url, width, height } => image_element(url, *width, *height, cx),
+				Glyph::Unicode(url) => unicode_element(url, size, cx),
 			});
 			cursor = emoji.at;
 		}
@@ -309,6 +347,17 @@ fn emoji_element(id: u64, animated: bool, size: f32, cx: &App) -> AnyElement {
 	let pixels = (size * 2.) as u32;
 	let url = media::cdn::emoji_url(id, animated, pixels);
 	let image = cx.global::<Images>().get(&url, SizeHint::square(pixels));
+	div()
+		.flex_none()
+		.size(rem(size))
+		.mx(rem(1.))
+		.when_some(image, |slot, image| slot.child(img(image).size_full()))
+		.into_any_element()
+}
+
+fn unicode_element(url: &str, size: f32, cx: &App) -> AnyElement {
+	let pixels = (size * 2.) as u32;
+	let image = cx.global::<Images>().get(url, SizeHint::square(pixels));
 	div()
 		.flex_none()
 		.size(rem(size))
@@ -423,7 +472,7 @@ impl<'a> Blocks<'a> {
 	fn inline_node(&mut self, node: &Node, style: &Style) {
 		let theme = self.env.theme;
 		match node {
-			Node::Text(text) => self.inline.push(text, style),
+			Node::Text(text) => self.inline.push_text(text, style),
 			Node::Bold(children) => {
 				let next = Self::styled(style, |h| h.font_weight = Some(FontWeight::BOLD));
 				self.children(children, &next);
@@ -656,7 +705,11 @@ impl<'a> Blocks<'a> {
 			.font_family(theme.code_font.clone())
 			.text_size(self.env.scaled(theme.font_sm))
 			.line_height(rem(18.) * self.env.prefs.font_scale)
-			.child(StyledText::new(code).with_highlights(runs))
+			.child({
+				let text = SharedString::from(code);
+				self.env
+					.selectable(text.clone(), StyledText::new(text).with_highlights(runs))
+			})
 			.into_any_element()
 	}
 }

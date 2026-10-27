@@ -1,8 +1,8 @@
 use chrono::Utc;
 use gpui::{
-	AnyElement, App, FontWeight, InteractiveElement as _, IntoElement, ObjectFit, ParentElement as _,
-	SharedString, StatefulInteractiveElement as _, Styled as _, StyledImage as _, div, img,
-	prelude::FluentBuilder as _,
+	AnyElement, App, FontWeight, InteractiveElement as _, IntoElement, MouseButton, ObjectFit,
+	ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _, StyledImage as _, div,
+	img, prelude::FluentBuilder as _,
 };
 use gpui_component::Sizable as _;
 use gpui_component::button::{Button, ButtonVariants as _};
@@ -20,8 +20,8 @@ use super::body::{BodyEnv, render_body};
 use super::player::{self, AudioSource, FileInfo, LoopSource, VideoSource, VoiceSource};
 use super::provider;
 use super::reaction_tip;
-use super::{ImageTarget, RowAction};
-use crate::components::IconButton;
+use super::{ImageTarget, RowAction, point_link, point_media, with_link_menu};
+use crate::components::{IconButton, unicode_emoji};
 use crate::format;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
@@ -92,7 +92,7 @@ fn proxied(url: &str, width: f32, height: f32) -> String {
 	attachment_proxy(url, (width * 2.) as u32, (height * 2.) as u32, ProxyFormat::Webp)
 }
 
-fn proxied_media(url: &str, animated: bool, width: f32, height: f32) -> String {
+pub(super) fn proxied_media(url: &str, animated: bool, width: f32, height: f32) -> String {
 	if animated {
 		animated_proxy(url, (width * 2.) as u32, (height * 2.) as u32)
 	} else {
@@ -167,7 +167,8 @@ fn video_attachment(attachment: &Attachment, env: &BodyEnv, cx: &App) -> AnyElem
 	let (native_width, native_height) = dimensions(attachment.width, attachment.height);
 	let (width, height) = fit(native_width, native_height, MAX_IMAGE_WIDTH, MAX_IMAGE_HEIGHT);
 	let url = attachment_source(attachment);
-	player::video(
+	let link = url.clone();
+	let video = player::video(
 		VideoSource {
 			key: MediaKey {
 				message: env.message_id,
@@ -182,7 +183,8 @@ fn video_attachment(attachment: &Attachment, env: &BodyEnv, cx: &App) -> AnyElem
 		},
 		env,
 		cx,
-	)
+	);
+	with_link_menu(&link, video)
 }
 
 fn audio_attachment(attachment: &Attachment, env: &BodyEnv, cx: &App) -> AnyElement {
@@ -191,8 +193,9 @@ fn audio_attachment(attachment: &Attachment, env: &BodyEnv, cx: &App) -> AnyElem
 		item: attachment.id.get(),
 	};
 	let url = attachment_source(attachment);
+	let link = url.clone();
 	if attachment.waveform.is_some() {
-		return player::voice_message(
+		let voice = player::voice_message(
 			VoiceSource {
 				key,
 				url,
@@ -202,8 +205,9 @@ fn audio_attachment(attachment: &Attachment, env: &BodyEnv, cx: &App) -> AnyElem
 			env,
 			cx,
 		);
+		return with_link_menu(&link, voice);
 	}
-	player::audio(
+	let audio = player::audio(
 		AudioSource {
 			key,
 			url,
@@ -211,7 +215,8 @@ fn audio_attachment(attachment: &Attachment, env: &BodyEnv, cx: &App) -> AnyElem
 		},
 		env,
 		cx,
-	)
+	);
+	with_link_menu(&link, audio)
 }
 
 fn image_attachment(attachment: &Attachment, env: &BodyEnv, cx: &App) -> AnyElement {
@@ -230,9 +235,11 @@ fn image_attachment(attachment: &Attachment, env: &BodyEnv, cx: &App) -> AnyElem
 		width: native_width as u32,
 		height: native_height as u32,
 	};
+	let pointed = point_media(&target, &target.url);
 	let dispatch = env.dispatch.clone();
 	div()
 		.id(("attachment", attachment.id.get()))
+		.on_mouse_down(MouseButton::Right, pointed)
 		.mt(theme.space_4)
 		.w(rem(width))
 		.h(rem(height))
@@ -399,10 +406,12 @@ fn bare_media(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<An
 		width: native_width as u32,
 		height: native_height as u32,
 	};
+	let pointed = point_media(&target, &url);
 	let dispatch = env.dispatch.clone();
 	Some(
 		div()
 			.id(("embed-media", index))
+			.on_mouse_down(MouseButton::Right, pointed)
 			.mt(env.theme.space_4)
 			.w(rem(width))
 			.h(rem(height))
@@ -436,7 +445,8 @@ fn gifv(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<AnyEleme
 		.unwrap_or(video);
 	let (native_width, native_height) = dimensions(sized.width, sized.height);
 	let (width, height) = fit(native_width, native_height, MAX_IMAGE_WIDTH, MAX_IMAGE_HEIGHT);
-	Some(player::gif_loop(
+	let link = embed.url.clone().or_else(|| video.url.clone())?;
+	let gif = player::gif_loop(
 		LoopSource {
 			key: embed_key(env, index),
 			url: media_url(video)?.to_owned(),
@@ -451,7 +461,8 @@ fn gifv(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<AnyEleme
 		},
 		env,
 		cx,
-	))
+	);
+	Some(with_link_menu(&link, gif))
 }
 
 fn embedded_video(
@@ -475,7 +486,12 @@ fn embedded_video(
 		.and_then(media_url)
 		.map(|url| proxied(url, width, height))
 		.or_else(|| video_poster(&url, (width * 2.) as u32, (height * 2.) as u32));
-	Some(player::video(
+	let link = embed
+		.url
+		.clone()
+		.or_else(|| video.url.clone())
+		.unwrap_or_else(|| url.clone());
+	let player = player::video(
 		VideoSource {
 			key: embed_key(env, index),
 			url,
@@ -489,7 +505,8 @@ fn embedded_video(
 		},
 		env,
 		cx,
-	))
+	);
+	Some(with_link_menu(&link, player))
 }
 
 fn link_text(
@@ -560,7 +577,7 @@ fn embed_card(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<An
 	let accent = embed
 		.color
 		.and_then(|color| u32::try_from(color).ok())
-		.map_or(theme.divider, role_color);
+		.map_or(theme.interactive_muted, role_color);
 	let key = index * 16;
 	let mut column = div().flex().flex_col().flex_1().min_w_0().gap(theme.space_4);
 	column = column.children(provider_line(embed, key, env));
@@ -626,7 +643,11 @@ fn embed_card(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<An
 			cx,
 		));
 	} else if let Some(player) = video_player {
-		column = column.child(provider::video(embed_key(env, index), player, embed, env, cx));
+		let frame = provider::video(embed_key(env, index), player, embed, env, cx);
+		column = column.child(match embed.url.as_deref() {
+			Some(link) => with_link_menu(link, frame),
+			None => frame,
+		});
 	} else {
 		let large = embed.image.as_ref().or_else(|| {
 			embed
@@ -641,7 +662,11 @@ fn embed_card(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<An
 		}
 	}
 	if let Some(player) = widget_player {
-		column = column.child(provider::widget(embed_key(env, index), player, embed, env, cx));
+		let frame = provider::widget(embed_key(env, index), player, embed, env, cx);
+		column = column.child(match embed.url.as_deref() {
+			Some(link) => with_link_menu(link, frame),
+			None => frame,
+		});
 	}
 	if embed.footer.is_some() || embed.timestamp.is_some() {
 		let footer = embed.footer.as_ref().map(|footer| footer.text.clone());
@@ -764,9 +789,16 @@ fn large_media(
 		width: native_width as u32,
 		height: native_height as u32,
 	};
+	let pointed = point_media(&image_target, url);
+	let link_target = target_url.clone().map(|url| point_link(&url));
 	let dispatch = env.dispatch.clone();
 	div()
 		.id(("embed-large", index))
+		.map(|frame| match (playable, link_target) {
+			(true, Some(link)) => frame.on_mouse_down(MouseButton::Right, link),
+			(true, None) => frame,
+			(false, _) => frame.on_mouse_down(MouseButton::Right, pointed),
+		})
 		.relative()
 		.mt(theme.space_4)
 		.w(rem(width))
@@ -844,11 +876,11 @@ fn reaction_chip(
 				.children(image.map(|image| img(image).size_full()))
 				.into_any_element()
 		}
-		None => div()
-			.text_size(rem(REACTION_EMOJI))
-			.line_height(rem(REACTION_EMOJI + 2.))
-			.child(reaction.emoji.name.clone().unwrap_or_default())
-			.into_any_element(),
+		None => unicode_emoji(
+			reaction.emoji.name.as_deref().unwrap_or_default(),
+			rem(REACTION_EMOJI),
+			cx,
+		),
 	};
 	let key = emoji_key(&reaction.emoji);
 	let add = !reaction.me;
@@ -876,8 +908,8 @@ fn reaction_chip(
 		.flex()
 		.items_center()
 		.gap(rem(6.))
-		.h(rem(24.))
-		.px(rem(6.))
+		.h(rem(26.))
+		.px(theme.space_8)
 		.rounded(theme.radius_md)
 		.border_1()
 		.cursor_pointer()
@@ -885,12 +917,12 @@ fn reaction_chip(
 		.font_weight(FontWeight::SEMIBOLD)
 		.when(me, |chip| {
 			chip.border_color(theme.brand)
-				.bg(with_alpha(theme.brand, 0.15))
+				.bg(with_alpha(theme.brand, 0.24))
 				.text_color(theme.mention_text)
 		})
 		.when(!me, |chip| {
-			chip.border_color(theme.background_secondary)
-				.bg(theme.background_secondary)
+			chip.border_color(theme.button_secondary)
+				.bg(theme.button_secondary)
 				.text_color(theme.interactive_normal)
 				.hover(|style| style.border_color(theme.interactive_muted))
 		})

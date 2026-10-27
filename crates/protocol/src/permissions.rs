@@ -54,6 +54,8 @@ bitflags! {
 		const SEND_VOICE_MESSAGES = 1 << 46;
 		const SEND_POLLS = 1 << 49;
 		const USE_EXTERNAL_APPS = 1 << 50;
+		const PIN_MESSAGES = 1 << 51;
+		const BYPASS_SLOWMODE = 1 << 52;
 	}
 }
 

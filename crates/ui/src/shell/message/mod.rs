@@ -1,8 +1,11 @@
 mod body;
+mod components;
 mod media;
+mod menu;
 mod player;
 mod provider;
 mod reaction_tip;
+mod selectable;
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -28,12 +31,12 @@ use state::{MessageRow, MessageView, RenderedMessage};
 
 pub use self::body::snippet;
 use self::body::{BodyEnv, render_body};
+use self::menu::{MenuSource, capabilities, capture_pointer};
+pub(in crate::shell) use self::menu::{point_link, point_media, with_link_menu};
 pub use self::reaction_tip::ReactionRequests;
 use super::community;
-use super::plugins::{
-	MenuTarget, PatchEffects, PluginMenu as _, author_badge, message_actions, message_extras, patch_effects,
-};
-use crate::components::{Avatar, ContextMenuBuilder, IconButton, tooltip};
+use super::plugins::{PatchEffects, author_badge, message_actions, message_extras, patch_effects};
+use crate::components::{Avatar, IconButton, tooltip};
 use crate::format;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
@@ -131,6 +134,7 @@ pub struct ImageTarget {
 	pub height: u32,
 }
 
+#[derive(Clone)]
 pub enum RowAction {
 	OpenLink(String),
 	Download(String),
@@ -184,16 +188,28 @@ pub enum RowAction {
 	Select(Snowflake),
 	DeleteSelected,
 	Report,
+	UseComponent(session::ComponentUse),
+	RunCommand {
+		message: Snowflake,
+		command: Box<protocol::ApplicationCommand>,
+	},
+	Save {
+		message: Snowflake,
+		due: Option<DateTime<Utc>>,
+	},
+	Publish(Snowflake),
 }
 
 #[derive(Clone, Copy, Default)]
 pub struct MessageAccess {
 	pub send: bool,
 	pub react: bool,
+	pub read_history: bool,
 	pub manage_messages: bool,
+	pub pin: bool,
 	pub create_threads: bool,
 	pub in_thread: bool,
-	pub guild: bool,
+	pub announcement: bool,
 }
 
 #[derive(Clone)]
@@ -229,6 +245,30 @@ fn sent_at(message: &Message) -> DateTime<Utc> {
 
 fn message_hover_background() -> Hsla {
 	hsla(0., 0., 0., 0.06)
+}
+
+fn highlighted(view: &MessageView, tint: Option<Hsla>) -> bool {
+	tint.is_none() && view.mentions_me
+}
+
+fn row_hover(view: &MessageView, tint: Option<Hsla>, theme: &Theme) -> Hsla {
+	if highlighted(view, tint) {
+		crate::theme::with_alpha(theme.warning, 0.12)
+	} else {
+		message_hover_background()
+	}
+}
+
+fn mention_highlight(row: gpui::Stateful<gpui::Div>, theme: &Theme) -> gpui::Stateful<gpui::Div> {
+	row.bg(crate::theme::with_alpha(theme.warning, 0.08)).child(
+		div()
+			.absolute()
+			.left_0()
+			.top_0()
+			.bottom_0()
+			.w(rem(2.))
+			.bg(theme.warning),
+	)
 }
 
 pub fn render_row(row: &MessageRow, env: &RowEnv, cx: &App) -> AnyElement {
@@ -714,142 +754,16 @@ fn forward_block(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 		.into_any_element()
 }
 
-fn menu_for(view: &MessageView, env: &RowEnv, cx: &App) -> ContextMenuBuilder {
-	let message = &view.message;
-	let id = message.id;
-	let channel_id = message.channel_id;
-	let guild = message.guild_id;
-	let content = match message.forwarded_message() {
-		Some(source) => source.content.clone(),
-		None => message.content.clone(),
-	};
-	let mine = Some(message.author.id) == env.me;
-	let reply = env.dispatch.clone();
-	let edit = env.dispatch.clone();
-	let delete = env.dispatch.clone();
-	let mut menu = ContextMenuBuilder::new();
-	if env.access.send {
-		menu = menu.item(cx.t("message-reply"), Some(IconKind::Reply), move |window, cx| {
-			reply(RowAction::Reply(id), window, cx)
-		});
-	}
-	if mine {
-		menu = menu.item(cx.t("message-edit"), Some(IconKind::Edit), move |window, cx| {
-			edit(RowAction::StartEdit(id), window, cx)
-		});
-	}
-	menu = menu
-		.separator()
-		.item(cx.t("menu-copy-text"), Some(IconKind::Copy), move |_, _| {
-			if let Err(error) = platform::clipboard::write_text(&content) {
-				tracing::warn!(%error, "could not copy the message text");
-			}
-		})
-		.item(cx.t("menu-copy-link"), Some(IconKind::Link), move |_, _| {
-			let scope = guild.map_or_else(|| "@me".to_owned(), |guild| guild.to_string());
-			let link = format!("https://discord.com/channels/{scope}/{channel_id}/{id}");
-			if let Err(error) = platform::clipboard::write_text(&link) {
-				tracing::warn!(%error, "could not copy the message link");
-			}
-		})
-		.item(cx.t("menu-forward"), Some(IconKind::Forward), {
-			let forward = env.dispatch.clone();
-			move |window, cx| forward(RowAction::Forward(id), window, cx)
-		});
-	if env.prefs.developer_mode {
-		menu = menu.item(cx.t("menu-copy-id"), Some(IconKind::Copy), move |_, _| {
-			if let Err(error) = platform::clipboard::write_text(&id.to_string()) {
-				tracing::warn!(%error, "could not copy the message id");
-			}
-		});
-	}
-	menu = menu.separator();
-	let access = env.access;
-	if access.manage_messages || !access.guild {
-		let pinned = message.pinned;
-		let pin = env.dispatch.clone();
-		menu = menu.item(
-			cx.t(if pinned { "menu-unpin" } else { "menu-pin" }),
-			Some(if pinned { IconKind::Unpin } else { IconKind::Pin }),
-			move |window, cx| {
-				pin(
-					RowAction::Pin {
-						message: id,
-						pin: !pinned,
-					},
-					window,
-					cx,
-				)
-			},
-		);
-	}
-	let threadable = matches!(message.kind, MessageType::Default | MessageType::Reply);
-	if access.create_threads && !access.in_thread && threadable && message.thread.is_none() {
-		let create = env.dispatch.clone();
-		menu = menu.item(
-			cx.t("menu-create-thread"),
-			Some(IconKind::NewThread),
-			move |window, cx| create(RowAction::CreateThread(id), window, cx),
-		);
-	}
-	let mark_unread = env.dispatch.clone();
-	menu = menu.item(
-		cx.t("menu-mark-unread"),
-		Some(IconKind::Inbox),
-		move |window, cx| mark_unread(RowAction::MarkUnread(id), window, cx),
-	);
-	if access.manage_messages {
-		let select = env.dispatch.clone();
-		let selected = env.selection.contains(&id);
-		menu = menu.item(
-			cx.t(if selected {
-				"menu-deselect-message"
-			} else {
-				"menu-select-message"
-			}),
-			Some(IconKind::Check),
-			move |window, cx| select(RowAction::Select(id), window, cx),
-		);
-		if !env.selection.is_empty() {
-			let bulk = env.dispatch.clone();
-			menu = menu.danger_item(
-				cx.t_args(
-					"menu-delete-selected",
-					&[("count", ArgValue::from(env.selection.len()))],
-				),
-				Some(IconKind::Trash),
-				move |window, cx| bulk(RowAction::DeleteSelected, window, cx),
-			);
-		}
-	}
-	if mine || access.manage_messages {
-		menu = menu.danger_item(cx.t("menu-delete"), Some(IconKind::Trash), move |window, cx| {
-			delete(RowAction::Delete(id), window, cx)
-		});
-	}
-	if !mine {
-		let report = env.dispatch.clone();
-		menu = menu.danger_item(cx.t("menu-report"), Some(IconKind::Flag), move |window, cx| {
-			report(RowAction::Report, window, cx)
-		});
-	}
-	menu.plugin_items(
-		"message-context-menu",
-		MenuTarget::message(message, env.lookup.guild, env.me),
-		cx,
-	)
-}
-
 fn toolbar(view: &MessageView, group: SharedString, env: &RowEnv, cx: &App) -> AnyElement {
 	let theme = env.theme;
 	let message = &view.message;
 	let id = message.id;
 	let key = id.get();
-	let mine = Some(message.author.id) == env.me;
+	let can = capabilities(message, env.access, env.me);
 	let react = env.dispatch.clone();
 	let reply = env.dispatch.clone();
 	let edit = env.dispatch.clone();
-	let more_menu = menu_for(view, env, cx).build();
+	let more_menu = MenuSource::new(message, env).into_menu().build();
 	div()
 		.invisible()
 		.group_hover(group, |style| style.visible())
@@ -864,7 +778,7 @@ fn toolbar(view: &MessageView, group: SharedString, env: &RowEnv, cx: &App) -> A
 		.border_1()
 		.border_color(theme.divider)
 		.bg(theme.background_primary)
-		.when(env.access.react, |bar| {
+		.when(can.react, |bar| {
 			bar.child(
 				IconButton::new(("message-react", key), IconKind::Emoji)
 					.filled_hover()
@@ -883,7 +797,7 @@ fn toolbar(view: &MessageView, group: SharedString, env: &RowEnv, cx: &App) -> A
 					}),
 			)
 		})
-		.when(env.access.send, |bar| {
+		.when(can.reply, |bar| {
 			bar.child(
 				IconButton::new(("message-reply", key), IconKind::Reply)
 					.filled_hover()
@@ -893,7 +807,7 @@ fn toolbar(view: &MessageView, group: SharedString, env: &RowEnv, cx: &App) -> A
 					.on_click(move |_, window, cx| reply(RowAction::Reply(id), window, cx)),
 			)
 		})
-		.when(mine, |bar| {
+		.when(can.edit, |bar| {
 			bar.child(
 				IconButton::new(("message-edit", key), IconKind::Edit)
 					.filled_hover()
@@ -1079,12 +993,14 @@ fn content_column(
 	);
 	let filtered = media_source(message, effects);
 	let media_message = filtered.as_ref().unwrap_or(message);
-	out.extend(media::attachments(
-		&media_message.attachments,
-		&body_env,
-		env.prefs.inline_media,
-		cx,
-	));
+	if !message.flags.contains(protocol::MessageFlags::IS_COMPONENTS_V2) {
+		out.extend(media::attachments(
+			&media_message.attachments,
+			&body_env,
+			env.prefs.inline_media,
+			cx,
+		));
+	}
 	if !message.flags.contains(protocol::MessageFlags::SUPPRESS_EMBEDS) {
 		out.extend(media::embeds(
 			&media_message.embeds,
@@ -1093,6 +1009,7 @@ fn content_column(
 			cx,
 		));
 	}
+	out.extend(components::render(media_message, &body_env, cx));
 	if let Some(effects) = effects {
 		out.extend(effects.cards(message.embeds.len(), message.id, theme));
 	}
@@ -1272,6 +1189,7 @@ fn interactive(
 	let selecting = !env.selection.is_empty();
 	let dispatch = env.dispatch.clone();
 	let row = row
+		.capture_any_mouse_down(|_, window, cx| capture_pointer(window, cx))
 		.when(env.selection.contains(&id), |row| {
 			row.bg(crate::theme::with_alpha(env.theme.brand, 0.14))
 		})
@@ -1281,7 +1199,7 @@ fn interactive(
 			}
 		});
 	row.child(toolbar(view, group, env, cx))
-		.context_menu(menu_for(view, env, cx).build())
+		.context_menu(MenuSource::new(&view.message, env).into_menu().build())
 		.into_any_element()
 }
 
@@ -1296,6 +1214,7 @@ fn message_row(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 	let content = content_column(view, env, effects.as_ref(), cx);
 	let accent = effects.as_ref().and_then(|effects| effects.accent(theme));
 	let tint = effects.as_ref().and_then(|effects| effects.background(theme));
+	let hover = row_hover(view, tint, theme);
 	let container = div()
 		.id(("message", id))
 		.group(group.clone())
@@ -1305,10 +1224,11 @@ fn message_row(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 		.pl(rem(72.))
 		.pr(rem(48.))
 		.py(rem(2.))
-		.hover(|style| style.bg(message_hover_background()))
+		.hover(move |style| style.bg(hover))
 		.when(view.pending, |row| row.opacity(0.5))
 		.when(view.deleted, |row| row.opacity(DELETED_OPACITY))
 		.when(view.failed, |row| row.text_color(theme.danger))
+		.when(highlighted(view, tint), |row| mention_highlight(row, theme))
 		.when_some(tint, |row, tint| row.bg(tint))
 		.when_some(accent, |row, accent| row.border_l_2().border_color(accent));
 	if view.grouped_with_previous {
@@ -1416,6 +1336,7 @@ fn compact_message(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 	let content = content_column(view, env, effects.as_ref(), cx);
 	let accent = effects.as_ref().and_then(|effects| effects.accent(theme));
 	let tint = effects.as_ref().and_then(|effects| effects.background(theme));
+	let hover = row_hover(view, tint, theme);
 	let row = div()
 		.id(("message", id))
 		.group(group.clone())
@@ -1424,9 +1345,10 @@ fn compact_message(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 		.items_start()
 		.min_h(theme.compact_row)
 		.pr(rem(48.))
-		.hover(|style| style.bg(message_hover_background()))
+		.hover(move |style| style.bg(hover))
 		.when(view.pending, |row| row.opacity(0.5))
 		.when(view.deleted, |row| row.opacity(DELETED_OPACITY))
+		.when(highlighted(view, tint), |row| mention_highlight(row, theme))
 		.when_some(tint, |row, tint| row.bg(tint))
 		.when_some(accent, |row, accent| row.border_l_2().border_color(accent))
 		.child(

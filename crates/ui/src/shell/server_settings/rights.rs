@@ -151,6 +151,16 @@ pub const GROUPS: &[RightGroup] = &[
 				hint: "right-manage-messages-hint",
 			},
 			Right {
+				flag: Permissions::PIN_MESSAGES,
+				name: "right-pin-messages",
+				hint: "right-pin-messages-hint",
+			},
+			Right {
+				flag: Permissions::BYPASS_SLOWMODE,
+				name: "right-bypass-slowmode",
+				hint: "right-bypass-slowmode-hint",
+			},
+			Right {
 				flag: Permissions::MANAGE_THREADS,
 				name: "right-manage-threads",
 				hint: "right-manage-threads-hint",

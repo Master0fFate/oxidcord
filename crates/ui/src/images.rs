@@ -152,6 +152,54 @@ impl Images {
 		self.retained.set(retained);
 	}
 
+	pub fn copy_image(&self, url: &str) {
+		let url = self.resolve(url);
+		let media = self.media.clone();
+		self.media.runtime().spawn(async move {
+			let copied = async {
+				let bytes = media
+					.fetcher()
+					.fetch(&url)
+					.await
+					.map_err(|error| error.to_string())?;
+				let decoded = image::load_from_memory(&bytes)
+					.map_err(|error| error.to_string())?
+					.to_rgba8();
+				let (width, height) = decoded.dimensions();
+				platform::clipboard::write_image(&platform::clipboard::RgbaImage {
+					width: width as usize,
+					height: height as usize,
+					bytes: decoded.into_raw(),
+				})
+				.map_err(|error| error.to_string())
+			};
+			if let Err(error) = copied.await {
+				tracing::warn!(%error, "could not copy the image");
+			}
+		});
+	}
+
+	pub fn save_image(&self, url: &str, name: String) {
+		let url = self.resolve(url);
+		let media = self.media.clone();
+		self.media.runtime().spawn(async move {
+			let Some(handle) = rfd::AsyncFileDialog::new().set_file_name(&name).save_file().await else {
+				return;
+			};
+			let saved = async {
+				let bytes = media
+					.fetcher()
+					.fetch(&url)
+					.await
+					.map_err(|error| error.to_string())?;
+				handle.write(&bytes).await.map_err(|error| error.to_string())
+			};
+			if let Err(error) = saved.await {
+				tracing::warn!(%error, "could not save the image");
+			}
+		});
+	}
+
 	pub fn placeholder(&self, hash: &str, width: u32, height: u32) -> Option<Arc<RenderImage>> {
 		let mut placeholders = self.placeholders.borrow_mut();
 		if let Some(image) = placeholders.get(hash) {
@@ -165,8 +213,8 @@ impl Images {
 
 	fn resolve(&self, url: &str) -> String {
 		match &self.mock_origin {
-			Some(origin) => mock_url(origin, url),
-			None => url.to_owned(),
+			Some(origin) if !media::twemoji::is_pack_url(url) => mock_url(origin, url),
+			_ => url.to_owned(),
 		}
 	}
 }
