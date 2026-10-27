@@ -4,6 +4,7 @@ mod headless;
 mod plugin;
 mod release;
 mod theme;
+mod twemoji;
 
 use std::process::ExitCode;
 
@@ -23,6 +24,7 @@ enum Task {
 	Plugin(plugin::PluginArgs),
 	Release(release::ReleaseArgs),
 	Theme(theme::ThemeArgs),
+	Twemoji(twemoji::TwemojiArgs),
 	FmtCheck,
 	Lint,
 	CheckAll,
@@ -36,6 +38,7 @@ fn main() -> ExitCode {
 		Task::Plugin(args) => plugin::run(args),
 		Task::Release(args) => release::run(args),
 		Task::Theme(args) => theme::run(args),
+		Task::Twemoji(args) => twemoji::run(args),
 		Task::FmtCheck => checks::fmt_check(),
 		Task::Lint => checks::lint(),
 		Task::CheckAll => checks::check_all(),

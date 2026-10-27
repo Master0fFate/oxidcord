@@ -8,6 +8,7 @@ pub mod placeholder;
 pub mod providers;
 mod resize;
 mod service;
+pub mod twemoji;
 mod types;
 
 pub use cache::{DiskCache, MemoryCache, SizeHint};

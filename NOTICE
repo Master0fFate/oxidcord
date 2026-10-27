@@ -6,3 +6,8 @@ endorsed by or sponsored by Discord Inc. "Discord" is a trademark of Discord Inc
 Using a third-party client with a Discord user account can violate the Discord
 Terms of Service and can lead to account termination. See the Disclaimer section
 of README.md.
+
+Emoji graphics in assets/twemoji.pack are Twemoji, copyright Twitter, Inc. and
+other contributors, from https://github.com/jdecked/twemoji, licensed under
+CC-BY 4.0 (https://creativecommons.org/licenses/by/4.0/). The images are
+repackaged into one file and otherwise unchanged.

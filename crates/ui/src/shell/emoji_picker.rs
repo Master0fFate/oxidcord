@@ -8,6 +8,7 @@ use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::scroll::ScrollableElement as _;
 use media::SizeHint;
 
+use crate::components::unicode_emoji;
 use crate::emoji::{self, CATEGORIES};
 use crate::i18n::Translate as _;
 use crate::images::Images;
@@ -152,10 +153,9 @@ impl EmojiPicker {
 			.size(rem(CELL))
 			.rounded(theme.radius_sm)
 			.cursor_pointer()
-			.text_size(rem(24.))
 			.hover(|style| style.bg(theme.modifier_selected))
 			.on_click(cx.listener(move |this, _, _, cx| this.pick(choice.clone(), cx)))
-			.child(glyph)
+			.child(unicode_emoji(glyph, rem(24.), cx))
 			.into_any_element()
 	}
 

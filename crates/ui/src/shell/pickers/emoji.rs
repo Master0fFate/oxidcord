@@ -11,7 +11,7 @@ use protocol::{EmojiCategory, Snowflake};
 use state::{CatalogEmoji, EmojiCatalog, EmojiRef};
 
 use super::{Picker, PickerEvent};
-use crate::components::{Avatar, ContextMenuBuilder, tooltip};
+use crate::components::{Avatar, ContextMenuBuilder, tooltip, unicode_emoji};
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
 use crate::shell::community::art::cover;
@@ -30,15 +30,15 @@ const TONES: [&str; 6] = [
 	"\u{1F3FF}",
 ];
 const TONE_SAMPLE: &str = "\u{1F44B}";
-const SECTION_GLYPHS: [&str; 8] = [
-	"\u{1F600}",
-	"\u{1F43B}",
-	"\u{1F354}",
-	"\u{26BD}",
-	"\u{1F697}",
-	"\u{1F4A1}",
-	"\u{2764}",
-	"\u{1F3C1}",
+const SECTION_ICONS: [IconKind; 8] = [
+	IconKind::Emoji,
+	IconKind::Nature,
+	IconKind::Food,
+	IconKind::Activity,
+	IconKind::Travel,
+	IconKind::Objects,
+	IconKind::Symbols,
+	IconKind::Flag,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -196,7 +196,6 @@ impl Picker {
 			.size(theme.picker_cell)
 			.rounded(theme.radius_sm)
 			.cursor_pointer()
-			.text_size(theme.font_xl)
 			.hover(|style| style.bg(theme.modifier_selected))
 			.on_hover(cx.listener(move |this, over: &bool, _, cx| {
 				if *over {
@@ -205,7 +204,7 @@ impl Picker {
 				}
 			}))
 			.on_click(cx.listener(move |_, _, _, cx| cx.emit(PickerEvent::Emoji(choice.clone()))))
-			.child(shown)
+			.child(unicode_emoji(&shown, rem(32.), cx))
 			.into_any_element()
 	}
 
@@ -327,7 +326,11 @@ impl Picker {
 		Button::new("emoji-tone")
 			.ghost()
 			.small()
-			.label(format!("{TONE_SAMPLE}{}", TONES[current]))
+			.child(unicode_emoji(
+				&format!("{TONE_SAMPLE}{}", TONES[current]),
+				rem(20.),
+				cx,
+			))
 			.tooltip(cx.t("picker-emoji-tone"))
 			.dropdown_menu(menu.build())
 			.into_any_element()
@@ -439,29 +442,31 @@ impl Picker {
 		}
 		for (index, section) in catalog.unicode.iter().enumerate() {
 			let name = section.category.name();
-			let glyph = SECTION_GLYPHS[EmojiCategory::ALL
+			let icon = SECTION_ICONS[EmojiCategory::ALL
 				.iter()
 				.position(|category| *category == section.category)
 				.unwrap_or(0)];
-			rail.push(self.rail_item(
-				100 + index,
-				Section::Unicode(index),
-				!searching && active == Section::Unicode(index),
-				(
-					cx.t(&format!("picker-emoji-{name}")),
-					div().text_size(theme.font_lg).child(glyph).into_any_element(),
+			rail.push(
+				self.rail_item(
+					100 + index,
+					Section::Unicode(index),
+					!searching && active == Section::Unicode(index),
+					(
+						cx.t(&format!("picker-emoji-{name}")),
+						Icon::new(icon)
+							.size(theme.glyph_md)
+							.color(theme.interactive_normal)
+							.into_any_element(),
+					),
+					theme,
+					cx,
 				),
-				theme,
-				cx,
-			));
+			);
 		}
 		let hovered = self.emoji.hovered.clone();
 		let preview = hovered.map(|hover| {
 			let visual: AnyElement = match (&hover.glyph, hover.custom) {
-				(Some(glyph), _) => div()
-					.text_size(theme.font_xl)
-					.child(glyph.clone())
-					.into_any_element(),
+				(Some(glyph), _) => unicode_emoji(glyph, theme.glyph_lg, cx),
 				(None, Some((id, animated))) => div()
 					.size(theme.glyph_lg)
 					.child(cover(
