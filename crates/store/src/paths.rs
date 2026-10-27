@@ -84,6 +84,10 @@ impl Paths {
 		self.data.join("themes")
 	}
 
+	pub fn icons_dir(&self) -> PathBuf {
+		self.data.join("icons")
+	}
+
 	pub fn logs_dir(&self) -> PathBuf {
 		self.data.join("logs")
 	}

@@ -132,11 +132,75 @@ pub enum IconKind {
 	Pause,
 	FileAudio,
 	Replay,
+	CirclePlus,
+	Bookmark,
+	Apps,
+	Logo,
+	Back,
+	Ahead,
+	Nature,
+	Food,
+	Activity,
+	Travel,
+	Objects,
+	Symbols,
 }
 
 impl IconKind {
 	pub fn path(self) -> SharedString {
-		self.name().path()
+		match self.drawn() {
+			Some(path) => SharedString::new_static(path),
+			None => self.name().path(),
+		}
+	}
+
+	fn drawn(self) -> Option<&'static str> {
+		Some(match self {
+			Self::Hash => "oxidcord/icons/hash.svg",
+			Self::Volume => "oxidcord/icons/volume.svg",
+			Self::VolumeOff => "oxidcord/icons/volume-off.svg",
+			Self::Megaphone => "oxidcord/icons/megaphone.svg",
+			Self::Forum => "oxidcord/icons/forum.svg",
+			Self::Stage => "oxidcord/icons/stage.svg",
+			Self::Thread => "oxidcord/icons/thread.svg",
+			Self::Lock => "oxidcord/icons/lock.svg",
+			Self::Bell => "oxidcord/icons/bell.svg",
+			Self::BellOff => "oxidcord/icons/bell-off.svg",
+			Self::Pin => "oxidcord/icons/pin.svg",
+			Self::Members => "oxidcord/icons/members.svg",
+			Self::Friends => "oxidcord/icons/friends.svg",
+			Self::Inbox => "oxidcord/icons/inbox.svg",
+			Self::Help => "oxidcord/icons/help.svg",
+			Self::Mic => "oxidcord/icons/mic.svg",
+			Self::MicOff => "oxidcord/icons/mic-off.svg",
+			Self::Headphones => "oxidcord/icons/headphones.svg",
+			Self::HeadphonesOff => "oxidcord/icons/headphones-off.svg",
+			Self::Settings => "oxidcord/icons/settings.svg",
+			Self::CirclePlus => "oxidcord/icons/circle-plus.svg",
+			Self::Gift => "oxidcord/icons/gift.svg",
+			Self::Gif => "oxidcord/icons/gif.svg",
+			Self::Sticker => "oxidcord/icons/sticker.svg",
+			Self::Emoji | Self::Smile => "oxidcord/icons/emoji.svg",
+			Self::Send => "oxidcord/icons/send.svg",
+			Self::Reply => "oxidcord/icons/reply.svg",
+			Self::Edit => "oxidcord/icons/edit.svg",
+			Self::More => "oxidcord/icons/more.svg",
+			Self::Trash => "oxidcord/icons/trash.svg",
+			Self::Compass => "oxidcord/icons/compass.svg",
+			Self::Phone => "oxidcord/icons/phone.svg",
+			Self::Video => "oxidcord/icons/video.svg",
+			Self::Folder => "oxidcord/icons/folder.svg",
+			Self::Logo => "oxidcord/icons/oxidcord.svg",
+			Self::Apps => "oxidcord/icons/apps.svg",
+			Self::Flag => "oxidcord/icons/flag.svg",
+			Self::Nature => "oxidcord/icons/nature.svg",
+			Self::Food => "oxidcord/icons/food.svg",
+			Self::Activity => "oxidcord/icons/activity.svg",
+			Self::Travel => "oxidcord/icons/travel.svg",
+			Self::Objects => "oxidcord/icons/objects.svg",
+			Self::Symbols => "oxidcord/icons/symbols.svg",
+			_ => return None,
+		})
 	}
 
 	fn name(self) -> IconName {
@@ -266,6 +330,18 @@ impl IconKind {
 			Self::Pause => IconName::Pause,
 			Self::FileAudio => IconName::FileMusic,
 			Self::Replay => IconName::RotateCcw,
+			Self::CirclePlus => IconName::CirclePlus,
+			Self::Bookmark => IconName::Bookmark,
+			Self::Logo => IconName::Bot,
+			Self::Apps => IconName::LayoutGrid,
+			Self::Back => IconName::ArrowLeft,
+			Self::Ahead => IconName::ArrowRight,
+			Self::Nature => IconName::Leaf,
+			Self::Food => IconName::Apple,
+			Self::Activity => IconName::Volleyball,
+			Self::Travel => IconName::Car,
+			Self::Objects => IconName::Lightbulb,
+			Self::Symbols => IconName::Heart,
 		}
 	}
 }
