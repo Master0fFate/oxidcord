@@ -103,7 +103,7 @@ impl FriendsPage {
 			.w(theme.friends_active_width)
 			.h_full()
 			.border_l_1()
-			.border_color(theme.background_tertiary)
+			.border_color(theme.divider)
 			.p(theme.space_16)
 			.gap(theme.space_16)
 			.child(

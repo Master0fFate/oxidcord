@@ -10,14 +10,14 @@ crates/rest         HTTP client: rate-limit buckets, 429 retry, Authorization re
 crates/state        normalized store, permission math, read state, message cache
 crates/store        sqlite cache and settings, token in the OS keyring
 crates/markdown     Discord markdown parser to AST to layout model
-crates/media        image and animation decoding, texture cache, ranged fetch, embed provider allowlist
+crates/media        image and animation decoding, texture cache, ranged fetch, embed provider allowlist, bundled Twemoji pack
 crates/player       audio and video playback for chat media: symphonia demux, FFmpeg codec pack, platform decoders
 crates/ui           native views and components, theme tokens
 crates/platform     tray, notifications, keyring, single instance, hotkeys
 crates/plugin-host  WebAssembly component runtime, capability broker, UI slot renderer
 crates/plugin-sdk   guest-side SDK for plugin authors
 tools/mockcord      mock Discord REST and gateway server driven by fixtures
-tools/xtask         headless-run, package, plugin pack, conformance runner
+tools/xtask         headless-run, package, plugin pack, conformance runner, twemoji pack
 plugins/            first-party example plugins
 ```
 
@@ -33,9 +33,9 @@ Every enum that Discord may extend has an `Unknown(i64)` or `Unknown(String)` va
 
 ## Security boundaries
 
-- Token: `Token` newtype, not `Clone`, not `Debug` printable, zeroized on drop, stored via `keyring`. Plaintext fallback only behind the explicit `storage.plaintext_token` setting.
+- Token: `Token` newtype, not `Clone`, not `Debug` printable, zeroized on drop, stored via `keyring`. Plaintext fallback only behind the explicit `storage.plaintext_token` setting, written with a user-only ACL on Windows and 0600 on unix.
 - Network: HTTPS only. Redirects drop the Authorization header. Response bodies are capped.
-- Plugins: see `docs/plugin-api/overview.md`. No WASI, no host handles, every host function gated by a manifest permission the user approved.
+- Plugins: see `docs/plugin-api/overview.md`. WASI only with an empty, network-free context, no host handles, every host function gated by a manifest permission the user approved.
 
 ## Platform
 

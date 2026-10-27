@@ -8,7 +8,7 @@ use gpui::{
 
 use super::tooltip::tooltip;
 use crate::icons::{Icon, IconKind};
-use crate::theme::{Theme, rem};
+use crate::theme::{Theme, rem, with_alpha};
 
 type ClickHandler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
@@ -22,6 +22,7 @@ pub struct IconButton {
 	active: bool,
 	filled_hover: bool,
 	color: Option<Hsla>,
+	tinted: bool,
 	on_click: Option<ClickHandler>,
 }
 
@@ -36,6 +37,7 @@ impl IconButton {
 			active: false,
 			filled_hover: false,
 			color: None,
+			tinted: false,
 			on_click: None,
 		}
 	}
@@ -70,6 +72,12 @@ impl IconButton {
 		self
 	}
 
+	pub fn tinted(mut self, color: Hsla) -> Self {
+		self.color = Some(color);
+		self.tinted = true;
+		self
+	}
+
 	pub fn on_click(mut self, handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
 		self.on_click = Some(Rc::new(handler));
 		self
@@ -87,7 +95,11 @@ impl RenderOnce for IconButton {
 		};
 		let hover_background = theme.modifier_hover;
 		let active_background = theme.modifier_selected;
-		let radius = theme.radius_sm;
+		let radius = theme.radius_md;
+		let tint = self
+			.color
+			.filter(|_| self.tinted)
+			.map(|color| with_alpha(color, 0.14));
 		let filled_hover = self.filled_hover;
 		let active = self.active;
 		let icon = Icon::new(self.icon)
@@ -105,6 +117,7 @@ impl RenderOnce for IconButton {
 			.rounded(radius)
 			.cursor_pointer()
 			.when(active && filled_hover, |button| button.bg(active_background))
+			.when_some(tint, |button, tint| button.bg(tint))
 			.when(filled_hover && !active, |button| {
 				button.hover(move |style| style.bg(hover_background))
 			})

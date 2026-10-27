@@ -300,7 +300,7 @@ impl Render for LoginScreen {
 			.text_color(theme.text_normal)
 			.text_size(theme.font_md)
 			.font_family(theme.ui_font.clone())
-			.child(TitleBar)
+			.child(TitleBar::new())
 			.child(
 				div()
 					.flex()

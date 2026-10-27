@@ -306,7 +306,7 @@ impl RenderOnce for SidebarPanel {
 			.max_h(rem(SIDEBAR_PANEL_MAX_HEIGHT))
 			.overflow_hidden()
 			.border_t_1()
-			.border_color(theme.background_tertiary)
+			.border_color(theme.divider)
 			.bg(theme.background_secondary)
 			.children(sections)
 			.into_any_element()

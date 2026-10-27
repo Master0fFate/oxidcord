@@ -5,6 +5,7 @@ mod composer;
 mod dm_sidebar;
 mod emoji_picker;
 mod friends;
+mod history;
 mod lightbox;
 mod links;
 mod login;
@@ -15,6 +16,7 @@ mod pickers;
 mod plugins;
 mod profile;
 mod quick_switcher;
+mod search_hints;
 mod search_panel;
 mod server_rail;
 mod server_settings;
@@ -33,9 +35,10 @@ use std::rc::Rc;
 use std::time::Instant;
 
 use gpui::{
-	Anchor, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement as _,
-	IntoElement, ParentElement as _, Pixels, Point, Render, SharedString, Styled as _, Subscription, Task,
-	Window, anchored, deferred, div, prelude::FluentBuilder as _,
+	Anchor, AnyElement, AppContext as _, ClickEvent, Context, Entity, EventEmitter, FocusHandle, Focusable,
+	InteractiveElement as _, IntoElement, MouseButton, NavigationDirection, ParentElement as _, Pixels,
+	Point, Render, SharedString, Styled as _, Subscription, Task, Window, anchored, deferred, div,
+	prelude::FluentBuilder as _,
 };
 use gpui_component::WindowExt as _;
 use platform::notifications::Notification;
@@ -50,6 +53,7 @@ use self::community::{Community, CommunityEvent, ComposerSlot, PickerTarget};
 use self::composer::{Composer, ComposerEvent};
 use self::dm_sidebar::{DmSidebar, DmSidebarEvent};
 use self::friends::{FriendsEvent, HomePage, HomePages};
+use self::history::{History, Place};
 use self::member_list::{MemberList, MemberListEvent};
 use self::message::{ImageTarget, snippet};
 use self::pickers::PickerTab;
@@ -60,14 +64,16 @@ use self::search_panel::{SearchEvent, SearchPanel};
 use self::server_rail::{RailEvent, ServerRail};
 use self::settings::{SettingsEvent, SettingsWindow};
 use self::timeline::{Timeline, TimelineEvent};
-use self::title_bar::TitleBar;
+use self::title_bar::{TitleBar, TitleContext};
 use self::top_bar::{TopBar, TopBarEvent, TopBarTitle};
 use self::user_panel::{UserPanel, UserPanelEvent};
 use self::voice::{CallToast, RoomEvent, UserMenu, UserMenuEvent, VoicePanel, VoiceRoom};
 use crate::actions::{
 	CloseOverlay, NextChannel, OpenQuickSwitcher, OpenSettings, PreviousChannel, SHELL_CONTEXT,
 };
+use crate::components::IconButton;
 use crate::data::{Data, DataEvent};
+use crate::i18n::Translate as _;
 use crate::icons::{IconKind, channel_icon};
 use crate::model::{Status, status_of};
 use crate::theme::{Theme, rem};
@@ -131,6 +137,7 @@ pub struct Shell {
 	last_channel: HashMap<Snowflake, Snowflake>,
 	last_dm: Option<Snowflake>,
 	recent_targets: Vec<SwitcherTarget>,
+	history: History,
 	panel: RightPanel,
 	members_visible: bool,
 	pending_jump: Option<Snowflake>,
@@ -367,12 +374,6 @@ impl Shell {
 					TopBarEvent::Pins { at } => this
 						.community
 						.update(cx, |community, cx| community.open_pins(*at, window, cx)),
-					TopBarEvent::Inbox { at } => this
-						.community
-						.update(cx, |community, cx| community.open_inbox(*at, window, cx)),
-					TopBarEvent::Help => this
-						.community
-						.update(cx, |community, cx| community.open_help(window, cx)),
 				},
 			),
 		);
@@ -527,6 +528,7 @@ impl Shell {
 			last_channel: HashMap::new(),
 			last_dm: None,
 			recent_targets: Vec::new(),
+			history: History::default(),
 			panel: RightPanel::Members,
 			members_visible: true,
 			pending_jump: None,
@@ -573,6 +575,11 @@ impl Shell {
 			},
 			cx,
 		);
+	}
+
+	fn sync_group_header(&mut self, cx: &mut Context<Self>) {
+		let group = self.groups.active(cx).then(|| self.groups.bar.clone().into());
+		self.top_bar.update(cx, |bar, cx| bar.set_group(group, cx));
 	}
 
 	fn refresh_direct_title(&mut self, cx: &mut Context<Self>) {
@@ -677,34 +684,30 @@ impl Shell {
 		self.select(Some(guild), channels[next], cx);
 	}
 
-	fn ensure_selection(&mut self, cx: &mut Context<Self>) {
-		if self.initial_selection_sent {
+	fn ensure_selection(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+		if self.initial_selection_sent || self.data.read(cx).state().selected().is_some() {
 			return;
 		}
-		let target = {
-			let data = self.data.read(cx);
-			let state = data.state();
-			if state.selected().is_some() {
-				return;
-			}
-			let guild = state
-				.guild_summaries()
-				.first()
-				.and_then(|summary| Some((summary.id, default_channel(&state, summary.id)?)));
-			match guild {
-				Some((guild, channel)) => Some((Some(guild), channel)),
-				None => state.dm_rows().first().map(|row| (None, row.channel_id)),
-			}
-		};
-		if let Some((guild, channel)) = target {
-			self.initial_selection_sent = true;
-			self.select(guild, channel, cx);
-		}
+		self.initial_selection_sent = true;
+		self.show_friends(window, cx);
+	}
+
+	fn show_friends(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+		self.plugin_ui.update(cx, |ui, cx| ui.close_page(cx));
+		self.home = true;
+		self.guild = None;
+		self.channel = None;
+		self.apply_selection(window, cx);
+		self.home_pages.show(HomePage::Friends, cx);
+		cx.notify();
 	}
 
 	fn sync_selection(&mut self, window: &mut Window, cx: &mut Context<Self>) {
 		let selected = self.data.read(cx).state().selected();
 		let Some(selected) = selected else {
+			if self.channel.is_some() {
+				self.show_friends(window, cx);
+			}
 			return;
 		};
 		let selected = self
@@ -723,6 +726,10 @@ impl Shell {
 			None => self.last_dm = Some(selected.channel_id),
 		}
 		self.remember_target(SwitcherTarget::Channel {
+			guild: selected.guild_id,
+			channel: selected.channel_id,
+		});
+		self.history.visit(Place {
 			guild: selected.guild_id,
 			channel: selected.channel_id,
 		});
@@ -747,6 +754,7 @@ impl Shell {
 		});
 		self.member_list.update(cx, |list, cx| list.show(guild, cx));
 		self.groups.show(channel.filter(|_| guild.is_none()), cx);
+		self.sync_group_header(cx);
 		let title = match described {
 			Some(item) if item.direct => TopBarTitle::Direct {
 				name: item.name,
@@ -807,7 +815,7 @@ impl Shell {
 
 	fn on_changes(&mut self, changes: &Changes, window: &mut Window, cx: &mut Context<Self>) {
 		if changes.guild_list || changes.private_channels {
-			self.ensure_selection(cx);
+			self.ensure_selection(window, cx);
 		}
 		if changes.selection {
 			self.sync_selection(window, cx);
@@ -818,6 +826,7 @@ impl Shell {
 		self.home_pages.on_changes(changes, cx);
 		if changes.private_channels || changes.relationships || changes.presence_any() {
 			self.groups.refresh(cx);
+			self.sync_group_header(cx);
 			self.refresh_direct_title(cx);
 		}
 		if changes.private_channels || changes.read_state || changes.presence_any() || changes.relationships {
@@ -1116,6 +1125,84 @@ impl Shell {
 		}
 	}
 
+	fn navigate(&mut self, direction: NavigationDirection, cx: &mut Context<Self>) {
+		let place = match direction {
+			NavigationDirection::Back => self.history.back(),
+			NavigationDirection::Forward => self.history.forward(),
+		};
+		if let Some(place) = place {
+			self.select(place.guild, place.channel, cx);
+			cx.notify();
+		}
+	}
+
+	fn history_button(&self, direction: NavigationDirection, cx: &mut Context<Self>) -> AnyElement {
+		let (id, icon, label, enabled) = match direction {
+			NavigationDirection::Back => (
+				"title-back",
+				IconKind::Back,
+				"title-back",
+				self.history.can_go_back(),
+			),
+			NavigationDirection::Forward => (
+				"title-forward",
+				IconKind::Ahead,
+				"title-forward",
+				self.history.can_go_forward(),
+			),
+		};
+		let muted = cx.global::<Theme>().interactive_muted;
+		IconButton::new(id, icon)
+			.icon_size(rem(18.))
+			.hit_size(rem(24.))
+			.tooltip(cx.t(label))
+			.when(!enabled, |button| button.color(muted))
+			.on_click(cx.listener(move |this, _, _, cx| this.navigate(direction, cx)))
+			.into_any_element()
+	}
+
+	fn title_bar(&self, cx: &mut Context<Self>) -> TitleBar {
+		let context = self.guild.and_then(|guild| {
+			let data = self.data.read(cx);
+			let state = data.state();
+			let guild = state.guild(guild)?;
+			Some(TitleContext {
+				name: guild.name.clone().into(),
+				icon: guild
+					.icon
+					.as_deref()
+					.map(|hash| media::cdn::guild_icon_url(guild.id.get(), hash, 64)),
+			})
+		});
+		let inbox = IconButton::new("title-inbox", IconKind::Inbox)
+			.icon_size(rem(18.))
+			.hit_size(rem(24.))
+			.tooltip(cx.t("top-bar-inbox"))
+			.on_click(cx.listener(|this, event: &ClickEvent, window, cx| {
+				let at = event.position();
+				this.community
+					.update(cx, |community, cx| community.open_inbox(at, window, cx));
+			}));
+		let help = IconButton::new("title-help", IconKind::Help)
+			.icon_size(rem(18.))
+			.hit_size(rem(24.))
+			.tooltip(cx.t("top-bar-help"))
+			.on_click(cx.listener(|this, _, window, cx| {
+				this.community
+					.update(cx, |community, cx| community.open_help(window, cx));
+			}));
+		let bar = TitleBar::new()
+			.leading([
+				self.history_button(NavigationDirection::Back, cx),
+				self.history_button(NavigationDirection::Forward, cx),
+			])
+			.trailing([inbox.into_any_element(), help.into_any_element()]);
+		match context {
+			Some(context) => bar.context(context),
+			None => bar,
+		}
+	}
+
 	fn room_visible(&self, cx: &gpui::App) -> bool {
 		let Some(channel) = self.channel else {
 			return false;
@@ -1299,7 +1386,7 @@ impl Shell {
 				let close = Rc::new(move |window: &mut Window, cx: &mut gpui::App| {
 					weak.update(cx, |this, cx| this.close_overlay(window, cx)).ok();
 				});
-				lightbox::lightbox(target, window, theme, cx, close)
+				lightbox::lightbox(target, &self.backend, window, theme, cx, close)
 			}
 			Overlay::Profile { card, at, anchor } => {
 				floating(card.clone().into_any_element(), *at, *anchor, cx)
@@ -1394,6 +1481,14 @@ impl Render for Shell {
 			.on_action(cx.listener(|this, _: &CloseOverlay, window, cx| this.close_overlay(window, cx)))
 			.on_action(cx.listener(|this, _: &PreviousChannel, _, cx| this.step_channel(false, cx)))
 			.on_action(cx.listener(|this, _: &NextChannel, _, cx| this.step_channel(true, cx)))
+			.on_mouse_down(
+				MouseButton::Navigate(NavigationDirection::Back),
+				cx.listener(|this, _, _, cx| this.navigate(NavigationDirection::Back, cx)),
+			)
+			.on_mouse_down(
+				MouseButton::Navigate(NavigationDirection::Forward),
+				cx.listener(|this, _, _, cx| this.navigate(NavigationDirection::Forward, cx)),
+			)
 			.relative()
 			.flex()
 			.flex_col()
@@ -1402,36 +1497,64 @@ impl Render for Shell {
 			.text_color(theme.text_normal)
 			.text_size(theme.font_md)
 			.font_family(theme.ui_font.clone())
-			.child(TitleBar)
+			.child(self.title_bar(cx))
 			.child(
 				div()
 					.flex()
 					.flex_1()
 					.min_h_0()
-					.child(self.rail.clone())
-					.when(show_sidebar, |body| {
-						body.child(
-							div()
-								.flex()
-								.flex_col()
-								.flex_none()
-								.w(theme.channel_sidebar_width)
-								.h_full()
-								.rounded_tl(theme.radius_md)
-								.overflow_hidden()
-								.child(
-									div()
-										.flex()
-										.flex_col()
-										.flex_1()
-										.min_h_0()
-										.overflow_hidden()
-										.child(sidebar),
-								)
-								.child(SidebarPanel)
-								.child(self.voice_panel.clone())
-								.child(self.user_panel.clone()),
-						)
+					.map(|body| {
+						if show_sidebar {
+							body.child(
+								div()
+									.flex()
+									.flex_col()
+									.flex_none()
+									.h_full()
+									.child(
+										div().flex().flex_1().min_h_0().child(self.rail.clone()).child(
+											div()
+												.flex()
+												.flex_col()
+												.flex_none()
+												.w(theme.channel_sidebar_width)
+												.h_full()
+												.rounded_tl(theme.radius_md)
+												.border_t_1()
+												.border_l_1()
+												.border_color(theme.divider)
+												.bg(theme.background_tertiary)
+												.overflow_hidden()
+												.child(
+													div()
+														.flex()
+														.flex_col()
+														.flex_1()
+														.min_h_0()
+														.overflow_hidden()
+														.child(sidebar),
+												)
+												.child(SidebarPanel),
+										),
+									)
+									.child(
+										div()
+											.flex()
+											.flex_col()
+											.flex_none()
+											.m(theme.space_8)
+											.rounded(theme.radius_md)
+											.border_1()
+											.border_color(theme.divider)
+											.bg(theme.user_panel_background)
+											.overflow_hidden()
+											.child(self.voice_panel.clone())
+											.child(self.user_panel.clone()),
+									),
+							)
+						} else {
+							body.child(self.rail.clone())
+						}
 					})
 					.child(
 						div()
@@ -1442,8 +1565,11 @@ impl Render for Shell {
 							.min_w_0()
 							.h_full()
 							.bg(theme.background_primary)
+							.border_t_1()
+							.border_l_1()
+							.border_color(theme.divider)
+							.when(!show_sidebar, |column| column.rounded_tl(theme.radius_md))
 							.child(self.top_bar.clone())
-							.when(in_group, |column| column.child(self.groups.bar.clone()))
 							.child(
 								div()
 									.flex()

@@ -760,7 +760,7 @@ impl VoiceRoom {
 			.h_full()
 			.bg(theme.background_primary)
 			.border_l_1()
-			.border_color(theme.background_tertiary)
+			.border_color(theme.divider)
 			.child(
 				div()
 					.flex()

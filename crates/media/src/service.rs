@@ -13,6 +13,7 @@ use crate::decode::{Limits, decode};
 use crate::error::{MediaError, Result, redact_url};
 use crate::fetch::MediaFetcher;
 use crate::resize::resize_decoded;
+use crate::twemoji;
 use crate::types::Decoded;
 
 const FAILURE_RETRY_DELAY: Duration = Duration::from_secs(60);
@@ -161,6 +162,9 @@ impl MediaService {
 	}
 
 	async fn raw_bytes(&self, url: &str) -> Result<(Bytes, bool)> {
+		if let Some(bundled) = twemoji::bytes(url) {
+			return Ok((bundled, true));
+		}
 		let disk = self.inner.disk.clone();
 		let owned = url.to_owned();
 		let cached = spawn_blocking(move || disk.get(&owned))

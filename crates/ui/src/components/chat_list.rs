@@ -163,7 +163,7 @@ impl ChatList {
 								.secondary()
 								.small()
 								.icon(Icon::default().path(IconKind::ArrowDown.path()))
-								.tooltip(label)
+								.label(label)
 								.rounded(theme.pixels(theme.radius_md))
 								.on_click(move |_, _, cx| {
 									jump_state.update(cx, |state, cx| state.scroll_to_end(cx));

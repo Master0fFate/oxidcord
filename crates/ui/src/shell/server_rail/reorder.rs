@@ -7,7 +7,7 @@ use protocol::Snowflake;
 use state::RailEntry;
 
 use crate::images::Images;
-use crate::theme::Theme;
+use crate::theme::{Theme, rem};
 
 use super::{ICON_PIXELS, Id};
 
@@ -44,7 +44,7 @@ impl Render for DragPreview {
 			.items_center()
 			.justify_center()
 			.size(theme.server_icon)
-			.rounded(theme.radius_lg)
+			.rounded(rem(super::TILE_RADIUS))
 			.overflow_hidden()
 			.opacity(0.85)
 			.bg(theme.brand)

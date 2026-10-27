@@ -3,6 +3,10 @@ use gpui::{App, FontWeight, Hsla, IntoElement, ParentElement as _, RenderOnce, S
 use crate::theme::{Theme, rem};
 
 const MAX_DISPLAYED: u32 = 999;
+const BADGE_HEIGHT: f32 = 16.;
+const BADGE_PADDING: f32 = 5.;
+const BADGE_TEXT: f32 = 12.;
+const RING_WIDTH: f32 = 3.;
 
 #[derive(IntoElement)]
 pub struct MentionBadge {
@@ -34,18 +38,26 @@ impl RenderOnce for MentionBadge {
 			.flex_none()
 			.items_center()
 			.justify_center()
-			.min_w(rem(16.))
-			.h(rem(16.))
-			.px(rem(4.))
+			.min_w(rem(BADGE_HEIGHT))
+			.h(rem(BADGE_HEIGHT))
+			.px(rem(BADGE_PADDING))
 			.rounded_full()
 			.bg(theme.mention_badge)
 			.text_color(theme.text_on_brand)
-			.text_size(theme.font_tiny)
+			.text_size(rem(BADGE_TEXT))
 			.font_weight(FontWeight::BOLD)
-			.line_height(rem(16.))
+			.line_height(rem(BADGE_HEIGHT))
+			.text_center()
+			.whitespace_nowrap()
 			.child(label);
 		match self.ring {
-			Some(ring) => badge.border_2().border_color(ring).min_w(rem(20.)).h(rem(20.)),
+			Some(ring) => div()
+				.flex()
+				.flex_none()
+				.p(rem(RING_WIDTH))
+				.rounded_full()
+				.bg(ring)
+				.child(badge),
 			None => badge,
 		}
 	}

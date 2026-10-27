@@ -104,8 +104,8 @@ impl RenderOnce for Avatar {
 				avatar.child(
 					div()
 						.absolute()
-						.right(-outer * 0.25)
-						.bottom(-outer * 0.25)
+						.right(-ring)
+						.bottom(-ring)
 						.size(outer)
 						.rounded_full()
 						.bg(cutout)

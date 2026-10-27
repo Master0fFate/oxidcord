@@ -374,7 +374,7 @@ impl Render for VoicePanel {
 			.py(theme.space_8)
 			.bg(theme.user_panel_background)
 			.border_b_1()
-			.border_color(theme.background_tertiary)
+			.border_color(theme.divider)
 			.child(
 				div()
 					.flex()

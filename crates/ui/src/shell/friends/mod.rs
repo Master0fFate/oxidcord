@@ -201,7 +201,7 @@ impl FriendsPage {
 			.h(theme.top_bar_height)
 			.px(theme.space_16)
 			.border_b_1()
-			.border_color(theme.background_tertiary)
+			.border_color(theme.divider)
 			.child(
 				div()
 					.flex()

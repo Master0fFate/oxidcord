@@ -57,7 +57,7 @@ impl SectionHeader {
 impl RenderOnce for SectionHeader {
 	fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
 		let theme = cx.global::<Theme>();
-		let rest = theme.header_secondary;
+		let rest = theme.text_muted;
 		let hover = theme.interactive_hover;
 		let group: SharedString = format!("section-header-{}", self.id).into();
 		let chevron = self.collapsed.map(|collapsed| {
@@ -79,25 +79,20 @@ impl RenderOnce for SectionHeader {
 			.group(group)
 			.flex()
 			.items_center()
-			.gap(rem(2.))
+			.gap(theme.space_4)
 			.h(rem(24.))
 			.px(theme.space_8)
-			.text_size(theme.font_tiny)
-			.font_weight(FontWeight::SEMIBOLD)
+			.text_size(theme.font_xs)
+			.font_weight(FontWeight::MEDIUM)
 			.text_color(rest)
 			.hover(move |style| style.text_color(hover))
 			.when(clickable, |row| row.cursor_pointer())
 			.when_some(self.on_click, |row, handler| {
 				row.on_click(move |event, window, cx| handler(event, window, cx))
 			})
+			.child(div().min_w_0().truncate().child(self.label.to_uppercase()))
 			.children(chevron)
-			.child(
-				div()
-					.flex_1()
-					.min_w_0()
-					.truncate()
-					.child(self.label.to_uppercase()),
-			)
+			.child(div().flex_1())
 			.children(self.trailing.map(|trailing| {
 				div()
 					.flex()

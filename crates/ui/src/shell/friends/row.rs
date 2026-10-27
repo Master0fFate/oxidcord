@@ -181,14 +181,18 @@ impl FriendsPage {
 			})
 			.build();
 		div()
+			.flex()
 			.flex_none()
+			.items_center()
+			.justify_center()
 			.size(theme.avatar_sm + theme.space_4)
 			.rounded_full()
 			.bg(theme.background_secondary)
 			.child(
 				Button::new(("friend-more", user.get()))
 					.ghost()
-					.rounded(theme.pixels(theme.avatar_sm))
+					.size_full()
+					.rounded_full()
 					.tooltip(cx.t("friends-more"))
 					.icon(ComponentIcon::default().path(IconKind::More.path()))
 					.dropdown_menu(menu),

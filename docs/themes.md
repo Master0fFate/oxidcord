@@ -96,6 +96,16 @@ Open Settings, Themes and use the catalog section. Refresh loads the signed cata
 
 A plugin package can also carry a `theme.json` (see `docs/plugin-api/building.md`), but first party themes ship through the themes catalog.
 
+## Icons
+
+The shell icons are filled SVGs bundled with the app. Drop a file named after an icon into `<data dir>/icons` to replace it, for example `<data dir>/icons/hash.svg`. Only the alpha channel is used, the theme decides the color. Files over 256 KB are ignored. Restart Oxidcord after adding or changing a file.
+
+Icon names: `activity`, `bell`, `bell-off`, `circle-plus`, `compass`, `edit`, `emoji`, `flag`, `folder`, `food`, `forum`, `friends`, `gif`, `gift`, `hash`, `headphones`, `headphones-off`, `help`, `inbox`, `lock`, `megaphone`, `members`, `mic`, `mic-off`, `more`, `nature`, `objects`, `phone`, `pin`, `reply`, `send`, `settings`, `stage`, `sticker`, `symbols`, `thread`, `trash`, `travel`, `video`, `volume`, `volume-off`.
+
+## Emoji
+
+Unicode emoji render with the bundled Twemoji images, the same artwork the Discord client uses. `cargo xtask twemoji` rebuilds `assets/twemoji.pack` from the pinned, checksummed jdecked/twemoji release. Emoji that are not in the pack fall back to the system emoji font.
+
 ## Tips
 
 - Start from `amoled` for a black theme and from `dark` otherwise. Overriding five or six tokens is usually enough.

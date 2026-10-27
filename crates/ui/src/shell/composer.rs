@@ -907,6 +907,9 @@ impl Composer {
 				.h(rem(32.))
 				.px(theme.space_12)
 				.rounded_t(theme.radius_md)
+				.border_1()
+				.border_b_0()
+				.border_color(theme.divider)
 				.bg(theme.background_secondary)
 				.text_size(theme.font_sm)
 				.text_color(theme.text_muted)
@@ -1025,13 +1028,15 @@ impl Render for Composer {
 						.flex_col()
 						.rounded_b(theme.radius_md)
 						.when(!has_reply, |input| input.rounded_t(theme.radius_md))
+						.border_1()
+						.border_color(theme.divider)
 						.bg(theme.input_background)
 						.children(chips)
 						.child(
 							div()
 								.flex()
 								.items_end()
-								.min_h(rem(44.))
+								.min_h(rem(52.))
 								.child(
 									div()
 										.flex()
@@ -1039,11 +1044,11 @@ impl Render for Composer {
 										.items_center()
 										.justify_center()
 										.w(rem(56.))
-										.h(rem(44.))
+										.h(rem(52.))
 										.when(access.attach, |slot| {
 											slot.child(
-												IconButton::new("composer-attach", IconKind::Plus)
-													.icon_size(rem(24.))
+												IconButton::new("composer-attach", IconKind::CirclePlus)
+													.icon_size(rem(22.))
 													.hit_size(rem(32.))
 													.tooltip(cx.t("composer-attach"))
 													.on_click(
@@ -1058,7 +1063,7 @@ impl Render for Composer {
 										.items_center()
 										.flex_1()
 										.min_w_0()
-										.min_h(rem(44.))
+										.min_h(rem(52.))
 										.py(rem(2.))
 										.child(
 											Textarea::new(&self.input)
@@ -1079,13 +1084,13 @@ impl Render for Composer {
 											.flex()
 											.flex_none()
 											.items_center()
-											.h(rem(44.))
+											.h(rem(52.))
 											.pr(theme.space_8)
-											.gap(rem(2.))
+											.gap(theme.space_4)
 											.children(composer_toolbar(plugin_context, cx))
 											.child(
 												IconButton::new("composer-gif", IconKind::Gif)
-													.icon_size(rem(24.))
+													.icon_size(rem(22.))
 													.hit_size(rem(32.))
 													.tooltip(cx.t("composer-gif"))
 													.on_click(cx.listener(|_, event: &ClickEvent, _, cx| {
@@ -1097,7 +1102,7 @@ impl Render for Composer {
 											)
 											.child(
 												IconButton::new("composer-sticker", IconKind::Sticker)
-													.icon_size(rem(24.))
+													.icon_size(rem(22.))
 													.hit_size(rem(32.))
 													.tooltip(cx.t("composer-sticker"))
 													.on_click(cx.listener(|_, event: &ClickEvent, _, cx| {
@@ -1109,7 +1114,7 @@ impl Render for Composer {
 											)
 											.child(
 												IconButton::new("composer-emoji", IconKind::Emoji)
-													.icon_size(rem(24.))
+													.icon_size(rem(22.))
 													.hit_size(rem(32.))
 													.tooltip(cx.t("composer-emoji"))
 													.on_click(cx.listener(|_, event: &ClickEvent, _, cx| {
@@ -1117,6 +1122,15 @@ impl Render for Composer {
 															tab: PickerTab::Emoji,
 															at: event.position(),
 														})
+													})),
+											)
+											.child(
+												IconButton::new("composer-send", IconKind::Send)
+													.icon_size(rem(22.))
+													.hit_size(rem(32.))
+													.tooltip(cx.t("composer-send"))
+													.on_click(cx.listener(|this, _, window, cx| {
+														this.send(window, cx)
 													})),
 											),
 									)

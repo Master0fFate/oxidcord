@@ -190,7 +190,7 @@ impl Render for PinsPanel {
 				.map(|pins| pins.iter().rev().cloned().collect())
 				.unwrap_or_default();
 			let count = messages.len();
-			(messages, state.can_manage_messages(self.channel), count)
+			(messages, state.can_pin(self.channel), count)
 		};
 		let loaded = self.data.read(cx).state().pins(self.channel).is_some();
 		let cards: Vec<AnyElement> = messages
