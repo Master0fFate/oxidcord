@@ -21,7 +21,10 @@ use crate::theme::{Theme, rem};
 const SNIPPET_LENGTH: usize = 220;
 const DISCORD_EPOCH_MS: i64 = 1_420_070_400_000;
 const SNOWFLAKE_TIME_SHIFT: u32 = 22;
-const HAS_VALUES: [&str; 7] = ["image", "video", "sound", "file", "sticker", "embed", "link"];
+pub const HAS_VALUES: [&str; 9] = [
+	"link", "embed", "poll", "file", "video", "image", "sound", "sticker", "snapshot",
+];
+pub const AUTHOR_TYPES: [&str; 3] = ["user", "bot", "webhook"];
 
 pub enum SearchEvent {
 	Jump { channel: Snowflake, message: Snowflake },
@@ -29,27 +32,47 @@ pub enum SearchEvent {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Filter {
+pub enum Filter {
 	From,
-	Mentions,
+	In,
 	Has,
+	Mentions,
 	Before,
+	During,
 	After,
+	Pinned,
+	AuthorType,
 }
 
 impl Filter {
-	fn key(self) -> &'static str {
+	pub const ALL: [Self; 9] = [
+		Self::From,
+		Self::In,
+		Self::Has,
+		Self::Mentions,
+		Self::Before,
+		Self::During,
+		Self::After,
+		Self::Pinned,
+		Self::AuthorType,
+	];
+
+	pub fn key(self) -> &'static str {
 		match self {
 			Self::From => "from",
-			Self::Mentions => "mentions",
+			Self::In => "in",
 			Self::Has => "has",
+			Self::Mentions => "mentions",
 			Self::Before => "before",
+			Self::During => "during",
 			Self::After => "after",
+			Self::Pinned => "pinned",
+			Self::AuthorType => "authortype",
 		}
 	}
 
-	fn named(key: &str) -> Option<Self> {
-		[Self::From, Self::Mentions, Self::Has, Self::Before, Self::After]
+	pub fn named(key: &str) -> Option<Self> {
+		Self::ALL
 			.into_iter()
 			.find(|filter| filter.key().eq_ignore_ascii_case(key))
 	}
@@ -66,6 +89,33 @@ fn snowflake_at(date: NaiveDate, end_of_day: bool) -> Option<Snowflake> {
 	u64::try_from(millis)
 		.ok()
 		.map(|millis| Snowflake::from(millis << SNOWFLAKE_TIME_SHIFT))
+}
+
+fn resolve_channel(state: &State, guild: Option<Snowflake>, name: &str) -> Option<Snowflake> {
+	let cleaned = name.trim_start_matches('#');
+	let digits = cleaned.trim_start_matches("<#").trim_end_matches('>');
+	if let Ok(id) = digits.parse::<u64>() {
+		return Some(Snowflake::from(id));
+	}
+	let needle = cleaned.to_lowercase();
+	let channels = &state.guild(guild?)?.channels;
+	let named = |exact: bool| {
+		channels.values().find(|channel| {
+			channel.name.as_deref().is_some_and(|name| {
+				let name = name.to_lowercase();
+				if exact {
+					name == needle
+				} else {
+					name.starts_with(&needle)
+				}
+			})
+		})
+	};
+	named(true).or_else(|| named(false)).map(|channel| channel.id)
+}
+
+fn day(value: &str) -> Option<NaiveDate> {
+	NaiveDate::parse_from_str(value, "%Y-%m-%d").ok()
 }
 
 fn resolve_user(
@@ -142,16 +192,35 @@ fn parse_query(
 					true
 				}
 			}
-			Filter::Before => NaiveDate::parse_from_str(value, "%Y-%m-%d")
-				.ok()
+			Filter::In => resolve_channel(state, guild, value)
+				.map(|id| query.channel_ids.push(id))
+				.is_some(),
+			Filter::Before => day(value)
 				.and_then(|date| snowflake_at(date, false))
 				.map(|id| query.before = Some(id))
 				.is_some(),
-			Filter::After => NaiveDate::parse_from_str(value, "%Y-%m-%d")
-				.ok()
+			Filter::After => day(value)
 				.and_then(|date| snowflake_at(date, true))
 				.map(|id| query.after = Some(id))
 				.is_some(),
+			Filter::During => day(value)
+				.and_then(|date| Some((snowflake_at(date, false)?, snowflake_at(date, true)?)))
+				.map(|(start, end)| {
+					query.after = Some(start);
+					query.before = Some(end);
+				})
+				.is_some(),
+			Filter::Pinned => value
+				.parse::<bool>()
+				.map(|pinned| query.pinned = Some(pinned))
+				.is_ok(),
+			Filter::AuthorType => {
+				let lowered = value.to_lowercase();
+				AUTHOR_TYPES.contains(&lowered.as_str()) && {
+					query.author_types.push(lowered);
+					true
+				}
+			}
 		});
 		match applied {
 			Some((filter, value)) if accepted => chips.push(Chip {
@@ -327,7 +396,7 @@ impl Render for SearchPanel {
 			.h_full()
 			.bg(theme.background_secondary)
 			.border_l_1()
-			.border_color(theme.background_tertiary)
+			.border_color(theme.divider)
 			.child(
 				div()
 					.flex()
@@ -337,7 +406,7 @@ impl Render for SearchPanel {
 					.h(theme.top_bar_height)
 					.px(theme.space_16)
 					.border_b_1()
-					.border_color(theme.background_tertiary)
+					.border_color(theme.divider)
 					.child(
 						div()
 							.text_size(theme.font_md)
