@@ -6,6 +6,8 @@ use gpui::{
 };
 use media::SizeHint;
 
+use super::SettingsBackend;
+use super::links;
 use super::message::ImageTarget;
 use crate::components::IconButton;
 use crate::i18n::Translate as _;
@@ -20,6 +22,7 @@ const FALLBACK_SIDE: f32 = 600.;
 
 pub fn lightbox(
 	target: &ImageTarget,
+	backend: &Rc<SettingsBackend>,
 	window: &Window,
 	theme: &Theme,
 	cx: &App,
@@ -37,6 +40,7 @@ pub fn lightbox(
 	let (width, height) = ((native_width * scale).round(), (native_height * scale).round());
 	let image = cx.global::<Images>().get(&target.url, SizeHint::ORIGINAL);
 	let url = target.url.clone();
+	let backend = backend.clone();
 	let backdrop_close = close.clone();
 	let button_close = close;
 	let shown = match image {
@@ -80,11 +84,7 @@ pub fn lightbox(
 						.icon_size(rem(22.))
 						.color(theme.interactive_active)
 						.tooltip(cx.t("lightbox-open"))
-						.on_click(move |_, _, _| {
-							if let Err(error) = platform::open::open_url(&url) {
-								tracing::warn!(%error, "could not open the image");
-							}
-						}),
+						.on_click(move |_, window, cx| links::open_link(&url, &backend, window, cx)),
 				)
 				.child(
 					IconButton::new("lightbox-close", IconKind::Close)

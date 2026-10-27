@@ -3,6 +3,8 @@ use std::io::ErrorKind;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use zeroize::Zeroizing;
+
 use crate::atomic::write_atomic;
 use crate::error::Result;
 
@@ -30,31 +32,48 @@ impl SecretSlot {
 	}
 
 	pub(crate) fn save(&self, token: &str, plaintext: bool) -> Result<TokenBackend> {
-		if !plaintext {
-			match self.save_to_keyring(token) {
-				Ok(()) => {
-					self.remove_file();
-					return Ok(TokenBackend::Keyring);
-				}
-				Err(error) => tracing::warn!(%error, "keyring unavailable, storing token in a file"),
-			}
+		if plaintext {
+			write_atomic(&self.file_path, token.as_bytes(), true)?;
+			return Ok(TokenBackend::PlaintextFile);
 		}
-		write_atomic(&self.file_path, token.as_bytes(), true)?;
-		Ok(TokenBackend::PlaintextFile)
+		self.save_to_keyring(token)?;
+		self.remove_file();
+		Ok(TokenBackend::Keyring)
 	}
 
 	pub(crate) fn load(&self, plaintext: bool) -> Result<Option<String>> {
-		let mut keyring_failure = None;
-		if !plaintext {
-			match self.load_from_keyring() {
-				Ok(Some(token)) => return Ok(Some(token)),
-				Ok(None) => {}
-				Err(error) => keyring_failure = Some(error),
-			}
+		if plaintext {
+			return match self.load_from_file()? {
+				Some(token) => Ok(Some(token)),
+				None => Ok(self.load_from_keyring().unwrap_or_default()),
+			};
 		}
+		match self.load_from_keyring() {
+			Ok(Some(token)) => Ok(Some(token)),
+			Ok(None) => self.load_from_file(),
+			Err(error) => self.load_from_file()?.map_or(Err(error), |token| Ok(Some(token))),
+		}
+	}
+
+	pub(crate) fn migrate(&self, plaintext: bool) -> Result<()> {
+		let stored = self.load(!plaintext).unwrap_or_else(|error| {
+			tracing::warn!(%error, "could not read a secret to move");
+			None
+		});
+		let Some(secret) = stored.map(Zeroizing::new) else {
+			return Ok(());
+		};
+		self.save(&secret, plaintext)?;
+		if plaintext && let Err(error) = self.delete_from_keyring() {
+			tracing::warn!(%error, "could not remove a secret from the keyring");
+		}
+		Ok(())
+	}
+
+	fn load_from_file(&self) -> Result<Option<String>> {
 		match fs::read_to_string(&self.file_path) {
 			Ok(token) => Ok(Some(token)),
-			Err(error) if error.kind() == ErrorKind::NotFound => keyring_failure.map_or(Ok(None), Err),
+			Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
 			Err(error) => Err(error.into()),
 		}
 	}
@@ -127,5 +146,9 @@ impl TokenStore {
 
 	pub fn clear(&self) {
 		self.slot.clear();
+	}
+
+	pub(crate) fn migrate(&self, plaintext: bool) -> Result<()> {
+		self.slot.migrate(plaintext)
 	}
 }

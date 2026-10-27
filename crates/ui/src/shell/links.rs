@@ -10,8 +10,10 @@ use super::SettingsBackend;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::theme::{Theme, rem};
 
-const ALLOWED_HOSTS: [&str; 10] = [
+const ALLOWED_HOSTS: [&str; 12] = [
 	"discord.com",
+	"discordapp.com",
+	"discordapp.net",
 	"github.com",
 	"youtube.com",
 	"youtu.be",
@@ -45,8 +47,7 @@ pub fn open_link(url: &str, backend: &Rc<SettingsBackend>, window: &mut Window, 
 	let Ok(parsed) = Url::parse(url) else {
 		return;
 	};
-	if parsed.scheme() == "mailto" {
-		launch(url);
+	if !matches!(parsed.scheme(), "http" | "https") {
 		return;
 	}
 	let Some(host) = parsed.host_str().map(str::to_ascii_lowercase) else {

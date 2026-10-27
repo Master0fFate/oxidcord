@@ -22,6 +22,7 @@ const RENDERER: &str = "Vulkan";
 pub struct AdvancedPage {
 	backend: Rc<SettingsBackend>,
 	startup_error: Option<SharedString>,
+	storage_error: Option<SharedString>,
 }
 
 impl AdvancedPage {
@@ -29,6 +30,7 @@ impl AdvancedPage {
 		Self {
 			backend,
 			startup_error: None,
+			storage_error: None,
 		}
 	}
 
@@ -49,6 +51,17 @@ impl AdvancedPage {
 				cx.notify();
 			}
 		}
+	}
+
+	fn set_plaintext_secrets(&mut self, plaintext: bool, cx: &mut Context<Self>) {
+		self.storage_error = match (self.backend.plaintext_secrets)(plaintext) {
+			Ok(()) => None,
+			Err(error) => {
+				tracing::warn!(%error, "could not move the stored sign-in");
+				Some(cx.t("advanced-plaintext-failed"))
+			}
+		};
+		cx.notify();
 	}
 }
 
@@ -128,6 +141,20 @@ impl Render for AdvancedPage {
 					.flex()
 					.flex_col()
 					.child(heading(cx.t("advanced-data"), &theme))
+					.child(row(
+						cx.t("advanced-plaintext"),
+						Some(
+							self.storage_error
+								.clone()
+								.unwrap_or_else(|| cx.t("advanced-plaintext-note")),
+						),
+						Switch::new("advanced-plaintext")
+							.checked(settings.storage.plaintext_token)
+							.on_change(cx.listener(|this, checked: &bool, _, cx| {
+								this.set_plaintext_secrets(*checked, cx);
+							})),
+						&theme,
+					))
 					.child(row(
 						cx.t("advanced-data-folder"),
 						Some(path),

@@ -149,7 +149,7 @@ WIT has no recursive types, so markdown, UI and view nodes are flat. A tree is a
 
 - One wasmtime instance per plugin on its own thread, with epoch interruption ticking every 10 ms.
 - Linear memory is capped at 64 MB and tables at 10,000 elements. Exceeding the memory cap traps the plugin.
-- WASI preview 2 is linked with an empty context: no preopened directories, environment, arguments or sockets.
+- WASI preview 2 is linked with an empty context: no preopened directories, environment or arguments, and TCP, UDP and name lookup are disabled.
 - A trap, timeout or memory trap restarts the instance (new store, `init` runs again, timers cleared) after a backoff that starts at 100 ms and doubles up to 5 s. Five crashes within 60 seconds disable the plugin until it is enabled again. Plugin storage survives restarts.
 - Each plugin has a queue. Events and timer firings are dropped oldest first beyond 256 queued items, and a repeating timer that is still queued is not queued again. Interactive calls jump ahead of queued events.
 - All timers of all plugins share one thread that sleeps until the next deadline.

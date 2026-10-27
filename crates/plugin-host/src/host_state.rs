@@ -122,7 +122,11 @@ impl HostState {
 			rate: RateLimits::new(),
 			storage,
 			gesture_sends: None,
-			wasi: WasiCtxBuilder::new().build(),
+			wasi: WasiCtxBuilder::new()
+				.allow_tcp(false)
+				.allow_udp(false)
+				.allow_ip_name_lookup(false)
+				.build(),
 			table: ResourceTable::new(),
 		}
 	}

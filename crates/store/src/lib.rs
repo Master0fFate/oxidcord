@@ -1,4 +1,6 @@
 mod accounts;
+#[cfg(windows)]
+mod acl;
 mod atomic;
 mod database;
 mod error;
@@ -36,7 +38,7 @@ pub struct Store {
 impl Store {
 	pub fn open(paths: Paths) -> Result<Self> {
 		let settings = Settings::load(&paths);
-		let cache_key = seal::load_or_create_key(paths.cache_key_path(), settings.storage.plaintext_token)?;
+		let cache_key = seal::load_or_create_key(paths.cache_key_path(), settings.storage.plaintext_token);
 		let db = Database::open(&paths.database_path(), &cache_key)?;
 		let tokens = TokenStore::new(paths.token_path(), settings.storage.plaintext_token);
 		let accounts = AccountStore::new(
@@ -59,5 +61,15 @@ impl Store {
 		self.tokens.set_plaintext(settings.storage.plaintext_token);
 		self.accounts.set_plaintext(settings.storage.plaintext_token);
 		settings.save(&self.paths)
+	}
+
+	pub fn set_plaintext_secrets(&self, plaintext: bool) -> Result<()> {
+		if self.settings.read().storage.plaintext_token == plaintext {
+			return Ok(());
+		}
+		seal::migrate_key(self.paths.cache_key_path(), plaintext)?;
+		self.tokens.migrate(plaintext)?;
+		self.accounts.migrate(plaintext)?;
+		self.update_settings(|settings| settings.storage.plaintext_token = plaintext)
 	}
 }

@@ -31,7 +31,26 @@ fn create(path: &Path, private: bool) -> std::io::Result<File> {
 		.open(path)
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn create(path: &Path, private: bool) -> std::io::Result<File> {
+	use std::os::windows::fs::OpenOptionsExt;
+
+	use windows::Win32::Foundation::GENERIC_WRITE;
+	use windows::Win32::Storage::FileSystem::{READ_CONTROL, WRITE_DAC};
+
+	let mut options = OpenOptions::new();
+	options.write(true).create(true).truncate(true);
+	if !private {
+		return options.open(path);
+	}
+	let file = options
+		.access_mode(GENERIC_WRITE.0 | WRITE_DAC.0 | READ_CONTROL.0)
+		.open(path)?;
+	crate::acl::restrict_to_current_user(&file)?;
+	Ok(file)
+}
+
+#[cfg(not(any(unix, windows)))]
 fn create(path: &Path, _private: bool) -> std::io::Result<File> {
 	OpenOptions::new()
 		.write(true)

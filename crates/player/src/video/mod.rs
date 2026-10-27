@@ -68,7 +68,12 @@ const AV1_CONFIG_HEADER: usize = 4;
 
 const AV1_SEQUENCE_HEADER: u8 = 1;
 const MAX_REORDER: usize = 32;
+const MAX_PIXELS: usize = 7680 * 4320;
 const VP9_MARKER: u8 = 0b10;
+
+fn within_pixel_cap(width: usize, height: usize) -> bool {
+	width.saturating_mul(height) <= MAX_PIXELS
+}
 
 fn extra(params: &VideoCodecParameters, id: VideoExtraDataId) -> Option<&[u8]> {
 	params
@@ -87,6 +92,9 @@ impl VideoTrack {
 			.width
 			.zip(params.height)
 			.map(|(width, height)| (u32::from(width), u32::from(height)));
+		if size.is_some_and(|(width, height)| !within_pixel_cap(width as usize, height as usize)) {
+			return Err(PlayerError::Unsupported("video is too large".to_owned()));
+		}
 		let codec = match params.codec {
 			CODEC_ID_H264 => Codec::Avc,
 			CODEC_ID_HEVC => Codec::Hevc,
@@ -201,7 +209,9 @@ impl VideoTrack {
 			if reorders {
 				picture.pts = order.pop().map_or(pts, |Reverse(first)| first);
 			}
-			sink(picture);
+			if within_pixel_cap(picture.width, picture.height) {
+				sink(picture);
+			}
 		};
 		match &mut self.backend {
 			Backend::Pack(decoder) => decoder.decode(data, pts, &mut timed),
@@ -218,7 +228,9 @@ impl VideoTrack {
 			if reorders {
 				picture.pts = order.pop().map_or(picture.pts, |Reverse(first)| first);
 			}
-			sink(picture);
+			if within_pixel_cap(picture.width, picture.height) {
+				sink(picture);
+			}
 		};
 		match &mut self.backend {
 			Backend::Pack(decoder) => decoder.finish(&mut timed),

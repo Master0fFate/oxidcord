@@ -106,6 +106,14 @@ impl AccountStore {
 		self.write(&index)
 	}
 
+	pub(crate) fn migrate(&self, plaintext: bool) -> Result<()> {
+		fs::create_dir_all(&self.tokens_dir)?;
+		for account in self.list() {
+			self.slot(account.user_id).migrate(plaintext)?;
+		}
+		Ok(())
+	}
+
 	fn slot(&self, user_id: Snowflake) -> SecretSlot {
 		SecretSlot::new(
 			format!("account-{user_id}"),

@@ -33,6 +33,7 @@ pub type SettingsWriter = Box<dyn Fn(&dyn Fn(&mut Settings))>;
 pub struct SettingsBackend {
 	pub read: Box<dyn Fn() -> Settings>,
 	pub write: SettingsWriter,
+	pub plaintext_secrets: Box<dyn Fn(bool) -> store::Result<()>>,
 	pub themes_dir: PathBuf,
 }
 
