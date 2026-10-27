@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::thread;
 use std::time::{Duration, Instant};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -10,6 +11,8 @@ use parking_lot::Mutex;
 use crate::error::{PlayerError, Result};
 
 pub const OUTPUT_CHANNELS: usize = 2;
+const SILENT_RATE: u32 = 48_000;
+const SILENT_TICK: Duration = Duration::from_millis(10);
 
 struct Ring {
 	samples: Mutex<VecDeque<f32>>,
@@ -20,21 +23,57 @@ struct Ring {
 	volume: Arc<AtomicU32>,
 }
 
+enum Sink {
+	Device(Stream),
+	Silent(SilentClock),
+}
+
+struct SilentClock {
+	playing: Arc<AtomicBool>,
+	alive: Arc<AtomicBool>,
+}
+
+impl SilentClock {
+	fn start(ring: Arc<Ring>) -> Self {
+		let playing = Arc::new(AtomicBool::new(false));
+		let alive = Arc::new(AtomicBool::new(true));
+		let (thread_playing, thread_alive) = (playing.clone(), alive.clone());
+		let spawned = thread::Builder::new().name("silent-audio".into()).spawn(move || {
+			let mut buffer = Vec::new();
+			let mut last = Instant::now();
+			while thread_alive.load(Ordering::Acquire) {
+				thread::sleep(SILENT_TICK);
+				let now = Instant::now();
+				let frames = (now.duration_since(last).as_secs_f64() * f64::from(SILENT_RATE)) as usize;
+				last = now;
+				if frames > 0 && thread_playing.load(Ordering::Acquire) {
+					buffer.clear();
+					buffer.resize(frames * OUTPUT_CHANNELS, 0.0f32);
+					fill(&mut buffer, OUTPUT_CHANNELS, &ring);
+				}
+			}
+		});
+		if let Err(error) = spawned {
+			tracing::warn!(%error, "could not start the silent audio clock");
+		}
+		Self { playing, alive }
+	}
+}
+
+impl Drop for SilentClock {
+	fn drop(&mut self) {
+		self.alive.store(false, Ordering::Release);
+	}
+}
+
 pub struct Output {
-	stream: Stream,
+	sink: Sink,
 	ring: Arc<Ring>,
 	rate: u32,
 }
 
 impl Output {
 	pub fn open(volume: Arc<AtomicU32>) -> Result<Self> {
-		let device = cpal::default_host()
-			.default_output_device()
-			.ok_or_else(|| PlayerError::Audio("no output device".to_owned()))?;
-		let supported = device
-			.default_output_config()
-			.map_err(|error| PlayerError::Audio(error.to_string()))?;
-		let config = supported.config();
 		let ring = Arc::new(Ring {
 			samples: Mutex::new(VecDeque::new()),
 			played: AtomicU64::new(0),
@@ -43,18 +82,14 @@ impl Output {
 			epoch: Instant::now(),
 			volume,
 		});
-		let stream = match supported.sample_format() {
-			SampleFormat::F32 => build::<f32>(&device, &config, &ring),
-			SampleFormat::I16 => build::<i16>(&device, &config, &ring),
-			SampleFormat::U16 => build::<u16>(&device, &config, &ring),
-			SampleFormat::I32 => build::<i32>(&device, &config, &ring),
-			other => return Err(PlayerError::Audio(format!("unsupported sample format {other}"))),
-		}?;
-		Ok(Self {
-			stream,
-			ring,
-			rate: config.sample_rate,
-		})
+		let (sink, rate) = match device_stream(&ring) {
+			Ok((stream, rate)) => (Sink::Device(stream), rate),
+			Err(error) => {
+				tracing::info!(%error, "no audio output, media plays silently");
+				(Sink::Silent(SilentClock::start(ring.clone())), SILENT_RATE)
+			}
+		};
+		Ok(Self { sink, ring, rate })
 	}
 
 	pub fn rate(&self) -> u32 {
@@ -89,17 +124,45 @@ impl Output {
 	}
 
 	pub fn resume(&self) {
-		if let Err(error) = self.stream.play() {
-			tracing::debug!(%error, "could not resume media audio");
+		match &self.sink {
+			Sink::Device(stream) => {
+				if let Err(error) = stream.play() {
+					tracing::debug!(%error, "could not resume media audio");
+				}
+			}
+			Sink::Silent(clock) => clock.playing.store(true, Ordering::Release),
 		}
 	}
 
 	pub fn pause(&self) {
 		self.ring.last_chunk.store(0, Ordering::Release);
-		if let Err(error) = self.stream.pause() {
-			tracing::debug!(%error, "could not pause media audio");
+		match &self.sink {
+			Sink::Device(stream) => {
+				if let Err(error) = stream.pause() {
+					tracing::debug!(%error, "could not pause media audio");
+				}
+			}
+			Sink::Silent(clock) => clock.playing.store(false, Ordering::Release),
 		}
 	}
+}
+
+fn device_stream(ring: &Arc<Ring>) -> Result<(Stream, u32)> {
+	let device = cpal::default_host()
+		.default_output_device()
+		.ok_or_else(|| PlayerError::Audio("no output device".to_owned()))?;
+	let supported = device
+		.default_output_config()
+		.map_err(|error| PlayerError::Audio(error.to_string()))?;
+	let config = supported.config();
+	let stream = match supported.sample_format() {
+		SampleFormat::F32 => build::<f32>(&device, &config, ring),
+		SampleFormat::I16 => build::<i16>(&device, &config, ring),
+		SampleFormat::U16 => build::<u16>(&device, &config, ring),
+		SampleFormat::I32 => build::<i32>(&device, &config, ring),
+		other => return Err(PlayerError::Audio(format!("unsupported sample format {other}"))),
+	}?;
+	Ok((stream, config.sample_rate))
 }
 
 fn build<T>(device: &cpal::Device, config: &StreamConfig, ring: &Arc<Ring>) -> Result<Stream>
