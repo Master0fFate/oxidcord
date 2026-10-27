@@ -15,7 +15,7 @@ use gpui_component::WindowExt as _;
 use gpui_component::button::{Button, ButtonVariant, ButtonVariants as _};
 use gpui_component::input::{Escape, InputEvent, TextareaState};
 use lru::LruCache;
-use protocol::Snowflake;
+use protocol::{ChannelType, Snowflake};
 use session::{Command, ReplyTarget};
 use state::{Changes, MessageRow};
 
@@ -91,6 +91,8 @@ fn same_row(a: &MessageRow, b: &MessageRow) -> bool {
 				&& x.plugin == y.plugin
 				&& x.altered_by == y.altered_by
 				&& x.deleted == y.deleted
+				&& x.mentions_me == y.mentions_me
+				&& x.member_roles == y.member_roles
 				&& x.rendered.as_ref().map(Arc::as_ptr) == y.rendered.as_ref().map(Arc::as_ptr)
 		}
 		(MessageRow::DaySeparator(x), MessageRow::DaySeparator(y)) => x == y,
@@ -214,6 +216,7 @@ impl Timeline {
 				state.messages(channel).is_some_and(|cache| cache.is_detached()),
 			)
 		};
+		let flipped = self.detached != detached;
 		self.detached = detached;
 		let old = &self.rows;
 		let prefix = old.iter().zip(&rows).take_while(|(a, b)| same_row(a, b)).count();
@@ -236,7 +239,9 @@ impl Timeline {
 		}
 		self.finish_jump(cx);
 		self.acknowledge(channel, window, cx);
-		cx.notify();
+		if changed || flipped {
+			cx.notify();
+		}
 	}
 
 	fn acknowledge(&mut self, channel: Snowflake, window: &Window, cx: &mut Context<Self>) {
@@ -393,12 +398,7 @@ impl Timeline {
 
 	fn on_row_action(&mut self, action: RowAction, window: &mut Window, cx: &mut Context<Self>) {
 		match action {
-			RowAction::OpenLink(url) => cx.emit(TimelineEvent::OpenLink(url)),
-			RowAction::Download(url) => {
-				if let Err(error) = platform::open::open_url(&url) {
-					tracing::warn!(%error, "could not open the download");
-				}
-			}
+			RowAction::OpenLink(url) | RowAction::Download(url) => cx.emit(TimelineEvent::OpenLink(url)),
 			RowAction::ToggleSpoiler(message, index) => {
 				self.revealed.borrow_mut().insert((message, index));
 				cx.notify();
@@ -494,6 +494,34 @@ impl Timeline {
 				channel_id,
 				message_id,
 			}),
+			RowAction::UseComponent(used) => self.data.read(cx).send(Command::UseComponent(used)),
+			RowAction::RunCommand { message, command } => {
+				if let Some(channel_id) = self.channel {
+					self.data.read(cx).send(Command::RunMessageCommand {
+						guild_id: self.guild,
+						channel_id,
+						message_id: message,
+						command,
+					});
+				}
+			}
+			RowAction::Save { message, due } => {
+				if let Some(channel_id) = self.channel {
+					self.data.read(cx).send(Command::SaveMessage {
+						channel_id,
+						message_id: message,
+						due_at: due,
+					});
+				}
+			}
+			RowAction::Publish(message_id) => {
+				if let Some(channel_id) = self.channel {
+					self.data.read(cx).send(Command::PublishMessage {
+						channel_id,
+						message_id,
+					});
+				}
+			}
 			RowAction::Select(message) => {
 				let mut selection = (*self.selection).clone();
 				if !selection.remove(&message) {
@@ -544,22 +572,28 @@ impl Timeline {
 		let data = self.data.read(cx);
 		let state = data.state();
 		let permissions = state.my_permissions(channel);
+		let kind = state.channel(channel).map(|found| found.kind);
 		let direct = self.guild.is_none();
 		MessageAccess {
 			send: direct || state.can_send(channel),
 			react: direct || state.can_react(channel),
+			read_history: direct || permissions.contains(protocol::Permissions::READ_MESSAGE_HISTORY),
 			manage_messages: self.guild.is_some() && state.can_manage_messages(channel),
+			pin: direct || state.can_pin(channel),
 			create_threads: self.guild.is_some()
-				&& permissions.contains(protocol::Permissions::CREATE_PUBLIC_THREADS),
-			in_thread: state.channel(channel).is_some_and(|found| {
-				matches!(
-					found.kind,
-					protocol::ChannelType::PublicThread
-						| protocol::ChannelType::PrivateThread
-						| protocol::ChannelType::AnnouncementThread
+				&& matches!(
+					kind,
+					Some(ChannelType::GuildText | ChannelType::GuildAnnouncement)
+				) && permissions.contains(
+				protocol::Permissions::CREATE_PUBLIC_THREADS | protocol::Permissions::READ_MESSAGE_HISTORY,
+			),
+			in_thread: matches!(
+				kind,
+				Some(
+					ChannelType::PublicThread | ChannelType::PrivateThread | ChannelType::AnnouncementThread
 				)
-			}),
-			guild: self.guild.is_some(),
+			),
+			announcement: kind == Some(ChannelType::GuildAnnouncement),
 		}
 	}
 

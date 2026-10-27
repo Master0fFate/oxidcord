@@ -30,6 +30,7 @@ pub enum SidebarEvent {
 	VoiceUser { user: Snowflake, at: Point<Pixels> },
 }
 
+#[derive(PartialEq)]
 struct ChannelItem {
 	id: Snowflake,
 	kind: ChannelType,
@@ -47,6 +48,7 @@ struct ChannelItem {
 	voice: Vec<Participant>,
 }
 
+#[derive(PartialEq)]
 struct CategoryItem {
 	id: Option<Snowflake>,
 	name: SharedString,
@@ -106,7 +108,7 @@ impl ChannelSidebar {
 		};
 		let data = self.data.read(cx);
 		let state = data.state();
-		self.name = state
+		let name: SharedString = state
 			.guild(guild)
 			.map(|guild| guild.name.clone().into())
 			.unwrap_or_default();
@@ -114,23 +116,37 @@ impl ChannelSidebar {
 		if !data.session().plugins().reveals_hidden_channels() {
 			nodes.retain_mut(drop_hidden);
 		}
-		self.categories = nodes
+		let categories: Vec<CategoryItem> = nodes
 			.iter()
 			.map(|node| category_item(node, guild, &state))
 			.collect();
-		self.access = GuildAccess::of(&state, guild);
-		self.invite_channel = nodes
+		let access = GuildAccess::of(&state, guild);
+		let invite_channel = nodes
 			.iter()
 			.flat_map(|node| node.children.iter())
 			.find(|row| !row.locked && row.kind == ChannelType::GuildText)
 			.map(|row| row.id);
 		let summary = state.guild_summary(guild);
-		self.unread = summary
+		let unread = summary
 			.as_ref()
 			.is_some_and(|summary| summary.unread || summary.mentions > 0);
-		self.muted = summary.is_some_and(|summary| summary.muted);
+		let muted = summary.is_some_and(|summary| summary.muted);
 		drop(state);
-		cx.notify();
+		let changed = name != self.name
+			|| categories != self.categories
+			|| access != self.access
+			|| invite_channel != self.invite_channel
+			|| unread != self.unread
+			|| muted != self.muted;
+		if changed {
+			self.name = name;
+			self.categories = categories;
+			self.access = access;
+			self.invite_channel = invite_channel;
+			self.unread = unread;
+			self.muted = muted;
+			cx.notify();
+		}
 	}
 
 	fn toggle(&self, category: Snowflake, cx: &mut Context<Self>) {
@@ -199,7 +215,7 @@ impl ChannelSidebar {
 					.right_0()
 					.bottom_0()
 					.h(rem(1.))
-					.bg(theme.background_tertiary),
+					.bg(theme.divider),
 			)
 			.context_menu(menu.build())
 			.into_any_element()
@@ -284,7 +300,7 @@ impl ChannelSidebar {
 						.justify_center()
 						.size(rem(11.))
 						.rounded_full()
-						.bg(theme.background_secondary)
+						.bg(theme.background_tertiary)
 						.child(Icon::new(IconKind::Lock).size(rem(9.)).color(rest)),
 				)
 			});
@@ -333,7 +349,7 @@ impl ChannelSidebar {
 			.mx(theme.space_8)
 			.when(thread, |row| row.ml(theme.space_32 + theme.space_8))
 			.px(theme.space_8)
-			.rounded(theme.radius_sm)
+			.rounded(theme.radius_md)
 			.when(can_select, |row| row.cursor_pointer())
 			.when(!can_select, |row| row.cursor_not_allowed())
 			.text_size(theme.font_md)
@@ -362,7 +378,7 @@ impl ChannelSidebar {
 					div()
 						.absolute()
 						.left(rem(-8.))
-						.top(rem(12.))
+						.top(rem(13.))
 						.w(rem(4.))
 						.h(rem(8.))
 						.rounded_r(rem(4.))
@@ -510,7 +526,7 @@ impl Render for ChannelSidebar {
 			.flex_col()
 			.size_full()
 			.min_h_0()
-			.bg(theme.background_secondary)
+			.bg(theme.background_tertiary)
 			.child(self.header(&theme, cx))
 			.child(
 				div()

@@ -78,6 +78,7 @@ pub struct MessageView {
 	pub author_display: String,
 	pub author_badge: Option<String>,
 	pub member_roles: SmallVec<[Snowflake; 4]>,
+	pub mentions_me: bool,
 }
 
 #[derive(Debug, Clone)]

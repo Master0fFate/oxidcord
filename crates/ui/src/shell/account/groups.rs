@@ -16,7 +16,7 @@ use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
 use crate::lookup::avatar_for;
 use crate::model::{Status, status_of};
-use crate::theme::Theme;
+use crate::theme::{Theme, rem};
 
 const AVATAR_PIXELS: u32 = 64;
 
@@ -52,6 +52,7 @@ impl Groups {
 	}
 }
 
+#[derive(PartialEq)]
 struct Group {
 	channel: Snowflake,
 	name: SharedString,
@@ -125,8 +126,11 @@ impl GroupBar {
 	}
 
 	fn refresh(&mut self, cx: &mut Context<Self>) {
-		self.group = load_group(self.data.read(cx), self.channel);
-		cx.notify();
+		let group = load_group(self.data.read(cx), self.channel);
+		if group != self.group {
+			self.group = group;
+			cx.notify();
+		}
 	}
 
 	fn rename(&mut self, name: String, cx: &mut Context<Self>) {
@@ -197,18 +201,11 @@ impl Render for GroupBar {
 		let leave_data = self.data.clone();
 		div()
 			.flex()
-			.flex_none()
+			.flex_1()
+			.min_w_0()
 			.items_center()
-			.gap(theme.space_12)
-			.h(theme.avatar_md)
-			.px(theme.space_16)
-			.border_b_1()
-			.border_color(theme.background_tertiary)
-			.child(
-				Icon::new(IconKind::Group)
-					.size(theme.icon_md)
-					.color(theme.text_muted),
-			)
+			.gap(theme.space_8)
+			.child(Icon::new(IconKind::Group).size(rem(22.)).color(theme.text_muted))
 			.child(name)
 			.child(
 				div()
@@ -236,6 +233,7 @@ impl Render for GroupBar {
 	}
 }
 
+#[derive(PartialEq)]
 struct MemberItem {
 	id: Snowflake,
 	name: SharedString,
@@ -271,17 +269,19 @@ impl GroupMembers {
 	fn refresh(&mut self, cx: &mut Context<Self>) {
 		let data = self.data.read(cx);
 		let Some(group) = load_group(data, self.channel) else {
-			self.items.clear();
-			self.can_remove = false;
-			cx.notify();
+			if !self.items.is_empty() || self.can_remove {
+				self.items.clear();
+				self.can_remove = false;
+				cx.notify();
+			}
 			return;
 		};
 		let state = data.state();
 		let me = state.current_user_id();
-		self.can_remove = me.is_some() && group.owner == me;
+		let can_remove = me.is_some() && group.owner == me;
 		let mut ids = group.members.clone();
 		ids.extend(me);
-		self.items = ids
+		let items: Vec<MemberItem> = ids
 			.into_iter()
 			.map(|id| MemberItem {
 				id,
@@ -292,7 +292,11 @@ impl GroupMembers {
 			})
 			.collect();
 		drop(state);
-		cx.notify();
+		if items != self.items || can_remove != self.can_remove {
+			self.items = items;
+			self.can_remove = can_remove;
+			cx.notify();
+		}
 	}
 
 	fn row(

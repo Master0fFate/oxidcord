@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::mpsc::Receiver;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gpui::{
 	App, AppContext as _, Bounds, Context, Entity, Global, IntoElement, ParentElement as _, Render,
@@ -40,6 +40,8 @@ const APP_TITLE: &str = "Oxidcord";
 const MIN_WIDTH: f32 = 940.;
 const MIN_HEIGHT: f32 = 500.;
 const TICK_INTERVAL: Duration = Duration::from_secs(30);
+const CHANGES_GAP: Duration = Duration::from_millis(16);
+const MEDIA_GAP: Duration = Duration::from_millis(100);
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct AppFlags {
@@ -95,91 +97,90 @@ pub(crate) struct AppRoot {
 }
 
 pub fn run(mut config: LaunchConfig) {
-	gpui_platform::application()
-		.with_assets(gpui_kit_assets::AllAssets)
-		.run(move |cx| {
-			gpui_component::init(cx);
-			actions::bind_keys(cx);
-			let settings = config.store.settings.read().clone();
-			Localizer::new(&settings.locale).install(cx);
-			Theme::set_font_scale(settings.accessibility.font_scale, cx);
-			Theme::resolve(&settings.theme, &config.store.paths.themes_dir()).install(cx);
-			zoom::install(config.store.clone(), cx);
-			set_reduced_motion(settings.accessibility.reduced_motion);
-			cx.set_global(config.flags);
-			cx.set_global(Textures(VideoTextures::new()));
-			VoiceHotkeys::install(&settings.keybinds, cx);
-			cx.on_window_closed(|cx, _| {
-				if cx.windows().is_empty() {
-					cx.quit();
-				}
-			})
-			.detach();
-			let media = match media_service(&config) {
-				Ok(media) => media,
-				Err(error) => {
-					tracing::error!(%error, "could not start the media service");
-					cx.quit();
-					return;
-				}
-			};
-			cx.set_global(Images::new(media.clone(), config.mock_origin.clone()));
-			Playback::install(
-				media.clone(),
-				config.mock_origin.clone(),
-				config.store.paths.cache_dir().join("embeds"),
-				cx,
-			);
-			UpdateService::launch(
-				config.store.clone(),
-				settings.updates.check_on_start && !config.flags.mock,
-				cx,
-			);
-			cx.set_global(PluginStore(config.store.clone()));
-			cx.set_global(DataDir(config.store.paths.data_dir().to_path_buf()));
-			let store = config.store.clone();
-			let on_window_ready = config.on_window_ready.take();
-			let backend = settings_backend(&store);
-			let options = WindowOptions {
-				window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
-					None,
-					size(
-						px(settings.window.width as f32),
-						px(settings.window.height as f32),
-					),
-					cx,
-				))),
-				window_min_size: Some(size(px(MIN_WIDTH), px(MIN_HEIGHT))),
-				titlebar: Some(TitlebarOptions {
-					title: Some(APP_TITLE.into()),
-					appears_transparent: true,
-					traffic_light_position: Some(point(px(9.), px(9.))),
-				}),
-				app_owns_titlebar_drag: true,
-				..WindowOptions::default()
-			};
-			let window = cx
-				.open_window(options, move |window, cx| {
-					zoom::attach(window, cx);
-					let root = cx.new(|cx| AppRoot::new(config, media, backend, window, cx));
-					cx.new(|cx| Root::new(root, window, cx))
-				})
-				.expect("open window");
-			window
-				.update(cx, |_, window, cx| {
-					window.on_window_should_close(cx, move |window, cx| {
-						remember_window(&store, window);
-						let to_tray =
-							store.settings.read().window.minimize_to_tray && cx.has_global::<TrayActive>();
-						!(to_tray && desktop::hide_window(window))
-					});
-				})
-				.expect("window is open");
-			cx.activate(true);
-			if let Some(ready) = on_window_ready {
-				ready();
+	let assets = crate::assets::Assets::new(config.store.paths.icons_dir());
+	gpui_platform::application().with_assets(assets).run(move |cx| {
+		gpui_component::init(cx);
+		actions::bind_keys(cx);
+		let settings = config.store.settings.read().clone();
+		Localizer::new(&settings.locale).install(cx);
+		Theme::set_font_scale(settings.accessibility.font_scale, cx);
+		Theme::resolve(&settings.theme, &config.store.paths.themes_dir()).install(cx);
+		zoom::install(config.store.clone(), cx);
+		set_reduced_motion(settings.accessibility.reduced_motion);
+		cx.set_global(config.flags);
+		cx.set_global(Textures(VideoTextures::new()));
+		VoiceHotkeys::install(&settings.keybinds, cx);
+		cx.on_window_closed(|cx, _| {
+			if cx.windows().is_empty() {
+				cx.quit();
 			}
-		});
+		})
+		.detach();
+		let media = match media_service(&config) {
+			Ok(media) => media,
+			Err(error) => {
+				tracing::error!(%error, "could not start the media service");
+				cx.quit();
+				return;
+			}
+		};
+		cx.set_global(Images::new(media.clone(), config.mock_origin.clone()));
+		Playback::install(
+			media.clone(),
+			config.mock_origin.clone(),
+			config.store.paths.cache_dir().join("embeds"),
+			cx,
+		);
+		UpdateService::launch(
+			config.store.clone(),
+			settings.updates.check_on_start && !config.flags.mock,
+			cx,
+		);
+		cx.set_global(PluginStore(config.store.clone()));
+		cx.set_global(DataDir(config.store.paths.data_dir().to_path_buf()));
+		let store = config.store.clone();
+		let on_window_ready = config.on_window_ready.take();
+		let backend = settings_backend(&store);
+		let options = WindowOptions {
+			window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
+				None,
+				size(
+					px(settings.window.width as f32),
+					px(settings.window.height as f32),
+				),
+				cx,
+			))),
+			window_min_size: Some(size(px(MIN_WIDTH), px(MIN_HEIGHT))),
+			titlebar: Some(TitlebarOptions {
+				title: Some(APP_TITLE.into()),
+				appears_transparent: true,
+				traffic_light_position: Some(point(px(9.), px(9.))),
+			}),
+			app_owns_titlebar_drag: true,
+			..WindowOptions::default()
+		};
+		let window = cx
+			.open_window(options, move |window, cx| {
+				zoom::attach(window, cx);
+				let root = cx.new(|cx| AppRoot::new(config, media, backend, window, cx));
+				cx.new(|cx| Root::new(root, window, cx))
+			})
+			.expect("open window");
+		window
+			.update(cx, |_, window, cx| {
+				window.on_window_should_close(cx, move |window, cx| {
+					remember_window(&store, window);
+					let to_tray =
+						store.settings.read().window.minimize_to_tray && cx.has_global::<TrayActive>();
+					!(to_tray && desktop::hide_window(window))
+				});
+			})
+			.expect("window is open");
+		cx.activate(true);
+		if let Some(ready) = on_window_ready {
+			ready();
+		}
+	});
 }
 
 fn media_service(config: &LaunchConfig) -> media::Result<MediaService> {
@@ -196,6 +197,10 @@ fn media_service(config: &LaunchConfig) -> media::Result<MediaService> {
 	))
 }
 
+fn remaining(last: Option<Instant>, gap: Duration) -> Duration {
+	last.map_or(Duration::ZERO, |at| gap.saturating_sub(at.elapsed()))
+}
+
 fn fold(signal: Signal, changes: &mut Changes, media: &mut bool) {
 	match signal {
 		Signal::Changes(next) => changes.merge(*next),
@@ -209,12 +214,28 @@ fn pump(
 	cx: &mut Context<AppRoot>,
 ) -> Task<()> {
 	cx.spawn(async move |_, cx| {
+		let mut last_changes: Option<Instant> = None;
+		let mut last_media: Option<Instant> = None;
 		while let Some(first) = receiver.recv().await {
 			let mut changes = Changes::default();
 			let mut media = false;
 			fold(first, &mut changes, &mut media);
+			let gap = if changes.is_empty() {
+				remaining(last_media, MEDIA_GAP)
+			} else {
+				remaining(last_changes, CHANGES_GAP)
+			};
+			if !gap.is_zero() {
+				cx.background_executor().timer(gap).await;
+			}
 			while let Ok(next) = receiver.try_recv() {
 				fold(next, &mut changes, &mut media);
+			}
+			if !changes.is_empty() {
+				last_changes = Some(Instant::now());
+			}
+			if media {
+				last_media = Some(Instant::now());
 			}
 			let delivered = data.update(cx, |data, cx| {
 				if !changes.is_empty() {
@@ -453,6 +474,7 @@ impl Render for AppRoot {
 fn settings_backend(store: &Arc<Store>) -> Rc<SettingsBackend> {
 	let reader = store.clone();
 	let writer = store.clone();
+	let secrets = store.clone();
 	Rc::new(SettingsBackend {
 		read: Box::new(move || reader.settings.read().clone()),
 		write: Box::new(move |apply| {
@@ -460,6 +482,7 @@ fn settings_backend(store: &Arc<Store>) -> Rc<SettingsBackend> {
 				tracing::warn!(%error, "could not save settings");
 			}
 		}),
+		plaintext_secrets: Box::new(move |plaintext| secrets.set_plaintext_secrets(plaintext)),
 		themes_dir: store.paths.themes_dir(),
 	})
 }

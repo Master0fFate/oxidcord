@@ -623,8 +623,9 @@ impl Community {
 				Content::Picker(picker) => picker.update(cx, |picker, cx| picker.refresh(cx)),
 			}
 		}
-		self.panel.update(cx, |_, cx| cx.notify());
-		cx.notify();
+		if thread.is_some() {
+			self.panel.update(cx, |_, cx| cx.notify());
+		}
 	}
 
 	pub fn on_media_ready(&mut self, cx: &mut Context<Self>) {

@@ -4,7 +4,7 @@ use state::{State, VideoKind};
 
 use crate::lookup::avatar_for;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Participant {
 	pub user: Snowflake,
 	pub name: SharedString,

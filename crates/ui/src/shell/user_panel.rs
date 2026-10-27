@@ -10,7 +10,7 @@ use media::SizeHint;
 use protocol::ActivityKind;
 
 use super::account::{StatusMenu, StatusMenuEvent};
-use crate::components::{Avatar, IconButton, tooltip};
+use crate::components::{Avatar, IconButton, tooltip, unicode_emoji};
 use crate::data::{Data, streamer_mode};
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::IconKind;
@@ -22,7 +22,7 @@ use crate::theme::{Theme, rem};
 const AVATAR_PIXELS: u32 = 64;
 const STATUS_EMOJI_SIZE: f32 = 14.;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 enum StatusEmoji {
 	Unicode(SharedString),
 	Custom { id: u64, animated: bool },
@@ -41,18 +41,16 @@ impl StatusEmoji {
 	}
 
 	fn element(&self, cx: &App) -> AnyElement {
-		let slot = div().flex_none().size(rem(STATUS_EMOJI_SIZE));
 		match self {
-			Self::Unicode(glyph) => slot
-				.text_size(rem(STATUS_EMOJI_SIZE - 2.))
-				.line_height(rem(STATUS_EMOJI_SIZE))
-				.child(glyph.clone())
-				.into_any_element(),
+			Self::Unicode(glyph) => unicode_emoji(glyph, rem(STATUS_EMOJI_SIZE), cx),
 			Self::Custom { id, animated } => {
 				let pixels = STATUS_EMOJI_SIZE as u32 * 2;
 				let url = media::cdn::emoji_url(*id, *animated, pixels);
 				let image = cx.global::<Images>().get(&url, SizeHint::square(pixels));
-				slot.when_some(image, |slot, image| slot.child(img(image).size_full()))
+				div()
+					.flex_none()
+					.size(rem(STATUS_EMOJI_SIZE))
+					.when_some(image, |slot, image| slot.child(img(image).size_full()))
 					.into_any_element()
 			}
 		}
@@ -151,30 +149,46 @@ impl UserPanel {
 	pub fn refresh(&mut self, cx: &mut Context<Self>) {
 		let data = self.data.read(cx);
 		let state = data.state();
-		self.latency = state.session().latency;
+		let latency = state.session().latency;
 		let Some(user) = state.current_user() else {
 			return;
 		};
 		let presence = state.presence(user.id);
-		self.name = state.display_name(None, user.id).into();
-		self.handle = user.username.clone().into();
-		self.avatar = user_avatar(user, AVATAR_PIXELS);
-		self.status = Status::from(&state.own_status());
+		let name: SharedString = state.display_name(None, user.id).into();
+		let handle: SharedString = user.username.clone().into();
+		let avatar = user_avatar(user, AVATAR_PIXELS);
+		let status = Status::from(&state.own_status());
 		let custom = presence.and_then(|presence| {
 			presence
 				.activities
 				.iter()
 				.find(|activity| activity.kind == ActivityKind::Custom)
 		});
-		self.custom_status = custom
+		let custom_status: Option<SharedString> = custom
 			.and_then(|activity| activity.state.clone())
 			.filter(|text| !text.is_empty())
 			.map(Into::into);
-		self.custom_emoji = custom
+		let custom_emoji = custom
 			.and_then(|activity| activity.emoji.as_ref())
 			.and_then(StatusEmoji::from_activity);
 		drop(state);
-		cx.notify();
+		let changed = latency != self.latency
+			|| name != self.name
+			|| handle != self.handle
+			|| avatar != self.avatar
+			|| status != self.status
+			|| custom_status != self.custom_status
+			|| custom_emoji != self.custom_emoji;
+		if changed {
+			self.latency = latency;
+			self.name = name;
+			self.handle = handle;
+			self.avatar = avatar;
+			self.status = status;
+			self.custom_status = custom_status;
+			self.custom_emoji = custom_emoji;
+			cx.notify();
+		}
 	}
 }
 
@@ -230,7 +244,7 @@ impl Render for UserPanel {
 			.filled_hover()
 			.hit_size(rem(32.))
 			.tooltip(mic_tooltip)
-			.when(muted || deafened, |button| button.color(danger))
+			.when(muted || deafened, |button| button.tinted(danger))
 			.on_click(cx.listener(|this, _, _, cx| {
 				this.data.update(cx, |data, cx| data.toggle_mute(cx));
 			}));
@@ -238,7 +252,7 @@ impl Render for UserPanel {
 			.filled_hover()
 			.hit_size(rem(32.))
 			.tooltip(deafen_tooltip)
-			.when(deafened, |button| button.color(danger))
+			.when(deafened, |button| button.tinted(danger))
 			.on_click(cx.listener(|this, _, _, cx| {
 				this.data.update(cx, |data, cx| data.toggle_deafen(cx));
 			}));
@@ -249,7 +263,6 @@ impl Render for UserPanel {
 			.gap(theme.space_4)
 			.h(theme.user_panel_height)
 			.px(theme.space_8)
-			.bg(theme.user_panel_background)
 			.child(
 				div()
 					.id("user-area")
@@ -260,7 +273,7 @@ impl Render for UserPanel {
 					.gap(theme.space_8)
 					.h(rem(40.))
 					.px(theme.space_4)
-					.rounded(theme.radius_sm)
+					.rounded(theme.radius_md)
 					.cursor_pointer()
 					.hover(|style| style.bg(theme.modifier_hover))
 					.on_click(

@@ -34,6 +34,7 @@ pub enum MemberListEvent {
 	OpenProfile { user: Snowflake, at: Point<Pixels> },
 }
 
+#[derive(PartialEq)]
 struct MemberItem {
 	id: Snowflake,
 	name: SharedString,
@@ -45,6 +46,7 @@ struct MemberItem {
 	badge: Option<SharedString>,
 }
 
+#[derive(PartialEq)]
 enum Row {
 	Group { id: String, name: String, count: u32 },
 	Member(MemberItem),
@@ -93,7 +95,7 @@ impl MemberList {
 		};
 		let data = self.data.read(cx);
 		let state = data.state();
-		self.rows = if self.query.is_empty() {
+		let rows = if self.query.is_empty() {
 			state
 				.member_rows(guild)
 				.into_iter()
@@ -114,7 +116,10 @@ impl MemberList {
 			search_rows(&state, guild, &self.query)
 		};
 		drop(state);
-		cx.notify();
+		if rows != self.rows {
+			self.rows = rows;
+			cx.notify();
+		}
 	}
 
 	fn on_search(&mut self, text: String, cx: &mut Context<Self>) {
@@ -224,7 +229,7 @@ impl MemberList {
 			.h(theme.member_row_height)
 			.mx(theme.space_8)
 			.px(theme.space_8)
-			.rounded(theme.radius_sm)
+			.rounded(theme.radius_md)
 			.cursor_pointer()
 			.hover(|style| style.bg(theme.modifier_hover))
 			.when(offline, |row| row.opacity(0.5))
@@ -240,7 +245,7 @@ impl MemberList {
 					.size(rem(32.))
 					.url(member.avatar.clone())
 					.status(member.status)
-					.cutout(theme.background_secondary),
+					.cutout(theme.background_primary),
 			)
 			.child(
 				div()
@@ -390,7 +395,7 @@ impl Render for MemberList {
 							.pt(theme.space_24)
 							.pb(theme.space_4)
 							.text_size(theme.font_tiny)
-							.font_weight(FontWeight::SEMIBOLD)
+							.font_weight(FontWeight::BOLD)
 							.text_color(theme.header_secondary)
 							.child(title.to_uppercase())
 							.into_any_element(),
@@ -413,7 +418,9 @@ impl Render for MemberList {
 			.flex_none()
 			.w(theme.member_list_width)
 			.h_full()
-			.bg(theme.background_secondary)
+			.bg(theme.background_primary)
+			.border_l_1()
+			.border_color(theme.divider)
 			.child(
 				div()
 					.flex_none()

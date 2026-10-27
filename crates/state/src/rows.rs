@@ -424,6 +424,7 @@ impl State {
 			author_display: over.and_then(|over| over.name.clone()).unwrap_or(author_display),
 			author_badge: over.and_then(|over| over.badge.clone()),
 			member_roles,
+			mentions_me: self.mentions_me(message, guild.map(|guild| guild.id)),
 		}
 	}
 

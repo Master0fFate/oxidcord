@@ -137,6 +137,9 @@ impl ForumView {
 	}
 
 	pub fn refresh(&mut self, cx: &mut Context<Self>) {
+		if self.channel.is_none() {
+			return;
+		}
 		self.request_starters(cx);
 		cx.notify();
 	}

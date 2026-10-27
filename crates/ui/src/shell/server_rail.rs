@@ -36,7 +36,7 @@ const DEFAULT_FOLDER_COLOR: u32 = 0x5865f2;
 const FOLDER_NAME_GUILDS: usize = 3;
 const SERVER_DIRECTORY: &str = "https://discord.com/servers";
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct GuildItem {
 	pub id: Snowflake,
 	pub name: SharedString,
@@ -45,7 +45,7 @@ pub struct GuildItem {
 	pub mentions: u32,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct FolderItem {
 	pub id: Id,
 	pub name: SharedString,
@@ -53,13 +53,17 @@ pub struct FolderItem {
 	pub guilds: Vec<GuildItem>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum RailEntry {
 	Guild(GuildItem),
 	Folder(FolderItem),
 }
 
 const MORPH: Duration = Duration::from_millis(140);
+const TILE_RADIUS: f32 = 12.;
+const GLYPH_SIZE: f32 = 22.;
+const LOGO_SIZE: f32 = 28.;
+const TILE_RADIUS_ACTIVE: f32 = 10.;
 
 pub enum RailEvent {
 	SelectHome,
@@ -182,10 +186,14 @@ impl ServerRail {
 	pub fn refresh(&mut self, cx: &mut Context<Self>) {
 		let data = self.data.read(cx);
 		let state = data.state();
-		self.entries = rail_entries(&state);
-		self.home_mentions = state.dm_rows().iter().map(|row| row.mentions).sum();
+		let entries = rail_entries(&state);
+		let home_mentions = state.dm_rows().iter().map(|row| row.mentions).sum();
 		drop(state);
-		cx.notify();
+		if entries != self.entries || home_mentions != self.home_mentions {
+			self.entries = entries;
+			self.home_mentions = home_mentions;
+			cx.notify();
+		}
 	}
 
 	fn set_hover(&mut self, target: Target, hovered: bool, cx: &mut Context<Self>) {
@@ -235,7 +243,7 @@ impl ServerRail {
 		};
 		let (from, to) = self.tiles.settle(target, state);
 		let seed = target.seed();
-		let radius = |round: bool| if round { 16. } else { 24. };
+		let radius = |round: bool| if round { TILE_RADIUS_ACTIVE } else { TILE_RADIUS };
 		let (from_radius, to_radius) = (radius(from.round), radius(to.round));
 		let animation_key = seed
 			.wrapping_mul(16)
@@ -247,10 +255,13 @@ impl ServerRail {
 		};
 		let size = theme.server_icon;
 		let ring = theme.background_tertiary;
-		let space_4 = theme.space_4;
 		let face = match face {
 			Face::Icon(kind) => Icon::new(kind)
-				.size(rem(26.))
+				.size(rem(if kind == IconKind::Logo {
+					LOGO_SIZE
+				} else {
+					GLYPH_SIZE
+				}))
 				.color(foreground)
 				.into_any_element(),
 			Face::Guild { icon, acronym } => {
@@ -285,13 +296,13 @@ impl ServerRail {
 				}
 			}
 			Face::Folder(letters) => {
-				let cell = theme.space_16;
+				let cell = rem(14.);
 				div()
 					.flex()
 					.flex_wrap()
 					.size_full()
-					.p(rem(6.))
-					.gap(space_4)
+					.p(rem(5.))
+					.gap(rem(2.))
 					.children(letters.into_iter().map(|mini| {
 						let image = mini
 							.icon
@@ -387,7 +398,7 @@ impl ServerRail {
 			acronym: acronym(&guild.name),
 		};
 		let style = TileStyle {
-			rest_background: theme.background_primary,
+			rest_background: theme.background_secondary,
 			rest_foreground: theme.text_normal,
 			active_background: theme.brand,
 			active_foreground: theme.text_on_brand,
@@ -463,7 +474,7 @@ impl ServerRail {
 					.top_0()
 					.left(inset)
 					.size(theme.server_icon)
-					.rounded(theme.radius_lg)
+					.rounded(rem(TILE_RADIUS))
 					.border_2()
 					.border_color(transparent_black())
 					.drag_over::<DraggedGuild>(move |style, _, _, _| style.border_color(brand))
@@ -592,7 +603,7 @@ impl ServerRail {
 					.flex_col()
 					.gap(theme.space_8)
 					.w(theme.server_icon)
-					.rounded(theme.radius_lg)
+					.rounded(rem(TILE_RADIUS))
 					.bg(tint)
 					.child(header)
 					.children(guilds),
@@ -605,13 +616,13 @@ impl Render for ServerRail {
 	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
 		let home_style = TileStyle {
-			rest_background: theme.background_primary,
-			rest_foreground: theme.text_normal,
+			rest_background: theme.background_secondary,
+			rest_foreground: theme.header_primary,
 			active_background: theme.brand,
 			active_foreground: theme.text_on_brand,
 		};
 		let add_style = || TileStyle {
-			rest_background: theme.background_primary,
+			rest_background: theme.background_secondary,
 			rest_foreground: theme.status_online,
 			active_background: theme.status_online,
 			active_foreground: theme.text_on_brand,
@@ -620,7 +631,7 @@ impl Render for ServerRail {
 			.tile(
 				TileSpec {
 					target: Target::Home,
-					face: Face::Icon(IconKind::Home),
+					face: Face::Icon(IconKind::Logo),
 					style: home_style,
 					unread: false,
 					selected: self.selected.is_none(),
@@ -701,9 +712,9 @@ impl Render for ServerRail {
 			.child(home)
 			.child(
 				Divider::horizontal()
-					.thickness(px(2.))
+					.thickness(px(1.))
 					.length(theme.space_32)
-					.color(theme.background_primary),
+					.color(theme.divider),
 			)
 			.children(rows)
 			.child(add)
@@ -711,9 +722,9 @@ impl Render for ServerRail {
 			.when(!apps.is_empty(), |rail| {
 				rail.child(
 					Divider::horizontal()
-						.thickness(px(2.))
+						.thickness(px(1.))
 						.length(theme.space_32)
-						.color(theme.background_primary),
+						.color(theme.divider),
 				)
 				.children(apps)
 			})

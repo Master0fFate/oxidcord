@@ -26,6 +26,7 @@ pub enum DmSidebarEvent {
 	CloseDm(Snowflake),
 }
 
+#[derive(PartialEq)]
 struct DmItem {
 	id: Snowflake,
 	name: SharedString,
@@ -64,14 +65,14 @@ impl DmSidebar {
 	}
 
 	pub fn select(&mut self, dm: Option<Snowflake>, cx: &mut Context<Self>) {
-		self.selected = dm.map(Selection::Dm);
+		self.selected = Some(dm.map_or(Selection::Friends, Selection::Dm));
 		cx.notify();
 	}
 
 	pub fn refresh(&mut self, cx: &mut Context<Self>) {
 		let data = self.data.read(cx);
 		let state = data.state();
-		self.dms = state
+		let dms: Vec<DmItem> = state
 			.dm_rows()
 			.into_iter()
 			.map(|row| {
@@ -88,7 +89,10 @@ impl DmSidebar {
 			})
 			.collect();
 		drop(state);
-		cx.notify();
+		if dms != self.dms {
+			self.dms = dms;
+			cx.notify();
+		}
 	}
 
 	fn nav_row(
@@ -116,7 +120,7 @@ impl DmSidebar {
 			.h(theme.member_row_height)
 			.mx(theme.space_8)
 			.px(theme.space_8)
-			.rounded(theme.radius_sm)
+			.rounded(theme.radius_md)
 			.cursor_pointer()
 			.text_size(theme.font_md)
 			.font_weight(FontWeight::MEDIUM)
@@ -162,7 +166,7 @@ impl DmSidebar {
 				.cutout(if selected {
 					theme.modifier_selected
 				} else {
-					theme.background_secondary
+					theme.background_tertiary
 				})
 				.into_any_element(),
 			Some(_) => div()
@@ -192,7 +196,7 @@ impl DmSidebar {
 			.h(theme.member_row_height)
 			.mx(theme.space_8)
 			.px(theme.space_8)
-			.rounded(theme.radius_sm)
+			.rounded(theme.radius_md)
 			.cursor_pointer()
 			.when(selected, |row| row.bg(theme.modifier_selected))
 			.when(!selected, |row| row.hover(|style| style.bg(theme.modifier_hover)))
@@ -270,7 +274,7 @@ impl Render for DmSidebar {
 			.flex_col()
 			.size_full()
 			.min_h_0()
-			.bg(theme.background_secondary)
+			.bg(theme.background_tertiary)
 			.child(
 				div()
 					.flex()
@@ -279,17 +283,17 @@ impl Render for DmSidebar {
 					.h(theme.top_bar_height)
 					.px(rem(10.))
 					.border_b_1()
-					.border_color(theme.background_tertiary)
+					.border_color(theme.divider)
 					.child(
 						div()
 							.id("dm-search")
 							.flex()
 							.flex_1()
 							.items_center()
-							.h(rem(28.))
+							.h(rem(30.))
 							.px(theme.space_8)
-							.rounded(theme.radius_sm)
-							.bg(theme.background_tertiary)
+							.rounded(theme.radius_md)
+							.bg(theme.background_secondary)
 							.cursor_pointer()
 							.text_size(theme.font_sm)
 							.text_color(theme.text_muted)
