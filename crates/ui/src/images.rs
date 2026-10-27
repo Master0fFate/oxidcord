@@ -164,18 +164,33 @@ impl Images {
 	}
 
 	fn resolve(&self, url: &str) -> String {
-		let Some(origin) = &self.mock_origin else {
-			return url.to_owned();
-		};
-		let Ok(parsed) = Url::parse(url) else {
-			return url.to_owned();
-		};
-		if parsed.host_str() == origin.host_str() {
-			return url.to_owned();
+		match &self.mock_origin {
+			Some(origin) => mock_url(origin, url),
+			None => url.to_owned(),
 		}
-		let mut hasher = DefaultHasher::new();
-		parsed.path().hash(&mut hasher);
-		format!("{}media/{:016x}.png", origin, hasher.finish())
+	}
+}
+
+pub fn mock_url(origin: &Url, url: &str) -> String {
+	let Ok(parsed) = Url::parse(url) else {
+		return url.to_owned();
+	};
+	if parsed.host_str() == origin.host_str() {
+		return url.to_owned();
+	}
+	let mut hasher = DefaultHasher::new();
+	parsed.path().hash(&mut hasher);
+	let file = parsed
+		.path_segments()
+		.and_then(|mut segments| segments.next_back())
+		.filter(|file| file.contains('.'))
+		.filter(|file| {
+			file.bytes()
+				.all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
+		});
+	match file {
+		Some(file) => format!("{}media/{:016x}-{file}", origin, hasher.finish()),
+		None => format!("{}media/{:016x}.png", origin, hasher.finish()),
 	}
 }
 

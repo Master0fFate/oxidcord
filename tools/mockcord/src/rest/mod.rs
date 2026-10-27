@@ -36,6 +36,7 @@ pub fn router(shared: Arc<Shared>) -> Router {
 		.route("/users/@me/profile", patch(admin::patch_profile))
 		.route("/users/@me/settings", patch(admin::patch_settings))
 		.route("/users/@me/guilds", get(users::my_guilds))
+		.route("/users/@me/mentions", get(users::my_mentions))
 		.route("/guilds", post(admin::create_guild))
 		.route("/auth/sessions", get(admin::auth_sessions))
 		.route("/auth/sessions/logout", post(admin::logout_sessions))

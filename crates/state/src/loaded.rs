@@ -14,8 +14,11 @@ use crate::changes::Changes;
 use crate::expressions::{EXPRESSIONS_KEY, EmojiRef, Expressions};
 use crate::state::{State, intern_user};
 
+pub const INBOX_KEY: Snowflake = Snowflake(1);
+
 #[derive(Debug, Clone)]
 pub enum Loaded {
+	Mentions(Vec<Message>),
 	Pins {
 		channel_id: Snowflake,
 		messages: Vec<Message>,
@@ -189,6 +192,7 @@ pub(crate) struct ArchivedThreads {
 
 #[derive(Debug, Default)]
 pub(crate) struct Lazy {
+	pub(crate) mentions: Option<Vec<Arc<Message>>>,
 	pub(crate) pins: HashMap<Snowflake, Vec<Arc<Message>>>,
 	pub(crate) archived: HashMap<Snowflake, ArchivedThreads>,
 	pub(crate) profiles: HashMap<Snowflake, UserProfile>,
@@ -393,6 +397,18 @@ impl State {
 	pub(crate) fn apply_loaded(&mut self, loaded: &Loaded) -> Changes {
 		let mut changes = Changes::default();
 		match loaded {
+			Loaded::Mentions(messages) => {
+				let shared = messages
+					.iter()
+					.map(|message| {
+						let guild_id = self.channel_guild(message.channel_id);
+						self.ingest_message_people(guild_id, message);
+						Arc::new(message.clone())
+					})
+					.collect();
+				self.lazy.mentions = Some(shared);
+				changes.loaded.insert(INBOX_KEY);
+			}
 			Loaded::Pins { channel_id, messages } => {
 				let guild_id = self.channel_guild(*channel_id);
 				let shared = messages
@@ -670,6 +686,10 @@ impl State {
 				reason: entry.reason.filter(|reason| !reason.is_empty()),
 			})
 			.collect()
+	}
+
+	pub fn mentions(&self) -> Option<&[Arc<Message>]> {
+		self.lazy.mentions.as_deref()
 	}
 
 	pub fn pins(&self, channel_id: Snowflake) -> Option<&[Arc<Message>]> {

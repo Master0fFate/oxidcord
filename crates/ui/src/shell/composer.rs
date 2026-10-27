@@ -7,18 +7,18 @@ use gpui::{
 	AnyElement, AppContext as _, ClickEvent, Context, Entity, EventEmitter, ExternalPaths, Focusable as _,
 	FontWeight, InteractiveElement as _, IntoElement, ObjectFit, ParentElement as _, Pixels, Point, Render,
 	SharedString, StatefulInteractiveElement as _, Styled as _, StyledImage as _, Subscription, Task, Window,
-	div, img, prelude::FluentBuilder as _,
+	div, img, prelude::FluentBuilder as _, px,
 };
 use gpui_component::input::{Escape, InputEvent, Textarea, TextareaState};
 use media::SizeHint;
 use plugin_host::ViewContext;
 use protocol::{ChannelType, Snowflake};
 use rest::UploadFile;
-use session::Command;
+use session::{Command, ReplyTarget};
 
 use super::pickers::PickerTab;
 use super::plugins::{self, command_list, composer_toolbar, parse_command};
-use crate::components::{Avatar, IconButton};
+use crate::components::{Avatar, Divider, IconButton};
 use crate::data::Data;
 use crate::emoji;
 use crate::format;
@@ -44,6 +44,7 @@ pub enum ComposerEvent {
 struct ReplyTo {
 	message: Snowflake,
 	name: SharedString,
+	mention: bool,
 }
 
 struct Attached {
@@ -245,7 +246,11 @@ impl Composer {
 		window: &mut Window,
 		cx: &mut Context<Self>,
 	) {
-		self.reply = Some(ReplyTo { message, name });
+		self.reply = Some(ReplyTo {
+			message,
+			name,
+			mention: true,
+		});
 		self.input.update(cx, |state, cx| state.focus(window, cx));
 		cx.notify();
 	}
@@ -543,7 +548,11 @@ impl Composer {
 				content_type: file.content_type.to_owned(),
 			})
 			.collect();
-		let reply_to = self.reply.take().map(|reply| reply.message);
+		let direct = self.direct;
+		let reply_to = self.reply.take().map(|reply| ReplyTarget {
+			message: reply.message,
+			mention: direct || reply.mention,
+		});
 		let data = self.data.read(cx);
 		match parse_command(data, &text).filter(|_| files.is_empty()) {
 			Some((name, args)) => data.send(Command::RunPluginCommand {
@@ -844,14 +853,56 @@ impl Composer {
 					&[("name", ArgValue::from(reply.name.to_string()))],
 				))
 				.child(
-					IconButton::new("composer-cancel-reply", IconKind::Close)
-						.icon_size(rem(16.))
-						.hit_size(rem(24.))
-						.tooltip(cx.t("composer-cancel-reply"))
-						.on_click(cx.listener(|this, _, _, cx| {
-							this.reply = None;
-							cx.notify();
-						})),
+					div()
+						.flex()
+						.items_center()
+						.gap(theme.space_8)
+						.when(!self.direct, |actions| {
+							actions
+								.child(
+									div()
+										.id("composer-reply-ping")
+										.flex()
+										.items_center()
+										.gap(theme.space_4)
+										.cursor_pointer()
+										.font_weight(FontWeight::BOLD)
+										.text_color(if reply.mention {
+											theme.link
+										} else {
+											theme.text_muted
+										})
+										.tooltip(crate::components::tooltip(cx.t("composer-reply-ping")))
+										.on_click(cx.listener(|this, _, _, cx| {
+											if let Some(reply) = &mut this.reply {
+												reply.mention = !reply.mention;
+												cx.notify();
+											}
+										}))
+										.child(Icon::new(IconKind::AtSign).size(rem(16.)))
+										.child(cx.t(if reply.mention {
+											"composer-reply-ping-on"
+										} else {
+											"composer-reply-ping-off"
+										})),
+								)
+								.child(
+									Divider::vertical()
+										.length(rem(16.))
+										.thickness(px(1.))
+										.color(theme.divider),
+								)
+						})
+						.child(
+							IconButton::new("composer-cancel-reply", IconKind::Close)
+								.icon_size(rem(16.))
+								.hit_size(rem(24.))
+								.tooltip(cx.t("composer-cancel-reply"))
+								.on_click(cx.listener(|this, _, _, cx| {
+									this.reply = None;
+									cx.notify();
+								})),
+						),
 				)
 				.into_any_element(),
 		)

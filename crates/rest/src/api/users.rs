@@ -1,4 +1,4 @@
-use protocol::{Guild, LenientVec, Relationship, Snowflake, User};
+use protocol::{Guild, LenientVec, Message, Relationship, Snowflake, User};
 use serde_json::{Value, json};
 
 use crate::client::RestClient;
@@ -23,6 +23,15 @@ impl RestClient {
 		if let Some(guild_id) = guild_id {
 			request = request.query(&[("guild_id", guild_id.to_string())]);
 		}
+		self.send(request).await
+	}
+
+	pub async fn mentions(&self, limit: u8) -> Result<LenientVec<Message>> {
+		let request = Request::get("/users/@me/mentions").query(&[
+			("limit", limit.to_string().as_str()),
+			("roles", "true"),
+			("everyone", "true"),
+		]);
 		self.send(request).await
 	}
 

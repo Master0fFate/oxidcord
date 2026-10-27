@@ -24,6 +24,7 @@ use crate::data::{Data, DataEvent};
 use crate::desktop::{self, Desktop, DesktopEvent, TrayActive};
 use crate::i18n::Localizer;
 use crate::images::Images;
+use crate::playback::Playback;
 use crate::shell::{
 	DataDir, LoginEvent, LoginOptions, LoginScreen, PluginStore, SettingsBackend, Shell, ShellEvent,
 	Textures, UpdateService, VideoTextures, VoiceHotkeys, set_reduced_motion,
@@ -123,6 +124,12 @@ pub fn run(mut config: LaunchConfig) {
 				}
 			};
 			cx.set_global(Images::new(media.clone(), config.mock_origin.clone()));
+			Playback::install(
+				media.clone(),
+				config.mock_origin.clone(),
+				config.store.paths.cache_dir().join("embeds"),
+				cx,
+			);
 			UpdateService::launch(
 				config.store.clone(),
 				settings.updates.check_on_start && !config.flags.mock,

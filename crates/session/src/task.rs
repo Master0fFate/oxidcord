@@ -10,8 +10,8 @@ use parking_lot::Mutex;
 use plugin_host::SendDecision;
 use plugin_host::api::VoiceInfo;
 use protocol::{
-	Channel, ChannelType, CreateMessage, DISCORD_EPOCH_MS, DispatchEvent, EditMessage, Message, MessageAck,
-	MessageReference, MessagesQuery, Nonce, Snowflake, Token, User,
+	AllowedMentions, Channel, ChannelType, CreateMessage, DISCORD_EPOCH_MS, DispatchEvent, EditMessage,
+	Message, MessageAck, MessageReference, MessagesQuery, Nonce, Snowflake, Token, User,
 };
 use rest::api::SearchQuery;
 use rest::{RestClient, UploadFile};
@@ -22,7 +22,7 @@ use tokio::runtime::Handle;
 use tokio::sync::mpsc;
 use tokio::time::{Instant, sleep_until};
 
-use crate::command::Command;
+use crate::command::{Command, ReplyTarget};
 use crate::config::VoiceIo;
 use crate::notifier::Notifier;
 use crate::persist::{self, Job, Persistor};
@@ -132,7 +132,7 @@ pub(crate) enum Internal {
 		nonce: Nonce,
 		channel_id: Snowflake,
 		content: String,
-		reply_to: Option<Snowflake>,
+		reply_to: Option<ReplyTarget>,
 		files: Vec<UploadFile>,
 		decision: SendDecision,
 	},
@@ -954,7 +954,7 @@ impl Core {
 		&mut self,
 		channel_id: Snowflake,
 		content: String,
-		reply_to: Option<Snowflake>,
+		reply_to: Option<ReplyTarget>,
 		files: Vec<UploadFile>,
 		by_plugin: Option<String>,
 	) {
@@ -985,17 +985,26 @@ impl Core {
 		nonce: Nonce,
 		channel_id: Snowflake,
 		content: String,
-		reply_to: Option<Snowflake>,
+		reply_to: Option<ReplyTarget>,
 		files: Vec<UploadFile>,
 	) {
 		let body = CreateMessage {
 			content: (!content.is_empty()).then_some(content),
 			nonce: Some(nonce.0.clone()),
-			message_reference: reply_to.map(|message_id| MessageReference {
-				message_id: Some(message_id),
+			message_reference: reply_to.map(|reply| MessageReference {
+				message_id: Some(reply.message),
 				channel_id: Some(channel_id),
 				fail_if_not_exists: Some(false),
 				..MessageReference::default()
+			}),
+			allowed_mentions: reply_to.filter(|reply| !reply.mention).map(|_| AllowedMentions {
+				parse: Some(vec![
+					"users".to_owned(),
+					"roles".to_owned(),
+					"everyone".to_owned(),
+				]),
+				replied_user: Some(false),
+				..AllowedMentions::default()
 			}),
 			..CreateMessage::default()
 		};

@@ -159,6 +159,7 @@ pub struct EmbedMedia {
 	pub width: Option<i64>,
 	pub content_type: Option<String>,
 	pub placeholder: Option<String>,
+	pub flags: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]

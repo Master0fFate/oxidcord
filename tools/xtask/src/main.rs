@@ -1,4 +1,5 @@
 mod checks;
+mod codecs;
 mod headless;
 mod plugin;
 mod release;
@@ -18,6 +19,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Task {
 	HeadlessRun(headless::Args),
+	Codecs(codecs::CodecArgs),
 	Plugin(plugin::PluginArgs),
 	Release(release::ReleaseArgs),
 	Theme(theme::ThemeArgs),
@@ -30,6 +32,7 @@ fn main() -> ExitCode {
 	let cli = Cli::parse();
 	let outcome = match cli.task {
 		Task::HeadlessRun(args) => headless::run(args),
+		Task::Codecs(args) => codecs::run(args),
 		Task::Plugin(args) => plugin::run(args),
 		Task::Release(args) => release::run(args),
 		Task::Theme(args) => theme::run(args),

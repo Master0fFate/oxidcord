@@ -10,7 +10,8 @@ crates/rest         HTTP client: rate-limit buckets, 429 retry, Authorization re
 crates/state        normalized store, permission math, read state, message cache
 crates/store        sqlite cache and settings, token in the OS keyring
 crates/markdown     Discord markdown parser to AST to layout model
-crates/media        image and animation decoding, texture cache
+crates/media        image and animation decoding, texture cache, ranged fetch, embed provider allowlist
+crates/player       audio and video playback for chat media: symphonia demux, FFmpeg codec pack, platform decoders
 crates/ui           native views and components, theme tokens
 crates/platform     tray, notifications, keyring, single instance, hotkeys
 crates/plugin-host  WebAssembly component runtime, capability broker, UI slot renderer
@@ -45,3 +46,9 @@ Every enum that Discord may extend has an `Unknown(i64)` or `Unknown(String)` va
 - `Tray` and `Hotkeys` install process-global event handlers, so each can be created once per process.
 - `single_instance::acquire` returns `AlreadyRunning` when another instance holds the lock. The second launch should call `notify_existing` with its CLI args (deep link) and exit.
 - On Windows, toasts need an AppUserModelID: call `notifications::set_app_user_model_id` at startup and pass the same id as `Notification::app_id`.
+
+## Chat media
+
+Videos, audio files and gifv loops stream through `crates/player` with ranged requests over the same host allowlist as images. Video decoding prefers the FFmpeg codec pack (`cargo xtask codecs` installs the pinned, checksummed LGPL build into `target/<profile>/codecs`), then Media Foundation on Windows, then OpenH264 for H.264. On macOS the pack is also looked up in the Homebrew and MacPorts library folders.
+
+Provider embeds (YouTube, Vimeo, Spotify, SoundCloud) are never loaded from the embed payload. `media::providers` rebuilds the player URL from a validated id against a fixed origin list, and the frame is a sandboxed iframe inside a local document with a CSP that only allows those origins. On Windows the frame is a WebView2 popup owned by the main window; on other platforms the play button opens the link in the browser.

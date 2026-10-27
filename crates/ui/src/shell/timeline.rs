@@ -16,7 +16,7 @@ use gpui_component::button::{Button, ButtonVariant, ButtonVariants as _};
 use gpui_component::input::{Escape, InputEvent, TextareaState};
 use lru::LruCache;
 use protocol::Snowflake;
-use session::Command;
+use session::{Command, ReplyTarget};
 use state::{Changes, MessageRow};
 
 use super::community::act;
@@ -513,7 +513,10 @@ impl Timeline {
 			} => self.data.read(cx).send(Command::SendMessage {
 				channel_id,
 				content,
-				reply_to,
+				reply_to: reply_to.map(|message| ReplyTarget {
+					message,
+					mention: true,
+				}),
 				files: Vec::new(),
 				by_plugin: None,
 			}),
@@ -836,5 +839,6 @@ impl Render for Timeline {
 			.when(!self.selection.is_empty(), |timeline| {
 				timeline.child(self.selection_bar(&theme, cx))
 			})
+			.child(crate::playback::Playback::view_marker())
 	}
 }

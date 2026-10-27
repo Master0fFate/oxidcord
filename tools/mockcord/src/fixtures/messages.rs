@@ -22,6 +22,8 @@ const CLUSTER_SIZE: usize = 4;
 const GROUPING_WINDOW_MS: i64 = 300_000;
 const RECENT_WINDOW_MS: i64 = 3_600_000;
 const STICKER_ID: u64 = 749_054_660_769_218_631;
+const ANIMATED_FLAG: u64 = 1 << 5;
+const VOICE_WAVEFORM: &str = "AAoUHiw4RlJeanV/iJCWm56foJ+dmpWPh312a19UST4zKB0TCQIACRQgLDhEUFxndHuEjJKXm56foJ+dmpWOhn10aV5TSD0yJxwSCAA=";
 const MALFORMED_ATTACHMENT: &str = r#"{"id":{"unexpected":true},"filename":["broken"],"size":"huge"}"#;
 
 pub struct ChannelSpec<'a> {
@@ -60,6 +62,13 @@ enum Special {
 	EmbedGifv,
 	EmbedArticle,
 	EmbedLink,
+	EmbedSpotify,
+	VideoFile,
+	WebmFile,
+	AudioFile,
+	VoiceMessage,
+	GifFile,
+	GifLink,
 	Poll,
 	Reactions,
 	Pinned,
@@ -162,6 +171,13 @@ fn special_list(spec: &ChannelSpec) -> Vec<Special> {
 		Unknown,
 		Malformed,
 		EmbedLink,
+		VideoFile,
+		GifLink,
+		AudioFile,
+		EmbedSpotify,
+		VoiceMessage,
+		GifFile,
+		WebmFile,
 		MentionMe,
 	];
 	if spec.emojis.is_empty() {
@@ -428,7 +444,7 @@ impl<'a> Generator<'a, '_> {
 			Special::EmbedGifv => {
 				message.content = "https://tenor.com/view/mock-gif-1".to_owned();
 				let thumbnail = self.media("https://media.tenor.com/mock/thumb.png", 498, 280);
-				let video = self.media("https://media.tenor.com/mock/clip.mp4", 498, 280);
+				let video = self.media("https://media.tenor.com/mock/gifv.mp4", 240, 136);
 				message.embeds = LenientVec::from(vec![Embed {
 					kind: Some(EmbedKind::Gifv),
 					url: Some("https://tenor.com/view/mock-gif-1".to_owned()),
@@ -468,6 +484,73 @@ impl<'a> Generator<'a, '_> {
 					title: Some("A plain link preview".to_owned()),
 					url: Some("https://example.org/plain-link".to_owned()),
 					description: Some("No image, no author, just a title and a line of text.".to_owned()),
+					..Embed::default()
+				}]);
+			}
+			Special::EmbedSpotify => {
+				let link = "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT";
+				message.content = link.to_owned();
+				message.embeds = LenientVec::from(vec![Embed {
+					kind: Some(EmbedKind::Link),
+					title: Some("Never Gonna Give You Up".to_owned()),
+					description: Some("Rick Astley · Song · 1987".to_owned()),
+					url: Some(link.to_owned()),
+					provider: Some(EmbedProvider {
+						name: Some("Spotify".to_owned()),
+						url: Some("https://www.spotify.com/".to_owned()),
+					}),
+					thumbnail: Some(self.media("https://i.scdn.co/image/mock-cover.jpg", 640, 640)),
+					..Embed::default()
+				}]);
+			}
+			Special::VideoFile => {
+				message.content = "clip from today".to_owned();
+				message.attachments = LenientVec::from(vec![self.file_attachment(
+					message.id.0,
+					"clip.mp4",
+					"video/mp4",
+					Some((320, 180)),
+				)]);
+			}
+			Special::WebmFile => {
+				message.attachments = LenientVec::from(vec![self.file_attachment(
+					message.id.0,
+					"clip.webm",
+					"video/webm",
+					Some((320, 180)),
+				)]);
+			}
+			Special::AudioFile => {
+				message.content = "new track".to_owned();
+				message.attachments = LenientVec::from(vec![self.file_attachment(
+					message.id.0,
+					"song.mp3",
+					"audio/mpeg",
+					None,
+				)]);
+			}
+			Special::VoiceMessage => {
+				let mut voice = self.file_attachment(message.id.0, "voice.ogg", "audio/ogg", None);
+				voice.duration_secs = Some(3.0);
+				voice.waveform = Some(VOICE_WAVEFORM.to_owned());
+				message.flags |= MessageFlags::IS_VOICE_MESSAGE;
+				message.attachments = LenientVec::from(vec![voice]);
+			}
+			Special::GifFile => {
+				let mut gif = self.file_attachment(message.id.0, "loop.gif", "image/gif", Some((200, 120)));
+				gif.flags = Some(ANIMATED_FLAG);
+				message.attachments = LenientVec::from(vec![gif]);
+			}
+			Special::GifLink => {
+				let link = "https://example.com/reactions/loop.gif";
+				message.content = link.to_owned();
+				let mut image = self.media(link, 200, 120);
+				image.content_type = Some("image/gif".to_owned());
+				image.flags = Some(ANIMATED_FLAG);
+				message.embeds = LenientVec::from(vec![Embed {
+					kind: Some(EmbedKind::Image),
+					url: Some(link.to_owned()),
+					thumbnail: Some(image),
 					..Embed::default()
 				}]);
 			}
@@ -631,6 +714,33 @@ impl<'a> Generator<'a, '_> {
 		}
 	}
 
+	fn file_attachment(
+		&mut self,
+		message_id: u64,
+		file: &str,
+		content_type: &str,
+		size: Option<(i64, i64)>,
+	) -> Attachment {
+		let attachment_id = message_id + 1;
+		let url = format!(
+			"https://cdn.discordapp.com/attachments/{}/{attachment_id}/{file}",
+			self.spec.channel_id
+		);
+		Attachment {
+			id: Snowflake(attachment_id),
+			filename: file.to_owned(),
+			content_type: Some(content_type.to_owned()),
+			size: Some(self.rng.random_range(10_000..200_000)),
+			proxy_url: Some(url.replace("cdn.discordapp.com", "media.discordapp.net")),
+			url: Some(url),
+			width: size.map(|(width, _)| width),
+			height: size.map(|(_, height)| height),
+			flags: Some(0),
+			placeholder: size.map(|(width, height)| thumbhash(self.rng, width >= height)),
+			..Attachment::default()
+		}
+	}
+
 	fn media(&mut self, url: &str, width: i64, height: i64) -> EmbedMedia {
 		EmbedMedia {
 			url: Some(url.to_owned()),
@@ -642,6 +752,7 @@ impl<'a> Generator<'a, '_> {
 			height: Some(height),
 			content_type: None,
 			placeholder: Some(thumbhash(self.rng, width >= height)),
+			flags: None,
 		}
 	}
 

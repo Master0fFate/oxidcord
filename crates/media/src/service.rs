@@ -68,6 +68,14 @@ impl MediaService {
 		&self.inner.disk
 	}
 
+	pub fn fetcher(&self) -> &MediaFetcher {
+		&self.inner.fetcher
+	}
+
+	pub fn runtime(&self) -> &Handle {
+		&self.inner.runtime
+	}
+
 	pub fn peek(&self, url: &str, hint: SizeHint, still: bool) -> Option<Arc<Decoded>> {
 		self.inner.memory.lock().get(url, hint, still)
 	}

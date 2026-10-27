@@ -13,6 +13,23 @@ const TENOR_PREVIEW: &str = "AAAAe";
 const TENOR_TINY_GIF: &str = "AAAAM";
 const TENOR_CODE_LEN: usize = 5;
 const VIDEO_EXTENSIONS: [&str; 5] = ["mp4", "m4v", "webm", "mov", "mkv"];
+const PLAYABLE_VIDEO_EXTENSIONS: [&str; 4] = ["mp4", "m4v", "webm", "mov"];
+const PLAYABLE_VIDEO_TYPES: [&str; 3] = ["video/mp4", "video/webm", "video/quicktime"];
+const AUDIO_EXTENSIONS: [&str; 8] = ["mp3", "ogg", "oga", "opus", "wav", "flac", "m4a", "aac"];
+const AUDIO_TYPES: [&str; 12] = [
+	"audio/mpeg",
+	"audio/mp3",
+	"audio/ogg",
+	"audio/opus",
+	"audio/wav",
+	"audio/x-wav",
+	"audio/wave",
+	"audio/flac",
+	"audio/x-flac",
+	"audio/mp4",
+	"audio/x-m4a",
+	"audio/aac",
+];
 const MIN_SIZE: u32 = 16;
 const MAX_SIZE: u32 = 4096;
 const STICKER_SIZE: u32 = 320;
@@ -146,6 +163,58 @@ pub fn avatar_decoration_url(asset: &str, size: u32) -> String {
 
 pub fn attachment_proxy(url: &str, width: u32, height: u32, format: ProxyFormat) -> String {
 	proxy_rewrite(url, width, height, format, None).unwrap_or_else(|| url.to_owned())
+}
+
+pub fn animated_proxy(url: &str, width: u32, height: u32) -> String {
+	proxy_rewrite(url, width, height, ProxyFormat::Webp, Some(true)).unwrap_or_else(|| url.to_owned())
+}
+
+pub fn video_poster(url: &str, width: u32, height: u32) -> Option<String> {
+	proxy_rewrite(url, width, height, ProxyFormat::Webp, None)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Playable {
+	Video,
+	Audio,
+}
+
+fn extension_of(name: &str) -> Option<&str> {
+	let path = name.split(['?', '#']).next().unwrap_or_default();
+	let file = path.rsplit('/').next().unwrap_or(path);
+	file.rsplit_once('.').map(|(_, extension)| extension)
+}
+
+pub fn playable(content_type: Option<&str>, name: &str) -> Option<Playable> {
+	let essence = content_type.map(|kind| {
+		kind.split(';')
+			.next()
+			.unwrap_or_default()
+			.trim()
+			.to_ascii_lowercase()
+	});
+	match essence.as_deref() {
+		Some(kind) if PLAYABLE_VIDEO_TYPES.contains(&kind) => return Some(Playable::Video),
+		Some(kind) if AUDIO_TYPES.contains(&kind) => return Some(Playable::Audio),
+		Some(kind) if !kind.is_empty() && kind != "application/octet-stream" => return None,
+		_ => {}
+	}
+	let extension = extension_of(name)?;
+	let matches = |known: &[&str]| known.iter().any(|item| extension.eq_ignore_ascii_case(item));
+	if matches(&PLAYABLE_VIDEO_EXTENSIONS) {
+		Some(Playable::Video)
+	} else if matches(&AUDIO_EXTENSIONS) {
+		Some(Playable::Audio)
+	} else {
+		None
+	}
+}
+
+pub fn is_gif(content_type: Option<&str>, name: &str) -> bool {
+	content_type.map_or_else(
+		|| extension_of(name).is_some_and(|extension| extension.eq_ignore_ascii_case("gif")),
+		|kind| kind.eq_ignore_ascii_case("image/gif"),
+	)
 }
 
 fn proxy_rewrite(

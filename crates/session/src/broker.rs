@@ -11,7 +11,7 @@ use protocol::{Snowflake, StatusKind, Sticker};
 use state::{ChannelMessages, MemberListRow, SharedState, State};
 use tokio::sync::mpsc;
 
-use crate::command::Command;
+use crate::command::{Command, ReplyTarget};
 use crate::task::Internal;
 
 pub trait BrokerSink: Send + Sync {
@@ -146,7 +146,10 @@ impl HostBroker for SessionBroker {
 		self.queue(Command::SendMessage {
 			channel_id: Snowflake(msg.channel_id),
 			content: msg.content,
-			reply_to: msg.reply_to.map(Snowflake),
+			reply_to: msg.reply_to.map(|id| ReplyTarget {
+				message: Snowflake(id),
+				mention: true,
+			}),
 			files: Vec::new(),
 			by_plugin: Some(plugin.to_owned()),
 		})?;
@@ -318,7 +321,10 @@ impl HostBroker for SessionBroker {
 		self.queue(Command::SendMessage {
 			channel_id: Snowflake(msg.channel_id),
 			content: msg.content,
-			reply_to: msg.reply_to.map(Snowflake),
+			reply_to: msg.reply_to.map(|id| ReplyTarget {
+				message: Snowflake(id),
+				mention: true,
+			}),
 			files: Vec::new(),
 			by_plugin: None,
 		})

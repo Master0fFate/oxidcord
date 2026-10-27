@@ -1,0 +1,28 @@
+[package]
+name = "oxidcord-player"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "player"
+
+[dependencies]
+media.workspace = true
+voice.workspace = true
+tokio.workspace = true
+parking_lot.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+bytes.workspace = true
+lru.workspace = true
+symphonia.workspace = true
+cpal.workspace = true
+opus.workspace = true
+openh264.workspace = true
+libloading.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = ["Win32_Media_MediaFoundation", "Win32_System_Com"] }

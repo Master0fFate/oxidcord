@@ -32,14 +32,15 @@ use super::pickers::{Picker, PickerEvent, PickerTab, SkinTone};
 use super::server_settings::{Page, ServerSettings, ServerSettingsEvent};
 use super::settings::SettingsBackend;
 use super::threads::{
-	ForumEvent, ForumView, PinsEvent, PinsPanel, ThreadList, ThreadListEvent, ThreadPanel, ThreadPanelEvent,
-	create, pins, post,
+	ForumEvent, ForumView, InboxEvent, InboxPanel, PinsEvent, PinsPanel, ThreadList, ThreadListEvent,
+	ThreadPanel, ThreadPanelEvent, create, pins, post,
 };
 use super::timeline::TimelineEvent;
 use crate::data::Data;
 use crate::theme::rem;
 
 const POPOVER_GAP: f32 = 12.;
+const HELP_URL: &str = "https://support.discord.com";
 
 #[derive(Clone)]
 pub struct CommunityHandle {
@@ -92,6 +93,7 @@ pub enum PickerTarget {
 enum Content {
 	Threads(Entity<ThreadList>),
 	Pins(Entity<PinsPanel>),
+	Inbox(Entity<InboxPanel>),
 	Picker(Entity<Picker>),
 }
 
@@ -379,6 +381,28 @@ impl Community {
 		self.float(Content::Pins(panel), at, window, cx);
 	}
 
+	pub fn open_inbox(&mut self, at: Point<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
+		let panel = cx.new(|cx| InboxPanel::new(self.data.clone(), cx));
+		self._subscriptions.push(
+			cx.subscribe_in(&panel, window, |this, _, event: &InboxEvent, _, cx| {
+				match event {
+					InboxEvent::Jump { channel, message } => cx.emit(CommunityEvent::Jump {
+						channel: *channel,
+						message: *message,
+					}),
+					InboxEvent::Close => {}
+				}
+				this.floating = None;
+				cx.notify();
+			}),
+		);
+		self.float(Content::Inbox(panel), at, window, cx);
+	}
+
+	pub fn open_help(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+		links::open_link(HELP_URL, &self.backend, window, cx);
+	}
+
 	fn thread_or_channel(&self, cx: &gpui::App) -> Option<Snowflake> {
 		self.panel.read(cx).thread().or(self.channel)
 	}
@@ -595,6 +619,7 @@ impl Community {
 			match &floating.content {
 				Content::Threads(list) => list.update(cx, |list, cx| list.refresh(cx)),
 				Content::Pins(pins) => pins.update(cx, |pins, cx| pins.refresh(cx)),
+				Content::Inbox(inbox) => inbox.update(cx, |inbox, cx| inbox.refresh(cx)),
 				Content::Picker(picker) => picker.update(cx, |picker, cx| picker.refresh(cx)),
 			}
 		}
@@ -689,6 +714,7 @@ impl Community {
 		let content: AnyElement = match &floating.content {
 			Content::Threads(list) => list.clone().into_any_element(),
 			Content::Pins(panel) => panel.clone().into_any_element(),
+			Content::Inbox(panel) => panel.clone().into_any_element(),
 			Content::Picker(picker) => picker.clone().into_any_element(),
 		};
 		let rem_size = window.rem_size();

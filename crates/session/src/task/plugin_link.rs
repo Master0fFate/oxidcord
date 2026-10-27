@@ -20,7 +20,7 @@ use tokio::time::Instant;
 use super::{Core, Internal};
 use crate::broker::{view_of, voice_info};
 use crate::catalog::{download_plugin, download_theme, fetch_catalog, fetch_theme_catalog, write_theme};
-use crate::command::Command;
+use crate::command::{Command, ReplyTarget};
 use crate::plugins::{PluginFlags, PluginHub};
 use crate::render::{RenderJob, RenderResult};
 
@@ -353,7 +353,7 @@ impl Core {
 		nonce: Nonce,
 		channel_id: Snowflake,
 		content: String,
-		reply_to: Option<Snowflake>,
+		reply_to: Option<ReplyTarget>,
 		files: Vec<UploadFile>,
 	) {
 		let manager = Arc::clone(&self.hub.manager);
@@ -361,7 +361,7 @@ impl Core {
 		let outgoing = OutgoingMessage {
 			channel_id: channel_id.get(),
 			content: content.clone(),
-			reply_to: reply_to.map(Snowflake::get),
+			reply_to: reply_to.map(|reply| reply.message.get()),
 		};
 		self.runtime.spawn_blocking(move || {
 			let decision = manager.before_send(outgoing);
@@ -381,7 +381,7 @@ impl Core {
 		nonce: Nonce,
 		channel_id: Snowflake,
 		content: String,
-		reply_to: Option<Snowflake>,
+		reply_to: Option<ReplyTarget>,
 		files: Vec<UploadFile>,
 		decision: SendDecision,
 	) {

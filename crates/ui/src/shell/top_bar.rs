@@ -27,6 +27,8 @@ pub enum TopBarEvent {
 	Call { video: bool },
 	Threads { at: gpui::Point<gpui::Pixels> },
 	Pins { at: gpui::Point<gpui::Pixels> },
+	Inbox { at: gpui::Point<gpui::Pixels> },
+	Help,
 }
 
 #[derive(Clone)]
@@ -292,8 +294,18 @@ impl Render for TopBar {
 					})
 					.children(super::plugins::panel_toggle(cx))
 					.child(search_box)
-					.child(IconButton::new("top-inbox", IconKind::Inbox).tooltip(cx.t("top-bar-inbox")))
-					.child(IconButton::new("top-help", IconKind::Help).tooltip(cx.t("top-bar-help"))),
+					.child(
+						IconButton::new("top-inbox", IconKind::Inbox)
+							.tooltip(cx.t("top-bar-inbox"))
+							.on_click(cx.listener(|_, event: &ClickEvent, _, cx| {
+								cx.emit(TopBarEvent::Inbox { at: event.position() })
+							})),
+					)
+					.child(
+						IconButton::new("top-help", IconKind::Help)
+							.tooltip(cx.t("top-bar-help"))
+							.on_click(cx.listener(|_, _, _, cx| cx.emit(TopBarEvent::Help))),
+					),
 			)
 	}
 }

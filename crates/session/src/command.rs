@@ -12,6 +12,12 @@ use serde_json::Value;
 use voice::video::VideoQuality;
 use voice::video::capture::ScreenTarget;
 
+#[derive(Debug, Clone, Copy)]
+pub struct ReplyTarget {
+	pub message: Snowflake,
+	pub mention: bool,
+}
+
 #[derive(Debug)]
 pub enum Command {
 	SelectChannel {
@@ -31,7 +37,7 @@ pub enum Command {
 	SendMessage {
 		channel_id: Snowflake,
 		content: String,
-		reply_to: Option<Snowflake>,
+		reply_to: Option<ReplyTarget>,
 		files: Vec<UploadFile>,
 		by_plugin: Option<String>,
 	},
@@ -237,6 +243,7 @@ pub enum Command {
 	LoadPins {
 		channel_id: Snowflake,
 	},
+	LoadMentions,
 	PinMessage {
 		channel_id: Snowflake,
 		message_id: Snowflake,

@@ -52,3 +52,5 @@ oxshots*
 /settings.json
 /*.db
 /logs/
+
+/run-dev.bat

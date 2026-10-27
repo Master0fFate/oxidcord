@@ -129,6 +129,9 @@ pub enum IconKind {
 	Tv,
 	UserCog,
 	Forward,
+	Pause,
+	FileAudio,
+	Replay,
 }
 
 impl IconKind {
@@ -260,6 +263,9 @@ impl IconKind {
 			Self::Tv => IconName::Tv,
 			Self::UserCog => IconName::UserCog,
 			Self::Forward => IconName::Forward,
+			Self::Pause => IconName::Pause,
+			Self::FileAudio => IconName::FileMusic,
+			Self::Replay => IconName::RotateCcw,
 		}
 	}
 }

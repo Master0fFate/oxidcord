@@ -16,6 +16,7 @@ const REACTION_PAGE: u8 = 100;
 const BULK_DELETE_LIMIT: usize = 100;
 const ACK_BULK_LIMIT: usize = 100;
 const ARCHIVED_PAGE: u8 = 50;
+const MENTIONS_PAGE: u8 = 25;
 
 fn sessions_or_empty(result: rest::Result<Value>) -> Value {
 	result.unwrap_or_else(|error| {
@@ -68,6 +69,7 @@ impl Core {
 			| Command::LoadActiveThreads { .. }
 			| Command::CreateForumPost { .. }
 			| Command::LoadPins { .. }
+			| Command::LoadMentions
 			| Command::PinMessage { .. }
 			| Command::UnpinMessage { .. }
 			| Command::LoadProfile { .. }
@@ -210,6 +212,10 @@ impl Core {
 				}
 			}
 			Command::LoadPins { channel_id } => self.load_pins(channel_id),
+			Command::LoadMentions => self.spawn_load("mentions", move |rest| async move {
+				let messages = rest.mentions(MENTIONS_PAGE).await?;
+				Ok(Loaded::Mentions(messages.into_vec()))
+			}),
 			Command::PinMessage {
 				channel_id,
 				message_id,

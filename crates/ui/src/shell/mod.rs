@@ -367,6 +367,12 @@ impl Shell {
 					TopBarEvent::Pins { at } => this
 						.community
 						.update(cx, |community, cx| community.open_pins(*at, window, cx)),
+					TopBarEvent::Inbox { at } => this
+						.community
+						.update(cx, |community, cx| community.open_inbox(*at, window, cx)),
+					TopBarEvent::Help => this
+						.community
+						.update(cx, |community, cx| community.open_help(window, cx)),
 				},
 			),
 		);
@@ -1371,6 +1377,13 @@ impl Render for Shell {
 		let overlay = self.overlay_element(window, &theme, cx);
 		let home = self.home_pages.element(&theme);
 		let plugin_page = plugins::open_page(cx).and_then(|page| plugins::main_view(&page, cx));
+		cx.global::<crate::playback::Playback>().set_shell_hidden(
+			room || plugin_page.is_some()
+				|| forum.is_some()
+				|| overlay.is_some()
+				|| self.settings.is_some()
+				|| thread_panel.is_some(),
+		);
 		div()
 			.key_context(SHELL_CONTEXT)
 			.track_focus(&self.focus)

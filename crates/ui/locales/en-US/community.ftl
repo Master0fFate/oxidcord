@@ -537,3 +537,7 @@ invite-revoke-body = The invite { $code } will stop working for everyone.
 stickers-edit = Edit
 stickers-edit-title = Edit Sticker
 stickers-edit-save = Save
+
+inbox-title = Mentions
+inbox-empty = No recent mentions.
+inbox-loading = Loading mentions...

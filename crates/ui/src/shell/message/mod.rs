@@ -1,5 +1,7 @@
 mod body;
 mod media;
+mod player;
+mod provider;
 mod reaction_tip;
 
 use std::cell::RefCell;
@@ -1037,7 +1039,7 @@ fn content_column(
 		out.push(editor(editing, env, cx));
 	} else if message.is_forward() {
 		out.push(forward_block(view, env, cx));
-	} else if !message.content.is_empty() {
+	} else if !message.content.is_empty() && !link_only(message, env.prefs) {
 		let document = document_of(env, view);
 		let trailer = if view.deleted {
 			Some(cx.t("message-deleted"))
@@ -1110,6 +1112,18 @@ fn content_column(
 	}
 	out.extend(message_extras(view, effects, theme, cx));
 	out
+}
+
+fn link_only(message: &Message, prefs: Prefs) -> bool {
+	if !prefs.link_previews || message.flags.contains(protocol::MessageFlags::SUPPRESS_EMBEDS) {
+		return false;
+	}
+	let content = message.content.trim();
+	!content.contains(char::is_whitespace)
+		&& message
+			.embeds
+			.iter()
+			.any(|embed| embed.url.as_deref() == Some(content) && media::hides_link(embed))
 }
 
 fn thread_chip(message: &Message, env: &RowEnv, cx: &App) -> Option<AnyElement> {

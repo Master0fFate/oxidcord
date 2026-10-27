@@ -6,7 +6,9 @@ use bytes::{Bytes, BytesMut};
 use futures_util::FutureExt;
 use futures_util::future::{BoxFuture, Shared};
 use parking_lot::Mutex;
+use reqwest::header::{CONTENT_RANGE, RANGE};
 use reqwest::redirect::Policy;
+use reqwest::{Response, StatusCode};
 use url::Url;
 
 use crate::error::{MediaError, Result, redact_url};
@@ -30,6 +32,13 @@ const HTTPS_PORT: u16 = 443;
 const LOOPBACK_HOST: &str = "127.0.0.1";
 
 type SharedFetch = Shared<BoxFuture<'static, Result<Bytes>>>;
+
+#[derive(Debug, Clone)]
+pub struct RangeBody {
+	pub start: u64,
+	pub bytes: Bytes,
+	pub total: Option<u64>,
+}
 
 pub struct MediaFetcherBuilder {
 	hosts: HashSet<String>,
@@ -146,6 +155,11 @@ impl MediaFetcher {
 		};
 		shared.await
 	}
+
+	pub async fn fetch_range(&self, url: &str, start: u64, length: u64) -> Result<RangeBody> {
+		let parsed = self.inner.validate(url)?;
+		self.inner.download_range(parsed, start, length.max(1)).await
+	}
 }
 
 impl FetcherInner {
@@ -161,38 +175,82 @@ impl FetcherInner {
 
 	async fn download(&self, url: Url) -> Result<Bytes> {
 		let shown = redact_url(url.as_str()).to_owned();
-		let mut response = self
+		let response = self.send(self.client.get(url), &shown).await?;
+		read_body(response, self.max_bytes, &shown).await
+	}
+
+	async fn download_range(&self, url: Url, start: u64, length: u64) -> Result<RangeBody> {
+		let shown = redact_url(url.as_str()).to_owned();
+		let last = start.saturating_add(length - 1);
+		let request = self
 			.client
 			.get(url)
+			.header(RANGE, format!("bytes={start}-{last}"));
+		let response = self.send(request, &shown).await?;
+		if response.status() == StatusCode::PARTIAL_CONTENT {
+			let (first, total) = response
+				.headers()
+				.get(CONTENT_RANGE)
+				.and_then(|value| value.to_str().ok())
+				.and_then(content_range)
+				.ok_or_else(|| MediaError::Fetch(format!("{shown}: bad content range")))?;
+			let cap = usize::try_from(length).unwrap_or(usize::MAX).min(self.max_bytes);
+			let bytes = read_body(response, cap, &shown).await?;
+			return Ok(RangeBody {
+				start: first,
+				bytes,
+				total,
+			});
+		}
+		let bytes = read_body(response, self.max_bytes, &shown).await?;
+		Ok(RangeBody {
+			start: 0,
+			total: Some(bytes.len() as u64),
+			bytes,
+		})
+	}
+
+	async fn send(&self, request: reqwest::RequestBuilder, shown: &str) -> Result<Response> {
+		let response = request
 			.send()
 			.await
 			.map_err(|error| MediaError::Fetch(format!("{shown}: {}", error.without_url())))?;
-		if !response.status().is_success() {
-			return Err(MediaError::Fetch(format!(
+		if response.status().is_success() {
+			Ok(response)
+		} else {
+			Err(MediaError::Fetch(format!(
 				"{shown}: status {}",
 				response.status()
-			)));
+			)))
 		}
-		let cap = self.max_bytes;
-		let declared = response
-			.content_length()
-			.and_then(|length| usize::try_from(length).ok());
-		if declared.is_some_and(|length| length > cap) {
+	}
+}
+
+async fn read_body(mut response: Response, cap: usize, shown: &str) -> Result<Bytes> {
+	let declared = response
+		.content_length()
+		.and_then(|length| usize::try_from(length).ok());
+	if declared.is_some_and(|length| length > cap) {
+		return Err(MediaError::Limit(format!("{shown}: body exceeds {cap} bytes")));
+	}
+	let mut body = BytesMut::with_capacity(declared.unwrap_or(0).min(cap));
+	while let Some(chunk) = response
+		.chunk()
+		.await
+		.map_err(|error| MediaError::Fetch(format!("{shown}: {}", error.without_url())))?
+	{
+		if body.len() + chunk.len() > cap {
 			return Err(MediaError::Limit(format!("{shown}: body exceeds {cap} bytes")));
 		}
-		let mut body = BytesMut::with_capacity(declared.unwrap_or(0).min(cap));
-		while let Some(chunk) = response
-			.chunk()
-			.await
-			.map_err(|error| MediaError::Fetch(format!("{shown}: {}", error.without_url())))?
-		{
-			if body.len() + chunk.len() > cap {
-				return Err(MediaError::Limit(format!("{shown}: body exceeds {cap} bytes")));
-			}
-			body.extend_from_slice(&chunk);
-		}
-		Ok(body.freeze())
+		body.extend_from_slice(&chunk);
 	}
+	Ok(body.freeze())
+}
+
+fn content_range(value: &str) -> Option<(u64, Option<u64>)> {
+	let (span, total) = value.strip_prefix("bytes ")?.split_once('/')?;
+	let (first, _) = span.split_once('-')?;
+	Some((first.trim().parse().ok()?, total.trim().parse().ok()))
 }
 
 struct Allowed {

@@ -175,6 +175,14 @@ message-forwarded = Forwarded
 
 attachment-download = Download
 
+media-play = Play
+media-pause = Pause
+media-replay = Replay
+media-mute = Mute
+media-unmute = Unmute
+media-unsupported = Can't play this file
+embed-open-browser = Open in browser
+
 poll-votes = { $count ->
     [one] { $count } vote
    *[other] { $count } votes
@@ -689,3 +697,7 @@ chat-time-24h-note = Show times as 14:30 instead of 2:30 PM.
 chat-emoji-autocomplete = Emoji autocomplete
 chat-emoji-autocomplete-note = Suggest emoji while you type.
 language-community-note = Community translations are welcome.
+
+composer-reply-ping = Mention author
+composer-reply-ping-on = ON
+composer-reply-ping-off = OFF

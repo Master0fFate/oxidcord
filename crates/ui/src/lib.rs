@@ -10,8 +10,10 @@ pub mod icons;
 pub mod images;
 pub mod lookup;
 pub mod model;
+pub mod playback;
 pub mod shell;
 pub mod theme;
+pub mod webframe;
 pub mod zoom;
 
 pub use app::{AppFlags, LaunchConfig, StartSession, run};

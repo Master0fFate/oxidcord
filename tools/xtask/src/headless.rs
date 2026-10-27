@@ -27,6 +27,7 @@ use url::Url;
 
 mod features;
 mod live;
+mod media;
 
 const RUNTIME_GRACE: Duration = Duration::from_secs(2);
 const MOCK_TOKEN: &str = "mock-token";
@@ -552,6 +553,9 @@ async fn scenario(
 	let text = harness
 		.text_features(server.fixtures(), guild_id, channel_id, sent_id)
 		.await?;
+	let media = harness
+		.media_features(server.fixtures(), server.rest_base_url())
+		.await?;
 	let (voice_frames_echoed, screen_share_started) =
 		harness.voice_call(voice_guild_id, voice_channel_id).await?;
 
@@ -585,6 +589,10 @@ async fn scenario(
 			"moderation_ok": text.moderation_ok,
 			"expressions_ok": text.expressions_ok,
 			"forward_ok": text.forward_ok,
+			"videos_played": media.videos_played,
+			"audio_played": media.audio_played,
+			"gif_frames": media.gif_frames,
+			"codec_pack": media.codec_pack,
 			"voice_frames_echoed": voice_frames_echoed,
 			"plugins_loaded": plugins_loaded,
 			"plugin_render_ms_p95": (render_p95 * 100.0).round() / 100.0,

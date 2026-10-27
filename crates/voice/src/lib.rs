@@ -30,5 +30,6 @@ pub use error::{Result, VoiceError};
 pub use event::VoiceEvent;
 pub use jitter::{JitterBuffer, Playout, Push};
 pub use mixer::Mixer;
+pub use resample::Resampler;
 pub use shared::{InputMode, VoiceStats};
 pub use transform::{Codec, FrameTransform, Passthrough};

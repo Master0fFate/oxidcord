@@ -8,12 +8,17 @@ use gpui_component::Sizable as _;
 use gpui_component::button::{Button, ButtonVariants as _};
 use markdown::parse;
 use media::SizeHint;
-use media::cdn::{ProxyFormat, attachment_proxy, sticker_url};
+use media::cdn::{
+	Playable, ProxyFormat, animated_proxy, attachment_proxy, is_gif, playable, sticker_url, video_poster,
+};
+use media::providers::{self, Candidate, Layout};
 use protocol::{
 	Attachment, Embed, EmbedKind, EmbedMedia, Message, PartialEmoji, Poll, Reaction, StickerItem,
 };
 
 use super::body::{BodyEnv, render_body};
+use super::player::{self, AudioSource, FileInfo, LoopSource, VideoSource, VoiceSource};
+use super::provider;
 use super::reaction_tip;
 use super::{ImageTarget, RowAction};
 use crate::components::IconButton;
@@ -22,6 +27,7 @@ use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
 use crate::images::Images;
 use crate::model::role_color;
+use crate::playback::MediaKey;
 use crate::theme::{Theme, rem, with_alpha};
 
 const MAX_IMAGE_WIDTH: f32 = 550.;
@@ -36,6 +42,8 @@ const STICKER_SIZE: f32 = 160.;
 const FIELD_WIDTH: f32 = 242.;
 const PLACEHOLDER_SIDE: u32 = 32;
 const REACTION_EMOJI: f32 = 16.;
+const ANIMATED_FLAG: u64 = 1 << 5;
+const EMBED_ITEM: u64 = 1 << 62;
 
 pub fn fit(width: f32, height: f32, max_width: f32, max_height: f32) -> (f32, f32) {
 	let scale = (max_width / width).min(max_height / height).min(1.);
@@ -49,7 +57,7 @@ fn dimensions(width: Option<i64>, height: Option<i64>) -> (f32, f32) {
 	}
 }
 
-fn picture(
+pub(super) fn picture(
 	url: &str,
 	placeholder: Option<&str>,
 	width: f32,
@@ -84,6 +92,34 @@ fn proxied(url: &str, width: f32, height: f32) -> String {
 	attachment_proxy(url, (width * 2.) as u32, (height * 2.) as u32, ProxyFormat::Webp)
 }
 
+fn proxied_media(url: &str, animated: bool, width: f32, height: f32) -> String {
+	if animated {
+		animated_proxy(url, (width * 2.) as u32, (height * 2.) as u32)
+	} else {
+		proxied(url, width, height)
+	}
+}
+
+fn attachment_animated(attachment: &Attachment) -> bool {
+	attachment.flags.is_some_and(|flags| flags & ANIMATED_FLAG != 0)
+		|| is_gif(attachment.content_type.as_deref(), &attachment.filename)
+}
+
+fn embed_animated(media: &EmbedMedia) -> bool {
+	media.flags.is_some_and(|flags| flags & ANIMATED_FLAG != 0)
+		|| media
+			.url
+			.as_deref()
+			.is_some_and(|url| is_gif(media.content_type.as_deref(), url))
+}
+
+fn embed_key(env: &BodyEnv, index: usize) -> MediaKey {
+	MediaKey {
+		message: env.message_id,
+		item: EMBED_ITEM | index as u64,
+	}
+}
+
 fn is_image(attachment: &Attachment) -> bool {
 	if let Some(kind) = &attachment.content_type {
 		return kind.starts_with("image/");
@@ -94,24 +130,88 @@ fn is_image(attachment: &Attachment) -> bool {
 		.any(|extension| name.ends_with(&format!(".{extension}")))
 }
 
-fn is_video(attachment: &Attachment) -> bool {
-	attachment
-		.content_type
-		.as_deref()
-		.is_some_and(|kind| kind.starts_with("video/"))
-}
-
 pub fn attachments(items: &[Attachment], env: &BodyEnv, inline: bool, cx: &App) -> Vec<AnyElement> {
 	items
 		.iter()
 		.map(|attachment| {
-			if inline && is_image(attachment) {
-				image_attachment(attachment, env, cx)
-			} else {
-				file_card(attachment, is_video(attachment), env, cx)
+			let kind = playable(attachment.content_type.as_deref(), &attachment.filename);
+			match (inline, kind) {
+				(true, _) if is_image(attachment) => image_attachment(attachment, env, cx),
+				(true, Some(Playable::Video)) => video_attachment(attachment, env, cx),
+				(true, Some(Playable::Audio)) => audio_attachment(attachment, env, cx),
+				_ => file_card(attachment, kind == Some(Playable::Video), env, cx),
 			}
 		})
 		.collect()
+}
+
+fn attachment_source(attachment: &Attachment) -> String {
+	attachment
+		.proxy_url
+		.clone()
+		.or_else(|| attachment.url.clone())
+		.unwrap_or_default()
+}
+
+fn attachment_file(attachment: &Attachment) -> FileInfo {
+	FileInfo {
+		name: attachment.filename.clone(),
+		size: attachment
+			.size
+			.map(|bytes| format::file_size(bytes.max(0) as u64)),
+		download: attachment.url.clone().unwrap_or_default(),
+	}
+}
+
+fn video_attachment(attachment: &Attachment, env: &BodyEnv, cx: &App) -> AnyElement {
+	let (native_width, native_height) = dimensions(attachment.width, attachment.height);
+	let (width, height) = fit(native_width, native_height, MAX_IMAGE_WIDTH, MAX_IMAGE_HEIGHT);
+	let url = attachment_source(attachment);
+	player::video(
+		VideoSource {
+			key: MediaKey {
+				message: env.message_id,
+				item: attachment.id.get(),
+			},
+			poster: video_poster(&url, (width * 2.) as u32, (height * 2.) as u32),
+			url,
+			placeholder: attachment.placeholder.as_deref(),
+			width,
+			height,
+			file: Some(attachment_file(attachment)),
+		},
+		env,
+		cx,
+	)
+}
+
+fn audio_attachment(attachment: &Attachment, env: &BodyEnv, cx: &App) -> AnyElement {
+	let key = MediaKey {
+		message: env.message_id,
+		item: attachment.id.get(),
+	};
+	let url = attachment_source(attachment);
+	if attachment.waveform.is_some() {
+		return player::voice_message(
+			VoiceSource {
+				key,
+				url,
+				waveform: attachment.waveform.as_deref(),
+				duration: attachment.duration_secs,
+			},
+			env,
+			cx,
+		);
+	}
+	player::audio(
+		AudioSource {
+			key,
+			url,
+			file: attachment_file(attachment),
+		},
+		env,
+		cx,
+	)
 }
 
 fn image_attachment(attachment: &Attachment, env: &BodyEnv, cx: &App) -> AnyElement {
@@ -123,7 +223,7 @@ fn image_attachment(attachment: &Attachment, env: &BodyEnv, cx: &App) -> AnyElem
 		.clone()
 		.or_else(|| attachment.proxy_url.clone())
 		.unwrap_or_default();
-	let shown = proxied(&source, width, height);
+	let shown = proxied_media(&source, attachment_animated(attachment), width, height);
 	let target = ImageTarget {
 		url: source,
 		name: attachment.filename.clone(),
@@ -242,6 +342,40 @@ fn media_url(media: &EmbedMedia) -> Option<&str> {
 	media.proxy_url.as_deref().or(media.url.as_deref())
 }
 
+fn direct_video(embed: &Embed) -> Option<&EmbedMedia> {
+	embed.video.as_ref().filter(|video| video.proxy_url.is_some())
+}
+
+fn media_only(embed: &Embed) -> bool {
+	embed.title.is_none()
+		&& embed.description.is_none()
+		&& embed.author.is_none()
+		&& embed.fields.is_empty()
+		&& embed.footer.is_none()
+}
+
+pub fn provider_player(embed: &Embed) -> Option<providers::Player> {
+	let video = embed.video.as_ref();
+	providers::player(&Candidate {
+		url: embed.url.as_deref(),
+		video_url: video.and_then(|video| video.url.as_deref()),
+		video_size: video.and_then(|video| {
+			Some((
+				u32::try_from(video.width?).ok()?,
+				u32::try_from(video.height?).ok()?,
+			))
+		}),
+	})
+}
+
+pub fn hides_link(embed: &Embed) -> bool {
+	match embed.kind {
+		Some(EmbedKind::Image | EmbedKind::Gifv) => true,
+		Some(EmbedKind::Video) => direct_video(embed).is_some() && media_only(embed),
+		_ => false,
+	}
+}
+
 pub fn embeds(items: &[Embed], env: &BodyEnv, previews: bool, cx: &App) -> Vec<AnyElement> {
 	items
 		.iter()
@@ -254,16 +388,13 @@ pub fn embeds(items: &[Embed], env: &BodyEnv, previews: bool, cx: &App) -> Vec<A
 }
 
 fn bare_media(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<AnyElement> {
-	let media = embed
-		.image
-		.as_ref()
-		.or(embed.thumbnail.as_ref())
-		.or(embed.video.as_ref())?;
+	let media = embed.image.as_ref().or(embed.thumbnail.as_ref())?;
 	let (native_width, native_height) = dimensions(media.width, media.height);
 	let (width, height) = fit(native_width, native_height, MAX_IMAGE_WIDTH, MAX_IMAGE_HEIGHT);
 	let url = media_url(media)?.to_owned();
+	let animated = embed_animated(media);
 	let target = ImageTarget {
-		url: url.clone(),
+		url: media.url.clone().unwrap_or_else(|| url.clone()),
 		name: String::new(),
 		width: native_width as u32,
 		height: native_height as u32,
@@ -275,12 +406,13 @@ fn bare_media(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<An
 			.mt(env.theme.space_4)
 			.w(rem(width))
 			.h(rem(height))
+			.max_w_full()
 			.rounded(env.theme.radius_md)
 			.overflow_hidden()
 			.cursor_pointer()
 			.on_click(move |_, window, cx| dispatch(RowAction::OpenImage(target.clone()), window, cx))
 			.child(picture(
-				&proxied(&url, width, height),
+				&proxied_media(&url, animated, width, height),
 				media.placeholder.as_deref(),
 				width,
 				height,
@@ -290,6 +422,74 @@ fn bare_media(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<An
 			))
 			.into_any_element(),
 	)
+}
+
+fn gifv(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<AnyElement> {
+	let Some(video) = direct_video(embed) else {
+		return bare_media(index, embed, env, cx);
+	};
+	let thumbnail = embed.thumbnail.as_ref();
+	let sized = [Some(video), thumbnail]
+		.into_iter()
+		.flatten()
+		.find(|media| media.width.is_some() && media.height.is_some())
+		.unwrap_or(video);
+	let (native_width, native_height) = dimensions(sized.width, sized.height);
+	let (width, height) = fit(native_width, native_height, MAX_IMAGE_WIDTH, MAX_IMAGE_HEIGHT);
+	Some(player::gif_loop(
+		LoopSource {
+			key: embed_key(env, index),
+			url: media_url(video)?.to_owned(),
+			poster: thumbnail
+				.and_then(media_url)
+				.map(|url| proxied(url, width, height)),
+			placeholder: thumbnail
+				.and_then(|media| media.placeholder.as_deref())
+				.or(video.placeholder.as_deref()),
+			width,
+			height,
+		},
+		env,
+		cx,
+	))
+}
+
+fn embedded_video(
+	index: usize,
+	embed: &Embed,
+	video: &EmbedMedia,
+	(max_width, max_height): (f32, f32),
+	env: &BodyEnv,
+	cx: &App,
+) -> Option<AnyElement> {
+	let thumbnail = embed.thumbnail.as_ref();
+	let sized = if video.width.is_some() {
+		video
+	} else {
+		thumbnail.unwrap_or(video)
+	};
+	let (native_width, native_height) = dimensions(sized.width, sized.height);
+	let (width, height) = fit(native_width, native_height, max_width, max_height);
+	let url = media_url(video)?.to_owned();
+	let poster = thumbnail
+		.and_then(media_url)
+		.map(|url| proxied(url, width, height))
+		.or_else(|| video_poster(&url, (width * 2.) as u32, (height * 2.) as u32));
+	Some(player::video(
+		VideoSource {
+			key: embed_key(env, index),
+			url,
+			poster,
+			placeholder: thumbnail
+				.and_then(|media| media.placeholder.as_deref())
+				.or(video.placeholder.as_deref()),
+			width,
+			height,
+			file: None,
+		},
+		env,
+		cx,
+	))
 }
 
 fn link_text(
@@ -308,6 +508,7 @@ fn link_text(
 				.id(id)
 				.cursor_pointer()
 				.text_color(theme.link)
+				.hover(|style| style.underline())
 				.on_click(move |_, window, cx| dispatch(RowAction::OpenLink(url.clone()), window, cx))
 				.into_any_element()
 		}
@@ -315,25 +516,54 @@ fn link_text(
 	}
 }
 
+fn provider_line(embed: &Embed, key: usize, env: &BodyEnv) -> Option<AnyElement> {
+	let theme = env.theme;
+	let provider = embed.provider.as_ref()?;
+	let name = provider.name.clone()?;
+	let label = div()
+		.text_size(theme.font_tiny)
+		.text_color(theme.text_muted)
+		.child(name);
+	Some(match provider.url.clone() {
+		Some(url) => {
+			let dispatch = env.dispatch.clone();
+			label
+				.id(("embed-provider", key))
+				.cursor_pointer()
+				.hover(|style| style.underline())
+				.on_click(move |_, window, cx| dispatch(RowAction::OpenLink(url.clone()), window, cx))
+				.into_any_element()
+		}
+		None => label.into_any_element(),
+	})
+}
+
 fn embed_card(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<AnyElement> {
 	let theme = env.theme;
-	if matches!(embed.kind, Some(EmbedKind::Image | EmbedKind::Gifv)) {
-		return bare_media(index, embed, env, cx);
+	match embed.kind {
+		Some(EmbedKind::Gifv) => return gifv(index, embed, env, cx),
+		Some(EmbedKind::Image) => return bare_media(index, embed, env, cx),
+		_ => {}
 	}
+	if let Some(video) = direct_video(embed)
+		&& media_only(embed)
+	{
+		return embedded_video(index, embed, video, (MAX_IMAGE_WIDTH, MAX_IMAGE_HEIGHT), env, cx);
+	}
+	let provider_player = provider_player(embed);
+	let video_player = provider_player
+		.as_ref()
+		.filter(|player| player.layout == Layout::Video);
+	let widget_player = provider_player
+		.as_ref()
+		.filter(|player| player.layout == Layout::Widget);
 	let accent = embed
 		.color
 		.and_then(|color| u32::try_from(color).ok())
 		.map_or(theme.divider, role_color);
 	let key = index * 16;
 	let mut column = div().flex().flex_col().flex_1().min_w_0().gap(theme.space_4);
-	if let Some(provider) = embed.provider.as_ref().and_then(|provider| provider.name.clone()) {
-		column = column.child(
-			div()
-				.text_size(theme.font_tiny)
-				.text_color(theme.text_muted)
-				.child(provider),
-		);
-	}
+	column = column.children(provider_line(embed, key, env));
 	if let Some(author) = &embed.author {
 		let icon = author
 			.proxy_icon_url
@@ -371,7 +601,7 @@ fn embed_card(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<An
 			FontWeight::SEMIBOLD,
 		));
 	}
-	if let Some(description) = &embed.description {
+	if let Some(description) = embed.description.as_ref().filter(|_| video_player.is_none()) {
 		let body = BodyEnv::new(
 			env.theme,
 			env.lookup,
@@ -386,15 +616,32 @@ fn embed_card(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<An
 	if !embed.fields.is_empty() {
 		column = column.child(fields(embed, env, cx));
 	}
-	let large = match (&embed.image, &embed.video, &embed.thumbnail) {
-		(Some(image), None, _) => Some(image),
-		(_, Some(video), thumbnail) => thumbnail.as_ref().or(Some(video)),
-		(None, None, _) => None,
-	};
-	if let Some(media) = large
-		&& let Some(url) = media_url(media)
-	{
-		column = column.child(large_media(index, media, url, embed, env, cx));
+	if let Some(video) = direct_video(embed) {
+		column = column.children(embedded_video(
+			index,
+			embed,
+			video,
+			(EMBED_IMAGE_WIDTH, EMBED_IMAGE_HEIGHT),
+			env,
+			cx,
+		));
+	} else if let Some(player) = video_player {
+		column = column.child(provider::video(embed_key(env, index), player, embed, env, cx));
+	} else {
+		let large = embed.image.as_ref().or_else(|| {
+			embed
+				.video
+				.as_ref()
+				.and(embed.thumbnail.as_ref().or(embed.video.as_ref()))
+		});
+		if let Some(media) = large
+			&& let Some(url) = media_url(media)
+		{
+			column = column.child(large_media(index, media, url, embed, env, cx));
+		}
+	}
+	if let Some(player) = widget_player {
+		column = column.child(provider::widget(embed_key(env, index), player, embed, env, cx));
 	}
 	if embed.footer.is_some() || embed.timestamp.is_some() {
 		let footer = embed.footer.as_ref().map(|footer| footer.text.clone());
@@ -416,10 +663,10 @@ fn embed_card(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<An
 	let thumbnail = embed
 		.thumbnail
 		.as_ref()
-		.filter(|_| embed.image.is_none() && embed.video.is_none())
+		.filter(|_| embed.image.is_none() && embed.video.is_none() && widget_player.is_none())
 		.and_then(|media| {
 			Some(picture(
-				media_url(media)?,
+				&proxied_media(media_url(media)?, embed_animated(media), THUMBNAIL, THUMBNAIL),
 				media.placeholder.as_deref(),
 				THUMBNAIL,
 				THUMBNAIL,
@@ -512,7 +759,7 @@ fn large_media(
 		.clone()
 		.or_else(|| embed.video.as_ref().and_then(|v| v.url.clone()));
 	let image_target = ImageTarget {
-		url: url.to_owned(),
+		url: media.url.clone().unwrap_or_else(|| url.to_owned()),
 		name: String::new(),
 		width: native_width as u32,
 		height: native_height as u32,
@@ -524,6 +771,7 @@ fn large_media(
 		.mt(theme.space_4)
 		.w(rem(width))
 		.h(rem(height))
+		.max_w_full()
 		.rounded(theme.radius_sm)
 		.overflow_hidden()
 		.cursor_pointer()
@@ -535,7 +783,7 @@ fn large_media(
 			dispatch(action, window, cx);
 		})
 		.child(picture(
-			&proxied(url, width, height),
+			&proxied_media(url, embed_animated(media), width, height),
 			media.placeholder.as_deref(),
 			width,
 			height,

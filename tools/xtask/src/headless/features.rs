@@ -286,35 +286,7 @@ impl Harness {
 
 	async fn forward_message(&self, fixtures: &Fixtures) -> Result<bool> {
 		let forward = forward_in(fixtures).context("the fixtures do not contain a forwarded message")?;
-		let guild_id = self.state.read().channel_guild(forward.channel_id);
-		self.session.send(Command::SelectChannel {
-			guild_id,
-			channel_id: forward.channel_id,
-		});
-		self.until("the forwarded channel history to load", |state| {
-			state
-				.messages(forward.channel_id)
-				.is_some_and(|cache| !cache.ordered.is_empty())
-		})
-		.await?;
-		let mut pages = 0;
-		while pages < FORWARD_PAGES && !self.loaded(forward.channel_id, forward.message_id) {
-			let cached = self.cached(forward.channel_id);
-			self.session.send(Command::LoadOlder {
-				channel_id: forward.channel_id,
-			});
-			self.until("older history to load around the forwarded message", |state| {
-				state
-					.messages(forward.channel_id)
-					.is_some_and(|cache| cache.ordered.len() > cached)
-			})
-			.await?;
-			pages += 1;
-		}
-		ensure!(
-			self.loaded(forward.channel_id, forward.message_id),
-			"the forwarded message never showed up in the cache"
-		);
+		self.reveal(forward.channel_id, forward.message_id).await?;
 		let source = {
 			let state = self.state.read();
 			let message = state
@@ -387,6 +359,34 @@ impl Harness {
 		})
 		.await?;
 		Ok(true)
+	}
+
+	pub(super) async fn reveal(&self, channel_id: Snowflake, message_id: Snowflake) -> Result<()> {
+		let guild_id = self.state.read().channel_guild(channel_id);
+		self.session.send(Command::SelectChannel { guild_id, channel_id });
+		self.until("the channel history to load", |state| {
+			state
+				.messages(channel_id)
+				.is_some_and(|cache| !cache.ordered.is_empty())
+		})
+		.await?;
+		let mut pages = 0;
+		while pages < FORWARD_PAGES && !self.loaded(channel_id, message_id) {
+			let cached = self.cached(channel_id);
+			self.session.send(Command::LoadOlder { channel_id });
+			self.until("older history to load around the wanted message", |state| {
+				state
+					.messages(channel_id)
+					.is_some_and(|cache| cache.ordered.len() > cached)
+			})
+			.await?;
+			pages += 1;
+		}
+		ensure!(
+			self.loaded(channel_id, message_id),
+			"message {message_id} never showed up in the cache"
+		);
+		Ok(())
 	}
 
 	fn cached(&self, channel_id: Snowflake) -> usize {

@@ -5,7 +5,7 @@ pub mod encode;
 mod error;
 pub(crate) mod hub;
 #[cfg(windows)]
-mod mf;
+pub mod mf;
 pub mod nal;
 pub(crate) mod receive;
 pub mod rtp;

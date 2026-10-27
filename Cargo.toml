@@ -26,6 +26,7 @@ session = { path = "crates/session", package = "oxidcord-session" }
 voice = { path = "crates/voice", package = "oxidcord-voice" }
 login = { path = "crates/login", package = "oxidcord-login" }
 updater = { path = "crates/updater", package = "oxidcord-updater" }
+player = { path = "crates/player", package = "oxidcord-player" }
 mockcord = { path = "tools/mockcord" }
 
 tokio = { version = "1.54", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "fs", "signal"] }
@@ -91,6 +92,8 @@ toml = "1.1"
 semver = "1.0"
 ed25519-dalek = "3.0"
 zip = { version = "9.0", default-features = false, features = ["deflate-flate2"] }
+tar = "0.4"
+lzma-rs = "0.3"
 
 fluent-bundle = "0.16"
 fluent-langneg = "0.14"
@@ -101,10 +104,12 @@ embed-resource = "3.0"
 cpal = "0.18"
 opus = "0.4"
 rubato = "5.0"
+symphonia = { version = "0.6.1", default-features = false, features = ["opt-simd", "isomp4", "mkv", "ogg", "wav", "flac", "mp3", "aac", "pcm", "vorbis", "alac", "adpcm"] }
 aes-gcm = { version = "0.11", features = ["hazmat"] }
 chacha20poly1305 = "0.11"
 nnnoiseless = { version = "0.5", default-features = false }
 openh264 = { version = "0.9", default-features = false, features = ["source"] }
+libloading = "0.9"
 openmls = "0.9"
 openmls_rust_crypto = "0.6"
 openmls_basic_credential = "0.6"
