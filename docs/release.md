@@ -4,7 +4,7 @@
 
 The client only installs an update if `manifest.json` carries a valid ed25519 signature (`manifest.json.sig`, hex encoded, over the raw manifest bytes) made with the key whose public half is compiled into the client as `UPDATE_PUBLIC_KEY` in `crates/updater/src/keys.rs`.
 
-The value committed in the repository is a placeholder: its private half was thrown away, so no release can be signed for it. Before the first public release replace it with your own key.
+The committed key is the live release key, and its private half is the `UPDATE_SIGNING_KEY` repository secret. A fork that publishes its own releases needs its own key:
 
 1. Run `cargo xtask release keygen update-signing.key`. It writes the base64 secret key to the file (created with owner-only permissions on Unix) and prints a ready-made `pub const UPDATE_PUBLIC_KEY: [u8; 32] = [...]` line.
 2. Paste that line over the constant in `crates/updater/src/keys.rs` and commit it.

@@ -6,15 +6,27 @@
 
 <p align="center">A native Discord client written in Rust, with a sandboxed WebAssembly plugin system.</p>
 
+<p align="center">
+	<a href="https://github.com/Master0fFate/oxidcord/releases/latest"><img src="https://img.shields.io/github/v/release/Master0fFate/oxidcord?label=release" alt="Latest release"></a>
+	<a href="https://github.com/Master0fFate/oxidcord/actions/workflows/ci.yml"><img src="https://github.com/Master0fFate/oxidcord/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+	<img src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-5865f2" alt="Windows, macOS and Linux">
+	<img src="https://img.shields.io/badge/license-MIT%20or%20Apache--2.0-blue" alt="MIT or Apache-2.0">
+</p>
+
+<p align="center">
+	<img src="assets/screenshots/chat.png" alt="A server channel with messages, an interactive Components V2 message and the member list" width="900">
+</p>
+
 > **Oxidcord is not an official Discord product. It is not made, endorsed, sponsored or supported by Discord Inc.**
 >
 > **Using a third-party client with a Discord user account can violate the Discord Terms of Service and Community Guidelines. Your account can be rate limited, flagged, locked, suspended or permanently banned, with or without warning. If you are not willing to lose the account, do not use this software with it.**
 >
-> **This software is a beta. It is provided as is, with no warranty of any kind, and the authors accept no liability for anything that happens as a result of using it. Read [Disclaimer](#disclaimer) before you install.**
+> **This software is early-stage. It is provided as is, with no warranty of any kind, and the authors accept no liability for anything that happens as a result of using it. Read [Disclaimer](#disclaimer) before you install.**
 
 ## Contents
 
 - [What it is](#what-it-is)
+- [Screenshots](#screenshots)
 - [Performance](#performance)
 - [Install](#install)
 - [First run](#first-run)
@@ -30,10 +42,35 @@
 ## What it is
 
 - Native, GPU rendered window. No web view for the main interface.
+- The current Discord desktop layout: server rail with folders, channel and DM sidebars, member list, threads, forums, voice and video.
+- Interactive messages: buttons, select menus and the Components V2 layouts bots send, plus app commands from the message menu.
+- Twemoji everywhere emoji show up, link embeds, inline images, video and audio playback.
+- Discord-style search with filters, text selection with copy, back and forward navigation, and the last channel restored on start.
 - WebAssembly plugins with a versioned API and a default-deny permission model.
 - No telemetry, no analytics, no crash upload, no remote logging.
 - Session token kept in the operating system credential store. The local message cache is encrypted with a key held in the same store.
 - Windows, macOS and Linux.
+
+## Screenshots
+
+<table>
+	<tr>
+		<td><img src="assets/screenshots/menu.png" alt="Message menu with quick reactions and the Apps submenu"></td>
+		<td><img src="assets/screenshots/search.png" alt="Search popover with filters"></td>
+	</tr>
+	<tr>
+		<td align="center">Message menu with app commands</td>
+		<td align="center">Search filters</td>
+	</tr>
+	<tr>
+		<td colspan="2" align="center"><img src="assets/screenshots/friends.png" alt="Friends list with Active Now" width="600"></td>
+	</tr>
+	<tr>
+		<td colspan="2" align="center">Friends and Active Now</td>
+	</tr>
+</table>
+
+All screenshots come from the built-in mock server (`oxidcord --mock`), so every name and message in them is generated.
 
 ## Performance
 
@@ -52,7 +89,7 @@ Discord startup time was not measured, because that would mean closing a running
 
 ## Install
 
-Download the package for your system from the [releases page](https://github.com/Master0fFate/oxidcord/releases). Versions with a `-beta` suffix are pre-releases.
+Download the package for your system from the [latest release](https://github.com/Master0fFate/oxidcord/releases/latest). Versions with a `-beta` suffix are pre-releases and only reach clients on the beta update channel.
 
 | System | File | Notes |
 | --- | --- | --- |
@@ -62,7 +99,7 @@ Download the package for your system from the [releases page](https://github.com
 
 Each release also contains `manifest.json` and `manifest.json.sig`. The in-app updater only installs a package whose sha256 matches the manifest and whose manifest carries a valid signature.
 
-Beta builds are not code signed with a paid developer certificate. Expect these warnings, they are normal for unsigned software and are your cue to check that you downloaded the file from this repository:
+Builds are not code signed with a paid developer certificate. Expect these warnings, they are normal for unsigned software and are your cue to check that you downloaded the file from this repository:
 
 - Windows SmartScreen: choose **More info**, then **Run anyway**.
 - macOS Gatekeeper: right click the app, choose **Open**, then confirm. If macOS still refuses, run `xattr -dr com.apple.quarantine /Applications/Oxidcord.app`.
@@ -140,7 +177,7 @@ Please read all of this. By downloading, installing, building or running Oxidcor
 
 **3. Use is entirely at your own risk.** You alone decide whether to use Oxidcord, with which account, and for what. Use a throwaway account if you are unsure. You are responsible for following the rules of Discord, of every server you join, and of the laws that apply to you.
 
-**4. No warranty.** The software is provided "as is" and "as available", without warranty of any kind, express or implied, including merchantability, fitness for a particular purpose, non-infringement, accuracy, availability, security or freedom from bugs. This is beta software. It can crash, lose or corrupt local data, display messages incorrectly, fail to send or delete messages, or stop working without notice when Discord changes its service.
+**4. No warranty.** The software is provided "as is" and "as available", without warranty of any kind, express or implied, including merchantability, fitness for a particular purpose, non-infringement, accuracy, availability, security or freedom from bugs. This is early-stage software. It can crash, lose or corrupt local data, display messages incorrectly, fail to send or delete messages, or stop working without notice when Discord changes its service.
 
 **5. No liability.** To the fullest extent permitted by law, the authors, maintainers and contributors are not liable for any claim, damage or loss arising from or connected to the software or its use. That includes, without limit, account suspension or termination, lost data, lost messages, lost money or digital goods, lost income, reputational harm, privacy incidents, token or account compromise, damage to your device, and any direct, indirect, incidental, special, consequential or punitive damages, even if advised that they were possible. If your jurisdiction does not allow some of these exclusions, they apply as far as the law lets them.
 
