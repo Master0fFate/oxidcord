@@ -25,6 +25,8 @@ use tokio::time::{Instant, sleep_until};
 use crate::broker::VoiceCache;
 use crate::command::{Command, ReplyTarget};
 use crate::config::VoiceIo;
+use crate::loads::PluginLoads;
+use crate::marks::ClientMarks;
 use crate::notifier::Notifier;
 use crate::persist::{self, Job, Persistor};
 use crate::plugins::{PluginFlags, PluginHub};
@@ -37,11 +39,13 @@ mod commands;
 mod expressions;
 mod mic_test;
 mod plugin_link;
+mod plugin_load;
 mod streams;
 mod video;
 mod voice_link;
 
 use mic_test::MicTestRun;
+pub(crate) use plugin_load::PluginAnswer;
 use streams::StreamLink;
 pub(crate) use video::SharedVideo;
 pub(crate) use voice_link::SharedVoice;
@@ -89,6 +93,10 @@ pub(crate) enum Internal {
 	DmOpened(Box<Channel>),
 	ThreadOpened(Box<Channel>),
 	Loaded(Loaded),
+	PluginApplied {
+		loaded: Loaded,
+		answer: PluginAnswer,
+	},
 	Rejected(String),
 	CameraStarted {
 		generation: u64,
@@ -180,6 +188,9 @@ pub(crate) struct CoreParts {
 	pub(crate) safe_mode: bool,
 	pub(crate) locale: String,
 	pub(crate) token: Arc<Token>,
+	pub(crate) loads: Arc<PluginLoads>,
+	pub(crate) marks: Arc<ClientMarks>,
+	pub(crate) media: Option<media::MediaFetcher>,
 }
 
 pub(crate) struct Core {
@@ -219,6 +230,9 @@ pub(crate) struct Core {
 	account_saved: bool,
 	select_created_guild: bool,
 	last_voice_info: Option<VoiceInfo>,
+	loads: Arc<PluginLoads>,
+	marks: Arc<ClientMarks>,
+	media: Option<media::MediaFetcher>,
 }
 
 fn page_query(
@@ -290,6 +304,9 @@ impl Core {
 			account_saved: false,
 			select_created_guild: false,
 			last_voice_info: None,
+			loads: parts.loads,
+			marks: parts.marks,
+			media: parts.media,
 		}
 	}
 
@@ -453,8 +470,9 @@ impl Core {
 			GatewayEvent::Connecting { .. } => {
 				self.apply_local(LocalEvent::ConnectionChanged { connected: false });
 			}
-			GatewayEvent::Hello { .. } => {}
+			GatewayEvent::Hello { .. } => self.marks.record("gateway-connected"),
 			GatewayEvent::Ready(ready) => {
+				self.marks.record("ready");
 				self.apply(Event::Ready(&ready));
 				let stale = {
 					let state = self.state.read();
@@ -600,6 +618,7 @@ impl Core {
 			}
 			Internal::ThreadOpened(thread) => self.on_thread_opened(thread),
 			Internal::Loaded(loaded) => self.on_loaded(loaded),
+			Internal::PluginApplied { loaded, answer } => self.on_plugin_applied(loaded, answer),
 			Internal::Rejected(reason) => self.reject(reason),
 			Internal::CameraStarted { generation, result } => self.on_camera_started(generation, result),
 			Internal::StreamTimeout { generation } => self.on_stream_timeout(generation),
@@ -824,6 +843,7 @@ impl Core {
 			Command::SwitchAccount(user_id) => self.switch_account(user_id),
 			Command::StartCall { channel_id } => self.start_call(channel_id),
 			Command::DeclineCall { channel_id } => self.decline_call(channel_id),
+			Command::PluginLoad(load) => self.on_plugin_load(load),
 			command @ (Command::RunPluginCommand { .. }
 			| Command::PluginUiAction { .. }
 			| Command::PluginViewEvent { .. }

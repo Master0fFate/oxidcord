@@ -1,4 +1,8 @@
-use crate::api::model::{EmojiInfo, MessageFull, StickerInfo};
+use crate::api::model::{
+	AuthSession, ChannelDetail, ClientInfo, EmojiInfo, EmojiRef, Folder, GuildDetail, MemberInfo,
+	MessageFull, MessageMeta, PluginSummary, Presence, ReadState, Relationship, RoleInfo, StickerInfo,
+	UserProfile, VoiceDetail,
+};
 use crate::api::{
 	ChannelSummary, GuildSummary, HostError, MemberSummary, MessageRef, MessageView, OutgoingMessage, User,
 	VoiceInfo,
@@ -76,6 +80,183 @@ pub trait HostBroker: Send + Sync {
 		_channel_id: u64,
 		_limit: u32,
 	) -> Result<Vec<MessageFull>, HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn relationships(&self, _plugin: &str) -> Result<Vec<Relationship>, HostError> {
+		Ok(Vec::new())
+	}
+
+	fn presence(&self, _plugin: &str, _user_id: u64) -> Result<Option<Presence>, HostError> {
+		Ok(None)
+	}
+
+	fn idle_seconds(&self, _plugin: &str) -> Result<u32, HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn read_state(
+		&self,
+		_plugin: &str,
+		_channel_id: u64,
+		_private: bool,
+	) -> Result<Option<ReadState>, HostError> {
+		Ok(None)
+	}
+
+	fn unread_channels(
+		&self,
+		_plugin: &str,
+		_guild_id: Option<u64>,
+		_private: bool,
+	) -> Result<Vec<ReadState>, HostError> {
+		Ok(Vec::new())
+	}
+
+	fn channel_muted(&self, _plugin: &str, _channel_id: u64, _private: bool) -> Result<bool, HostError> {
+		Ok(false)
+	}
+
+	fn roles(&self, _plugin: &str, _guild_id: u64) -> Result<Vec<RoleInfo>, HostError> {
+		Ok(Vec::new())
+	}
+
+	fn member_info(
+		&self,
+		_plugin: &str,
+		_guild_id: u64,
+		_user_id: u64,
+	) -> Result<Option<MemberInfo>, HostError> {
+		Ok(None)
+	}
+
+	fn channel_permissions(
+		&self,
+		_plugin: &str,
+		_channel_id: u64,
+		_user_id: Option<u64>,
+		_private: bool,
+	) -> Result<u64, HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn guild_detail(&self, _plugin: &str, _guild_id: u64) -> Result<Option<GuildDetail>, HostError> {
+		Ok(None)
+	}
+
+	fn channel_detail(
+		&self,
+		_plugin: &str,
+		_channel_id: u64,
+		_private: bool,
+	) -> Result<Option<ChannelDetail>, HostError> {
+		Ok(None)
+	}
+
+	fn folders(&self, _plugin: &str) -> Result<Vec<Folder>, HostError> {
+		Ok(Vec::new())
+	}
+
+	fn cached_profile(&self, _plugin: &str, _user_id: u64) -> Option<UserProfile> {
+		None
+	}
+
+	fn load_profile(&self, _plugin: &str, _user_id: u64) -> Result<Option<UserProfile>, HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn sessions(&self, _plugin: &str) -> Result<Vec<AuthSession>, HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn client_info(&self, _plugin: &str) -> Result<ClientInfo, HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn voice_detail(&self, _plugin: &str, _private: bool) -> Result<Option<VoiceDetail>, HostError> {
+		Ok(None)
+	}
+
+	fn cached_message(&self, _plugin: &str, _channel_id: u64, _message_id: u64) -> Option<MessageFull> {
+		None
+	}
+
+	fn load_message(
+		&self,
+		_plugin: &str,
+		_channel_id: u64,
+		_message_id: u64,
+		_private: bool,
+	) -> Result<Option<MessageFull>, HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn message_meta(
+		&self,
+		_plugin: &str,
+		_message: &MessageRef,
+		_private: bool,
+	) -> Result<Option<MessageMeta>, HostError> {
+		Ok(None)
+	}
+
+	fn cached_reaction_users(
+		&self,
+		_plugin: &str,
+		_message: &MessageRef,
+		_emoji: &EmojiRef,
+		_limit: u32,
+		_private: bool,
+	) -> Option<Vec<User>> {
+		None
+	}
+
+	fn load_reaction_users(
+		&self,
+		_plugin: &str,
+		_message: &MessageRef,
+		_emoji: &EmojiRef,
+		_limit: u32,
+		_private: bool,
+	) -> Result<Vec<User>, HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn cached_user(&self, _plugin: &str, _user_id: u64) -> Option<User> {
+		None
+	}
+
+	fn load_user(&self, _plugin: &str, _user_id: u64) -> Result<Option<User>, HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn attachment_bytes(
+		&self,
+		_plugin: &str,
+		_message: &MessageRef,
+		_attachment_id: u64,
+		_private: bool,
+	) -> Result<Vec<u8>, HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn avatar_bytes(&self, _plugin: &str, _user_id: u64, _size: u32) -> Result<Vec<u8>, HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn favorite_emojis(&self, _plugin: &str) -> Result<Vec<EmojiRef>, HostError> {
+		Ok(Vec::new())
+	}
+
+	fn plugins(&self, _plugin: &str) -> Result<Vec<PluginSummary>, HostError> {
+		Ok(Vec::new())
+	}
+
+	fn composer_draft(&self, _plugin: &str, _private: bool) -> Result<String, HostError> {
+		Ok(String::new())
+	}
+
+	fn speak(&self, _plugin: &str, _text: &str, _rate: f32, _volume: f32) -> Result<(), HostError> {
 		Err(HostError::Unavailable)
 	}
 }

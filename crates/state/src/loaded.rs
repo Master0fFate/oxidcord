@@ -95,6 +95,7 @@ pub enum Loaded {
 	RecentStickers(Vec<Sticker>),
 	UserSettings(Value),
 	AuthSessions(Value),
+	User(Box<User>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -532,6 +533,10 @@ impl State {
 				}
 			}
 			Loaded::UserSettings(settings) => return self.apply_user_settings(settings),
+			Loaded::User(user) => {
+				intern_user(&mut self.users, user);
+				changes.loaded.insert(user.id);
+			}
 			Loaded::AuthSessions(raw) => {
 				let parsed = RawAuthSessions::deserialize(raw).unwrap_or_default();
 				self.lazy.auth_sessions = Some(

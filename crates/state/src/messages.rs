@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::time::Instant;
 
 use protocol::{Message, MessageUpdate, Nonce, PartialEmoji, Reaction, Snowflake};
 
@@ -16,6 +17,7 @@ pub struct PendingMessage {
 	pub plugin: Option<String>,
 	pub altered_by: Option<String>,
 	pub rendered: Option<Arc<RenderedMessage>>,
+	pub sent_at: Instant,
 }
 
 #[derive(Debug, Default)]
@@ -27,12 +29,21 @@ pub struct ChannelMessages {
 	pub pending: Vec<PendingMessage>,
 	pub gaps: Vec<(Snowflake, Snowflake)>,
 	deleted: HashSet<Snowflake>,
+	latency: HashMap<Snowflake, u32>,
 	detached: bool,
 }
 
 impl ChannelMessages {
 	pub fn is_deleted(&self, id: Snowflake) -> bool {
 		self.deleted.contains(&id)
+	}
+
+	pub fn latency_ms(&self, id: Snowflake) -> Option<u32> {
+		self.latency.get(&id).copied()
+	}
+
+	pub fn record_latency(&mut self, id: Snowflake, millis: u32) {
+		self.latency.insert(id, millis);
 	}
 
 	pub fn is_hidden(&self, id: Snowflake) -> bool {
@@ -87,6 +98,7 @@ impl ChannelMessages {
 			self.by_id.clear();
 			self.rendered.clear();
 			self.deleted.clear();
+			self.latency.clear();
 			self.gaps.clear();
 		}
 		for message in messages {
@@ -121,6 +133,7 @@ impl ChannelMessages {
 		self.by_id.remove(&id);
 		self.rendered.remove(&id);
 		self.deleted.remove(&id);
+		self.latency.remove(&id);
 		true
 	}
 
@@ -149,6 +162,7 @@ impl ChannelMessages {
 			plugin,
 			altered_by: None,
 			rendered: Some(rendered),
+			sent_at: Instant::now(),
 		});
 	}
 
@@ -220,6 +234,7 @@ impl ChannelMessages {
 			self.by_id.remove(&message.id);
 			self.rendered.remove(&message.id);
 			self.deleted.remove(&message.id);
+			self.latency.remove(&message.id);
 		}
 		self.reached_start = false;
 	}
@@ -232,6 +247,7 @@ impl ChannelMessages {
 			self.by_id.remove(&message.id);
 			self.rendered.remove(&message.id);
 			self.deleted.remove(&message.id);
+			self.latency.remove(&message.id);
 		}
 		self.detached = true;
 	}

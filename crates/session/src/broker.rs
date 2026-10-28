@@ -1,20 +1,34 @@
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock, Weak};
 
+use base64::Engine as _;
+use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use parking_lot::Mutex;
-use plugin_host::HostBroker;
-use plugin_host::api::model::{EmojiInfo, EmojiRef, Lifecycle, MessageFull, StickerInfo};
+use plugin_host::api::model::{
+	AuthSession, ChannelDetail, ClientInfo, EmojiInfo, EmojiRef, Folder, GuildDetail, Lifecycle, MemberInfo,
+	MessageFull, MessageMeta, PluginSummary, Presence, ReadState, Relationship, RoleInfo, StickerInfo,
+	UserProfile, VoiceDetail,
+};
 use plugin_host::api::{
 	ChannelSummary, GuildSummary, HostError, MemberSummary, MessageRef, MessageView, OutgoingMessage, User,
 	VoiceInfo,
 };
 use plugin_host::convert::{message_full, message_view, user_view};
-use protocol::{Snowflake, StatusKind, Sticker};
-use state::{ChannelMessages, MemberSlot, SharedState, State};
+use plugin_host::{HostBroker, PluginManager};
+use protocol::{Message, Snowflake, StatusKind, Sticker};
+use sha2::{Digest, Sha256};
+use state::{ChannelMessages, DM_PERMISSIONS, MemberSlot, SharedState, State};
+use tokio::runtime::Handle;
 use tokio::sync::mpsc;
 
-use crate::command::{Command, ReplyTarget};
+use crate::command::{Command, PluginLoad, Reply, ReplyTarget};
+use crate::loads::{PluginLoads, await_reply};
+use crate::marks::ClientMarks;
 use crate::task::Internal;
+use crate::views;
+
+const MAX_IMPLICIT: usize = 1_000;
+const MAX_UNREAD_CHANNELS: usize = 2_000;
 
 pub trait BrokerSink: Send + Sync {
 	fn clipboard_write(&self, plugin: &str, text: &str) -> bool;
@@ -22,6 +36,14 @@ pub trait BrokerSink: Send + Sync {
 	fn notify(&self, plugin: &str, title: &str, body: &str) -> bool;
 
 	fn open_url(&self, plugin: &str, url: &str) -> bool;
+
+	fn idle_seconds(&self) -> Option<u64> {
+		None
+	}
+
+	fn speak(&self, _plugin: &str, _text: &str, _rate: f32, _volume: f32) -> bool {
+		false
+	}
 }
 
 pub struct NoopSink;
@@ -64,12 +86,26 @@ impl VoiceCache {
 	}
 }
 
+type ImplicitUsers = ((usize, usize, usize), Arc<[Snowflake]>);
+
+#[derive(Default)]
+pub(crate) struct BrokerCaches {
+	implicit: Mutex<Option<ImplicitUsers>>,
+	sessions_requested: AtomicBool,
+	plugins: OnceLock<Weak<PluginManager>>,
+}
+
 pub(crate) struct SessionBroker {
 	pub(crate) state: SharedState,
 	pub(crate) voice: Arc<VoiceCache>,
 	pub(crate) commands: mpsc::Sender<Command>,
 	pub(crate) internal: mpsc::UnboundedSender<Internal>,
 	pub(crate) sink: Arc<dyn BrokerSink>,
+	pub(crate) handle: Handle,
+	pub(crate) marks: Arc<ClientMarks>,
+	pub(crate) loads: Arc<PluginLoads>,
+	pub(crate) locale: String,
+	pub(crate) caches: BrokerCaches,
 }
 
 pub(crate) fn view_of(
@@ -160,11 +196,96 @@ fn delivered(accepted: bool) -> Result<(), HostError> {
 	}
 }
 
+pub(crate) fn fetched_full(state: &State, message: &Message) -> MessageFull {
+	let view = view_of(message, || state.channel_guild(message.channel_id));
+	let mine = state.current_user_id() == Some(message.author.id);
+	message_full(message, view, mine, Lifecycle::Live)
+}
+
+pub(crate) fn reaction_key(emoji: &EmojiRef) -> String {
+	match emoji.id {
+		Some(id) => format!("{}:{id}", emoji.name),
+		None => emoji.name.clone(),
+	}
+}
+
+fn is_private(state: &State, channel_id: Snowflake) -> bool {
+	state.channel(channel_id).is_some() && state.channel_guild(channel_id).is_none()
+}
+
+fn current_session(sessions: &[state::AuthSession], session_id: &str) -> Option<usize> {
+	let hashed = (!session_id.is_empty())
+		.then(|| {
+			let digest = Sha256::digest(session_id.as_bytes());
+			[
+				hex::encode(digest),
+				STANDARD.encode(digest),
+				URL_SAFE_NO_PAD.encode(digest),
+			]
+		})
+		.and_then(|hashes| {
+			sessions
+				.iter()
+				.position(|session| hashes.contains(&session.id_hash))
+		});
+	hashed.or_else(|| {
+		sessions
+			.iter()
+			.enumerate()
+			.max_by_key(|(_, session)| session.last_used)
+			.map(|(index, _)| index)
+	})
+}
+
 impl SessionBroker {
 	fn queue(&self, command: Command) -> Result<(), HostError> {
 		self.commands
 			.try_send(command)
 			.map_err(|_| HostError::Unavailable)
+	}
+
+	pub(crate) fn attach_plugins(&self, manager: &Arc<PluginManager>) {
+		let _ = self.caches.plugins.set(Arc::downgrade(manager));
+	}
+
+	fn request<T>(
+		&self,
+		load: impl FnOnce(Reply<crate::command::LoadResult<T>>) -> PluginLoad,
+	) -> crate::command::LoadResult<T> {
+		let (reply, receiver) = Reply::channel();
+		self.queue(Command::PluginLoad(load(reply)))?;
+		await_reply(&self.handle, receiver)?
+	}
+
+	fn media(&self, url: String) -> Result<Vec<u8>, HostError> {
+		self.loads.media.run(url.clone(), || {
+			self.request(|reply| PluginLoad::Media { url, reply })
+		})
+	}
+
+	fn find_message(
+		&self,
+		state: &State,
+		channel_id: Snowflake,
+		message_id: Snowflake,
+	) -> Option<Arc<Message>> {
+		state
+			.messages(channel_id)
+			.and_then(|cache| cache.by_id.get(&message_id).cloned())
+			.or_else(|| self.loads.fetched_message(channel_id, message_id))
+	}
+
+	fn implicit_users(&self, state: &State) -> Arc<[Snowflake]> {
+		let fingerprint = state.people_fingerprint();
+		let mut cache = self.caches.implicit.lock();
+		if let Some((known, users)) = &*cache
+			&& *known == fingerprint
+		{
+			return Arc::clone(users);
+		}
+		let users: Arc<[Snowflake]> = state.implicit_relationships().into();
+		*cache = Some((fingerprint, Arc::clone(&users)));
+		users
 	}
 }
 
@@ -441,5 +562,361 @@ impl HostBroker for SessionBroker {
 			.collect();
 		messages.reverse();
 		Ok(messages)
+	}
+
+	fn relationships(&self, _plugin: &str) -> Result<Vec<Relationship>, HostError> {
+		let state = self.state.read();
+		let mut found: Vec<Relationship> = state
+			.relationships()
+			.filter_map(|relationship| views::relationship(&state, relationship))
+			.collect();
+		found.extend(
+			self.implicit_users(&state)
+				.iter()
+				.take(MAX_IMPLICIT)
+				.filter_map(|user_id| views::implicit(&state, *user_id)),
+		);
+		Ok(found)
+	}
+
+	fn presence(&self, _plugin: &str, user_id: u64) -> Result<Option<Presence>, HostError> {
+		Ok(views::presence(&self.state.read(), Snowflake(user_id)))
+	}
+
+	fn idle_seconds(&self, _plugin: &str) -> Result<u32, HostError> {
+		self.sink
+			.idle_seconds()
+			.map(|seconds| u32::try_from(seconds).unwrap_or(u32::MAX))
+			.ok_or(HostError::Unavailable)
+	}
+
+	fn read_state(
+		&self,
+		_plugin: &str,
+		channel_id: u64,
+		private: bool,
+	) -> Result<Option<ReadState>, HostError> {
+		let state = self.state.read();
+		let channel_id = Snowflake(channel_id);
+		if !private && is_private(&state, channel_id) {
+			return Ok(None);
+		}
+		Ok(state.channel_unread(channel_id).map(views::read_state))
+	}
+
+	fn unread_channels(
+		&self,
+		_plugin: &str,
+		guild_id: Option<u64>,
+		private: bool,
+	) -> Result<Vec<ReadState>, HostError> {
+		Ok(self
+			.state
+			.read()
+			.unread_channels(guild_id.map(Snowflake), private)
+			.into_iter()
+			.take(MAX_UNREAD_CHANNELS)
+			.map(views::read_state)
+			.collect())
+	}
+
+	fn channel_muted(&self, _plugin: &str, channel_id: u64, private: bool) -> Result<bool, HostError> {
+		let state = self.state.read();
+		let channel_id = Snowflake(channel_id);
+		if !private && is_private(&state, channel_id) {
+			return Ok(false);
+		}
+		Ok(state
+			.channel_unread(channel_id)
+			.is_some_and(|unread| unread.muted))
+	}
+
+	fn roles(&self, _plugin: &str, guild_id: u64) -> Result<Vec<RoleInfo>, HostError> {
+		views::roles(&self.state.read(), Snowflake(guild_id)).ok_or(HostError::Unavailable)
+	}
+
+	fn member_info(
+		&self,
+		_plugin: &str,
+		guild_id: u64,
+		user_id: u64,
+	) -> Result<Option<MemberInfo>, HostError> {
+		Ok(views::member_info(
+			&self.state.read(),
+			Snowflake(guild_id),
+			Snowflake(user_id),
+		))
+	}
+
+	fn channel_permissions(
+		&self,
+		_plugin: &str,
+		channel_id: u64,
+		user_id: Option<u64>,
+		private: bool,
+	) -> Result<u64, HostError> {
+		let state = self.state.read();
+		let channel_id = Snowflake(channel_id);
+		match state.channel_guild(channel_id) {
+			Some(guild_id) => {
+				let user = user_id
+					.map(Snowflake)
+					.or_else(|| state.current_user_id())
+					.ok_or(HostError::Unavailable)?;
+				Ok(state.permissions_in(guild_id, channel_id, user).bits())
+			}
+			None if private && is_private(&state, channel_id) => Ok(DM_PERMISSIONS.bits()),
+			None => Err(HostError::Unavailable),
+		}
+	}
+
+	fn guild_detail(&self, _plugin: &str, guild_id: u64) -> Result<Option<GuildDetail>, HostError> {
+		Ok(views::guild_detail(&self.state.read(), Snowflake(guild_id)))
+	}
+
+	fn channel_detail(
+		&self,
+		_plugin: &str,
+		channel_id: u64,
+		private: bool,
+	) -> Result<Option<ChannelDetail>, HostError> {
+		Ok(views::channel_detail(
+			&self.state.read(),
+			Snowflake(channel_id),
+			private,
+		))
+	}
+
+	fn folders(&self, _plugin: &str) -> Result<Vec<Folder>, HostError> {
+		Ok(views::folders(&self.state.read()))
+	}
+
+	fn cached_profile(&self, _plugin: &str, user_id: u64) -> Option<UserProfile> {
+		self.state
+			.read()
+			.profile(Snowflake(user_id))
+			.map(views::user_profile)
+	}
+
+	fn load_profile(&self, _plugin: &str, user_id: u64) -> Result<Option<UserProfile>, HostError> {
+		let user_id = Snowflake(user_id);
+		self.loads.profiles.run(user_id, || {
+			self.request(|reply| PluginLoad::Profile { user_id, reply })
+		})
+	}
+
+	fn sessions(&self, _plugin: &str) -> Result<Vec<AuthSession>, HostError> {
+		let state = self.state.read();
+		let Some(found) = state.auth_sessions() else {
+			drop(state);
+			if !self.caches.sessions_requested.swap(true, Ordering::AcqRel) {
+				self.queue(Command::LoadSessions)?;
+			}
+			return Err(HostError::Unavailable);
+		};
+		let current = current_session(found, &state.session().session_id);
+		Ok(found
+			.iter()
+			.enumerate()
+			.map(|(index, session)| AuthSession {
+				id: session.id_hash.clone(),
+				client_os: session.os.clone(),
+				client_platform: session.platform.clone(),
+				location: session.location.clone(),
+				approx_last_used_ms: session.last_used.map_or(0, |time| time.timestamp_millis()),
+				current: current == Some(index),
+			})
+			.collect())
+	}
+
+	fn client_info(&self, _plugin: &str) -> Result<ClientInfo, HostError> {
+		Ok(ClientInfo {
+			version: env!("CARGO_PKG_VERSION").to_owned(),
+			platform: std::env::consts::OS.to_owned(),
+			uptime_ms: i64::try_from(self.marks.uptime_ms()).unwrap_or(i64::MAX),
+			startup: self.marks.startup(),
+			locale: self.locale.clone(),
+		})
+	}
+
+	fn voice_detail(&self, _plugin: &str, _private: bool) -> Result<Option<VoiceDetail>, HostError> {
+		Ok(views::voice_detail(&self.state.read()))
+	}
+
+	fn cached_message(&self, _plugin: &str, channel_id: u64, message_id: u64) -> Option<MessageFull> {
+		let state = self.state.read();
+		let (channel_id, message_id) = (Snowflake(channel_id), Snowflake(message_id));
+		if let Some(cache) = state.messages(channel_id)
+			&& let Some(message) = cache.by_id.get(&message_id)
+		{
+			return Some(full_of(&state, cache, message, Lifecycle::Live));
+		}
+		let message = self.loads.fetched_message(channel_id, message_id)?;
+		Some(fetched_full(&state, &message))
+	}
+
+	fn load_message(
+		&self,
+		_plugin: &str,
+		channel_id: u64,
+		message_id: u64,
+		private: bool,
+	) -> Result<Option<MessageFull>, HostError> {
+		let (channel_id, message_id) = (Snowflake(channel_id), Snowflake(message_id));
+		if !private && is_private(&self.state.read(), channel_id) {
+			return Ok(None);
+		}
+		self.loads.messages.run((channel_id, message_id), || {
+			self.request(|reply| PluginLoad::Message {
+				channel_id,
+				message_id,
+				reply,
+			})
+		})
+	}
+
+	fn message_meta(
+		&self,
+		_plugin: &str,
+		message: &MessageRef,
+		private: bool,
+	) -> Result<Option<MessageMeta>, HostError> {
+		let state = self.state.read();
+		let channel_id = Snowflake(message.channel_id);
+		if !private && is_private(&state, channel_id) {
+			return Ok(None);
+		}
+		let Some(found) = self.find_message(&state, channel_id, Snowflake(message.id)) else {
+			return Ok(None);
+		};
+		let meta = views::message_meta(&state, state.messages(channel_id), &found);
+		Ok(Some(meta).filter(|meta| meta.guild_id.is_some() || private))
+	}
+
+	fn cached_reaction_users(
+		&self,
+		_plugin: &str,
+		message: &MessageRef,
+		emoji: &EmojiRef,
+		limit: u32,
+		private: bool,
+	) -> Option<Vec<User>> {
+		let state = self.state.read();
+		if !private && is_private(&state, Snowflake(message.channel_id)) {
+			return Some(Vec::new());
+		}
+		state
+			.reaction_users(Snowflake(message.id), &reaction_key(emoji))
+			.map(|users| users.iter().take(limit as usize).map(user_view).collect())
+	}
+
+	fn load_reaction_users(
+		&self,
+		_plugin: &str,
+		message: &MessageRef,
+		emoji: &EmojiRef,
+		limit: u32,
+		private: bool,
+	) -> Result<Vec<User>, HostError> {
+		let (channel_id, message_id) = (Snowflake(message.channel_id), Snowflake(message.id));
+		if !private && is_private(&self.state.read(), channel_id) {
+			return Ok(Vec::new());
+		}
+		let emoji = reaction_key(emoji);
+		let mut users = self
+			.loads
+			.reactions
+			.run((channel_id, message_id, emoji.clone()), || {
+				self.request(|reply| PluginLoad::ReactionUsers {
+					channel_id,
+					message_id,
+					emoji,
+					reply,
+				})
+			})?;
+		users.truncate(limit as usize);
+		Ok(users)
+	}
+
+	fn cached_user(&self, _plugin: &str, user_id: u64) -> Option<User> {
+		self.state
+			.read()
+			.user(Snowflake(user_id))
+			.map(|user| user_view(user))
+	}
+
+	fn load_user(&self, _plugin: &str, user_id: u64) -> Result<Option<User>, HostError> {
+		let user_id = Snowflake(user_id);
+		self.loads.users.run(user_id, || {
+			self.request(|reply| PluginLoad::User { user_id, reply })
+		})
+	}
+
+	fn attachment_bytes(
+		&self,
+		_plugin: &str,
+		message: &MessageRef,
+		attachment_id: u64,
+		private: bool,
+	) -> Result<Vec<u8>, HostError> {
+		let url = {
+			let state = self.state.read();
+			let channel_id = Snowflake(message.channel_id);
+			if !private && is_private(&state, channel_id) {
+				return Err(HostError::Unavailable);
+			}
+			let found = self
+				.find_message(&state, channel_id, Snowflake(message.id))
+				.ok_or(HostError::Unavailable)?;
+			found
+				.attachments
+				.iter()
+				.find(|attachment| attachment.id.get() == attachment_id)
+				.and_then(|attachment| attachment.url.clone())
+				.ok_or(HostError::Unavailable)?
+		};
+		self.media(url)
+	}
+
+	fn avatar_bytes(&self, _plugin: &str, user_id: u64, size: u32) -> Result<Vec<u8>, HostError> {
+		let url = {
+			let state = self.state.read();
+			let user = state.user(Snowflake(user_id));
+			media::cdn::avatar_url(
+				user_id,
+				user.and_then(|user| user.avatar.as_deref()),
+				user.and_then(|user| user.discriminator.as_deref()),
+				size,
+			)
+		};
+		self.media(url)
+	}
+
+	fn favorite_emojis(&self, _plugin: &str) -> Result<Vec<EmojiRef>, HostError> {
+		Ok(Vec::new())
+	}
+
+	fn plugins(&self, _plugin: &str) -> Result<Vec<PluginSummary>, HostError> {
+		self.caches
+			.plugins
+			.get()
+			.and_then(Weak::upgrade)
+			.map(|manager| manager.summaries())
+			.ok_or(HostError::Unavailable)
+	}
+
+	fn composer_draft(&self, _plugin: &str, private: bool) -> Result<String, HostError> {
+		let state = self.state.read();
+		let Some(selected) = state.selected() else {
+			return Ok(String::new());
+		};
+		if !private && selected.guild_id.is_none() {
+			return Ok(String::new());
+		}
+		Ok(state.draft(selected.channel_id).unwrap_or_default().to_owned())
+	}
+
+	fn speak(&self, plugin: &str, text: &str, rate: f32, volume: f32) -> Result<(), HostError> {
+		delivered(self.sink.speak(plugin, text, rate, volume))
 	}
 }

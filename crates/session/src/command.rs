@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
-use plugin_host::api::model::{EmojiRef, UiContext, ViewEvent};
+use plugin_host::api::model::{EmojiRef, MessageFull, UiContext, UserProfile, ViewEvent};
+use plugin_host::api::{HostError, User as PluginUser};
 use plugin_host::{Permission, ViewContext};
 use protocol::{
 	ApplicationCommand, ChannelType, ComponentType, Gif, MessageFlags, NotificationLevel,
@@ -10,6 +11,7 @@ use protocol::{
 use rest::UploadFile;
 use rest::api::SearchQuery;
 use serde_json::Value;
+use tokio::sync::oneshot;
 use voice::video::VideoQuality;
 use voice::video::capture::ScreenTarget;
 
@@ -31,8 +33,57 @@ pub struct ReplyTarget {
 	pub mention: bool,
 }
 
+pub struct Reply<T>(oneshot::Sender<T>);
+
+impl<T> Reply<T> {
+	pub fn channel() -> (Self, oneshot::Receiver<T>) {
+		let (sender, receiver) = oneshot::channel();
+		(Self(sender), receiver)
+	}
+
+	pub fn send(self, value: T) {
+		let _ = self.0.send(value);
+	}
+}
+
+impl<T> std::fmt::Debug for Reply<T> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.write_str("Reply")
+	}
+}
+
+pub type LoadResult<T> = Result<T, HostError>;
+
+#[derive(Debug)]
+pub enum PluginLoad {
+	Profile {
+		user_id: Snowflake,
+		reply: Reply<LoadResult<Option<UserProfile>>>,
+	},
+	Message {
+		channel_id: Snowflake,
+		message_id: Snowflake,
+		reply: Reply<LoadResult<Option<MessageFull>>>,
+	},
+	User {
+		user_id: Snowflake,
+		reply: Reply<LoadResult<Option<PluginUser>>>,
+	},
+	ReactionUsers {
+		channel_id: Snowflake,
+		message_id: Snowflake,
+		emoji: String,
+		reply: Reply<LoadResult<Vec<PluginUser>>>,
+	},
+	Media {
+		url: String,
+		reply: Reply<LoadResult<Vec<u8>>>,
+	},
+}
+
 #[derive(Debug)]
 pub enum Command {
+	PluginLoad(PluginLoad),
 	SelectChannel {
 		guild_id: Option<Snowflake>,
 		channel_id: Snowflake,

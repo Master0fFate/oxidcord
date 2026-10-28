@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use chrono::{DateTime, Utc};
 use protocol::{LenientVec, Snowflake, StreamDelete, StreamState, VoiceState};
 use serde::Deserialize;
 use serde_json::Value;
@@ -50,6 +51,7 @@ pub struct VoiceSession {
 	pub screen_share: Option<StreamInfo>,
 	pub watching: Option<String>,
 	pub remote_video: HashMap<Snowflake, VideoKind>,
+	pub connected_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -126,6 +128,9 @@ impl State {
 			(status, Some(session)) if session.channel_id == channel_id && session.guild_id == guild_id => {
 				let changed = session.status != *status;
 				session.status = status.clone();
+				if *status == VoiceStatus::Connected && session.connected_at.is_none() {
+					session.connected_at = Some(Utc::now());
+				}
 				if matches!(status, VoiceStatus::Disconnected { .. }) {
 					session.speaking.clear();
 					session.camera_on = false;
@@ -149,6 +154,7 @@ impl State {
 					screen_share: None,
 					watching: None,
 					remote_video: HashMap::new(),
+					connected_at: (*status == VoiceStatus::Connected).then(Utc::now),
 				});
 				true
 			}

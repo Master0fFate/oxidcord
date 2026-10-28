@@ -3,19 +3,24 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use gateway::{Gateway, GatewayConfig, GatewayHandle};
+use media::MediaFetcher;
 use plugin_host::catalog::{Catalog, ThemeCatalog};
 use plugin_host::{CommandEntry, Grants, Mounts, Patches, PluginInfo, PluginManager, RuntimeConfig, Slots};
 use protocol::Token;
+use protocol::gateway::IdentifyProperties;
 use rest::{RestClient, RestConfig};
 use state::{SharedState, State};
 use tokio::runtime::{Builder, Handle, Runtime};
 use tokio::sync::mpsc;
+use url::Url;
 use voice::video::VideoSink;
 
-use crate::broker::{SessionBroker, VoiceCache};
+use crate::broker::{BrokerCaches, SessionBroker, VoiceCache};
 use crate::catalog::catalog_key;
 use crate::command::Command;
 use crate::config::{PluginOptions, SessionConfig, VoiceIo};
+use crate::loads::PluginLoads;
+use crate::marks::ClientMarks;
 use crate::notifier::Notifier;
 use crate::plugins::PluginHub;
 use crate::search::SearchResults;
@@ -25,6 +30,7 @@ const COMMAND_CAPACITY: usize = 256;
 const RUNTIME_WORKERS: usize = 4;
 const SHUTDOWN_WAIT: Duration = Duration::from_secs(5);
 const RUNTIME_GRACE: Duration = Duration::from_secs(2);
+const PLUGIN_MEDIA_MAX_BYTES: usize = 8 * 1024 * 1024;
 
 pub struct Session {
 	state: SharedState,
@@ -42,6 +48,24 @@ pub struct Session {
 
 fn install_crypto_provider() {
 	let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+}
+
+fn media_fetcher(identify: &IdentifyProperties, rest_base: &Url) -> Option<MediaFetcher> {
+	let mut builder = MediaFetcher::builder()
+		.user_agent(identify.user_agent())
+		.max_bytes(PLUGIN_MEDIA_MAX_BYTES);
+	if rest_base.host_str() == Some("127.0.0.1")
+		&& let Some(port) = rest_base.port()
+	{
+		builder = builder.allow_loopback_http(port);
+	}
+	match builder.build() {
+		Ok(fetcher) => Some(fetcher),
+		Err(error) => {
+			tracing::warn!(%error, "plugin media fetcher is unavailable");
+			None
+		}
+	}
 }
 
 fn runtime_for(requested: Option<Handle>) -> (Option<Runtime>, Handle) {
@@ -73,6 +97,9 @@ impl Session {
 		install_crypto_provider();
 		let (runtime, handle) = runtime_for(config.runtime);
 		let locale = config.locale.clone();
+		let marks = Arc::new(ClientMarks::new());
+		let loads = Arc::new(PluginLoads::default());
+		let media = media_fetcher(&config.identify, &config.rest_base);
 		let rest = RestClient::new(
 			RestConfig {
 				base_url: config.rest_base,
@@ -100,6 +127,11 @@ impl Session {
 			commands: commands.clone(),
 			internal: internal.clone(),
 			sink: plugins.sink,
+			handle: handle.clone(),
+			marks: Arc::clone(&marks),
+			loads: Arc::clone(&loads),
+			locale: locale.clone(),
+			caches: BrokerCaches::default(),
 		});
 		let grants = Arc::new(Grants::new(config.store.clone()));
 		let plugin_runtime = plugin_host::Runtime::new(
@@ -110,14 +142,12 @@ impl Session {
 			handle.clone(),
 			config.store.clone(),
 			grants.clone(),
-			broker,
+			broker.clone(),
 		)
 		.expect("plugin runtime initializes");
-		let hub = Arc::new(PluginHub::new(
-			Arc::new(PluginManager::new(plugin_runtime)),
-			grants,
-			config.store.clone(),
-		));
+		let manager = Arc::new(PluginManager::new(plugin_runtime));
+		broker.attach_plugins(&manager);
+		let hub = Arc::new(PluginHub::new(manager, grants, config.store.clone()));
 		let core = Core::new(CoreParts {
 			state: state.clone(),
 			rest,
@@ -136,6 +166,9 @@ impl Session {
 			shared_voice: voice.clone(),
 			video: video.clone(),
 			token,
+			loads,
+			marks,
+			media,
 		});
 		let (done, finished) = std::sync::mpsc::channel();
 		handle.spawn(async move {

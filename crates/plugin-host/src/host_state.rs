@@ -47,6 +47,8 @@ const MAX_EMOJI_BYTES: usize = 128;
 const MAX_FETCHED_MESSAGES: u32 = 100;
 const MAX_LISTED_MEMBERS: u32 = 1_000;
 const MAX_LISTED_EMOJIS: u32 = 10_000;
+const MAX_REACTION_USERS: u32 = 100;
+const MAX_SPOKEN_CHARS: usize = 300;
 const MAX_SENDS_PER_GESTURE: u8 = 3;
 const MAX_MENU_ITEMS: usize = 16;
 const MAX_MENU_LABEL: usize = 64;
@@ -728,142 +730,187 @@ impl client::Host for HostState {
 
 	fn list_relationships(&mut self) -> Result<Vec<Relationship>, HostError> {
 		self.require(Permission::ContextRelationships)?;
-		unavailable()
+		self.services.broker.relationships(&self.plugin)
 	}
 
-	fn user_presence(&mut self, _user_id: u64) -> Result<Option<Presence>, HostError> {
+	fn user_presence(&mut self, user_id: u64) -> Result<Option<Presence>, HostError> {
 		self.require(Permission::ContextPresence)?;
-		unavailable()
+		self.services.broker.presence(&self.plugin, user_id)
 	}
 
 	fn idle_seconds(&mut self) -> Result<u32, HostError> {
 		self.require(Permission::ContextPresence)?;
-		unavailable()
+		self.services.broker.idle_seconds(&self.plugin)
 	}
 
-	fn read_state(&mut self, _channel_id: u64) -> Result<Option<ReadState>, HostError> {
+	fn read_state(&mut self, channel_id: u64) -> Result<Option<ReadState>, HostError> {
 		self.require(Permission::ContextReadState)?;
-		unavailable()
+		self.services
+			.broker
+			.read_state(&self.plugin, channel_id, self.has_private_access())
 	}
 
-	fn unread_channels(&mut self, _guild_id: Option<u64>) -> Result<Vec<ReadState>, HostError> {
+	fn unread_channels(&mut self, guild_id: Option<u64>) -> Result<Vec<ReadState>, HostError> {
 		self.require(Permission::ContextReadState)?;
-		unavailable()
+		self.services
+			.broker
+			.unread_channels(&self.plugin, guild_id, self.has_private_access())
 	}
 
-	fn channel_muted(&mut self, _channel_id: u64) -> Result<bool, HostError> {
+	fn channel_muted(&mut self, channel_id: u64) -> Result<bool, HostError> {
 		self.require(Permission::ContextReadState)?;
-		unavailable()
+		self.services
+			.broker
+			.channel_muted(&self.plugin, channel_id, self.has_private_access())
 	}
 
-	fn list_roles(&mut self, _guild_id: u64) -> Result<Vec<RoleInfo>, HostError> {
+	fn list_roles(&mut self, guild_id: u64) -> Result<Vec<RoleInfo>, HostError> {
 		self.require(Permission::ContextRoles)?;
-		unavailable()
+		self.services.broker.roles(&self.plugin, guild_id)
 	}
 
-	fn member_info(&mut self, _guild_id: u64, _user_id: u64) -> Result<Option<MemberInfo>, HostError> {
+	fn member_info(&mut self, guild_id: u64, user_id: u64) -> Result<Option<MemberInfo>, HostError> {
 		self.require(Permission::ContextRoles)?;
-		unavailable()
+		self.services.broker.member_info(&self.plugin, guild_id, user_id)
 	}
 
-	fn channel_permissions(&mut self, _channel_id: u64, _user_id: Option<u64>) -> Result<u64, HostError> {
+	fn channel_permissions(&mut self, channel_id: u64, user_id: Option<u64>) -> Result<u64, HostError> {
 		self.require(Permission::ContextRoles)?;
-		unavailable()
+		self.services
+			.broker
+			.channel_permissions(&self.plugin, channel_id, user_id, self.has_private_access())
 	}
 
-	fn guild_detail(&mut self, _guild_id: u64) -> Result<Option<GuildDetail>, HostError> {
+	fn guild_detail(&mut self, guild_id: u64) -> Result<Option<GuildDetail>, HostError> {
 		self.require(Permission::ContextDirectory)?;
-		unavailable()
+		self.services.broker.guild_detail(&self.plugin, guild_id)
 	}
 
-	fn channel_detail(&mut self, _channel_id: u64) -> Result<Option<ChannelDetail>, HostError> {
+	fn channel_detail(&mut self, channel_id: u64) -> Result<Option<ChannelDetail>, HostError> {
 		self.require(Permission::ContextDirectory)?;
-		unavailable()
+		self.services
+			.broker
+			.channel_detail(&self.plugin, channel_id, self.has_private_access())
 	}
 
 	fn list_folders(&mut self) -> Result<Vec<Folder>, HostError> {
 		self.require(Permission::ContextDirectory)?;
-		unavailable()
+		self.services.broker.folders(&self.plugin)
 	}
 
-	fn user_profile(&mut self, _user_id: u64) -> Result<Option<UserProfile>, HostError> {
+	fn user_profile(&mut self, user_id: u64) -> Result<Option<UserProfile>, HostError> {
 		self.require(Permission::ContextProfiles)?;
+		if let Some(profile) = self.services.broker.cached_profile(&self.plugin, user_id) {
+			return Ok(Some(profile));
+		}
 		self.loads()?;
-		unavailable()
+		within_rate(self.rate.lookup.take())?;
+		self.services.broker.load_profile(&self.plugin, user_id)
 	}
 
 	fn list_sessions(&mut self) -> Result<Vec<AuthSession>, HostError> {
 		self.require(Permission::ContextSessions)?;
-		unavailable()
+		self.services.broker.sessions(&self.plugin)
 	}
 
 	fn client_info(&mut self) -> Result<ClientInfo, HostError> {
 		self.require(Permission::ContextBasic)?;
-		unavailable()
+		self.services.broker.client_info(&self.plugin)
 	}
 
 	fn voice_detail(&mut self) -> Result<Option<VoiceDetail>, HostError> {
 		self.require(Permission::ContextVoice)?;
-		unavailable()
+		let detail = self
+			.services
+			.broker
+			.voice_detail(&self.plugin, self.has_private_access())?;
+		Ok(detail.filter(|detail| detail.base.guild_id.is_some() || self.has_private_access()))
 	}
 
-	fn fetch_message(
-		&mut self,
-		_channel_id: u64,
-		_message_id: u64,
-	) -> Result<Option<MessageFull>, HostError> {
+	fn fetch_message(&mut self, channel_id: u64, message_id: u64) -> Result<Option<MessageFull>, HostError> {
 		self.require(Permission::ContextTimeline)?;
+		let private = self.has_private_access();
+		let broker = &self.services.broker;
+		if let Some(message) = broker.cached_message(&self.plugin, channel_id, message_id) {
+			return Ok(Some(message).filter(|message| self.visible(message)));
+		}
 		self.loads()?;
-		unavailable()
+		within_rate(self.rate.fetch_message.take())?;
+		let message = self
+			.services
+			.broker
+			.load_message(&self.plugin, channel_id, message_id, private)?;
+		Ok(message.filter(|message| self.visible(message)))
 	}
 
-	fn message_meta(&mut self, _m: MessageRef) -> Result<Option<MessageMeta>, HostError> {
+	fn message_meta(&mut self, m: MessageRef) -> Result<Option<MessageMeta>, HostError> {
 		self.require(Permission::ContextTimeline)?;
-		unavailable()
+		self.services
+			.broker
+			.message_meta(&self.plugin, &m, self.has_private_access())
 	}
 
-	fn reaction_users(
-		&mut self,
-		_m: MessageRef,
-		_emoji: EmojiRef,
-		_limit: u32,
-	) -> Result<Vec<User>, HostError> {
+	fn reaction_users(&mut self, m: MessageRef, emoji: EmojiRef, limit: u32) -> Result<Vec<User>, HostError> {
 		self.require(Permission::ContextTimeline)?;
+		if emoji.name.is_empty() || emoji.name.len() > MAX_EMOJI_BYTES {
+			return Err(invalid("emoji length"));
+		}
+		let limit = limit.clamp(1, MAX_REACTION_USERS);
+		let private = self.has_private_access();
+		let broker = &self.services.broker;
+		if let Some(users) = broker.cached_reaction_users(&self.plugin, &m, &emoji, limit, private) {
+			return Ok(users);
+		}
 		self.loads()?;
-		unavailable()
+		within_rate(self.rate.reaction_users.take())?;
+		self.services
+			.broker
+			.load_reaction_users(&self.plugin, &m, &emoji, limit, private)
 	}
 
-	fn fetch_user(&mut self, _user_id: u64) -> Result<Option<User>, HostError> {
+	fn fetch_user(&mut self, user_id: u64) -> Result<Option<User>, HostError> {
 		self.require(Permission::ContextMembers)?;
+		if let Some(user) = self.services.broker.cached_user(&self.plugin, user_id) {
+			return Ok(Some(user));
+		}
 		self.loads()?;
-		unavailable()
+		within_rate(self.rate.lookup.take())?;
+		self.services.broker.load_user(&self.plugin, user_id)
 	}
 
-	fn attachment_bytes(&mut self, _m: MessageRef, _attachment_id: u64) -> Result<Vec<u8>, HostError> {
+	fn attachment_bytes(&mut self, m: MessageRef, attachment_id: u64) -> Result<Vec<u8>, HostError> {
 		self.require(Permission::ContextAttachments)?;
 		self.loads()?;
-		unavailable()
+		within_rate(self.rate.attachment_bytes.take())?;
+		self.services
+			.broker
+			.attachment_bytes(&self.plugin, &m, attachment_id, self.has_private_access())
 	}
 
-	fn avatar_bytes(&mut self, _user_id: u64, _size: u32) -> Result<Vec<u8>, HostError> {
+	fn avatar_bytes(&mut self, user_id: u64, size: u32) -> Result<Vec<u8>, HostError> {
 		self.require(Permission::ContextAttachments)?;
 		self.loads()?;
-		unavailable()
+		within_rate(self.rate.attachment_bytes.take())?;
+		self.services
+			.broker
+			.avatar_bytes(&self.plugin, user_id, cdn_size(size))
 	}
 
 	fn list_favorite_emojis(&mut self) -> Result<Vec<EmojiRef>, HostError> {
 		self.require(Permission::ContextExpressions)?;
-		unavailable()
+		self.services.broker.favorite_emojis(&self.plugin)
 	}
 
 	fn list_plugins(&mut self) -> Result<Vec<PluginSummary>, HostError> {
 		self.require(Permission::PluginsList)?;
-		unavailable()
+		self.services.broker.plugins(&self.plugin)
 	}
 
 	fn composer_get_draft(&mut self) -> Result<String, HostError> {
 		self.require(Permission::Composer)?;
-		unavailable()
+		self.services
+			.broker
+			.composer_draft(&self.plugin, self.has_private_access())
 	}
 
 	fn set_status(&mut self, _status: String) -> Result<(), HostError> {
@@ -1044,9 +1091,18 @@ impl client::Host for HostState {
 		unavailable()
 	}
 
-	fn speak(&mut self, _text: String, _rate: f32, _volume: f32) -> Result<(), HostError> {
+	fn speak(&mut self, text: String, rate: f32, volume: f32) -> Result<(), HostError> {
 		self.require(Permission::ActionsSpeak)?;
-		unavailable()
+		if text.trim().is_empty() || text.chars().count() > MAX_SPOKEN_CHARS {
+			return Err(invalid("speech text length"));
+		}
+		if !rate.is_finite() || !volume.is_finite() {
+			return Err(invalid("speech rate and volume must be finite"));
+		}
+		within_rate(self.rate.speak.take())?;
+		self.services
+			.broker
+			.speak(&self.plugin, &text, rate.clamp(0.5, 2.0), volume.clamp(0.0, 1.0))
 	}
 
 	fn invalidate_message(&mut self, _m: MessageRef) -> Result<(), HostError> {

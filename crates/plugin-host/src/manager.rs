@@ -12,8 +12,8 @@ use crate::api::model::SendDecisionFull;
 use crate::api::model::{
 	Badge, ChannelClick, ChannelDetail, ClientEvent, DisplayOverrideFull, EmojiInfo, EmojiRef, Lifecycle,
 	LinkVerdict, MessageClick, MessageFull, MessageMeta, MessagePatchExt, NodeKind, NotificationInfo,
-	NotificationVerdict, OutgoingFull, PickVerdict, Presence, RichTree, TextNode, TextSize, Tone, UiContext,
-	ViewEvent, ViewNode, ViewReply, ViewTree, Weight,
+	NotificationVerdict, OutgoingFull, PickVerdict, PluginSummary, Presence, RichTree, TextNode, TextSize,
+	Tone, UiContext, ViewEvent, ViewNode, ViewReply, ViewTree, Weight,
 };
 use crate::api::{
 	DisplayOverride, Event, MessageView, OutgoingMessage, SendDecision as GuestDecision, User, VoiceInfo,
@@ -627,6 +627,21 @@ impl PluginManager {
 					error: plugin.load_error.clone().or_else(|| plugin.health.last_error()),
 					crashes: plugin.health.total_crashes(),
 				}
+			})
+			.collect()
+	}
+
+	pub fn summaries(&self) -> Vec<PluginSummary> {
+		let grants = self.runtime.grants();
+		self.plugins
+			.read()
+			.iter()
+			.map(|plugin| PluginSummary {
+				id: plugin.manifest.id.clone(),
+				name: plugin.manifest.name.clone(),
+				version: plugin.manifest.version.to_string(),
+				enabled: grants.get(&plugin.manifest.id).enabled,
+				ext: !plugin.manifest.hooks.is_empty(),
 			})
 			.collect()
 	}

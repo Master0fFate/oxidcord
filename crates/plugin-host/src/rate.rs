@@ -44,6 +44,11 @@ pub struct RateLimits {
 	pub toast: Bucket,
 	pub timer: Bucket,
 	pub composer: Bucket,
+	pub lookup: Bucket,
+	pub fetch_message: Bucket,
+	pub reaction_users: Bucket,
+	pub attachment_bytes: Bucket,
+	pub speak: Bucket,
 }
 
 impl RateLimits {
@@ -59,6 +64,11 @@ impl RateLimits {
 			toast: Bucket::new(1, Duration::from_secs(5)),
 			timer: Bucket::new(32, Duration::from_millis(250)),
 			composer: Bucket::new(5, Duration::from_secs(1)),
+			lookup: Bucket::new(5, Duration::from_secs(2)),
+			fetch_message: Bucket::new(5, Duration::from_secs(2)),
+			reaction_users: Bucket::new(5, Duration::from_secs(2)),
+			attachment_bytes: Bucket::new(10, Duration::from_secs(6)),
+			speak: Bucket::new(1, Duration::from_secs(2)),
 		}
 	}
 }

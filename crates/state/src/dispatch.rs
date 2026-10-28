@@ -211,6 +211,10 @@ impl State {
 				changes.messages.insert(channel_id);
 			}
 			if let Some(pending) = pending {
+				if cache.by_id.contains_key(&message.id) {
+					let millis = u32::try_from(pending.sent_at.elapsed().as_millis()).unwrap_or(u32::MAX);
+					cache.record_latency(message.id, millis);
+				}
 				if let Some(by) = pending.plugin {
 					self.sent_by_plugin.insert(message.id, by);
 				}

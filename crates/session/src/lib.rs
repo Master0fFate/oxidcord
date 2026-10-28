@@ -2,7 +2,9 @@ mod broker;
 mod catalog;
 mod command;
 mod config;
+mod loads;
 pub mod login;
+mod marks;
 mod notifier;
 mod persist;
 mod plugins;
@@ -10,9 +12,10 @@ mod render;
 mod search;
 mod session;
 mod task;
+mod views;
 
 pub use broker::{BrokerSink, NoopSink};
-pub use command::{Command, ComponentUse, ReplyTarget};
+pub use command::{Command, ComponentUse, LoadResult, PluginLoad, Reply, ReplyTarget};
 pub use config::{NotifyFn, PluginOptions, SessionConfig, VoiceIo};
 pub use plugin_host::catalog::{Catalog, CatalogEntry, ThemeCatalog, ThemeEntry};
 pub use plugin_host::{

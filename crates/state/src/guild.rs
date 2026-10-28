@@ -18,6 +18,9 @@ pub struct GuildState {
 	pub features: Vec<String>,
 	pub member_count: Option<i64>,
 	pub description: Option<String>,
+	pub premium_tier: u8,
+	pub premium_subscription_count: u32,
+	pub vanity_url_code: Option<String>,
 	pub joined_at: Option<DateTime<Utc>>,
 	pub large: bool,
 	pub unavailable: bool,
@@ -81,6 +84,15 @@ impl GuildState {
 		self.icon.clone_from(&guild.icon);
 		self.banner.clone_from(&guild.banner);
 		self.description.clone_from(&guild.description);
+		if let Some(tier) = guild.premium_tier {
+			self.premium_tier = u8::try_from(i64::from(tier)).unwrap_or(0);
+		}
+		if let Some(count) = guild.premium_subscription_count {
+			self.premium_subscription_count = u32::try_from(count).unwrap_or(0);
+		}
+		if guild.vanity_url_code.is_some() {
+			self.vanity_url_code.clone_from(&guild.vanity_url_code);
+		}
 		self.owner_id = guild.owner_id.or(self.owner_id);
 		self.member_count = guild.member_count.or(self.member_count);
 		self.joined_at = guild.joined_at.or(self.joined_at);

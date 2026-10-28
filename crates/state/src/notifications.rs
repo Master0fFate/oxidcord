@@ -293,3 +293,72 @@ impl State {
 		state.mention_count = Some(state.mention_count.unwrap_or(0) + 1);
 	}
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChannelUnread {
+	pub channel_id: Snowflake,
+	pub last_message_id: Option<Snowflake>,
+	pub last_read_id: Option<Snowflake>,
+	pub mentions: u32,
+	pub unread: bool,
+	pub muted: bool,
+}
+
+impl State {
+	fn unread_entry(
+		&self,
+		channel: &Channel,
+		settings: Option<&UserGuildSettings>,
+		viewable: bool,
+		now: DateTime<Utc>,
+	) -> ChannelUnread {
+		let status = self.channel_status(channel, settings, viewable, now);
+		let guild_muted = guild_muted(settings, now);
+		ChannelUnread {
+			channel_id: channel.id,
+			last_message_id: channel.last_message_id,
+			last_read_id: self
+				.read_states
+				.get(&channel.id)
+				.and_then(|state| state.last_message_id),
+			mentions: status.mentions,
+			unread: status.unread && !guild_muted,
+			muted: status.muted || guild_muted,
+		}
+	}
+
+	pub fn channel_unread(&self, channel_id: Snowflake) -> Option<ChannelUnread> {
+		let channel = self.channel(channel_id)?;
+		let settings = self.guild_settings(self.channel_guild(channel_id));
+		Some(self.unread_entry(channel, settings, self.can_view(channel_id), Utc::now()))
+	}
+
+	pub fn unread_channels(&self, guild_id: Option<Snowflake>, include_private: bool) -> Vec<ChannelUnread> {
+		let now = Utc::now();
+		let me = self.current_user_id();
+		let guilds = self
+			.guilds
+			.values()
+			.filter(|guild| guild_id.is_none_or(|wanted| guild.id == wanted));
+		let mut found: Vec<ChannelUnread> = Vec::new();
+		for guild in guilds {
+			let settings = self.guild_settings.get(&guild.id);
+			for channel in guild.channels.values() {
+				let viewable = me.is_some_and(|me| {
+					compute_permissions(guild, Some(channel), me, now).contains(Permissions::VIEW_CHANNEL)
+				});
+				found.push(self.unread_entry(channel, settings, viewable, now));
+			}
+		}
+		if include_private && guild_id.is_none() {
+			let settings = self.guild_settings(None);
+			found.extend(
+				self.private_channels
+					.values()
+					.map(|channel| self.unread_entry(channel, settings, true, now)),
+			);
+		}
+		found.retain(|entry| entry.unread || entry.mentions > 0);
+		found
+	}
+}

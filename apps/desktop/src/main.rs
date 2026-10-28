@@ -98,6 +98,14 @@ impl BrokerSink for PlatformSink {
 	fn open_url(&self, plugin: &str, url: &str) -> bool {
 		report(plugin, "open url", platform::open::open_url(url))
 	}
+
+	fn idle_seconds(&self) -> Option<u64> {
+		platform::idle::seconds_since_input()
+	}
+
+	fn speak(&self, _plugin: &str, text: &str, rate: f32, volume: f32) -> bool {
+		platform::speech::speak_with(text, rate, volume)
+	}
 }
 
 fn report(plugin: &str, what: &str, outcome: platform::Result<()>) -> bool {

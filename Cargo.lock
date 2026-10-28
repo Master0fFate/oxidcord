@@ -7380,6 +7380,7 @@ dependencies = [
  "hex",
  "oxidcord-gateway",
  "oxidcord-markdown",
+ "oxidcord-media",
  "oxidcord-plugin-host",
  "oxidcord-protocol",
  "oxidcord-rest",

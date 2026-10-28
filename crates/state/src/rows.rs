@@ -325,7 +325,7 @@ impl State {
 		rows
 	}
 
-	fn dm_name(&self, channel: &Channel) -> String {
+	pub fn dm_name(&self, channel: &Channel) -> String {
 		if let Some(name) = channel.name.as_deref().filter(|name| !name.is_empty()) {
 			return name.to_owned();
 		}
