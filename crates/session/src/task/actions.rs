@@ -1,6 +1,7 @@
 use std::future::Future;
 
 use chrono::{DateTime, Utc};
+use plugin_host::api::model::NotificationSettings;
 use protocol::{ChannelType, Permissions, Snowflake};
 use rest::{RestClient, RestError};
 use serde_json::{Map, Value, json};
@@ -199,6 +200,52 @@ impl Core {
 			rest.patch_guild_settings(guild_id, body).await.map(drop)
 		});
 	}
+}
+
+fn mute_fields(settings: &NotificationSettings) -> [(&'static str, Option<Value>); 2] {
+	let until = settings.mute_until_ms.and_then(DateTime::from_timestamp_millis);
+	let muted = settings.muted.or_else(|| until.map(|_| true));
+	[
+		("muted", muted.map(Value::from)),
+		("mute_config", muted.map(|muted| mute_config(muted, until))),
+	]
+}
+
+fn non_empty(fields: Value) -> Option<Value> {
+	fields
+		.as_object()
+		.is_some_and(|fields| !fields.is_empty())
+		.then_some(fields)
+}
+
+pub(super) fn guild_notification_body(settings: &NotificationSettings) -> Option<Value> {
+	let [muted, mute_config] = mute_fields(settings);
+	non_empty(object([
+		(
+			"message_notifications",
+			settings.level.filter(|level| *level <= 2).map(Value::from),
+		),
+		("suppress_everyone", settings.suppress_everyone.map(Value::from)),
+		("suppress_roles", settings.suppress_roles.map(Value::from)),
+		("mobile_push", settings.mobile_push.map(Value::from)),
+		("hide_muted_channels", settings.hide_muted.map(Value::from)),
+		muted,
+		mute_config,
+	]))
+}
+
+pub(super) fn channel_notification_body(
+	channel_id: Snowflake,
+	settings: &NotificationSettings,
+) -> Option<Value> {
+	let [muted, mute_config] = mute_fields(settings);
+	let mut entry = non_empty(object([
+		("message_notifications", settings.level.map(Value::from)),
+		muted,
+		mute_config,
+	]))?;
+	entry["channel_id"] = json!(channel_id);
+	Some(json!({ "channel_overrides": { channel_id.to_string(): entry } }))
 }
 
 pub(super) fn mute_config(muted: bool, until: Option<DateTime<Utc>>) -> Value {

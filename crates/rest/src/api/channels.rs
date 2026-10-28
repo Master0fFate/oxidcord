@@ -193,6 +193,17 @@ impl RestClient {
 		self.send_empty(Request::put(path)).await
 	}
 
+	pub async fn add_burst_reaction(
+		&self,
+		channel_id: Snowflake,
+		message_id: Snowflake,
+		emoji: &str,
+	) -> Result<()> {
+		let path = format!("{}/@me", reaction_path(channel_id, message_id, emoji));
+		self.send_empty(Request::put(path).query(&[("location", "Message"), ("type", "1")]))
+			.await
+	}
+
 	pub async fn remove_own_reaction(
 		&self,
 		channel_id: Snowflake,

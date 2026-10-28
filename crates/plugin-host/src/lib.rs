@@ -10,6 +10,7 @@ mod grants;
 mod hook;
 mod host_state;
 mod instance;
+mod keybinds;
 mod latency;
 mod manager;
 mod manifest;
@@ -22,6 +23,7 @@ mod runtime;
 mod slots;
 mod storage;
 mod timers;
+mod watches;
 
 pub mod api {
 	pub use crate::bindings::oxidcord::plugin::types::*;
@@ -31,13 +33,15 @@ pub mod api {
 	}
 }
 
-pub use broker::{HostBroker, NoopBroker};
+pub use broker::{HostBroker, Invalidation, Navigation, NoopBroker, PickedPath};
 pub use config::{HookTimeouts, RuntimeConfig};
 pub use error::{Error, Result};
 pub use fetch::{Fetcher, is_public};
 pub use grants::{Grants, PluginGrant};
 pub use hook::Hook;
+pub use host_state::SETTINGS_PAGES;
 pub use instance::{CallError, PluginInstance, PluginState};
+pub use keybinds::{KeybindError, Keybinds, MAX_KEYBINDS_PER_PLUGIN, normalize_chord};
 pub use latency::LatencyStats;
 pub use manager::{
 	CommandError, EmojiPick, FullSendDecision, Intercepted, LoadIssue, PluginDebug, PluginInfo,
@@ -53,3 +57,4 @@ pub use permission::{Permission, Tier};
 pub use runtime::Runtime;
 pub use slots::{CommandEntry, SlotEntry, Slots};
 pub use storage::{PluginStorage, STORAGE_QUOTA_BYTES};
+pub use watches::Watches;

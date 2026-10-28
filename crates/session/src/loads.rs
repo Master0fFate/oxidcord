@@ -12,6 +12,7 @@ use tokio::runtime::Handle;
 use tokio::sync::oneshot;
 
 pub(crate) const LOAD_TIMEOUT: Duration = Duration::from_secs(5);
+pub(crate) const DIALOG_TIMEOUT: Duration = Duration::from_secs(600);
 const FETCHED_MESSAGES: usize = 128;
 
 struct Flight<V> {
@@ -105,8 +106,16 @@ impl PluginLoads {
 }
 
 pub(crate) fn await_reply<T>(handle: &Handle, receiver: oneshot::Receiver<T>) -> Result<T, HostError> {
+	await_reply_for(handle, receiver, LOAD_TIMEOUT)
+}
+
+pub(crate) fn await_reply_for<T>(
+	handle: &Handle,
+	receiver: oneshot::Receiver<T>,
+	limit: Duration,
+) -> Result<T, HostError> {
 	handle
-		.block_on(async { tokio::time::timeout(LOAD_TIMEOUT, receiver).await })
+		.block_on(async { tokio::time::timeout(limit, receiver).await })
 		.map_err(|_| HostError::Timeout)?
 		.map_err(|_| HostError::Unavailable)
 }

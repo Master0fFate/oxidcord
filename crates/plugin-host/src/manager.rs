@@ -542,6 +542,8 @@ impl PluginManager {
 		self.runtime.commands().clear_plugin(id);
 		self.runtime.mounts().clear_plugin(id);
 		self.runtime.patches().clear_plugin(id);
+		self.runtime.keybinds().clear_plugin(id);
+		self.runtime.watches().clear_plugin(id);
 		self.runtime.timers().detach(id);
 		self.rehook();
 	}

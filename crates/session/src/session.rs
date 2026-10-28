@@ -5,7 +5,9 @@ use std::time::Duration;
 use gateway::{Gateway, GatewayConfig, GatewayHandle};
 use media::MediaFetcher;
 use plugin_host::catalog::{Catalog, ThemeCatalog};
-use plugin_host::{CommandEntry, Grants, Mounts, Patches, PluginInfo, PluginManager, RuntimeConfig, Slots};
+use plugin_host::{
+	CommandEntry, Grants, Keybinds, Mounts, Patches, PluginInfo, PluginManager, RuntimeConfig, Slots, Watches,
+};
 use protocol::Token;
 use protocol::gateway::IdentifyProperties;
 use rest::{RestClient, RestConfig};
@@ -31,6 +33,7 @@ const RUNTIME_WORKERS: usize = 4;
 const SHUTDOWN_WAIT: Duration = Duration::from_secs(5);
 const RUNTIME_GRACE: Duration = Duration::from_secs(2);
 const PLUGIN_MEDIA_MAX_BYTES: usize = 8 * 1024 * 1024;
+const SAVE_MEDIA_MAX_BYTES: usize = 100 * 1024 * 1024;
 
 pub struct Session {
 	state: SharedState,
@@ -50,10 +53,10 @@ fn install_crypto_provider() {
 	let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 }
 
-fn media_fetcher(identify: &IdentifyProperties, rest_base: &Url) -> Option<MediaFetcher> {
+fn media_fetcher(identify: &IdentifyProperties, rest_base: &Url, max_bytes: usize) -> Option<MediaFetcher> {
 	let mut builder = MediaFetcher::builder()
 		.user_agent(identify.user_agent())
-		.max_bytes(PLUGIN_MEDIA_MAX_BYTES);
+		.max_bytes(max_bytes);
 	if rest_base.host_str() == Some("127.0.0.1")
 		&& let Some(port) = rest_base.port()
 	{
@@ -99,7 +102,8 @@ impl Session {
 		let locale = config.locale.clone();
 		let marks = Arc::new(ClientMarks::new());
 		let loads = Arc::new(PluginLoads::default());
-		let media = media_fetcher(&config.identify, &config.rest_base);
+		let media = media_fetcher(&config.identify, &config.rest_base, PLUGIN_MEDIA_MAX_BYTES);
+		let save_media = media_fetcher(&config.identify, &config.rest_base, SAVE_MEDIA_MAX_BYTES);
 		let rest = RestClient::new(
 			RestConfig {
 				base_url: config.rest_base,
@@ -126,7 +130,7 @@ impl Session {
 			voice: voice_cache.clone(),
 			commands: commands.clone(),
 			internal: internal.clone(),
-			sink: plugins.sink,
+			sink: Arc::clone(&plugins.sink),
 			handle: handle.clone(),
 			marks: Arc::clone(&marks),
 			loads: Arc::clone(&loads),
@@ -169,6 +173,8 @@ impl Session {
 			loads,
 			marks,
 			media,
+			save_media,
+			sink: plugins.sink,
 		});
 		let (done, finished) = std::sync::mpsc::channel();
 		handle.spawn(async move {
@@ -214,6 +220,14 @@ impl Session {
 
 	pub fn plugin_patches(&self) -> Arc<Patches> {
 		Arc::clone(self.hub.manager.runtime().patches())
+	}
+
+	pub fn plugin_keybinds(&self) -> Arc<Keybinds> {
+		Arc::clone(self.hub.manager.runtime().keybinds())
+	}
+
+	pub fn plugin_watches(&self) -> Arc<Watches> {
+		Arc::clone(self.hub.manager.runtime().watches())
 	}
 
 	pub fn plugin_commands(&self) -> Arc<[(String, CommandEntry)]> {

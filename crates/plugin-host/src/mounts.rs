@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use parking_lot::RwLock;
 
-use crate::api::model::{MenuItem, MountOptions, UiContext, ViewTree};
+use crate::api::model::{MenuItem, MenuWhenExt, MountOptions, UiContext, ViewTree};
 
 pub const STATIC_POINTS: [&str; 9] = [
 	"title-bar",
@@ -26,12 +26,21 @@ pub const CONTEXT_POINTS: [&str; 4] = [
 	"member-list-section",
 ];
 
-pub const MENUS: [&str; 5] = [
+pub const MENUS: [&str; 14] = [
 	"message-context-menu",
 	"user-context-menu",
 	"channel-context-menu",
 	"server-context-menu",
 	"link-context-menu",
+	"emoji-context-menu",
+	"sticker-context-menu",
+	"image-context-menu",
+	"role-context-menu",
+	"selection-context-menu",
+	"composer-context-menu",
+	"account-panel-menu",
+	"attachment-context-menu",
+	"reaction-context-menu",
 ];
 
 const MAX_MOUNTS_PER_PLUGIN: usize = 32;
@@ -88,6 +97,7 @@ pub struct Provider {
 pub struct MenuEntry {
 	pub plugin_id: Arc<str>,
 	pub items: Arc<[MenuItem]>,
+	pub extra: Arc<[(String, MenuWhenExt)]>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -268,6 +268,14 @@ impl Database {
 		Ok(())
 	}
 
+	pub fn kv_delete(&self, key: &str) -> Result<()> {
+		self.conn
+			.lock()
+			.prepare_cached("DELETE FROM kv WHERE key = ?1")?
+			.execute([key])?;
+		Ok(())
+	}
+
 	pub fn media_touch(&self, url_hash: &str) -> Result<()> {
 		self.conn
 			.lock()

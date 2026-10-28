@@ -499,6 +499,7 @@ impl Community {
 								channel_id: channel,
 								message_id: message,
 								emoji: choice.reaction_key(),
+								burst: false,
 							},
 							cx,
 						),
@@ -711,7 +712,7 @@ impl Community {
 		if let Some(name) = name {
 			let composer = self.panel.read(cx).composer().clone();
 			composer.update(cx, |composer, cx| {
-				composer.set_reply(message, name.into(), window, cx)
+				composer.set_reply(message, name.into(), true, window, cx)
 			});
 		}
 	}

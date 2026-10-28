@@ -17,6 +17,7 @@ use crate::guild::GuildState;
 use crate::loaded::Lazy;
 use crate::messages::ChannelMessages;
 use crate::notifications::Alert;
+use crate::plugin_shell::PluginShell;
 use crate::settings::GuildFolder;
 use crate::views::RenderedMessage;
 use crate::views::UserOverride;
@@ -78,6 +79,7 @@ pub struct State {
 	pub(crate) afk: bool,
 	pub(crate) alerts: VecDeque<Alert>,
 	pub(crate) alert_count: u64,
+	pub(crate) plugin_shell: PluginShell,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -518,6 +520,23 @@ impl State {
 			LocalEvent::AfkChanged(afk) => {
 				changes.own_status = self.afk != *afk;
 				self.afk = *afk;
+			}
+			LocalEvent::UiIntent(intent) => {
+				self.plugin_shell.push_intent(intent.clone());
+				changes.intents = true;
+			}
+			LocalEvent::ClientOptionsChanged(options) => {
+				if self.plugin_shell.client_options != *options {
+					self.plugin_shell.client_options = *options;
+					changes.client_options = true;
+				}
+			}
+			LocalEvent::DmSectionsChanged(sections) => {
+				if self.plugin_shell.dm_sections != *sections {
+					self.plugin_shell.dm_sections.clone_from(sections);
+					changes.dm_sections = true;
+					changes.private_channels = true;
+				}
 			}
 		}
 		changes

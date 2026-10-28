@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -7,8 +7,9 @@ use std::time::{Duration, Instant as StdInstant};
 use chrono::Utc;
 use gateway::{GatewayEvent, GatewayHandle};
 use parking_lot::Mutex;
-use plugin_host::SendDecision;
 use plugin_host::api::VoiceInfo;
+use plugin_host::api::model::DmSection;
+use plugin_host::{Invalidation, SendDecision};
 use protocol::{
 	AllowedMentions, Channel, ChannelType, CreateMessage, DISCORD_EPOCH_MS, DispatchEvent, EditMessage,
 	Message, MessageAck, MessageReference, MessagesQuery, Nonce, Snowflake, Token, User,
@@ -16,13 +17,16 @@ use protocol::{
 use rest::api::SearchQuery;
 use rest::{RestClient, UploadFile};
 use serde_json::{Value, json};
-use state::{Changes, Event, LoadDirection, Loaded, LocalEvent, SharedState, TYPING_TIMEOUT, UserOverride};
+use state::{
+	Changes, ClientOptions, Event, LoadDirection, Loaded, LocalEvent, SharedState, TYPING_TIMEOUT, UiIntent,
+	UserOverride,
+};
 use store::Store;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc;
 use tokio::time::{Instant, sleep_until};
 
-use crate::broker::VoiceCache;
+use crate::broker::{BrokerSink, VoiceCache};
 use crate::command::{Command, ReplyTarget};
 use crate::config::VoiceIo;
 use crate::loads::PluginLoads;
@@ -38,6 +42,7 @@ mod actions;
 mod commands;
 mod expressions;
 mod mic_test;
+mod plugin_actions;
 mod plugin_link;
 mod plugin_load;
 mod streams;
@@ -168,6 +173,12 @@ pub(crate) enum Internal {
 		result: Result<(), String>,
 	},
 	AccountSwitch(Snowflake),
+	Invalidate {
+		plugin: String,
+		target: Invalidation,
+	},
+	Command(Box<Command>),
+	Intent(UiIntent),
 }
 
 pub(crate) struct CoreParts {
@@ -191,6 +202,8 @@ pub(crate) struct CoreParts {
 	pub(crate) loads: Arc<PluginLoads>,
 	pub(crate) marks: Arc<ClientMarks>,
 	pub(crate) media: Option<media::MediaFetcher>,
+	pub(crate) save_media: Option<media::MediaFetcher>,
+	pub(crate) sink: Arc<dyn BrokerSink>,
 }
 
 pub(crate) struct Core {
@@ -233,6 +246,12 @@ pub(crate) struct Core {
 	loads: Arc<PluginLoads>,
 	marks: Arc<ClientMarks>,
 	media: Option<media::MediaFetcher>,
+	save_media: Option<media::MediaFetcher>,
+	sink: Arc<dyn BrokerSink>,
+	plugin_options: BTreeMap<String, ClientOptions>,
+	plugin_dm_sections: BTreeMap<String, Vec<DmSection>>,
+	invalidated_users: HashSet<Snowflake>,
+	stale_decorations: HashSet<Snowflake>,
 }
 
 fn page_query(
@@ -255,6 +274,7 @@ fn ack_day() -> i64 {
 struct CustomStatus {
 	text: String,
 	emoji: Option<String>,
+	emoji_id: Option<Snowflake>,
 }
 
 impl Core {
@@ -307,6 +327,12 @@ impl Core {
 			loads: parts.loads,
 			marks: parts.marks,
 			media: parts.media,
+			save_media: parts.save_media,
+			sink: parts.sink,
+			plugin_options: BTreeMap::new(),
+			plugin_dm_sections: BTreeMap::new(),
+			invalidated_users: HashSet::new(),
+			stale_decorations: HashSet::new(),
 		}
 	}
 
@@ -660,6 +686,11 @@ impl Core {
 			} => self.on_mic_test_level(generation, level, remaining_secs),
 			Internal::MicTestFinished { generation, result } => self.on_mic_test_finished(generation, result),
 			Internal::AccountSwitch(user_id) => self.apply_local(LocalEvent::AccountSwitchRequested(user_id)),
+			Internal::Invalidate { plugin, target } => self.on_invalidate(&plugin, target),
+			Internal::Command(command) => {
+				self.on_command(*command);
+			}
+			Internal::Intent(intent) => self.push_intent(intent),
 		}
 	}
 
@@ -751,10 +782,15 @@ impl Core {
 				channel_id,
 				message_id,
 				emoji,
+				burst,
 			} => {
 				self.remember_reaction(&emoji);
 				self.spawn_rest("add reaction", move |rest| async move {
-					rest.add_reaction(channel_id, message_id, &emoji).await
+					if burst {
+						rest.add_burst_reaction(channel_id, message_id, &emoji).await
+					} else {
+						rest.add_reaction(channel_id, message_id, &emoji).await
+					}
 				});
 			}
 			Command::RemoveReaction {
@@ -844,6 +880,22 @@ impl Core {
 			Command::StartCall { channel_id } => self.start_call(channel_id),
 			Command::DeclineCall { channel_id } => self.decline_call(channel_id),
 			Command::PluginLoad(load) => self.on_plugin_load(load),
+			command @ (Command::StartReply { .. }
+			| Command::StartEdit { .. }
+			| Command::JumpToMessage { .. }
+			| Command::JumpToTop { .. }
+			| Command::OpenSettings { .. }
+			| Command::Navigate(_)
+			| Command::PickFiles { .. }
+			| Command::AttachFiles { .. }
+			| Command::AttachSticker { .. }
+			| Command::SetComposerText { .. }
+			| Command::SaveAttachment { .. }
+			| Command::SetClientOption { .. }
+			| Command::SetDmSections { .. }
+			| Command::SetNotificationSettings { .. }
+			| Command::CloneEmoji { .. }
+			| Command::CloneSticker { .. }) => self.on_plugin_action(command),
 			command @ (Command::RunPluginCommand { .. }
 			| Command::PluginUiAction { .. }
 			| Command::PluginViewEvent { .. }

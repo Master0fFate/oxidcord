@@ -268,6 +268,7 @@ impl Core {
 			self.rerender_stale(selected.channel_id);
 		}
 		self.schedule_overrides(Duration::ZERO);
+		self.refresh_plugin_shell();
 		self.notifier.push(Changes {
 			plugins: true,
 			plugin_slots: true,
@@ -590,6 +591,9 @@ impl Core {
 			self.schedule_overrides(Duration::ZERO);
 			return;
 		}
+		for (_, user_id, _) in &entries {
+			self.invalidated_users.remove(user_id);
+		}
 		let more = entries.len() >= OVERRIDE_BATCH;
 		self.apply_local(LocalEvent::UserOverrides { entries });
 		if more {
@@ -607,7 +611,7 @@ impl Core {
 		let mut targets = Vec::new();
 		let mut consider = |user: &User| {
 			if targets.len() < OVERRIDE_BATCH
-				&& !state.has_override_entry(guild_id, user.id)
+				&& (!state.has_override_entry(guild_id, user.id) || self.invalidated_users.contains(&user.id))
 				&& seen.insert(user.id)
 			{
 				targets.push((guild_id, user.clone()));
@@ -731,6 +735,7 @@ impl Core {
 				});
 			}
 			Command::PluginUninstall(id) => {
+				self.forget_plugin_shell(&id);
 				self.plugin_task(TaskKind::Lifecycle, "uninstall plugin", move |hub| {
 					hub.uninstall(&id)
 				});

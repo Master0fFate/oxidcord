@@ -112,6 +112,7 @@ impl CustomStatusForm {
 		self.data.read(cx).send(Command::SetCustomStatus {
 			text,
 			emoji: self.emoji.clone(),
+			emoji_id: None,
 			expires: has_content.then(|| self.clear_after.expires()).flatten(),
 		});
 	}
@@ -244,6 +245,7 @@ pub fn open(data: Entity<Data>, window: &mut Window, cx: &mut App) {
 								clear.read(cx).send(Command::SetCustomStatus {
 									text: None,
 									emoji: None,
+									emoji_id: None,
 									expires: None,
 								});
 								window.close_dialog(cx);

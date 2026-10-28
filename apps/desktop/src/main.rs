@@ -96,7 +96,7 @@ impl BrokerSink for PlatformSink {
 	}
 
 	fn open_url(&self, plugin: &str, url: &str) -> bool {
-		report(plugin, "open url", platform::open::open_url(url))
+		report(plugin, "open url", platform::open::open_plugin_url(url))
 	}
 
 	fn idle_seconds(&self) -> Option<u64> {
@@ -105,6 +105,14 @@ impl BrokerSink for PlatformSink {
 
 	fn speak(&self, _plugin: &str, text: &str, rate: f32, volume: f32) -> bool {
 		platform::speech::speak_with(text, rate, volume)
+	}
+
+	fn pick_files(&self, multiple: bool) -> Vec<PathBuf> {
+		platform::dialog::pick_files(multiple)
+	}
+
+	fn save_file(&self, file_name: &str) -> Option<PathBuf> {
+		platform::dialog::save_file(file_name)
 	}
 }
 

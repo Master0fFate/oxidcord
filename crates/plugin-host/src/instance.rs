@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use parking_lot::{Condvar, Mutex};
 use wasmtime::component::Component;
-use wasmtime::{Store, Trap};
+use wasmtime::{Store, Trap, UpdateDeadline};
 
 use crate::api::model::{
 	Badge, ChannelClick, ChannelDetail, ClientEvent, DisplayOverrideFull, EmojiInfo, EmojiRef, LinkVerdict,
@@ -40,7 +40,7 @@ pub enum PluginState {
 }
 
 impl PluginState {
-	pub(crate) fn is_active(self) -> bool {
+	pub fn is_active(self) -> bool {
 		matches!(self, Self::Loaded | Self::Crashed)
 	}
 
@@ -94,6 +94,13 @@ pub struct Health {
 	last_micros: AtomicU64,
 	denied: AtomicU64,
 	last_error: Mutex<Option<String>>,
+	blocked: Mutex<Blocked>,
+}
+
+#[derive(Default)]
+struct Blocked {
+	finished: Duration,
+	since: Option<Instant>,
 }
 
 impl Health {
@@ -107,7 +114,28 @@ impl Health {
 			last_micros: AtomicU64::new(0),
 			denied: AtomicU64::new(0),
 			last_error: Mutex::new(None),
+			blocked: Mutex::new(Blocked::default()),
 		}
+	}
+
+	pub fn begin_blocking(&self) {
+		self.blocked.lock().since = Some(Instant::now());
+	}
+
+	pub fn end_blocking(&self) {
+		let mut blocked = self.blocked.lock();
+		if let Some(since) = blocked.since.take() {
+			blocked.finished += since.elapsed();
+		}
+	}
+
+	pub fn blocked_for(&self) -> Duration {
+		let blocked = self.blocked.lock();
+		blocked.finished + blocked.since.map_or(Duration::ZERO, |since| since.elapsed())
+	}
+
+	pub fn is_blocking(&self) -> bool {
+		self.blocked.lock().since.is_some()
 	}
 
 	pub fn state(&self) -> PluginState {
@@ -568,10 +596,15 @@ fn quiet_reply() -> ViewReply {
 	}
 }
 
+const BLOCKED_POLL: Duration = Duration::from_millis(100);
+
+fn ticks_for(tick: Duration, timeout: Duration) -> u64 {
+	timeout.div_duration_f64(tick).ceil() as u64 + 1
+}
+
 impl WorkerContext {
 	fn epoch_ticks(&self, timeout: Duration) -> u64 {
-		let tick = self.runtime.config.epoch_tick;
-		timeout.div_duration_f64(tick).ceil() as u64 + 1
+		ticks_for(self.runtime.config.epoch_tick, timeout)
 	}
 
 	fn classify(&self, error: &wasmtime::Error, memory_exceeded: bool) -> CallError {
@@ -587,11 +620,21 @@ impl WorkerContext {
 	fn start(&self) -> Result<Running, CallError> {
 		let config = &self.runtime.config;
 		self.runtime.services.timers.clear_plugin(&self.id);
+		self.runtime.services.keybinds.clear_plugin(&self.id);
+		self.runtime.services.watches.clear_plugin(&self.id);
 		let state = HostState::new(Arc::clone(&self.id), Arc::clone(&self.runtime.services), config)
 			.with_health(Arc::clone(&self.health));
 		let mut store = Store::new(&self.runtime.engine, state);
 		store.limiter(|state| &mut state.limits);
-		store.epoch_deadline_trap();
+		let tick = config.epoch_tick;
+		store.epoch_deadline_callback(move |mut hook| {
+			let blocked = hook.data_mut().take_blocked_time();
+			Ok(if blocked.is_zero() {
+				UpdateDeadline::Interrupt
+			} else {
+				UpdateDeadline::Continue(ticks_for(tick, blocked))
+			})
+		});
 		store.set_epoch_deadline(self.epoch_ticks(config.timeouts.init));
 		let loaded = self.pre.instance.instantiate(&mut store).and_then(|instance| {
 			let plugin = self.pre.guest.load(&mut store, &instance)?;
@@ -639,6 +682,7 @@ impl WorkerContext {
 		store.set_epoch_deadline(self.epoch_ticks(timeout));
 		let guest = plugin.oxidcord_plugin_guest();
 		let gesture = kind.is_gesture();
+		store.data_mut().mark_blocked_time();
 		store.data_mut().set_context(kind.context());
 		if gesture {
 			store.data_mut().begin_gesture();
@@ -1091,21 +1135,34 @@ impl PluginInstance {
 		if !queue.push_call(call) {
 			return Err(CallError::Busy);
 		}
-		match receiver.recv_timeout(timeout + self.runtime.config.caller_grace) {
-			Ok(result) => result,
-			Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+		let allowance = timeout + self.runtime.config.caller_grace;
+		let blocked_before = self.health.blocked_for();
+		let issued = Instant::now();
+		loop {
+			let limit = allowance + self.health.blocked_for().saturating_sub(blocked_before);
+			let remaining = limit.saturating_sub(issued.elapsed());
+			if remaining.is_zero() {
 				cancelled.store(true, Ordering::Release);
 				if started.load(Ordering::Acquire) {
 					self.abandon(&queue);
 				}
-				Err(CallError::Timeout)
+				return Err(CallError::Timeout);
 			}
-			Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-				Err(if self.health.state() == PluginState::Disabled {
-					CallError::Disabled
-				} else {
-					CallError::Stopped
-				})
+			let wait = if self.health.is_blocking() {
+				remaining.min(BLOCKED_POLL)
+			} else {
+				remaining
+			};
+			match receiver.recv_timeout(wait) {
+				Ok(result) => return result,
+				Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+				Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+					return Err(if self.health.state() == PluginState::Disabled {
+						CallError::Disabled
+					} else {
+						CallError::Stopped
+					});
+				}
 			}
 		}
 	}

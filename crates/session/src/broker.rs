@@ -1,28 +1,31 @@
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
+use chrono::DateTime;
 use parking_lot::Mutex;
 use plugin_host::api::model::{
-	AuthSession, ChannelDetail, ClientInfo, EmojiInfo, EmojiRef, Folder, GuildDetail, Lifecycle, MemberInfo,
-	MessageFull, MessageMeta, PluginSummary, Presence, ReadState, Relationship, RoleInfo, StickerInfo,
-	UserProfile, VoiceDetail,
+	AuthSession, ChannelDetail, ClientInfo, ClientOption, DmSection, EmojiInfo, EmojiRef, FileBlob, Folder,
+	GuildDetail, Lifecycle, MemberInfo, MessageFull, MessageMeta, NotificationSettings, PluginSummary,
+	Presence, ReadState, Relationship, RoleInfo, StickerInfo, UserProfile, VoiceDetail,
 };
 use plugin_host::api::{
 	ChannelSummary, GuildSummary, HostError, MemberSummary, MessageRef, MessageView, OutgoingMessage, User,
 	VoiceInfo,
 };
 use plugin_host::convert::{message_full, message_view, user_view};
-use plugin_host::{HostBroker, PluginManager};
-use protocol::{Message, Snowflake, StatusKind, Sticker};
+use plugin_host::{HostBroker, Invalidation, Navigation, PickedPath, PluginManager};
+use protocol::{Message, Permissions, Snowflake, StatusKind, Sticker};
+use rest::UploadFile;
 use sha2::{Digest, Sha256};
 use state::{ChannelMessages, DM_PERMISSIONS, MemberSlot, SharedState, State};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc;
 
 use crate::command::{Command, PluginLoad, Reply, ReplyTarget};
-use crate::loads::{PluginLoads, await_reply};
+use crate::loads::{DIALOG_TIMEOUT, PluginLoads, await_reply, await_reply_for};
 use crate::marks::ClientMarks;
 use crate::task::Internal;
 use crate::views;
@@ -43,6 +46,14 @@ pub trait BrokerSink: Send + Sync {
 
 	fn speak(&self, _plugin: &str, _text: &str, _rate: f32, _volume: f32) -> bool {
 		false
+	}
+
+	fn pick_files(&self, _multiple: bool) -> Vec<PathBuf> {
+		Vec::new()
+	}
+
+	fn save_file(&self, _file_name: &str) -> Option<PathBuf> {
+		None
 	}
 }
 
@@ -188,6 +199,17 @@ fn channel_summary(row: &state::ChannelRow, guild_id: Option<u64>) -> ChannelSum
 	}
 }
 
+fn upload_file(blob: FileBlob) -> UploadFile {
+	UploadFile {
+		content_type: blob
+			.content_type
+			.unwrap_or_else(|| rest::content_type_for(&blob.name).to_owned()),
+		name: blob.name,
+		bytes: blob.bytes.into(),
+		description: None,
+	}
+}
+
 fn delivered(accepted: bool) -> Result<(), HostError> {
 	if accepted {
 		Ok(())
@@ -209,7 +231,7 @@ pub(crate) fn reaction_key(emoji: &EmojiRef) -> String {
 	}
 }
 
-fn is_private(state: &State, channel_id: Snowflake) -> bool {
+pub(crate) fn is_private(state: &State, channel_id: Snowflake) -> bool {
 	state.channel(channel_id).is_some() && state.channel_guild(channel_id).is_none()
 }
 
@@ -242,6 +264,43 @@ impl SessionBroker {
 		self.commands
 			.try_send(command)
 			.map_err(|_| HostError::Unavailable)
+	}
+
+	fn reachable(&self, channel_id: Snowflake, private: bool) -> Result<(), HostError> {
+		if !private && is_private(&self.state.read(), channel_id) {
+			return Err(HostError::Unavailable);
+		}
+		Ok(())
+	}
+
+	fn loaded_in(&self, state: &State, message: &MessageRef) -> Result<Arc<Message>, HostError> {
+		self.find_message(state, Snowflake(message.channel_id), Snowflake(message.id))
+			.ok_or_else(|| HostError::Invalid("message is not loaded".to_owned()))
+	}
+
+	fn loaded_message(&self, message: &MessageRef) -> Result<(), HostError> {
+		self.loaded_in(&self.state.read(), message).map(drop)
+	}
+
+	fn own_message(&self, message: &MessageRef) -> Result<(), HostError> {
+		let state = self.state.read();
+		let found = self.loaded_in(&state, message)?;
+		if state.current_user_id() == Some(found.author.id) {
+			Ok(())
+		} else {
+			Err(HostError::Invalid(
+				"only your own messages can be edited".to_owned(),
+			))
+		}
+	}
+
+	fn selected_channel(&self, private: bool) -> Result<Snowflake, HostError> {
+		self.state
+			.read()
+			.selected()
+			.filter(|selected| selected.guild_id.is_some() || private)
+			.map(|selected| selected.channel_id)
+			.ok_or(HostError::Unavailable)
 	}
 
 	pub(crate) fn attach_plugins(&self, manager: &Arc<PluginManager>) {
@@ -309,6 +368,7 @@ impl HostBroker for SessionBroker {
 			channel_id: Snowflake(message.channel_id),
 			message_id: Snowflake(message.id),
 			emoji,
+			burst: false,
 		})
 	}
 
@@ -918,5 +978,318 @@ impl HostBroker for SessionBroker {
 
 	fn speak(&self, plugin: &str, text: &str, rate: f32, volume: f32) -> Result<(), HostError> {
 		delivered(self.sink.speak(plugin, text, rate, volume))
+	}
+
+	fn set_status(&self, _plugin: &str, status: StatusKind) -> Result<(), HostError> {
+		self.queue(Command::SetStatus(status))
+	}
+
+	fn set_custom_status(
+		&self,
+		_plugin: &str,
+		text: String,
+		emoji: Option<EmojiRef>,
+		expires_ms: Option<i64>,
+	) -> Result<(), HostError> {
+		let (emoji, emoji_id) = match emoji {
+			Some(emoji) => (Some(emoji.name), emoji.id.map(Snowflake)),
+			None => (None, None),
+		};
+		self.queue(Command::SetCustomStatus {
+			text: (!text.is_empty()).then_some(text),
+			emoji,
+			emoji_id,
+			expires: expires_ms.and_then(DateTime::from_timestamp_millis),
+		})
+	}
+
+	fn mark_read(&self, _plugin: &str, channel_id: u64, private: bool) -> Result<(), HostError> {
+		self.reachable(Snowflake(channel_id), private)?;
+		self.queue(Command::MarkChannelRead {
+			channel_id: Snowflake(channel_id),
+		})
+	}
+
+	fn mark_unread(&self, _plugin: &str, message: &MessageRef, private: bool) -> Result<(), HostError> {
+		self.reachable(Snowflake(message.channel_id), private)?;
+		self.queue(Command::MarkUnread {
+			channel_id: Snowflake(message.channel_id),
+			message_id: Snowflake(message.id),
+		})
+	}
+
+	fn mark_guild_read(&self, _plugin: &str, guild_id: u64) -> Result<(), HostError> {
+		self.queue(Command::MarkGuildRead {
+			guild_id: Snowflake(guild_id),
+		})
+	}
+
+	fn start_reply(&self, _plugin: &str, message: &MessageRef, mention: bool) -> Result<(), HostError> {
+		self.loaded_message(message)?;
+		self.queue(Command::StartReply {
+			channel_id: Snowflake(message.channel_id),
+			message_id: Snowflake(message.id),
+			mention,
+		})
+	}
+
+	fn start_edit(&self, _plugin: &str, message: &MessageRef) -> Result<(), HostError> {
+		self.own_message(message)?;
+		self.queue(Command::StartEdit {
+			channel_id: Snowflake(message.channel_id),
+			message_id: Snowflake(message.id),
+		})
+	}
+
+	fn jump_to_message(&self, _plugin: &str, message: &MessageRef) -> Result<(), HostError> {
+		self.queue(Command::JumpToMessage {
+			channel_id: Snowflake(message.channel_id),
+			message_id: Snowflake(message.id),
+		})
+	}
+
+	fn jump_to_top(&self, _plugin: &str, channel_id: u64) -> Result<(), HostError> {
+		self.queue(Command::JumpToTop {
+			channel_id: Snowflake(channel_id),
+		})
+	}
+
+	fn edit_message(&self, _plugin: &str, message: &MessageRef, content: String) -> Result<(), HostError> {
+		self.own_message(message)?;
+		self.queue(Command::EditMessage {
+			channel_id: Snowflake(message.channel_id),
+			message_id: Snowflake(message.id),
+			content,
+		})
+	}
+
+	fn delete_message(&self, _plugin: &str, message: &MessageRef) -> Result<(), HostError> {
+		let channel_id = Snowflake(message.channel_id);
+		{
+			let state = self.state.read();
+			let found = self.loaded_in(&state, message)?;
+			let mine = state.current_user_id() == Some(found.author.id);
+			let moderator = state.channel_guild(channel_id).is_some()
+				&& state
+					.my_permissions(channel_id)
+					.contains(Permissions::MANAGE_MESSAGES);
+			if !(mine || moderator) {
+				return Err(HostError::Invalid(
+					"only your own messages can be deleted without Manage Messages".to_owned(),
+				));
+			}
+		}
+		self.queue(Command::DeleteMessage {
+			channel_id,
+			message_id: Snowflake(message.id),
+		})
+	}
+
+	fn react(
+		&self,
+		_plugin: &str,
+		message: &MessageRef,
+		emoji: &EmojiRef,
+		burst: bool,
+	) -> Result<(), HostError> {
+		self.queue(Command::AddReaction {
+			channel_id: Snowflake(message.channel_id),
+			message_id: Snowflake(message.id),
+			emoji: reaction_key(emoji),
+			burst,
+		})
+	}
+
+	fn remove_reaction(
+		&self,
+		_plugin: &str,
+		message: &MessageRef,
+		emoji: &EmojiRef,
+	) -> Result<(), HostError> {
+		self.queue(Command::RemoveReaction {
+			channel_id: Snowflake(message.channel_id),
+			message_id: Snowflake(message.id),
+			emoji: reaction_key(emoji),
+		})
+	}
+
+	fn pick_files(&self, _plugin: &str, multiple: bool) -> Result<Vec<PickedPath>, HostError> {
+		let (reply, receiver) = Reply::channel();
+		self.queue(Command::PickFiles { multiple, reply })?;
+		await_reply_for(&self.handle, receiver, DIALOG_TIMEOUT)?
+	}
+
+	fn attach_files(&self, _plugin: &str, paths: Vec<PathBuf>, private: bool) -> Result<(), HostError> {
+		let channel_id = self.selected_channel(private)?;
+		self.queue(Command::AttachFiles { channel_id, paths })
+	}
+
+	fn send_message_files(
+		&self,
+		plugin: &str,
+		msg: OutgoingMessage,
+		files: Vec<FileBlob>,
+	) -> Result<(), HostError> {
+		self.queue(Command::SendMessage {
+			channel_id: Snowflake(msg.channel_id),
+			content: msg.content,
+			reply_to: msg.reply_to.map(|id| ReplyTarget {
+				message: Snowflake(id),
+				mention: true,
+			}),
+			files: files.into_iter().map(upload_file).collect(),
+			by_plugin: Some(plugin.to_owned()),
+		})
+	}
+
+	fn set_draft(&self, _plugin: &str, text: String, private: bool) -> Result<(), HostError> {
+		let channel_id = self.selected_channel(private)?;
+		self.queue(Command::SetComposerText {
+			channel_id,
+			content: text,
+		})
+	}
+
+	fn attach_sticker(&self, _plugin: &str, sticker_id: u64, private: bool) -> Result<(), HostError> {
+		let channel_id = self.selected_channel(private)?;
+		let usable = self
+			.state
+			.read()
+			.find_sticker(Snowflake(sticker_id))
+			.is_some_and(|sticker| sticker.available != Some(false));
+		if !usable {
+			return Err(HostError::Invalid("sticker is not available".to_owned()));
+		}
+		self.queue(Command::AttachSticker {
+			channel_id,
+			sticker_id: Snowflake(sticker_id),
+		})
+	}
+
+	fn save_attachment(
+		&self,
+		_plugin: &str,
+		message: &MessageRef,
+		attachment_id: u64,
+		private: bool,
+	) -> Result<(), HostError> {
+		self.reachable(Snowflake(message.channel_id), private)?;
+		let present = {
+			let state = self.state.read();
+			self.loaded_in(&state, message)?
+				.attachments
+				.iter()
+				.any(|attachment| attachment.id.get() == attachment_id && attachment.url.is_some())
+		};
+		if !present {
+			return Err(HostError::Unavailable);
+		}
+		self.queue(Command::SaveAttachment {
+			channel_id: Snowflake(message.channel_id),
+			message_id: Snowflake(message.id),
+			attachment_id: Snowflake(attachment_id),
+		})
+	}
+
+	fn join_voice(&self, _plugin: &str, guild_id: Option<u64>, channel_id: u64) -> Result<(), HostError> {
+		if self.state.read().channel(Snowflake(channel_id)).is_none() {
+			return Err(HostError::Invalid("unknown channel".to_owned()));
+		}
+		self.queue(Command::JoinVoice {
+			guild_id: guild_id.map(Snowflake),
+			channel_id: Snowflake(channel_id),
+		})
+	}
+
+	fn leave_voice(&self, _plugin: &str) -> Result<(), HostError> {
+		self.queue(Command::LeaveVoice)
+	}
+
+	fn guild_notifications(
+		&self,
+		_plugin: &str,
+		guild_id: u64,
+		settings: NotificationSettings,
+	) -> Result<(), HostError> {
+		if self.state.read().guild(Snowflake(guild_id)).is_none() {
+			return Err(HostError::Invalid("unknown guild".to_owned()));
+		}
+		self.queue(Command::SetNotificationSettings {
+			guild_id: Some(Snowflake(guild_id)),
+			channel_id: None,
+			settings,
+		})
+	}
+
+	fn channel_notifications(
+		&self,
+		_plugin: &str,
+		channel_id: u64,
+		settings: NotificationSettings,
+	) -> Result<(), HostError> {
+		if self.state.read().channel(Snowflake(channel_id)).is_none() {
+			return Err(HostError::Invalid("unknown channel".to_owned()));
+		}
+		self.queue(Command::SetNotificationSettings {
+			guild_id: None,
+			channel_id: Some(Snowflake(channel_id)),
+			settings,
+		})
+	}
+
+	fn set_client_option(&self, plugin: &str, option: ClientOption) -> Result<(), HostError> {
+		self.queue(Command::SetClientOption {
+			plugin_id: plugin.to_owned(),
+			option,
+		})
+	}
+
+	fn set_dm_sections(&self, plugin: &str, sections: Vec<DmSection>) -> Result<(), HostError> {
+		self.queue(Command::SetDmSections {
+			plugin_id: plugin.to_owned(),
+			sections,
+		})
+	}
+
+	fn clone_emoji(
+		&self,
+		_plugin: &str,
+		guild_id: u64,
+		emoji: &EmojiRef,
+		name: String,
+	) -> Result<(), HostError> {
+		let emoji_id = emoji.id.ok_or(HostError::Unavailable)?;
+		self.queue(Command::CloneEmoji {
+			guild_id: Snowflake(guild_id),
+			emoji_id: Snowflake(emoji_id),
+			animated: emoji.animated,
+			name,
+		})
+	}
+
+	fn clone_sticker(&self, _plugin: &str, guild_id: u64, sticker_id: u64) -> Result<(), HostError> {
+		self.queue(Command::CloneSticker {
+			guild_id: Snowflake(guild_id),
+			sticker_id: Snowflake(sticker_id),
+		})
+	}
+
+	fn invalidate(&self, plugin: &str, target: Invalidation) -> Result<(), HostError> {
+		self.internal
+			.send(Internal::Invalidate {
+				plugin: plugin.to_owned(),
+				target,
+			})
+			.map_err(|_| HostError::Unavailable)
+	}
+
+	fn open_settings(&self, _plugin: &str, page: &str) -> Result<(), HostError> {
+		self.queue(Command::OpenSettings {
+			page: page.to_owned(),
+		})
+	}
+
+	fn navigate(&self, _plugin: &str, direction: Navigation) -> Result<(), HostError> {
+		self.queue(Command::Navigate(direction))
 	}
 }

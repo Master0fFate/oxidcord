@@ -416,6 +416,7 @@ impl Timeline {
 						channel_id,
 						message_id,
 						emoji,
+						burst: false,
 					}
 				} else {
 					Command::RemoveReaction {
@@ -667,6 +668,16 @@ impl Timeline {
 		self.remeasure(editing.message, cx);
 		cx.notify();
 		true
+	}
+
+	pub fn begin_edit(&mut self, message_id: Snowflake, window: &mut Window, cx: &mut Context<Self>) {
+		self.start_edit(message_id, window, cx);
+	}
+
+	pub fn jump_to_top(&mut self, cx: &mut Context<Self>) {
+		self.drive(cx, |scroll, cx| {
+			scroll.scroll_to_item(0, cx);
+		});
 	}
 
 	fn start_edit(&mut self, message_id: Snowflake, window: &mut Window, cx: &mut Context<Self>) {

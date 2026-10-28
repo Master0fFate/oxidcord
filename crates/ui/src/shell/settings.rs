@@ -252,6 +252,16 @@ impl SettingsWindow {
 		}
 	}
 
+	pub fn show_named(&mut self, name: &str, window: &mut Window, cx: &mut Context<Self>) {
+		let page = SECTIONS
+			.iter()
+			.flat_map(|(_, pages)| pages.iter().copied())
+			.find(|page| page.key().strip_prefix("settings-") == Some(name));
+		if let Some(page) = page {
+			self.show_page(page, window, cx);
+		}
+	}
+
 	pub fn show_voice(&mut self, window: &mut Window, cx: &mut Context<Self>) {
 		self.show_page(Page::VoiceVideo, window, cx);
 	}

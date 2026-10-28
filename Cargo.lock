@@ -7277,6 +7277,7 @@ dependencies = [
  "interprocess",
  "notify-rust",
  "parking_lot",
+ "rfd",
  "thiserror 2.0.21",
  "tracing",
  "tray-icon",

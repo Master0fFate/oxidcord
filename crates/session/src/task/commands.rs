@@ -548,18 +548,25 @@ impl Core {
 					rest.patch_guild_settings(guild_id, changes).await.map(drop)
 				});
 			}
-			Command::SetCustomStatus { text, emoji, expires } => {
+			Command::SetCustomStatus {
+				text,
+				emoji,
+				emoji_id,
+				expires,
+			} => {
 				let setting = (text.is_some() || emoji.is_some()).then(|| {
 					json!({
 						"text": text,
 						"emoji_name": emoji,
+						"emoji_id": emoji_id,
 						"expires_at": expires.map(timestamp),
 					})
 				});
-				self.custom_status = text
-					.clone()
-					.or_else(|| emoji.clone())
-					.map(|label| CustomStatus { text: label, emoji });
+				self.custom_status = text.clone().or_else(|| emoji.clone()).map(|label| CustomStatus {
+					text: label,
+					emoji,
+					emoji_id,
+				});
 				self.publish_presence();
 				self.spawn_action("custom status", move |rest| async move {
 					rest.patch_user_settings(json!({ "custom_status": setting }))
@@ -1122,7 +1129,7 @@ impl Core {
 			.map(|custom| {
 				let mut activity = json!({ "type": 4, "name": "Custom Status", "state": custom.text });
 				if let Some(emoji) = &custom.emoji {
-					activity["emoji"] = json!({ "name": emoji });
+					activity["emoji"] = json!({ "name": emoji, "id": custom.emoji_id });
 				}
 				activity
 			})
@@ -1137,7 +1144,11 @@ impl Core {
 	}
 
 	pub(super) fn set_presence_command(&mut self, status: StatusKind, custom_status: Option<String>) {
-		self.custom_status = custom_status.map(|text| CustomStatus { text, emoji: None });
+		self.custom_status = custom_status.map(|text| CustomStatus {
+			text,
+			emoji: None,
+			emoji_id: None,
+		});
 		self.apply_local(LocalEvent::StatusChosen(status));
 	}
 }

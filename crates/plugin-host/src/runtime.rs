@@ -18,11 +18,13 @@ use crate::error::{Error, Result};
 use crate::fetch::Fetcher;
 use crate::grants::Grants;
 use crate::host_state::{HostState, Services};
+use crate::keybinds::Keybinds;
 use crate::latency::LatencyStats;
 use crate::mounts::Mounts;
 use crate::patches::Patches;
 use crate::slots::{Commands, Slots};
 use crate::timers::Timers;
+use crate::watches::Watches;
 
 const PACKAGE: &str = "oxidcord:plugin";
 
@@ -160,6 +162,8 @@ impl Runtime {
 			timers: Timers::spawn().map_err(|error| Error::io("plugin-timers", error))?,
 			fetcher: Fetcher::new(handle),
 			latency: LatencyStats::default(),
+			keybinds: Arc::new(Keybinds::default()),
+			watches: Arc::new(Watches::default()),
 		});
 		let stop = Arc::new(AtomicBool::new(false));
 		let activity = Arc::new(Activity::default());
@@ -207,6 +211,14 @@ impl Runtime {
 
 	pub fn patches(&self) -> &Arc<Patches> {
 		&self.shared.services.patches
+	}
+
+	pub fn keybinds(&self) -> &Arc<Keybinds> {
+		&self.shared.services.keybinds
+	}
+
+	pub fn watches(&self) -> &Arc<Watches> {
+		&self.shared.services.watches
 	}
 
 	pub(crate) fn latency(&self) -> &LatencyStats {

@@ -254,7 +254,7 @@ impl PluginBridge {
 				.plugin_mounts()
 				.menu_items(menu)
 				.iter()
-				.map(|MenuEntry { plugin_id, items }| MenuGroup {
+				.map(|MenuEntry { plugin_id, items, .. }| MenuGroup {
 					plugin_id: Arc::clone(plugin_id),
 					items: Arc::clone(items),
 				})

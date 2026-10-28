@@ -47,7 +47,7 @@ use gpui_component::WindowExt as _;
 use platform::notifications::Notification;
 use protocol::{ChannelType, Snowflake, StatusKind};
 use session::Command;
-use state::{Alert, Changes, State};
+use state::{Alert, Changes, State, UiIntent};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 use self::account::{AccountHub, GroupEvent, Groups};
@@ -145,6 +145,7 @@ pub struct Shell {
 	members_visible: bool,
 	pending_jump: Option<Snowflake>,
 	seen_alert: u64,
+	seen_intent: u64,
 	notification_clicks: UnboundedSender<Snowflake>,
 	title_mentions: u32,
 	rail: Entity<ServerRail>,
@@ -522,7 +523,11 @@ impl Shell {
 				}
 			}
 		});
-		let seen_alert = data.read(cx).state().last_alert_id();
+		let (seen_alert, seen_intent) = {
+			let data = data.read(cx);
+			let state = data.state();
+			(state.last_alert_id(), state.last_intent_id())
+		};
 
 		let mut shell = Self {
 			data,
@@ -540,6 +545,7 @@ impl Shell {
 			members_visible: true,
 			pending_jump: None,
 			seen_alert,
+			seen_intent,
 			notification_clicks,
 			title_mentions: 0,
 			rail,
@@ -898,6 +904,70 @@ impl Shell {
 		if changes.alerts {
 			self.raise_alerts(window, cx);
 		}
+		if changes.intents {
+			self.consume_intents(window, cx);
+		}
+	}
+
+	fn consume_intents(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+		let pending: Vec<UiIntent> = {
+			let data = self.data.read(cx);
+			let state = data.state();
+			let seen = std::mem::replace(&mut self.seen_intent, state.last_intent_id());
+			state
+				.intents_after(seen)
+				.map(|queued| queued.intent.clone())
+				.collect()
+		};
+		for intent in pending {
+			self.apply_intent(intent, window, cx);
+		}
+	}
+
+	fn apply_intent(&mut self, intent: UiIntent, window: &mut Window, cx: &mut Context<Self>) {
+		let current = self.channel;
+		let here = |channel_id: Snowflake| Some(channel_id) == current;
+		match intent {
+			UiIntent::StartReply {
+				channel_id,
+				message_id,
+				mention,
+			} if here(channel_id) => self.start_reply(message_id, mention, window, cx),
+			UiIntent::StartEdit {
+				channel_id,
+				message_id,
+			} if here(channel_id) => self
+				.timeline
+				.update(cx, |timeline, cx| timeline.begin_edit(message_id, window, cx)),
+			UiIntent::SetComposerText { channel_id, content } if here(channel_id) => self
+				.composer
+				.update(cx, |composer, cx| composer.set_text(content, window, cx)),
+			UiIntent::AttachFiles { channel_id, paths } if here(channel_id) => self
+				.composer
+				.update(cx, |composer, cx| composer.add_paths(paths, cx)),
+			UiIntent::AttachSticker {
+				channel_id,
+				sticker_id,
+			} if here(channel_id) => self
+				.composer
+				.update(cx, |composer, cx| composer.add_sticker(sticker_id, cx)),
+			UiIntent::JumpToMessage {
+				channel_id,
+				message_id,
+			} => self.jump_to(channel_id, message_id, cx),
+			UiIntent::JumpToTop { channel_id } if here(channel_id) => {
+				self.timeline.update(cx, |timeline, cx| timeline.jump_to_top(cx));
+			}
+			UiIntent::OpenSettings(page) => {
+				self.open_settings(window, cx);
+				if let Some(settings) = &self.settings {
+					settings.update(cx, |settings, cx| settings.show_named(&page, window, cx));
+				}
+			}
+			UiIntent::NavigateBack => self.navigate(NavigationDirection::Back, cx),
+			UiIntent::NavigateForward => self.navigate(NavigationDirection::Forward, cx),
+			_ => {}
+		}
 	}
 
 	fn on_media_ready(&mut self, cx: &mut Context<Self>) {
@@ -1020,7 +1090,7 @@ impl Shell {
 				self.overlay = Some(Overlay::Lightbox(target.clone()));
 				cx.notify();
 			}
-			TimelineEvent::Reply(message) => self.start_reply(*message, window, cx),
+			TimelineEvent::Reply(message) => self.start_reply(*message, true, window, cx),
 			TimelineEvent::OpenEmoji { message_id, at } => {
 				if let Some(channel) = self.channel {
 					let target = PickerTarget::Reaction {
@@ -1036,7 +1106,13 @@ impl Shell {
 		}
 	}
 
-	fn start_reply(&mut self, message: Snowflake, window: &mut Window, cx: &mut Context<Self>) {
+	fn start_reply(
+		&mut self,
+		message: Snowflake,
+		mention: bool,
+		window: &mut Window,
+		cx: &mut Context<Self>,
+	) {
 		let Some(channel) = self.channel else {
 			return;
 		};
@@ -1050,7 +1126,7 @@ impl Shell {
 		};
 		if let Some(name) = name {
 			self.composer.update(cx, |composer, cx| {
-				composer.set_reply(message, name.into(), window, cx)
+				composer.set_reply(message, name.into(), mention, window, cx)
 			});
 		}
 	}

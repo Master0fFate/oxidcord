@@ -6,11 +6,21 @@ use url::Url;
 use crate::{PlatformError, Result};
 
 const ALLOWED_SCHEMES: [&str; 2] = ["http", "https"];
+const APP_SCHEMES: [&str; 5] = ["spotify", "steam", "tidal", "itms-apps", "music"];
 
 pub fn open_url(raw: &str) -> Result<()> {
+	open_allowed(raw, &[])
+}
+
+pub fn open_plugin_url(raw: &str) -> Result<()> {
+	open_allowed(raw, &APP_SCHEMES)
+}
+
+fn open_allowed(raw: &str, extra: &[&str]) -> Result<()> {
 	let url = Url::parse(raw)?;
-	if !ALLOWED_SCHEMES.contains(&url.scheme()) {
-		return Err(PlatformError::UnsupportedScheme(url.scheme().to_owned()));
+	let scheme = url.scheme();
+	if !ALLOWED_SCHEMES.contains(&scheme) && !extra.contains(&scheme) {
+		return Err(PlatformError::UnsupportedScheme(scheme.to_owned()));
 	}
 	launch(url.as_str())
 }

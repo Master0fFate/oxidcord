@@ -10,6 +10,39 @@ pub struct UploadFile {
 	pub description: Option<String>,
 }
 
+pub fn content_type_for(name: &str) -> &'static str {
+	let extension = name
+		.rsplit_once('.')
+		.map(|(_, extension)| extension.to_ascii_lowercase())
+		.unwrap_or_default();
+	match extension.as_str() {
+		"png" | "apng" => "image/png",
+		"jpg" | "jpeg" | "jfif" => "image/jpeg",
+		"gif" => "image/gif",
+		"webp" => "image/webp",
+		"bmp" => "image/bmp",
+		"avif" => "image/avif",
+		"heic" => "image/heic",
+		"svg" => "image/svg+xml",
+		"mp4" | "m4v" => "video/mp4",
+		"webm" => "video/webm",
+		"mov" => "video/quicktime",
+		"mkv" => "video/x-matroska",
+		"avi" => "video/x-msvideo",
+		"mp3" => "audio/mpeg",
+		"ogg" | "opus" => "audio/ogg",
+		"wav" => "audio/wav",
+		"m4a" => "audio/mp4",
+		"aac" => "audio/aac",
+		"flac" => "audio/flac",
+		"txt" | "log" | "md" => "text/plain",
+		"json" => "application/json",
+		"pdf" => "application/pdf",
+		"zip" => "application/zip",
+		_ => "application/octet-stream",
+	}
+}
+
 pub(crate) enum Body {
 	Empty,
 	Json(Bytes),

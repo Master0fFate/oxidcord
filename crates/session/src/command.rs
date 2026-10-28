@@ -1,9 +1,11 @@
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
-use plugin_host::api::model::{EmojiRef, MessageFull, UiContext, UserProfile, ViewEvent};
+use plugin_host::api::model::{
+	ClientOption, DmSection, EmojiRef, MessageFull, NotificationSettings, UiContext, UserProfile, ViewEvent,
+};
 use plugin_host::api::{HostError, User as PluginUser};
-use plugin_host::{Permission, ViewContext};
+use plugin_host::{Navigation, Permission, PickedPath, ViewContext};
 use protocol::{
 	ApplicationCommand, ChannelType, ComponentType, Gif, MessageFlags, NotificationLevel,
 	PermissionOverwriteKind, Permissions, Snowflake, StatusKind,
@@ -124,6 +126,7 @@ pub enum Command {
 		channel_id: Snowflake,
 		message_id: Snowflake,
 		emoji: String,
+		burst: bool,
 	},
 	RemoveReaction {
 		channel_id: Snowflake,
@@ -593,6 +596,7 @@ pub enum Command {
 	SetCustomStatus {
 		text: Option<String>,
 		emoji: Option<String>,
+		emoji_id: Option<Snowflake>,
 		expires: Option<DateTime<Utc>>,
 	},
 	SetStatus(StatusKind),
@@ -698,6 +702,70 @@ pub enum Command {
 		id: Snowflake,
 		name: String,
 		roles: Vec<Snowflake>,
+	},
+	StartReply {
+		channel_id: Snowflake,
+		message_id: Snowflake,
+		mention: bool,
+	},
+	StartEdit {
+		channel_id: Snowflake,
+		message_id: Snowflake,
+	},
+	JumpToMessage {
+		channel_id: Snowflake,
+		message_id: Snowflake,
+	},
+	JumpToTop {
+		channel_id: Snowflake,
+	},
+	OpenSettings {
+		page: String,
+	},
+	Navigate(Navigation),
+	PickFiles {
+		multiple: bool,
+		reply: Reply<LoadResult<Vec<PickedPath>>>,
+	},
+	AttachFiles {
+		channel_id: Snowflake,
+		paths: Vec<PathBuf>,
+	},
+	AttachSticker {
+		channel_id: Snowflake,
+		sticker_id: Snowflake,
+	},
+	SetComposerText {
+		channel_id: Snowflake,
+		content: String,
+	},
+	SaveAttachment {
+		channel_id: Snowflake,
+		message_id: Snowflake,
+		attachment_id: Snowflake,
+	},
+	SetClientOption {
+		plugin_id: String,
+		option: ClientOption,
+	},
+	SetDmSections {
+		plugin_id: String,
+		sections: Vec<DmSection>,
+	},
+	SetNotificationSettings {
+		guild_id: Option<Snowflake>,
+		channel_id: Option<Snowflake>,
+		settings: NotificationSettings,
+	},
+	CloneEmoji {
+		guild_id: Snowflake,
+		emoji_id: Snowflake,
+		animated: bool,
+		name: String,
+	},
+	CloneSticker {
+		guild_id: Snowflake,
+		sticker_id: Snowflake,
 	},
 	Reconnect,
 	Logout,

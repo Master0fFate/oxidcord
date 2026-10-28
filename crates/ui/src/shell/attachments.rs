@@ -17,7 +17,6 @@ use media::{Decoded, Limits};
 use rest::UploadFile;
 
 use super::community::modal::{self, Close};
-use super::composer::content_type;
 use crate::components::{IconButton, dialog_footer, field};
 use crate::format;
 use crate::i18n::Translate as _;
@@ -62,7 +61,7 @@ impl Pending {
 	pub fn new(id: u64, name: String, bytes: Bytes) -> Self {
 		Self {
 			id,
-			content_type: content_type(&name),
+			content_type: rest::content_type_for(&name),
 			name,
 			bytes,
 			spoiler: false,
@@ -83,7 +82,7 @@ impl Pending {
 		};
 		let description = self.description.trim();
 		UploadFile {
-			content_type: content_type(&name).to_owned(),
+			content_type: rest::content_type_for(&name).to_owned(),
 			description: (!description.is_empty()).then(|| description.to_owned()),
 			name,
 			bytes: self.bytes,

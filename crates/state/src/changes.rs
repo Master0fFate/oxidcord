@@ -89,6 +89,9 @@ pub struct Changes {
 	pub loaded: IdSet,
 	pub streams: bool,
 	pub rejected: bool,
+	pub intents: bool,
+	pub client_options: bool,
+	pub dm_sections: bool,
 }
 
 impl Changes {
@@ -119,6 +122,9 @@ impl Changes {
 			loaded: IdSet::All,
 			streams: true,
 			rejected: true,
+			intents: true,
+			client_options: true,
+			dm_sections: true,
 		}
 	}
 
@@ -139,7 +145,10 @@ impl Changes {
 			|| self.voice_session
 			|| self.calls
 			|| self.streams
-			|| self.rejected)
+			|| self.rejected
+			|| self.intents
+			|| self.client_options
+			|| self.dm_sections)
 			&& self.channel_lists.is_empty()
 			&& self.messages.is_empty()
 			&& self.members.is_empty()
@@ -168,6 +177,9 @@ impl Changes {
 		self.calls |= other.calls;
 		self.streams |= other.streams;
 		self.rejected |= other.rejected;
+		self.intents |= other.intents;
+		self.client_options |= other.client_options;
+		self.dm_sections |= other.dm_sections;
 		self.channel_lists.merge(&other.channel_lists);
 		self.messages.merge(&other.messages);
 		self.members.merge(&other.members);

@@ -20,7 +20,6 @@ use crate::format;
 use crate::i18n::Translate as _;
 use crate::icons::{Icon, IconKind};
 use crate::shell::community::modal::{self, Close};
-use crate::shell::composer::content_type;
 use crate::shell::incoming::{self, Incoming};
 use crate::theme::{Theme, rem, with_alpha};
 
@@ -176,7 +175,7 @@ impl NewPost {
 		let files = std::mem::take(&mut self.files)
 			.into_iter()
 			.map(|file| UploadFile {
-				content_type: content_type(&file.name).to_owned(),
+				content_type: rest::content_type_for(&file.name).to_owned(),
 				name: file.name,
 				bytes: file.bytes,
 				description: None,

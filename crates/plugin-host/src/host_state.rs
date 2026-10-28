@@ -1,7 +1,9 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use protocol::StatusKind;
 use store::Store;
 use url::Url;
 use wasmtime::ResourceLimiter;
@@ -10,9 +12,9 @@ use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 
 use crate::api::model::{
 	AuthSession, ChannelDetail, ClickWatch, ClientInfo, ClientOption, ContextDetail, DmSection, EmojiInfo,
-	EmojiRef, FileBlob, Folder, GuildDetail, Keybind, MemberInfo, MenuItem, MenuItemExt, MessageFull,
-	MessageMeta, MountOptions, NotificationSettings, PickedFile, PluginSummary, Presence, ReadState,
-	Relationship, RoleInfo, StickerInfo, UserProfile, ViewTree, VoiceDetail,
+	EmojiRef, FileBlob, Folder, GuildDetail, Keybind, MemberInfo, MenuItem, MenuItemExt, MenuWhenExt,
+	MessageFull, MessageMeta, MountOptions, NotificationSettings, PickedFile, PluginSummary, Presence,
+	ReadState, Relationship, RoleInfo, StickerInfo, UserProfile, ViewTree, VoiceDetail,
 };
 use crate::api::{
 	ChannelSummary, FetchRequest, FetchResponse, GuildSummary, HostError, MemberSummary, MessageRef,
@@ -20,7 +22,7 @@ use crate::api::{
 };
 use crate::bindings::ext::oxidcord::plugin::{client, model, ui};
 use crate::bindings::oxidcord::plugin::{host, types};
-use crate::broker::HostBroker;
+use crate::broker::{HostBroker, Invalidation, Navigation};
 use crate::config::RuntimeConfig;
 use crate::convert::{
 	ImagePolicy, clip_line, sanitize_view, upgrade_ui_tree, valid_icon, valid_key, validate_ui_tree,
@@ -28,6 +30,7 @@ use crate::convert::{
 use crate::fetch::Fetcher;
 use crate::grants::Grants;
 use crate::instance::Health;
+use crate::keybinds::Keybinds;
 use crate::latency::LatencyStats;
 use crate::mounts::{self, MenuEntry, Mount, Mounts, Overlay, Provider};
 use crate::patches::Patches;
@@ -36,6 +39,7 @@ use crate::rate::RateLimits;
 use crate::slots::{Commands, Slots};
 use crate::storage::PluginStorage;
 use crate::timers::{self, Timers};
+use crate::watches::Watches;
 
 const MAX_MESSAGE_BYTES: usize = 4_000;
 const MAX_LOG_BYTES: usize = 2_048;
@@ -50,6 +54,44 @@ const MAX_LISTED_EMOJIS: u32 = 10_000;
 const MAX_REACTION_USERS: u32 = 100;
 const MAX_SPOKEN_CHARS: usize = 300;
 const MAX_SENDS_PER_GESTURE: u8 = 3;
+const MAX_CUSTOM_STATUS_CHARS: usize = 128;
+const MAX_CUSTOM_STATUS_BYTES: usize = 512;
+const MAX_PICKED_HANDLES: usize = 16;
+const MAX_ATTACHED_FILES: usize = 10;
+const MAX_UPLOAD_FILES: usize = 4;
+const MAX_UPLOAD_BYTES: usize = 10 * 1024 * 1024;
+const MAX_FILE_NAME_BYTES: usize = 255;
+const MAX_DM_SECTIONS: usize = 16;
+const MAX_DM_CHANNELS: usize = 200;
+const MAX_DM_SECTION_TITLE: usize = 64;
+const MIN_EMOJI_NAME: usize = 2;
+const MAX_EMOJI_NAME: usize = 32;
+const MAX_NOTIFICATION_LEVEL: u8 = 3;
+const MAX_NOTIFICATION_VOLUME: u8 = 100;
+const MAX_FORUM_LAYOUT: u8 = 2;
+const MAX_FORUM_SORT: u8 = 1;
+pub const SETTINGS_PAGES: [&str; 20] = [
+	"my-account",
+	"profiles",
+	"privacy",
+	"devices",
+	"connections",
+	"clips",
+	"friend-requests",
+	"appearance",
+	"accessibility",
+	"voice-video",
+	"chat",
+	"notifications",
+	"keybinds",
+	"language",
+	"streamer-mode",
+	"advanced",
+	"plugins",
+	"themes",
+	"developer",
+	"updates",
+];
 const MAX_MENU_ITEMS: usize = 16;
 const MAX_MENU_LABEL: usize = 64;
 const MAX_MOUNT_TITLE: usize = 64;
@@ -87,6 +129,8 @@ pub struct Services {
 	pub timers: Timers,
 	pub fetcher: Fetcher,
 	pub latency: LatencyStats,
+	pub keybinds: Arc<Keybinds>,
+	pub watches: Arc<Watches>,
 }
 
 pub struct PluginLimits {
@@ -128,6 +172,9 @@ pub struct HostState {
 	storage: PluginStorage,
 	gesture_sends: Option<u8>,
 	context: CallContext,
+	picked: BTreeMap<u64, PathBuf>,
+	next_pick: u64,
+	blocked_mark: Duration,
 	wasi: WasiCtx,
 	table: ResourceTable,
 }
@@ -148,6 +195,9 @@ impl HostState {
 			storage,
 			gesture_sends: None,
 			context: CallContext::Init,
+			picked: BTreeMap::new(),
+			next_pick: 1,
+			blocked_mark: Duration::ZERO,
 			wasi: WasiCtxBuilder::new()
 				.allow_tcp(false)
 				.allow_udp(false)
@@ -183,6 +233,23 @@ impl HostState {
 
 	pub(crate) fn set_context(&mut self, context: CallContext) {
 		self.context = context;
+	}
+
+	fn blocked_total(&self) -> Duration {
+		self.health
+			.as_ref()
+			.map_or(Duration::ZERO, |health| health.blocked_for())
+	}
+
+	pub(crate) fn mark_blocked_time(&mut self) {
+		self.blocked_mark = self.blocked_total();
+	}
+
+	pub(crate) fn take_blocked_time(&mut self) -> Duration {
+		let total = self.blocked_total();
+		let fresh = total.saturating_sub(self.blocked_mark);
+		self.blocked_mark = total;
+		fresh
 	}
 
 	fn loads(&self) -> Result<(), HostError> {
@@ -253,10 +320,6 @@ impl WasiView for HostState {
 
 fn invalid(reason: &str) -> HostError {
 	HostError::Invalid(reason.to_owned())
-}
-
-fn unavailable<T>() -> Result<T, HostError> {
-	Err(HostError::Unavailable)
 }
 
 fn within_rate(allowed: bool) -> Result<(), HostError> {
@@ -367,8 +430,18 @@ impl host::Host for HostState {
 	fn open_url(&mut self, url: String) -> Result<(), HostError> {
 		self.require(Permission::ActionsOpenUrl)?;
 		let parsed = Url::parse(&url).map_err(|_| invalid("invalid url"))?;
-		if url.len() > MAX_URL_BYTES || !matches!(parsed.scheme(), "http" | "https") {
-			return Err(invalid("url must be http or https"));
+		if url.len() > MAX_URL_BYTES {
+			return Err(invalid("url is too long"));
+		}
+		if !matches!(parsed.scheme(), "http" | "https") {
+			if !self
+				.services
+				.grants
+				.allows_url_scheme(&self.plugin, parsed.scheme())
+			{
+				return Err(invalid("url scheme is not approved"));
+			}
+			self.require_gesture()?;
 		}
 		within_rate(self.rate.open_url.take())?;
 		self.services.broker.open_url(&self.plugin, url)
@@ -432,9 +505,7 @@ impl host::Host for HostState {
 	}
 
 	fn now_ms(&mut self) -> i64 {
-		SystemTime::now()
-			.duration_since(UNIX_EPOCH)
-			.map_or(0, |elapsed| elapsed.as_millis() as i64)
+		epoch_millis()
 	}
 
 	fn register_slot(&mut self, slot: String, node: UiTree) -> Result<(), HostError> {
@@ -576,6 +647,7 @@ impl ui::Host for HostState {
 			MenuEntry {
 				plugin_id: Arc::clone(&self.plugin),
 				items: menu_items(items).into(),
+				extra: Arc::from([]),
 			},
 		);
 		self.changed();
@@ -617,23 +689,46 @@ impl ui::Host for HostState {
 		Ok(())
 	}
 
-	fn set_menu_items_ext(&mut self, _menu: String, _items: Vec<MenuItemExt>) -> Result<(), HostError> {
+	fn set_menu_items_ext(&mut self, menu: String, items: Vec<MenuItemExt>) -> Result<(), HostError> {
 		self.require(Permission::UiMount)?;
-		unavailable()
+		let menu = mounts::menu(&menu).ok_or_else(|| invalid("unknown menu"))?;
+		let flags: Vec<(String, MenuWhenExt)> = items
+			.iter()
+			.map(|item| (item.base.key.clone(), item.extra))
+			.collect();
+		let kept = menu_items(items.into_iter().map(|item| item.base).collect());
+		let extra: Vec<(String, MenuWhenExt)> = flags
+			.into_iter()
+			.filter(|(key, extra)| *extra != MenuWhenExt::empty() && kept.iter().any(|item| item.key == *key))
+			.collect();
+		self.services.mounts.set_menu(
+			menu,
+			MenuEntry {
+				plugin_id: Arc::clone(&self.plugin),
+				items: kept.into(),
+				extra: extra.into(),
+			},
+		);
+		self.changed();
+		Ok(())
 	}
 
 	fn context_detail(&mut self) -> Option<ContextDetail> {
 		None
 	}
 
-	fn watch_clicks(&mut self, _watch: ClickWatch) -> Result<(), HostError> {
+	fn watch_clicks(&mut self, watch: ClickWatch) -> Result<(), HostError> {
 		self.require(Permission::UiInput)?;
-		unavailable()
+		within_rate(self.rate.ui.take())?;
+		self.services.watches.watch_messages(&self.plugin, watch);
+		Ok(())
 	}
 
-	fn watch_channel_clicks(&mut self, _watch: ClickWatch) -> Result<(), HostError> {
+	fn watch_channel_clicks(&mut self, watch: ClickWatch) -> Result<(), HostError> {
 		self.require(Permission::UiInput)?;
-		unavailable()
+		within_rate(self.rate.ui.take())?;
+		self.services.watches.watch_channels(&self.plugin, watch);
+		Ok(())
 	}
 }
 
@@ -913,182 +1008,338 @@ impl client::Host for HostState {
 			.composer_draft(&self.plugin, self.has_private_access())
 	}
 
-	fn set_status(&mut self, _status: String) -> Result<(), HostError> {
+	fn set_status(&mut self, status: String) -> Result<(), HostError> {
 		self.require(Permission::ActionsPresence)?;
-		unavailable()
+		let status = StatusKind::from(status.as_str());
+		if !matches!(
+			status,
+			StatusKind::Online | StatusKind::Idle | StatusKind::Dnd | StatusKind::Invisible
+		) {
+			return Err(invalid("unknown status"));
+		}
+		within_rate(self.rate.presence.take())?;
+		self.services.broker.set_status(&self.plugin, status)
 	}
 
 	fn set_custom_status(
 		&mut self,
-		_text: String,
-		_emoji: Option<EmojiRef>,
-		_expires_ms: Option<i64>,
+		text: String,
+		emoji: Option<EmojiRef>,
+		expires_ms: Option<i64>,
 	) -> Result<(), HostError> {
 		self.require(Permission::ActionsPresence)?;
-		unavailable()
+		if text.chars().count() > MAX_CUSTOM_STATUS_CHARS {
+			return Err(invalid("custom status text length"));
+		}
+		if emoji.as_ref().is_some_and(|emoji| !valid_emoji(emoji)) {
+			return Err(invalid("emoji length"));
+		}
+		if expires_ms.is_some_and(|expires| expires <= epoch_millis()) {
+			return Err(invalid("expiry is in the past"));
+		}
+		within_rate(self.rate.presence.take())?;
+		self.services.broker.set_custom_status(
+			&self.plugin,
+			clip_line(&text, MAX_CUSTOM_STATUS_BYTES),
+			emoji,
+			expires_ms,
+		)
 	}
 
-	fn mark_read(&mut self, _channel_id: u64) -> Result<(), HostError> {
+	fn mark_read(&mut self, channel_id: u64) -> Result<(), HostError> {
 		self.require(Permission::ActionsAck)?;
-		unavailable()
+		within_rate(self.rate.ack.take())?;
+		self.services
+			.broker
+			.mark_read(&self.plugin, channel_id, self.has_private_access())
 	}
 
-	fn mark_unread(&mut self, _m: MessageRef) -> Result<(), HostError> {
+	fn mark_unread(&mut self, m: MessageRef) -> Result<(), HostError> {
 		self.require(Permission::ActionsAck)?;
-		unavailable()
+		within_rate(self.rate.ack.take())?;
+		self.services
+			.broker
+			.mark_unread(&self.plugin, &m, self.has_private_access())
 	}
 
-	fn mark_guild_read(&mut self, _guild_id: u64) -> Result<(), HostError> {
+	fn mark_guild_read(&mut self, guild_id: u64) -> Result<(), HostError> {
 		self.require(Permission::ActionsAck)?;
 		self.require_gesture()?;
-		unavailable()
+		within_rate(self.rate.ack.take())?;
+		self.services.broker.mark_guild_read(&self.plugin, guild_id)
 	}
 
-	fn start_reply(&mut self, _m: MessageRef, _mention: bool) -> Result<(), HostError> {
+	fn start_reply(&mut self, m: MessageRef, mention: bool) -> Result<(), HostError> {
 		self.require(Permission::ActionsCompose)?;
 		self.require_gesture()?;
-		unavailable()
+		within_rate(self.rate.action.take())?;
+		self.services.broker.start_reply(&self.plugin, &m, mention)
 	}
 
-	fn start_edit(&mut self, _m: MessageRef) -> Result<(), HostError> {
+	fn start_edit(&mut self, m: MessageRef) -> Result<(), HostError> {
 		self.require(Permission::ActionsCompose)?;
 		self.require_gesture()?;
-		unavailable()
+		within_rate(self.rate.action.take())?;
+		self.services.broker.start_edit(&self.plugin, &m)
 	}
 
-	fn jump_to_message(&mut self, _m: MessageRef) -> Result<(), HostError> {
+	fn jump_to_message(&mut self, m: MessageRef) -> Result<(), HostError> {
 		self.require(Permission::ActionsCompose)?;
 		self.require_gesture()?;
-		unavailable()
+		within_rate(self.rate.action.take())?;
+		self.services.broker.jump_to_message(&self.plugin, &m)
 	}
 
-	fn jump_to_top(&mut self, _channel_id: u64) -> Result<(), HostError> {
+	fn jump_to_top(&mut self, channel_id: u64) -> Result<(), HostError> {
 		self.require(Permission::ActionsCompose)?;
 		self.require_gesture()?;
-		unavailable()
+		within_rate(self.rate.action.take())?;
+		self.services.broker.jump_to_top(&self.plugin, channel_id)
 	}
 
-	fn edit_message(&mut self, _m: MessageRef, _content: String) -> Result<(), HostError> {
+	fn edit_message(&mut self, m: MessageRef, content: String) -> Result<(), HostError> {
 		self.require(Permission::ActionsEdit)?;
 		self.require_gesture()?;
-		unavailable()
+		if content.is_empty() || content.len() > MAX_MESSAGE_BYTES {
+			return Err(invalid("message content length"));
+		}
+		within_rate(self.rate.action.take())?;
+		self.services.broker.edit_message(&self.plugin, &m, content)
 	}
 
-	fn delete_message(&mut self, _m: MessageRef) -> Result<(), HostError> {
+	fn delete_message(&mut self, m: MessageRef) -> Result<(), HostError> {
 		self.require(Permission::ActionsDelete)?;
 		self.require_gesture()?;
-		unavailable()
+		within_rate(self.rate.action.take())?;
+		self.services.broker.delete_message(&self.plugin, &m)
 	}
 
-	fn react(&mut self, _m: MessageRef, _emoji: EmojiRef, burst: bool) -> Result<(), HostError> {
+	fn react(&mut self, m: MessageRef, emoji: EmojiRef, burst: bool) -> Result<(), HostError> {
 		self.require(Permission::ActionsReact)?;
 		if burst {
 			self.require_gesture()?;
 		}
-		unavailable()
+		if !valid_emoji(&emoji) {
+			return Err(invalid("emoji length"));
+		}
+		within_rate(self.rate.add_reaction.take())?;
+		self.services.broker.react(&self.plugin, &m, &emoji, burst)
 	}
 
-	fn remove_reaction(&mut self, _m: MessageRef, _emoji: EmojiRef) -> Result<(), HostError> {
+	fn remove_reaction(&mut self, m: MessageRef, emoji: EmojiRef) -> Result<(), HostError> {
 		self.require(Permission::ActionsReact)?;
-		unavailable()
+		if !valid_emoji(&emoji) {
+			return Err(invalid("emoji length"));
+		}
+		within_rate(self.rate.add_reaction.take())?;
+		self.services.broker.remove_reaction(&self.plugin, &m, &emoji)
 	}
 
-	fn pick_files(&mut self, _multiple: bool) -> Result<Vec<PickedFile>, HostError> {
+	fn pick_files(&mut self, multiple: bool) -> Result<Vec<PickedFile>, HostError> {
 		self.require(Permission::ActionsUpload)?;
 		self.require_gesture()?;
-		unavailable()
+		within_rate(self.rate.action.take())?;
+		let health = self.health.clone();
+		if let Some(health) = &health {
+			health.begin_blocking();
+		}
+		let picked = self.services.broker.pick_files(&self.plugin, multiple);
+		if let Some(health) = &health {
+			health.end_blocking();
+		}
+		let limit = if multiple { MAX_PICKED_HANDLES } else { 1 };
+		Ok(picked?
+			.into_iter()
+			.take(limit)
+			.map(|file| PickedFile {
+				handle: self.remember_pick(file.path),
+				name: clip_line(&file.name, MAX_FILE_NAME_BYTES),
+				size: file.size,
+				content_type: file.content_type,
+			})
+			.collect())
 	}
 
-	fn composer_attach_files(&mut self, _handles: Vec<u64>) -> Result<(), HostError> {
+	fn composer_attach_files(&mut self, handles: Vec<u64>) -> Result<(), HostError> {
 		self.require(Permission::ActionsUpload)?;
 		self.require_gesture()?;
-		unavailable()
+		if handles.is_empty() || handles.len() > MAX_ATTACHED_FILES {
+			return Err(invalid("file count"));
+		}
+		let paths = handles
+			.iter()
+			.map(|handle| {
+				self.picked
+					.get(handle)
+					.cloned()
+					.ok_or_else(|| invalid("unknown file handle"))
+			})
+			.collect::<Result<Vec<PathBuf>, HostError>>()?;
+		within_rate(self.rate.action.take())?;
+		self.services
+			.broker
+			.attach_files(&self.plugin, paths, self.has_private_access())
 	}
 
-	fn send_message_files(&mut self, _msg: OutgoingMessage, _files: Vec<FileBlob>) -> Result<(), HostError> {
+	fn send_message_files(&mut self, msg: OutgoingMessage, files: Vec<FileBlob>) -> Result<(), HostError> {
 		self.require(Permission::ActionsUpload)?;
 		self.require_gesture()?;
-		unavailable()
+		if msg.content.len() > MAX_MESSAGE_BYTES {
+			return Err(invalid("message content length"));
+		}
+		check_blobs(&files)?;
+		self.take_gesture_send()?;
+		within_rate(self.rate.send_message.take())?;
+		self.services.broker.send_message_files(&self.plugin, msg, files)
 	}
 
-	fn composer_set_draft(&mut self, _text: String) -> Result<(), HostError> {
+	fn composer_set_draft(&mut self, text: String) -> Result<(), HostError> {
 		self.require(Permission::Composer)?;
 		self.require_gesture()?;
-		unavailable()
+		if text.len() > MAX_MESSAGE_BYTES {
+			return Err(invalid("text length"));
+		}
+		within_rate(self.rate.composer.take())?;
+		self.services
+			.broker
+			.set_draft(&self.plugin, text, self.has_private_access())
 	}
 
-	fn composer_attach_sticker(&mut self, _sticker_id: u64) -> Result<(), HostError> {
+	fn composer_attach_sticker(&mut self, sticker_id: u64) -> Result<(), HostError> {
 		self.require(Permission::Composer)?;
 		self.require_gesture()?;
-		unavailable()
+		within_rate(self.rate.composer.take())?;
+		self.services
+			.broker
+			.attach_sticker(&self.plugin, sticker_id, self.has_private_access())
 	}
 
-	fn save_attachment(&mut self, _m: MessageRef, _attachment_id: u64) -> Result<(), HostError> {
+	fn save_attachment(&mut self, m: MessageRef, attachment_id: u64) -> Result<(), HostError> {
 		self.require(Permission::ActionsSave)?;
 		self.require_gesture()?;
-		unavailable()
+		within_rate(self.rate.action.take())?;
+		self.services
+			.broker
+			.save_attachment(&self.plugin, &m, attachment_id, self.has_private_access())
 	}
 
-	fn join_voice(&mut self, _guild_id: Option<u64>, _channel_id: u64) -> Result<(), HostError> {
+	fn join_voice(&mut self, guild_id: Option<u64>, channel_id: u64) -> Result<(), HostError> {
 		self.require(Permission::ActionsVoice)?;
 		self.require_gesture()?;
-		unavailable()
+		within_rate(self.rate.action.take())?;
+		self.services
+			.broker
+			.join_voice(&self.plugin, guild_id, channel_id)
 	}
 
 	fn leave_voice(&mut self) -> Result<(), HostError> {
 		self.require(Permission::ActionsVoice)?;
 		self.require_gesture()?;
-		unavailable()
+		within_rate(self.rate.action.take())?;
+		self.services.broker.leave_voice(&self.plugin)
 	}
 
 	fn set_guild_notifications(
 		&mut self,
-		_guild_id: u64,
-		_settings: NotificationSettings,
+		guild_id: u64,
+		settings: NotificationSettings,
 	) -> Result<(), HostError> {
 		self.require(Permission::ActionsSettings)?;
-		unavailable()
+		check_notification_settings(&settings)?;
+		within_rate(self.rate.settings.take())?;
+		self.services
+			.broker
+			.guild_notifications(&self.plugin, guild_id, settings)
 	}
 
 	fn set_channel_notifications(
 		&mut self,
-		_channel_id: u64,
-		_settings: NotificationSettings,
+		channel_id: u64,
+		settings: NotificationSettings,
 	) -> Result<(), HostError> {
 		self.require(Permission::ActionsSettings)?;
-		unavailable()
+		check_notification_settings(&settings)?;
+		within_rate(self.rate.settings.take())?;
+		self.services
+			.broker
+			.channel_notifications(&self.plugin, channel_id, settings)
 	}
 
-	fn set_client_option(&mut self, _value: ClientOption) -> Result<(), HostError> {
+	fn set_client_option(&mut self, value: ClientOption) -> Result<(), HostError> {
 		self.require(Permission::ActionsSettings)?;
-		unavailable()
+		let in_range = match &value {
+			ClientOption::NotificationVolume(volume) => *volume <= MAX_NOTIFICATION_VOLUME,
+			ClientOption::ForumLayout(layout) => *layout <= MAX_FORUM_LAYOUT,
+			ClientOption::ForumSort(sort) => *sort <= MAX_FORUM_SORT,
+			_ => true,
+		};
+		if !in_range {
+			return Err(invalid("option value out of range"));
+		}
+		within_rate(self.rate.settings.take())?;
+		self.services.broker.set_client_option(&self.plugin, value)
 	}
 
-	fn set_dm_sections(&mut self, _sections: Vec<DmSection>) -> Result<(), HostError> {
+	fn set_dm_sections(&mut self, sections: Vec<DmSection>) -> Result<(), HostError> {
 		self.require(Permission::ActionsSettings)?;
-		unavailable()
+		let mut budget = MAX_DM_CHANNELS;
+		let sections: Vec<DmSection> = sections
+			.into_iter()
+			.take(MAX_DM_SECTIONS)
+			.filter_map(|section| {
+				let title = clip_line(&section.title, MAX_DM_SECTION_TITLE);
+				let take = section.channels.len().min(budget);
+				budget -= take;
+				(!title.trim().is_empty()).then(|| DmSection {
+					title,
+					channels: section.channels.into_iter().take(take).collect(),
+					collapsed: section.collapsed,
+				})
+			})
+			.collect();
+		within_rate(self.rate.settings.take())?;
+		self.services.broker.set_dm_sections(&self.plugin, sections)
 	}
 
-	fn clone_emoji(&mut self, _guild_id: u64, _emoji: EmojiRef, _name: String) -> Result<(), HostError> {
+	fn clone_emoji(&mut self, guild_id: u64, emoji: EmojiRef, name: String) -> Result<(), HostError> {
 		self.require(Permission::ActionsGuild)?;
 		self.require_gesture()?;
-		unavailable()
+		if emoji.id.is_none() {
+			return Err(invalid("only custom emoji can be cloned"));
+		}
+		if !valid_expression_name(&name) {
+			return Err(invalid(
+				"emoji name must be 2 to 32 letters, digits or underscores",
+			));
+		}
+		within_rate(self.rate.action.take())?;
+		self.services
+			.broker
+			.clone_emoji(&self.plugin, guild_id, &emoji, name)
 	}
 
-	fn clone_sticker(&mut self, _guild_id: u64, _sticker_id: u64) -> Result<(), HostError> {
+	fn clone_sticker(&mut self, guild_id: u64, sticker_id: u64) -> Result<(), HostError> {
 		self.require(Permission::ActionsGuild)?;
 		self.require_gesture()?;
-		unavailable()
+		within_rate(self.rate.action.take())?;
+		self.services
+			.broker
+			.clone_sticker(&self.plugin, guild_id, sticker_id)
 	}
 
-	fn register_keybind(&mut self, _bind: Keybind) -> Result<(), HostError> {
+	fn register_keybind(&mut self, bind: Keybind) -> Result<(), HostError> {
 		self.require(Permission::UiKeybinds)?;
-		unavailable()
+		within_rate(self.rate.ui.take())?;
+		self.services
+			.keybinds
+			.register(&self.plugin, &bind)
+			.map_err(|error| invalid(error.reason()))
 	}
 
-	fn unregister_keybind(&mut self, _id: String) -> Result<(), HostError> {
+	fn unregister_keybind(&mut self, id: String) -> Result<(), HostError> {
 		self.require(Permission::UiKeybinds)?;
-		unavailable()
+		self.services.keybinds.unregister(&self.plugin, &id);
+		Ok(())
 	}
 
 	fn speak(&mut self, text: String, rate: f32, volume: f32) -> Result<(), HostError> {
@@ -1105,35 +1356,106 @@ impl client::Host for HostState {
 			.speak(&self.plugin, &text, rate.clamp(0.5, 2.0), volume.clamp(0.0, 1.0))
 	}
 
-	fn invalidate_message(&mut self, _m: MessageRef) -> Result<(), HostError> {
-		unavailable()
+	fn invalidate_message(&mut self, m: MessageRef) -> Result<(), HostError> {
+		self.invalidate(Invalidation::Message(m.channel_id, m.id))
 	}
 
-	fn invalidate_user(&mut self, _user_id: u64) -> Result<(), HostError> {
-		unavailable()
+	fn invalidate_user(&mut self, user_id: u64) -> Result<(), HostError> {
+		self.invalidate(Invalidation::User(user_id))
 	}
 
-	fn invalidate_channel(&mut self, _channel_id: u64) -> Result<(), HostError> {
-		unavailable()
+	fn invalidate_channel(&mut self, channel_id: u64) -> Result<(), HostError> {
+		self.invalidate(Invalidation::Channel(channel_id))
 	}
 
-	fn open_settings(&mut self, _page: String) -> Result<(), HostError> {
+	fn open_settings(&mut self, page: String) -> Result<(), HostError> {
 		self.require(Permission::ActionsNavigate)?;
 		self.require_gesture()?;
-		unavailable()
+		if !SETTINGS_PAGES.contains(&page.as_str()) {
+			return Err(invalid("unknown settings page"));
+		}
+		within_rate(self.rate.action.take())?;
+		self.services.broker.open_settings(&self.plugin, &page)
 	}
 
 	fn navigate_back(&mut self) -> Result<(), HostError> {
-		self.require(Permission::ActionsNavigate)?;
-		self.require_gesture()?;
-		unavailable()
+		self.navigate(Navigation::Back)
 	}
 
 	fn navigate_forward(&mut self) -> Result<(), HostError> {
+		self.navigate(Navigation::Forward)
+	}
+}
+
+impl HostState {
+	fn remember_pick(&mut self, path: PathBuf) -> u64 {
+		let handle = self.next_pick;
+		self.next_pick += 1;
+		self.picked.insert(handle, path);
+		while self.picked.len() > MAX_PICKED_HANDLES {
+			self.picked.pop_first();
+		}
+		handle
+	}
+
+	fn invalidate(&mut self, target: Invalidation) -> Result<(), HostError> {
+		within_rate(self.rate.invalidate.take())?;
+		self.services.broker.invalidate(&self.plugin, target)
+	}
+
+	fn navigate(&mut self, direction: Navigation) -> Result<(), HostError> {
 		self.require(Permission::ActionsNavigate)?;
 		self.require_gesture()?;
-		unavailable()
+		within_rate(self.rate.action.take())?;
+		self.services.broker.navigate(&self.plugin, direction)
 	}
+}
+
+fn epoch_millis() -> i64 {
+	SystemTime::now()
+		.duration_since(UNIX_EPOCH)
+		.map_or(0, |elapsed| elapsed.as_millis() as i64)
+}
+
+fn valid_emoji(emoji: &EmojiRef) -> bool {
+	!emoji.name.is_empty() && emoji.name.len() <= MAX_EMOJI_BYTES
+}
+
+fn valid_expression_name(name: &str) -> bool {
+	(MIN_EMOJI_NAME..=MAX_EMOJI_NAME).contains(&name.len())
+		&& name
+			.bytes()
+			.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+}
+
+fn valid_file_name(name: &str) -> bool {
+	!name.is_empty()
+		&& name.len() <= MAX_FILE_NAME_BYTES
+		&& !name.chars().any(|character| {
+			character.is_control()
+				|| matches!(character, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|')
+		})
+}
+
+fn check_blobs(files: &[FileBlob]) -> Result<(), HostError> {
+	if files.is_empty() || files.len() > MAX_UPLOAD_FILES {
+		return Err(invalid("file count"));
+	}
+	if files.iter().any(|file| !valid_file_name(&file.name)) {
+		return Err(invalid("file name"));
+	}
+	let total: usize = files.iter().map(|file| file.bytes.len()).sum();
+	if total > MAX_UPLOAD_BYTES {
+		return Err(invalid("files are too large"));
+	}
+	Ok(())
+}
+
+fn check_notification_settings(settings: &NotificationSettings) -> Result<(), HostError> {
+	if settings.level.is_some_and(|level| level > MAX_NOTIFICATION_LEVEL) {
+		return Err(invalid("notification level"));
+	}
+	Ok(())
 }
 
 fn truncate(text: &str, max_bytes: usize) -> &str {

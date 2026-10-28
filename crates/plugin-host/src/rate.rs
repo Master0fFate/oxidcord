@@ -49,6 +49,11 @@ pub struct RateLimits {
 	pub reaction_users: Bucket,
 	pub attachment_bytes: Bucket,
 	pub speak: Bucket,
+	pub presence: Bucket,
+	pub ack: Bucket,
+	pub settings: Bucket,
+	pub invalidate: Bucket,
+	pub action: Bucket,
 }
 
 impl RateLimits {
@@ -69,6 +74,11 @@ impl RateLimits {
 			reaction_users: Bucket::new(5, Duration::from_secs(2)),
 			attachment_bytes: Bucket::new(10, Duration::from_secs(6)),
 			speak: Bucket::new(1, Duration::from_secs(2)),
+			presence: Bucket::new(2, Duration::from_secs(5)),
+			ack: Bucket::new(5, Duration::from_secs(1)),
+			settings: Bucket::new(5, Duration::from_secs(2)),
+			invalidate: Bucket::new(50, Duration::from_millis(100)),
+			action: Bucket::new(5, Duration::from_secs(1)),
 		}
 	}
 }

@@ -10,5 +10,5 @@ pub use client::RestClient;
 pub use config::RestConfig;
 pub use error::{RestError, Result};
 pub use limiter::RateLimiter;
-pub use request::{Request, UploadFile, encode_component};
+pub use request::{Request, UploadFile, content_type_for, encode_component};
 pub use route::{RouteKey, route_key};

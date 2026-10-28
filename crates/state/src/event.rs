@@ -4,6 +4,7 @@ use std::time::Duration;
 use protocol::{DispatchEvent, Message, Nonce, Ready, ReadySupplemental, Snowflake, StatusKind, User};
 
 use crate::loaded::Loaded;
+use crate::plugin_shell::{ClientOptions, DmSectionView, UiIntent};
 use crate::views::{RenderedMessage, UserOverride};
 use crate::voice::{StreamInfo, VideoKind, VoiceStatus};
 
@@ -110,6 +111,9 @@ pub enum LocalEvent {
 	},
 	StatusChosen(StatusKind),
 	AfkChanged(bool),
+	UiIntent(UiIntent),
+	ClientOptionsChanged(ClientOptions),
+	DmSectionsChanged(Vec<DmSectionView>),
 }
 
 #[derive(Debug)]

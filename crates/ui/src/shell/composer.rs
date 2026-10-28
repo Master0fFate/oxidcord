@@ -34,6 +34,7 @@ const TYPING_INTERVAL: Duration = Duration::from_secs(5);
 const MAX_SUGGESTIONS: usize = 8;
 const MIN_EMOJI_QUERY: usize = 2;
 const MAX_FILES: usize = 10;
+const MAX_STICKERS: usize = 3;
 const AVATAR_PIXELS: u32 = 48;
 const EMOJI_PIXELS: u32 = 48;
 
@@ -93,6 +94,7 @@ pub struct Composer {
 	access: SendAccess,
 	reply: Option<ReplyTo>,
 	files: Vec<Pending>,
+	stickers: Vec<Snowflake>,
 	next_file: u64,
 	typing: Vec<SharedString>,
 	autocomplete: Option<Autocomplete>,
@@ -104,39 +106,6 @@ pub struct Composer {
 }
 
 impl EventEmitter<ComposerEvent> for Composer {}
-
-pub(in crate::shell) fn content_type(name: &str) -> &'static str {
-	let extension = name
-		.rsplit_once('.')
-		.map(|(_, extension)| extension.to_ascii_lowercase())
-		.unwrap_or_default();
-	match extension.as_str() {
-		"png" | "apng" => "image/png",
-		"jpg" | "jpeg" | "jfif" => "image/jpeg",
-		"gif" => "image/gif",
-		"webp" => "image/webp",
-		"bmp" => "image/bmp",
-		"avif" => "image/avif",
-		"heic" => "image/heic",
-		"svg" => "image/svg+xml",
-		"mp4" | "m4v" => "video/mp4",
-		"webm" => "video/webm",
-		"mov" => "video/quicktime",
-		"mkv" => "video/x-matroska",
-		"avi" => "video/x-msvideo",
-		"mp3" => "audio/mpeg",
-		"ogg" | "opus" => "audio/ogg",
-		"wav" => "audio/wav",
-		"m4a" => "audio/mp4",
-		"aac" => "audio/aac",
-		"flac" => "audio/flac",
-		"txt" | "log" | "md" => "text/plain",
-		"json" => "application/json",
-		"pdf" => "application/pdf",
-		"zip" => "application/zip",
-		_ => "application/octet-stream",
-	}
-}
 
 pub(in crate::shell) fn accept_files(element: Div, composer: Entity<Composer>) -> Div {
 	element
@@ -208,6 +177,7 @@ impl Composer {
 			access: SendAccess::default(),
 			reply: None,
 			files: Vec::new(),
+			stickers: Vec::new(),
 			next_file: 0,
 			typing: Vec::new(),
 			autocomplete: None,
@@ -242,6 +212,7 @@ impl Composer {
 		self.access = self.read_access(cx);
 		self.reply = None;
 		self.files.clear();
+		self.stickers.clear();
 		self.autocomplete = None;
 		self.last_typing = None;
 		let draft = channel
@@ -283,16 +254,31 @@ impl Composer {
 		&mut self,
 		message: Snowflake,
 		name: SharedString,
+		mention: bool,
 		window: &mut Window,
 		cx: &mut Context<Self>,
 	) {
 		self.reply = Some(ReplyTo {
 			message,
 			name,
-			mention: true,
+			mention,
 		});
 		self.input.update(cx, |state, cx| state.focus(window, cx));
 		cx.notify();
+	}
+
+	pub fn set_text(&mut self, text: String, window: &mut Window, cx: &mut Context<Self>) {
+		self.input.update(cx, |state, cx| {
+			state.set_value(inline_emoji::content(text), window, cx);
+			state.focus(window, cx);
+		});
+	}
+
+	pub fn add_sticker(&mut self, sticker: Snowflake, cx: &mut Context<Self>) {
+		if self.access.send && self.stickers.len() < MAX_STICKERS && !self.stickers.contains(&sticker) {
+			self.stickers.push(sticker);
+			cx.notify();
+		}
 	}
 
 	pub fn insert(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
@@ -331,6 +317,7 @@ impl Composer {
 		}
 		if !access.send {
 			self.reply = None;
+			self.stickers.clear();
 			self.autocomplete = None;
 		}
 		let placeholder = self.placeholder(cx);
@@ -648,9 +635,10 @@ impl Composer {
 			return;
 		};
 		let text = self.input.read(cx).value().trim().to_owned();
-		if text.is_empty() && self.files.is_empty() {
+		if text.is_empty() && self.files.is_empty() && self.stickers.is_empty() {
 			return;
 		}
+		let stickers = std::mem::take(&mut self.stickers);
 		let files: Vec<UploadFile> = std::mem::take(&mut self.files)
 			.into_iter()
 			.map(Pending::upload)
@@ -661,19 +649,27 @@ impl Composer {
 			mention: direct || reply.mention,
 		});
 		let data = self.data.read(cx);
-		match parse_command(data, &text).filter(|_| files.is_empty()) {
-			Some((name, args)) => data.send(Command::RunPluginCommand {
-				name,
-				args,
+		if !text.is_empty() || !files.is_empty() {
+			match parse_command(data, &text).filter(|_| files.is_empty()) {
+				Some((name, args)) => data.send(Command::RunPluginCommand {
+					name,
+					args,
+					channel_id: channel,
+				}),
+				None => data.send(Command::SendMessage {
+					channel_id: channel,
+					content: text,
+					reply_to,
+					files,
+					by_plugin: None,
+				}),
+			}
+		}
+		for sticker_id in stickers {
+			data.send(Command::SendSticker {
 				channel_id: channel,
-			}),
-			None => data.send(Command::SendMessage {
-				channel_id: channel,
-				content: text,
-				reply_to,
-				files,
-				by_plugin: None,
-			}),
+				sticker_id,
+			});
 		}
 		data.send(Command::SetDraft {
 			channel_id: channel,
@@ -951,7 +947,7 @@ impl Composer {
 			return;
 		};
 		file.name = edit.name;
-		file.content_type = content_type(&file.name);
+		file.content_type = rest::content_type_for(&file.name);
 		file.description = edit.description;
 		file.spoiler = edit.spoiler;
 		cx.notify();
@@ -973,7 +969,7 @@ impl Composer {
 			};
 			this.update(cx, |this, cx| {
 				if let Some(file) = this.files.iter_mut().find(|file| file.id == id) {
-					file.content_type = content_type(&cropped.name);
+					file.content_type = rest::content_type_for(&cropped.name);
 					file.name = cropped.name;
 					file.bytes = Bytes::from(cropped.bytes);
 					file.preview = preview.and_then(attachments::preview);

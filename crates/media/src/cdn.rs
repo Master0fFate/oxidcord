@@ -127,6 +127,11 @@ pub fn emoji_url(id: u64, animated: bool, size: u32) -> String {
 	)
 }
 
+pub fn emoji_source_url(id: u64, animated: bool) -> String {
+	let extension = if animated { "gif" } else { "png" };
+	format!("{CDN}/emojis/{id}.{extension}?size=128&quality=lossless")
+}
+
 pub fn sticker_url(id: u64, format: StickerFormat) -> Option<String> {
 	match format {
 		StickerFormat::Png | StickerFormat::Apng => {

@@ -493,6 +493,7 @@ async fn scenario(
 		channel_id,
 		message_id: sent_id,
 		emoji: REACTION.to_owned(),
+		burst: false,
 	});
 	harness
 		.until("the reaction to appear", |state| {

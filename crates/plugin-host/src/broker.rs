@@ -1,12 +1,37 @@
+use std::path::PathBuf;
+
+use protocol::StatusKind;
+
 use crate::api::model::{
-	AuthSession, ChannelDetail, ClientInfo, EmojiInfo, EmojiRef, Folder, GuildDetail, MemberInfo,
-	MessageFull, MessageMeta, PluginSummary, Presence, ReadState, Relationship, RoleInfo, StickerInfo,
-	UserProfile, VoiceDetail,
+	AuthSession, ChannelDetail, ClientInfo, ClientOption, DmSection, EmojiInfo, EmojiRef, FileBlob, Folder,
+	GuildDetail, MemberInfo, MessageFull, MessageMeta, NotificationSettings, PluginSummary, Presence,
+	ReadState, Relationship, RoleInfo, StickerInfo, UserProfile, VoiceDetail,
 };
 use crate::api::{
 	ChannelSummary, GuildSummary, HostError, MemberSummary, MessageRef, MessageView, OutgoingMessage, User,
 	VoiceInfo,
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Invalidation {
+	Message(u64, u64),
+	User(u64),
+	Channel(u64),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Navigation {
+	Back,
+	Forward,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PickedPath {
+	pub path: PathBuf,
+	pub name: String,
+	pub size: u64,
+	pub content_type: Option<String>,
+}
 
 pub trait HostBroker: Send + Sync {
 	fn send_message(&self, plugin: &str, msg: OutgoingMessage) -> Result<u64, HostError>;
@@ -257,6 +282,170 @@ pub trait HostBroker: Send + Sync {
 	}
 
 	fn speak(&self, _plugin: &str, _text: &str, _rate: f32, _volume: f32) -> Result<(), HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn set_status(&self, _plugin: &str, _status: StatusKind) -> Result<(), HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn set_custom_status(
+		&self,
+		_plugin: &str,
+		_text: String,
+		_emoji: Option<EmojiRef>,
+		_expires_ms: Option<i64>,
+	) -> Result<(), HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn mark_read(&self, _plugin: &str, _channel_id: u64, _private: bool) -> Result<(), HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn mark_unread(&self, _plugin: &str, _message: &MessageRef, _private: bool) -> Result<(), HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn mark_guild_read(&self, _plugin: &str, _guild_id: u64) -> Result<(), HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn start_reply(&self, _plugin: &str, _message: &MessageRef, _mention: bool) -> Result<(), HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn start_edit(&self, _plugin: &str, _message: &MessageRef) -> Result<(), HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn jump_to_message(&self, _plugin: &str, _message: &MessageRef) -> Result<(), HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn jump_to_top(&self, _plugin: &str, _channel_id: u64) -> Result<(), HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn edit_message(&self, _plugin: &str, _message: &MessageRef, _content: String) -> Result<(), HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn delete_message(&self, _plugin: &str, _message: &MessageRef) -> Result<(), HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn react(
+		&self,
+		_plugin: &str,
+		_message: &MessageRef,
+		_emoji: &EmojiRef,
+		_burst: bool,
+	) -> Result<(), HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn remove_reaction(
+		&self,
+		_plugin: &str,
+		_message: &MessageRef,
+		_emoji: &EmojiRef,
+	) -> Result<(), HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn pick_files(&self, _plugin: &str, _multiple: bool) -> Result<Vec<PickedPath>, HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn attach_files(&self, _plugin: &str, _paths: Vec<PathBuf>, _private: bool) -> Result<(), HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn send_message_files(
+		&self,
+		_plugin: &str,
+		_msg: OutgoingMessage,
+		_files: Vec<FileBlob>,
+	) -> Result<(), HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn set_draft(&self, _plugin: &str, _text: String, _private: bool) -> Result<(), HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn attach_sticker(&self, _plugin: &str, _sticker_id: u64, _private: bool) -> Result<(), HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn save_attachment(
+		&self,
+		_plugin: &str,
+		_message: &MessageRef,
+		_attachment_id: u64,
+		_private: bool,
+	) -> Result<(), HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn join_voice(&self, _plugin: &str, _guild_id: Option<u64>, _channel_id: u64) -> Result<(), HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn leave_voice(&self, _plugin: &str) -> Result<(), HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn guild_notifications(
+		&self,
+		_plugin: &str,
+		_guild_id: u64,
+		_settings: NotificationSettings,
+	) -> Result<(), HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn channel_notifications(
+		&self,
+		_plugin: &str,
+		_channel_id: u64,
+		_settings: NotificationSettings,
+	) -> Result<(), HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn set_client_option(&self, _plugin: &str, _option: ClientOption) -> Result<(), HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn set_dm_sections(&self, _plugin: &str, _sections: Vec<DmSection>) -> Result<(), HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn clone_emoji(
+		&self,
+		_plugin: &str,
+		_guild_id: u64,
+		_emoji: &EmojiRef,
+		_name: String,
+	) -> Result<(), HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn clone_sticker(&self, _plugin: &str, _guild_id: u64, _sticker_id: u64) -> Result<(), HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn invalidate(&self, _plugin: &str, _target: Invalidation) -> Result<(), HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn open_settings(&self, _plugin: &str, _page: &str) -> Result<(), HostError> {
+		Err(HostError::Unavailable)
+	}
+
+	fn navigate(&self, _plugin: &str, _direction: Navigation) -> Result<(), HostError> {
 		Err(HostError::Unavailable)
 	}
 }
