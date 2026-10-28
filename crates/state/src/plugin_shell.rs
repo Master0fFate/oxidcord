@@ -101,6 +101,7 @@ pub struct PluginBadge {
 	pub tooltip: String,
 	pub color: Option<BadgeColor>,
 	pub key: Option<String>,
+	pub plugin: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

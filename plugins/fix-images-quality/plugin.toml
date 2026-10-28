@@ -1,0 +1,18 @@
+id = "dev.oxidcord.fix-images-quality"
+name = "Fix Images Quality"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Improves quality of images by loading them at their original resolution"
+entry = "fix_images_quality.wasm"
+min_host = "0.4.3"
+hooks = ["intercept"]
+
+[[permissions]]
+permission = "message-intercept"
+reason = "Loads image attachments from their original file."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

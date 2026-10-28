@@ -1,0 +1,18 @@
+id = "dev.oxidcord.no-mosaic"
+name = "No Mosaic"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Removes Discord image mosaic"
+entry = "no_mosaic.wasm"
+min_host = "0.4.3"
+hooks = ["intercept"]
+
+[[permissions]]
+permission = "message-intercept"
+reason = "Changes the attachment layout of messages."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

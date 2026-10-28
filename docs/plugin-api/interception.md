@@ -114,7 +114,7 @@ For each message the render thread runs, in this order:
 
 1. `filter-message` of every plugin with `message-filter`. Any `false` hides the message and nothing else runs.
 2. `render-message` of every plugin with `message-render`, chained by priority.
-3. `intercept-message` of every extended plugin with `message-intercept`, chained by priority. Each sees the content produced so far. Patches are merged: content comes from the last plugin that set it, the first non-`keep` action wins per embed, the first `hidden` or `collapsed` visibility wins, decorations take the first plugin that set each field, and annotations, extra embeds, hidden attachments and accessories are shown from every plugin.
+3. `intercept-message` of every extended plugin with `message-intercept`, chained by priority. Each sees the content produced so far. Patches are merged: content comes from the last plugin that set it, the first non-`keep` action wins per embed, the first `hidden` or `collapsed` visibility wins, decorations take the first plugin that set each field, and annotations, extra embeds, hidden attachments and accessories are shown from every plugin. Attachment overrides merge per attachment id, the first plugin that set a field wins it.
 
 Plugins are ordered by the manifest `priority`, lower first, then by id.
 

@@ -63,13 +63,30 @@ pub struct UserOverride {
 	pub name: Option<String>,
 	pub color: Option<u32>,
 	pub badge: Option<String>,
-	pub plugin: Option<String>,
 	pub suffix: Option<String>,
 	pub badges: Vec<PluginBadge>,
 	pub avatar: Option<String>,
 	pub banner: Option<String>,
 	pub decoration: Option<String>,
 	pub pronouns: Option<String>,
+}
+
+const MAX_OVERRIDE_BADGES: usize = 8;
+
+impl UserOverride {
+	pub fn merged_with(mut self, later: Self) -> Self {
+		self.name = self.name.or(later.name);
+		self.color = self.color.or(later.color);
+		self.badge = self.badge.or(later.badge);
+		self.suffix = self.suffix.or(later.suffix);
+		self.avatar = self.avatar.or(later.avatar);
+		self.banner = self.banner.or(later.banner);
+		self.decoration = self.decoration.or(later.decoration);
+		self.pronouns = self.pronouns.or(later.pronouns);
+		self.badges.extend(later.badges);
+		self.badges.truncate(MAX_OVERRIDE_BADGES);
+		self
+	}
 }
 
 #[derive(Debug, Clone)]

@@ -69,20 +69,15 @@ fn badge_face(badge: &PluginBadge, color: Hsla, theme: &Theme, cx: &App) -> AnyE
 	}
 }
 
-fn badge(
-	index: usize,
-	user: Snowflake,
-	plugin: Option<&str>,
-	badge: &PluginBadge,
-	theme: &Theme,
-	cx: &App,
-) -> AnyElement {
+fn badge(index: usize, user: Snowflake, badge: &PluginBadge, theme: &Theme, cx: &App) -> AnyElement {
 	let color = badge
 		.color
 		.as_ref()
 		.and_then(|color| badge_color(color, theme))
 		.unwrap_or(theme.interactive_normal);
-	let clickable = plugin
+	let clickable = badge
+		.plugin
+		.as_deref()
 		.zip(badge.key.as_deref())
 		.map(|(plugin, key)| (plugin.to_owned(), key.to_owned()));
 	div()
@@ -132,7 +127,7 @@ pub fn tags(over: &UserOverride, user: Snowflake, theme: &Theme, cx: &App) -> Ve
 		over.badges
 			.iter()
 			.enumerate()
-			.map(|(index, entry)| badge(index, user, over.plugin.as_deref(), entry, theme, cx)),
+			.map(|(index, entry)| badge(index, user, entry, theme, cx)),
 	);
 	out
 }
@@ -141,7 +136,7 @@ pub fn badges(over: &UserOverride, user: Snowflake, theme: &Theme, cx: &App) -> 
 	over.badges
 		.iter()
 		.enumerate()
-		.map(|(index, entry)| badge(index, user, over.plugin.as_deref(), entry, theme, cx))
+		.map(|(index, entry)| badge(index, user, entry, theme, cx))
 		.collect()
 }
 
@@ -154,6 +149,6 @@ pub fn channel_badges(
 	badges
 		.iter()
 		.enumerate()
-		.map(|(index, entry)| badge(index, channel, None, entry, theme, cx))
+		.map(|(index, entry)| badge(index, channel, entry, theme, cx))
 		.collect()
 }

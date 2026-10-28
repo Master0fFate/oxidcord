@@ -205,9 +205,17 @@ An item is shown only when every flag in `when` holds: `in-guild`, `in-dm`, `own
 | `tooltip` | Hover hint on the whole message row |
 | `code_block(index, node)` | Replaces the plain code block with the same ordinal by colored `code-span` lines (`text`, `color`, `bold`, `italic`) |
 
+Attachment overrides of several plugins merge per attachment id: the first plugin that sets `alt`, `tooltip` or `url` wins that field, and `blur` and `hidden` apply when any plugin sets them.
+
 ## User display
 
 `display-user-full` overrides draw in messages, the member list, DM rows, reply previews, the typing line and the profile popout: `name`, a muted `suffix` and `pronouns` after the name, `badges` as small icons, images or labels with tooltips, `avatar`, `banner` (popout) and `decoration` as a ring over the avatar. A badge with a `key` is clickable and calls `on-badge-click`.
+
+Overrides from several plugins merge per user in plugin priority order. The first plugin that sets `name`, `suffix`, `color`, `avatar`, `banner`, `decoration` or `pronouns` wins that field, badges of every plugin are listed in priority order and capped at 8, and a badge click calls `on-badge-click` of the plugin that made the badge. This applies to `display-user` and `display-user-full` alike.
+
+## Click watches
+
+`ui::watch_clicks` registers which message clicks a plugin receives in `on-message-click`: the click kinds, an exact modifier combination and optionally the click targets. A plugin holds up to 4 watches, one per modifier combination. A new watch replaces the one with the same modifiers, and a watch without kinds removes it. A click that matches a watch is taken by the plugin and does not reach the client.
 
 ## Client options
 

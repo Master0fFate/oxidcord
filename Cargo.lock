@@ -836,6 +836,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
+name = "better-gif-alt-text"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
 name = "bindgen"
 version = "0.72.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -986,6 +993,13 @@ dependencies = [
  "futures-io",
  "futures-lite",
  "piper",
+]
+
+[[package]]
+name = "blur-nsfw"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
 ]
 
 [[package]]
@@ -1436,6 +1450,13 @@ dependencies = [
  "core-foundation 0.10.1",
  "core-graphics-types 0.2.0",
  "objc",
+]
+
+[[package]]
+name = "code-highlight"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
 ]
 
 [[package]]
@@ -2216,6 +2237,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "dearrow"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+ "serde_json",
+]
+
+[[package]]
 name = "der"
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2892,6 +2921,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c66915cc5391097de7a2b0b972e8505aa33c0df401fd3a6811dbdb32881ba48"
 
 [[package]]
+name = "fix-images-quality"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
 name = "flate2"
 version = "1.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3035,6 +3071,13 @@ dependencies = [
  "slotmap",
  "tinyvec",
  "ttf-parser",
+]
+
+[[package]]
+name = "force-owner-crown"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
 ]
 
 [[package]]
@@ -4832,6 +4875,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "image-filename"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
 name = "image-link"
 version = "0.4.3"
 dependencies = [
@@ -5992,6 +6042,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "message-click-actions"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
+name = "message-latency"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
+name = "message-link-embeds"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
 name = "message-logger"
 version = "0.4.3"
 dependencies = [
@@ -6297,6 +6368,13 @@ dependencies = [
 
 [[package]]
 name = "no-blocked-messages"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
+name = "no-mosaic"
 version = "0.4.3"
 dependencies = [
  "oxidcord-plugin-sdk",
@@ -8797,6 +8875,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
+name = "reply-timestamp"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
 name = "reqwest"
 version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8873,6 +8958,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "reveal-all-spoilers"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
 name = "review-db"
 version = "0.4.3"
 dependencies = [
@@ -8938,6 +9030,13 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "role-color-everywhere"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
 ]
 
 [[package]]
@@ -9760,6 +9859,13 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "show-me-your-name"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
+name = "show-timeout-duration"
 version = "0.4.3"
 dependencies = [
  "oxidcord-plugin-sdk",
@@ -11565,6 +11671,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "valid-reply"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
+name = "valid-user"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
 name = "valuable"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12473,6 +12593,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bae2f2b2b816647a1cab1acc91f5bd20812d53cb344382635ec2181940c8034f"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "who-reacted"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
 ]
 
 [[package]]

@@ -8,11 +8,12 @@ use crate::api::model::{ChannelClick, ClickKind, ClickTarget, ClickWatch, Messag
 
 const MAX_WATCH_KINDS: usize = 3;
 const MAX_WATCH_TARGETS: usize = 16;
+const MAX_WATCHES: usize = 4;
 
 #[derive(Default)]
 struct Inner {
-	messages: HashMap<Arc<str>, ClickWatch>,
-	channels: HashMap<Arc<str>, ClickWatch>,
+	messages: HashMap<Arc<str>, Vec<ClickWatch>>,
+	channels: HashMap<Arc<str>, Vec<ClickWatch>>,
 }
 
 #[derive(Default)]
@@ -21,21 +22,21 @@ pub struct Watches {
 	revision: AtomicU64,
 }
 
-fn sanitized(watch: ClickWatch) -> Option<ClickWatch> {
+fn sanitized(watch: &ClickWatch) -> ClickWatch {
 	let mut kinds: Vec<ClickKind> = Vec::with_capacity(MAX_WATCH_KINDS);
-	for kind in watch.kinds {
-		if !kinds.contains(&kind) {
-			kinds.push(kind);
+	for kind in &watch.kinds {
+		if !kinds.contains(kind) {
+			kinds.push(*kind);
 		}
 	}
 	kinds.truncate(MAX_WATCH_KINDS);
-	let mut targets = watch.targets;
+	let mut targets = watch.targets.clone();
 	targets.truncate(MAX_WATCH_TARGETS);
-	(!kinds.is_empty()).then_some(ClickWatch {
+	ClickWatch {
 		kinds,
 		modifiers: watch.modifiers,
 		targets,
-	})
+	}
 }
 
 fn same_target(left: &ClickTarget, right: &ClickTarget) -> bool {
@@ -50,20 +51,41 @@ fn matches(watch: &ClickWatch, kind: ClickKind, modifiers: Modifiers, target: Op
 		})
 }
 
-fn store(map: &mut HashMap<Arc<str>, ClickWatch>, plugin_id: &Arc<str>, watch: ClickWatch) {
-	match sanitized(watch) {
-		Some(watch) => map.insert(Arc::clone(plugin_id), watch),
-		None => map.remove(&**plugin_id),
-	};
+fn store(map: &mut HashMap<Arc<str>, Vec<ClickWatch>>, plugin_id: &Arc<str>, watch: &ClickWatch) {
+	let watch = sanitized(watch);
+	let watches = map.entry(Arc::clone(plugin_id)).or_default();
+	watches.retain(|kept| kept.modifiers != watch.modifiers);
+	if !watch.kinds.is_empty() && watches.len() < MAX_WATCHES {
+		watches.push(watch);
+	}
+	if watches.is_empty() {
+		map.remove(&**plugin_id);
+	}
 }
 
-fn snapshot(map: &HashMap<Arc<str>, ClickWatch>) -> Vec<(Arc<str>, ClickWatch)> {
+fn snapshot(map: &HashMap<Arc<str>, Vec<ClickWatch>>) -> Vec<(Arc<str>, ClickWatch)> {
 	let mut found: Vec<_> = map
 		.iter()
-		.map(|(plugin_id, watch)| (Arc::clone(plugin_id), watch.clone()))
+		.flat_map(|(plugin_id, watches)| watches.iter().map(|watch| (Arc::clone(plugin_id), watch.clone())))
 		.collect();
 	found.sort_by(|left, right| left.0.cmp(&right.0));
 	found
+}
+
+fn matching(
+	map: &HashMap<Arc<str>, Vec<ClickWatch>>,
+	kind: ClickKind,
+	modifiers: Modifiers,
+	target: Option<&ClickTarget>,
+) -> Vec<Arc<str>> {
+	map.iter()
+		.filter(|(_, watches)| {
+			watches
+				.iter()
+				.any(|watch| matches(watch, kind, modifiers, target))
+		})
+		.map(|(plugin_id, _)| Arc::clone(plugin_id))
+		.collect()
 }
 
 impl Watches {
@@ -72,12 +94,12 @@ impl Watches {
 	}
 
 	pub fn watch_messages(&self, plugin_id: &Arc<str>, watch: ClickWatch) {
-		store(&mut self.inner.write().messages, plugin_id, watch);
+		store(&mut self.inner.write().messages, plugin_id, &watch);
 		self.revision.fetch_add(1, Ordering::AcqRel);
 	}
 
 	pub fn watch_channels(&self, plugin_id: &Arc<str>, watch: ClickWatch) {
-		store(&mut self.inner.write().channels, plugin_id, watch);
+		store(&mut self.inner.write().channels, plugin_id, &watch);
 		self.revision.fetch_add(1, Ordering::AcqRel);
 	}
 
@@ -98,23 +120,16 @@ impl Watches {
 	}
 
 	pub fn message_targets(&self, click: &MessageClick) -> Vec<Arc<str>> {
-		self.inner
-			.read()
-			.messages
-			.iter()
-			.filter(|(_, watch)| matches(watch, click.kind, click.modifiers, Some(&click.target)))
-			.map(|(plugin_id, _)| Arc::clone(plugin_id))
-			.collect()
+		matching(
+			&self.inner.read().messages,
+			click.kind,
+			click.modifiers,
+			Some(&click.target),
+		)
 	}
 
 	pub fn channel_targets(&self, click: &ChannelClick) -> Vec<Arc<str>> {
-		self.inner
-			.read()
-			.channels
-			.iter()
-			.filter(|(_, watch)| matches(watch, click.kind, click.modifiers, None))
-			.map(|(plugin_id, _)| Arc::clone(plugin_id))
-			.collect()
+		matching(&self.inner.read().channels, click.kind, click.modifiers, None)
 	}
 
 	pub fn clear_plugin(&self, plugin_id: &str) {

@@ -1,0 +1,18 @@
+id = "dev.oxidcord.message-latency"
+name = "Message Latency"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Displays an indicator for messages that took n seconds or more to send"
+entry = "message_latency.wasm"
+min_host = "0.4.3"
+hooks = ["intercept"]
+
+[[permissions]]
+permission = "message-intercept"
+reason = "Adds the delay line to slow messages."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

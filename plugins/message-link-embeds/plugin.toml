@@ -1,0 +1,33 @@
+id = "dev.oxidcord.message-link-embeds"
+name = "Message Link Embeds"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Adds a preview to messages that link another message"
+entry = "message_link_embeds.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "message-intercept"
+reason = "Shows a preview under messages that link another message."
+
+[[permissions]]
+permission = "context-timeline"
+reason = "Reads the linked message, and loads it when the client does not have it yet."
+
+[[permissions]]
+permission = "context-directory"
+reason = "Reads the name of the channel the linked message is in."
+
+[[permissions]]
+permission = "actions-navigate"
+reason = "Opens the channel of the linked message from the Jump button."
+
+[[permissions]]
+permission = "actions-compose"
+reason = "Scrolls to the linked message from the Jump button."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

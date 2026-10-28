@@ -1342,34 +1342,23 @@ impl PluginManager {
 			})
 	}
 
-	pub fn display_users(
-		&self,
-		users: &[(Option<u64>, User, Option<Presence>)],
-	) -> Vec<Option<DisplayAnswer>> {
+	pub fn display_users(&self, users: &[(Option<u64>, User, Option<Presence>)]) -> Vec<Vec<DisplayAnswer>> {
 		let sets = self.hooks();
-		let mut resolved: Vec<Option<DisplayAnswer>> = vec![None; users.len()];
+		let mut answers: Vec<Vec<DisplayAnswer>> = vec![Vec::new(); users.len()];
+		let everyone: Vec<usize> = (0..users.len()).collect();
 		for entry in &sets.display {
-			if entry.plugin.tripped(Breaker::Display) {
-				continue;
-			}
-			let pending: Vec<usize> = (0..users.len())
-				.filter(|&index| resolved[index].is_none())
-				.collect();
-			for chunk in pending.chunks(DISPLAY_CHUNK) {
-				let failed = if entry.ext_display {
-					display_full_chunk(entry, users, chunk, &mut resolved)
-				} else {
-					display_legacy_chunk(entry, users, chunk, &mut resolved)
-				};
-				if failed && entry.plugin.tripped(Breaker::Display) {
+			for chunk in everyone.chunks(DISPLAY_CHUNK) {
+				if entry.plugin.tripped(Breaker::Display) {
 					break;
 				}
-			}
-			if resolved.iter().all(Option::is_some) {
-				break;
+				if entry.ext_display {
+					display_full_chunk(entry, users, chunk, &mut answers);
+				} else {
+					display_legacy_chunk(entry, users, chunk, &mut answers);
+				}
 			}
 		}
-		resolved
+		answers
 	}
 
 	pub fn ui_action(&self, plugin_id: &str, id: &str, payload: &str) -> Result<bool> {
@@ -1547,8 +1536,8 @@ fn display_full_chunk(
 	entry: &HookEntry,
 	users: &[(Option<u64>, User, Option<Presence>)],
 	chunk: &[usize],
-	resolved: &mut [Option<DisplayAnswer>],
-) -> bool {
+	answers: &mut [Vec<DisplayAnswer>],
+) {
 	let batch: Arc<[DisplayRequest]> = chunk
 		.iter()
 		.map(|&index| {
@@ -1564,16 +1553,12 @@ fn display_full_chunk(
 		Ok(overrides) => {
 			entry.plugin.succeeded(Breaker::Display);
 			for (&index, over) in chunk.iter().zip(overrides) {
-				resolved[index] = over
-					.and_then(|over| sanitize_display_full(over, &entry.images))
-					.map(|over| DisplayAnswer::Full(Arc::clone(&entry.id), over));
+				if let Some(over) = over.and_then(|over| sanitize_display_full(over, &entry.images)) {
+					answers[index].push(DisplayAnswer::Full(Arc::clone(&entry.id), over));
+				}
 			}
-			false
 		}
-		Err(error) => {
-			entry.plugin.failed(Breaker::Display, &error);
-			true
-		}
+		Err(error) => entry.plugin.failed(Breaker::Display, &error),
 	}
 }
 
@@ -1581,8 +1566,8 @@ fn display_legacy_chunk(
 	entry: &HookEntry,
 	users: &[(Option<u64>, User, Option<Presence>)],
 	chunk: &[usize],
-	resolved: &mut [Option<DisplayAnswer>],
-) -> bool {
+	answers: &mut [Vec<DisplayAnswer>],
+) {
 	let batch: Arc<[(Option<u64>, User)]> = chunk
 		.iter()
 		.map(|&index| {
@@ -1594,14 +1579,12 @@ fn display_legacy_chunk(
 		Ok(overrides) => {
 			entry.plugin.succeeded(Breaker::Display);
 			for (&index, over) in chunk.iter().zip(overrides) {
-				resolved[index] = over.map(|over| DisplayAnswer::Legacy(sanitize_override(over)));
+				if let Some(over) = over {
+					answers[index].push(DisplayAnswer::Legacy(sanitize_override(over)));
+				}
 			}
-			false
 		}
-		Err(error) => {
-			entry.plugin.failed(Breaker::Display, &error);
-			true
-		}
+		Err(error) => entry.plugin.failed(Breaker::Display, &error),
 	}
 }
 

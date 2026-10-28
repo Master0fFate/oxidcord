@@ -1,0 +1,18 @@
+id = "dev.oxidcord.force-owner-crown"
+name = "Force Owner Crown"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Force the owner crown next to usernames even if the server is large."
+entry = "force_owner_crown.wasm"
+min_host = "0.4.3"
+hooks = ["display-user"]
+
+[[permissions]]
+permission = "user-display"
+reason = "Adds the crown next to the name of the server owner."
+
+[[permissions]]
+permission = "context-directory"
+reason = "Reads who owns the server."

@@ -288,12 +288,21 @@ impl PatchEffects {
 		})
 	}
 
-	pub fn attachment_override(&self, id: Snowflake) -> Option<&AttachmentOverride> {
+	pub fn attachment_override(&self, id: Snowflake) -> Option<AttachmentOverride> {
 		self.set()
 			.patches
 			.iter()
 			.flat_map(|patch| patch.attachments.iter())
-			.find(|over| over.id == id.get())
+			.filter(|over| over.id == id.get())
+			.cloned()
+			.reduce(|first, later| AttachmentOverride {
+				id: first.id,
+				blur: first.blur || later.blur,
+				alt: first.alt.or(later.alt),
+				tooltip: first.tooltip.or(later.tooltip),
+				url: first.url.or(later.url),
+				hidden: first.hidden || later.hidden,
+			})
 	}
 
 	pub fn layout(&self) -> Option<AttachmentLayout> {

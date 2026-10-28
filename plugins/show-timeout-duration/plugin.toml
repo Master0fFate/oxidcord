@@ -1,0 +1,22 @@
+id = "dev.oxidcord.show-timeout-duration"
+name = "Show Timeout Duration"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Shows how much longer a user's timeout will last, either in the timeout icon tooltip or next to it"
+entry = "show_timeout_duration.wasm"
+min_host = "0.4.3"
+hooks = ["display-user"]
+
+[[permissions]]
+permission = "user-display"
+reason = "Adds the timeout badge to timed out members."
+
+[[permissions]]
+permission = "context-roles"
+reason = "Reads when a member's timeout ends."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

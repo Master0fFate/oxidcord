@@ -207,6 +207,7 @@ pub(super) fn plugin_badge(badge: plugin_host::api::model::Badge) -> PluginBadge
 		tooltip: badge.tooltip,
 		color: badge.color.map(plugin_color),
 		key: badge.key,
+		plugin: None,
 	}
 }
 
@@ -219,7 +220,6 @@ fn legacy_override(over: DisplayOverride) -> Option<UserOverride> {
 		name: over.name,
 		color,
 		badge: over.badge,
-		plugin: None,
 		suffix: None,
 		badges: Vec::new(),
 		avatar: None,
@@ -239,15 +239,28 @@ fn to_override(answer: DisplayAnswer) -> Option<UserOverride> {
 				_ => None,
 			},
 			badge: None,
-			plugin: Some(plugin.to_string()),
 			suffix: over.suffix,
-			badges: over.badges.into_iter().map(plugin_badge).collect(),
+			badges: over
+				.badges
+				.into_iter()
+				.map(|badge| PluginBadge {
+					plugin: Some(plugin.to_string()),
+					..plugin_badge(badge)
+				})
+				.collect(),
 			avatar: over.avatar,
 			banner: over.banner,
 			decoration: over.decoration,
 			pronouns: over.pronouns,
 		}),
 	}
+}
+
+fn merge_answers(answers: Vec<DisplayAnswer>) -> Option<UserOverride> {
+	answers
+		.into_iter()
+		.filter_map(to_override)
+		.reduce(UserOverride::merged_with)
 }
 
 fn uncached_update(update: &MessageUpdate) -> Option<Message> {
@@ -657,7 +670,7 @@ impl Core {
 				.display_users(&users)
 				.into_iter()
 				.zip(keys)
-				.map(|(answer, (guild_id, user_id))| (guild_id, user_id, answer.and_then(to_override)))
+				.map(|(answer, (guild_id, user_id))| (guild_id, user_id, merge_answers(answer)))
 				.collect();
 			let _ = internal.send(Internal::Overrides { epoch, entries });
 		});

@@ -1,0 +1,26 @@
+id = "dev.oxidcord.role-color-everywhere"
+name = "Role Color Everywhere"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Adds the top role color anywhere possible"
+entry = "role_color_everywhere.wasm"
+min_host = "0.4.3"
+hooks = ["display-user", "intercept"]
+
+[[permissions]]
+permission = "user-display"
+reason = "Gives names the color of the member's top role."
+
+[[permissions]]
+permission = "message-intercept"
+reason = "Colors mentions and tints messages with the role color."
+
+[[permissions]]
+permission = "context-roles"
+reason = "Reads the role color and nickname of members."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

@@ -1,0 +1,23 @@
+id = "dev.oxidcord.dearrow"
+name = "Dearrow"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Makes YouTube embed titles and thumbnails less sensationalist, powered by Dearrow"
+entry = "dearrow.wasm"
+min_host = "0.4.3"
+network_hosts = ["sponsor.ajay.app"]
+image_hosts = ["dearrow-thumb.ajay.app", "i.ytimg.com"]
+
+[[permissions]]
+permission = "message-intercept"
+reason = "Replaces the title and thumbnail of YouTube embeds."
+
+[[permissions]]
+permission = "net-fetch"
+reason = "Sends the id of each YouTube video in a message to DeArrow to get the community title and thumbnail."
+
+[[permissions]]
+permission = "storage"
+reason = "Keeps the DeArrow answers for a day and reads the plugin settings."
