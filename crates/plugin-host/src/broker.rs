@@ -48,7 +48,12 @@ pub trait HostBroker: Send + Sync {
 		Err(HostError::Unavailable)
 	}
 
-	fn list_emojis(&self, _plugin: &str, _channel_id: Option<u64>) -> Result<Vec<EmojiInfo>, HostError> {
+	fn list_emojis(
+		&self,
+		_plugin: &str,
+		_channel_id: Option<u64>,
+		_limit: u32,
+	) -> Result<Vec<EmojiInfo>, HostError> {
 		Err(HostError::Unavailable)
 	}
 

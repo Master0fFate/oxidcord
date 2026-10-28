@@ -12,7 +12,7 @@ use tokio::runtime::{Builder, Handle, Runtime};
 use tokio::sync::mpsc;
 use voice::video::VideoSink;
 
-use crate::broker::SessionBroker;
+use crate::broker::{SessionBroker, VoiceCache};
 use crate::catalog::catalog_key;
 use crate::command::Command;
 use crate::config::{PluginOptions, SessionConfig, VoiceIo};
@@ -93,8 +93,10 @@ impl Session {
 		let stats = Arc::new(Stats::default());
 		let (commands, command_receiver) = mpsc::channel(COMMAND_CAPACITY);
 		let (internal, internal_receiver) = mpsc::unbounded_channel();
+		let voice_cache = Arc::new(VoiceCache::default());
 		let broker = Arc::new(SessionBroker {
 			state: state.clone(),
+			voice: voice_cache.clone(),
 			commands: commands.clone(),
 			internal: internal.clone(),
 			sink: plugins.sink,
@@ -129,6 +131,7 @@ impl Session {
 			runtime: handle.clone(),
 			search: search.clone(),
 			stats: stats.clone(),
+			voice_cache,
 			voice_io,
 			shared_voice: voice.clone(),
 			video: video.clone(),
@@ -180,7 +183,7 @@ impl Session {
 		Arc::clone(self.hub.manager.runtime().patches())
 	}
 
-	pub fn plugin_commands(&self) -> Vec<(String, CommandEntry)> {
+	pub fn plugin_commands(&self) -> Arc<[(String, CommandEntry)]> {
 		self.hub.manager.commands()
 	}
 
@@ -194,6 +197,10 @@ impl Session {
 
 	pub fn plugin_render_ms_p95(&self) -> Option<f64> {
 		self.hub.stats.p95_ms()
+	}
+
+	pub fn plugin_call_ms_p95(&self) -> Option<f64> {
+		self.hub.manager.interactive_call_p95_ms()
 	}
 
 	pub fn catalog(&self) -> Option<Arc<Catalog>> {

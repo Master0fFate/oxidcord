@@ -23,6 +23,7 @@ use crate::convert::{
 use crate::fetch::Fetcher;
 use crate::grants::Grants;
 use crate::instance::Health;
+use crate::latency::LatencyStats;
 use crate::mounts::{self, MenuEntry, Mount, Mounts, Overlay, Provider};
 use crate::patches::Patches;
 use crate::permission::Permission;
@@ -40,6 +41,7 @@ const MAX_NOTIFY_BODY_BYTES: usize = 1_024;
 const MAX_EMOJI_BYTES: usize = 128;
 const MAX_FETCHED_MESSAGES: u32 = 100;
 const MAX_LISTED_MEMBERS: u32 = 1_000;
+const MAX_LISTED_EMOJIS: u32 = 10_000;
 const MAX_SENDS_PER_GESTURE: u8 = 3;
 const MAX_MENU_ITEMS: usize = 16;
 const MAX_MENU_LABEL: usize = 64;
@@ -63,6 +65,7 @@ pub struct Services {
 	pub patches: Arc<Patches>,
 	pub timers: Timers,
 	pub fetcher: Fetcher,
+	pub latency: LatencyStats,
 }
 
 pub struct PluginLimits {
@@ -177,12 +180,8 @@ impl HostState {
 		}
 	}
 
-	fn image_policy(&self) -> ImagePolicy {
-		ImagePolicy::new(false, self.services.grants.get(&self.plugin).image_hosts)
-	}
-
 	fn view(&self, tree: &ViewTree) -> ViewTree {
-		sanitize_view(tree, &self.image_policy())
+		sanitize_view(tree, &self.services.grants.image_policy(&self.plugin))
 	}
 
 	fn changed(&self) {
@@ -468,7 +467,7 @@ impl ui::Host for HostState {
 		let mount = Mount {
 			plugin_id: Arc::clone(&self.plugin),
 			key,
-			tree: self.view(&tree),
+			tree: Arc::new(self.view(&tree)),
 			options: mount_options(options),
 		};
 		self.services
@@ -530,7 +529,7 @@ impl ui::Host for HostState {
 			menu,
 			MenuEntry {
 				plugin_id: Arc::clone(&self.plugin),
-				items: menu_items(items),
+				items: menu_items(items).into(),
 			},
 		);
 		self.changed();
@@ -597,7 +596,9 @@ impl client::Host for HostState {
 
 	fn list_emojis(&mut self, channel_id: Option<u64>) -> Result<Vec<EmojiInfo>, HostError> {
 		self.require(Permission::ContextExpressions)?;
-		self.services.broker.list_emojis(&self.plugin, channel_id)
+		self.services
+			.broker
+			.list_emojis(&self.plugin, channel_id, MAX_LISTED_EMOJIS)
 	}
 
 	fn emoji_url(&mut self, emoji: EmojiRef, size: u32) -> Option<String> {

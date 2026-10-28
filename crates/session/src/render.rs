@@ -1,13 +1,14 @@
-use std::collections::{HashMap, VecDeque};
+use std::borrow::Cow;
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use parking_lot::{Condvar, Mutex};
-use plugin_host::PluginManager;
 use plugin_host::api::model::Lifecycle;
 use plugin_host::convert::{DELETED_FLAG, clip, message_full};
+use plugin_host::{LatencyStats, PluginManager};
 use protocol::{Message, Snowflake};
 use state::RenderedMessage;
 use tokio::sync::mpsc::UnboundedSender;
@@ -16,8 +17,6 @@ use crate::broker::view_of;
 use crate::task::Internal;
 
 const FLUSH_INTERVAL: Duration = Duration::from_millis(30);
-const SAMPLE_CAPACITY: usize = 512;
-const P95: f64 = 0.95;
 const HISTORY_CAPACITY: usize = 2_000;
 const HISTORY_VERSIONS: usize = 10;
 const HISTORY_CHARS: usize = 2_000;
@@ -37,40 +36,50 @@ pub(crate) struct RenderResult {
 }
 
 #[derive(Default)]
-pub(crate) struct RenderStats {
-	samples: Mutex<VecDeque<f32>>,
-}
-
-impl RenderStats {
-	fn record(&self, elapsed: Duration) {
-		let mut samples = self.samples.lock();
-		if samples.len() == SAMPLE_CAPACITY {
-			samples.pop_front();
-		}
-		samples.push_back(elapsed.as_secs_f32() * 1000.0);
-	}
-
-	pub(crate) fn p95_ms(&self) -> Option<f64> {
-		let mut sorted: Vec<f32> = self.samples.lock().iter().copied().collect();
-		if sorted.is_empty() {
-			return None;
-		}
-		sorted.sort_by(f32::total_cmp);
-		let index = ((sorted.len() as f64 * P95).ceil() as usize).clamp(1, sorted.len()) - 1;
-		Some(f64::from(sorted[index]))
-	}
-}
-
-struct Queued {
-	sequence: u64,
-	job: RenderJob,
-}
-
-#[derive(Default)]
 struct Queue {
-	jobs: Vec<Queued>,
+	by_sequence: BTreeMap<u64, RenderJob>,
+	by_message: HashMap<Snowflake, u64>,
+	by_channel: BTreeSet<(u64, u64)>,
 	next_sequence: u64,
 	closed: bool,
+}
+
+impl Queue {
+	fn insert(&mut self, job: RenderJob) {
+		self.remove_message(job.message.id);
+		self.next_sequence += 1;
+		let sequence = self.next_sequence;
+		self.by_message.insert(job.message.id, sequence);
+		self.by_channel.insert((job.message.channel_id.get(), sequence));
+		self.by_sequence.insert(sequence, job);
+	}
+
+	fn remove_message(&mut self, message_id: Snowflake) {
+		if let Some(sequence) = self.by_message.remove(&message_id)
+			&& let Some(job) = self.by_sequence.remove(&sequence)
+		{
+			self.by_channel.remove(&(job.message.channel_id.get(), sequence));
+		}
+	}
+
+	fn take_best(&mut self, selected: u64) -> Option<RenderJob> {
+		let sequence = self
+			.by_channel
+			.range((selected, 0)..=(selected, u64::MAX))
+			.next_back()
+			.map(|&(_, sequence)| sequence)
+			.or_else(|| self.by_sequence.last_key_value().map(|(&sequence, _)| sequence))?;
+		let job = self.by_sequence.remove(&sequence)?;
+		self.by_message.remove(&job.message.id);
+		self.by_channel.remove(&(job.message.channel_id.get(), sequence));
+		Some(job)
+	}
+
+	fn clear(&mut self) {
+		self.by_sequence.clear();
+		self.by_message.clear();
+		self.by_channel.clear();
+	}
 }
 
 struct Shared {
@@ -87,7 +96,7 @@ pub(crate) struct RenderWorker {
 impl RenderWorker {
 	pub(crate) fn spawn(
 		manager: Arc<PluginManager>,
-		stats: Arc<RenderStats>,
+		stats: Arc<LatencyStats>,
 		results: UnboundedSender<Internal>,
 		epoch: u64,
 	) -> Self {
@@ -110,12 +119,7 @@ impl RenderWorker {
 	pub(crate) fn submit(&self, jobs: Vec<RenderJob>) {
 		let mut queue = self.shared.queue.lock();
 		for job in jobs {
-			queue
-				.jobs
-				.retain(|queued| queued.job.message.id != job.message.id);
-			queue.next_sequence += 1;
-			let sequence = queue.next_sequence;
-			queue.jobs.push(Queued { sequence, job });
+			queue.insert(job);
 		}
 		drop(queue);
 		self.shared.ready.notify_one();
@@ -127,7 +131,7 @@ impl RenderWorker {
 
 	pub(crate) fn set_epoch(&self, epoch: u64) {
 		self.shared.epoch.store(epoch, Ordering::Release);
-		self.shared.queue.lock().jobs.clear();
+		self.shared.queue.lock().clear();
 	}
 }
 
@@ -145,15 +149,8 @@ fn next_job(shared: &Shared) -> Option<(RenderJob, bool)> {
 			return None;
 		}
 		let selected = shared.selected.load(Ordering::Acquire);
-		let best = queue
-			.jobs
-			.iter()
-			.enumerate()
-			.max_by_key(|(_, queued)| (queued.job.message.channel_id.get() == selected, queued.sequence))
-			.map(|(index, _)| index);
-		if let Some(index) = best {
-			let queued = queue.jobs.swap_remove(index);
-			return Some((queued.job, queue.jobs.is_empty()));
+		if let Some(job) = queue.take_best(selected) {
+			return Some((job, queue.by_sequence.is_empty()));
 		}
 		shared.ready.wait(&mut queue);
 	}
@@ -161,7 +158,7 @@ fn next_job(shared: &Shared) -> Option<(RenderJob, bool)> {
 
 struct Seen {
 	content: String,
-	previous: Vec<String>,
+	previous: VecDeque<String>,
 	deleted_at: Option<i64>,
 }
 
@@ -179,7 +176,11 @@ fn now_ms() -> i64 {
 
 impl History {
 	fn observe(&mut self, message: &Message, deleted: bool) -> Lifecycle {
-		let content = clip(&message.content, HISTORY_CHARS);
+		let content = if message.content.len() > HISTORY_CHARS {
+			Cow::Owned(clip(&message.content, HISTORY_CHARS))
+		} else {
+			Cow::Borrowed(message.content.as_str())
+		};
 		if !self.seen.contains_key(&message.id) {
 			self.order.push_back(message.id);
 			if self.order.len() > HISTORY_CAPACITY
@@ -189,22 +190,22 @@ impl History {
 			}
 		}
 		let seen = self.seen.entry(message.id).or_insert_with(|| Seen {
-			content: content.clone(),
-			previous: Vec::new(),
+			content: content.to_string(),
+			previous: VecDeque::new(),
 			deleted_at: None,
 		});
 		if seen.content != content {
-			let earlier = std::mem::replace(&mut seen.content, content);
-			seen.previous.push(earlier);
+			let earlier = std::mem::replace(&mut seen.content, content.into_owned());
+			seen.previous.push_back(earlier);
 			if seen.previous.len() > HISTORY_VERSIONS {
-				seen.previous.remove(0);
+				seen.previous.pop_front();
 			}
 		}
 		if deleted {
 			return Lifecycle::Deleted(*seen.deleted_at.get_or_insert_with(now_ms));
 		}
 		if message.edited_timestamp.is_some() {
-			Lifecycle::Edited(seen.previous.clone())
+			Lifecycle::Edited(seen.previous.iter().cloned().collect())
 		} else {
 			Lifecycle::Live
 		}
@@ -213,10 +214,21 @@ impl History {
 
 fn render(manager: &PluginManager, job: &RenderJob, history: &mut History) -> RenderedMessage {
 	let message = &job.message;
+	let hooks = manager.render_hooks(job.guild_id.map(Snowflake::get));
+	if !hooks.filter && !hooks.render && !job.intercept {
+		manager.store_patches(message.id.get(), Vec::new());
+		return RenderedMessage {
+			ast: markdown::parse(&message.content).nodes,
+			hidden: job.deleted,
+			deleted: job.deleted,
+			revision: job.epoch,
+		};
+	}
 	let mut view = view_of(message, || job.guild_id);
 	if job.deleted {
 		view.flags |= DELETED_FLAG;
 	}
+	let view = Arc::new(view);
 	let mut hidden = !manager.filter_message(&view);
 	let mut ast = markdown::parse(&message.content).nodes;
 	let mut patches = Vec::new();
@@ -232,6 +244,7 @@ fn render(manager: &PluginManager, job: &RenderJob, history: &mut History) -> Re
 		}
 		if job.intercept {
 			let lifecycle = history.observe(message, job.deleted);
+			let view = Arc::try_unwrap(view).unwrap_or_else(|shared| (*shared).clone());
 			let outcome = manager.intercept(message_full(message, view, job.mine, lifecycle), ast);
 			ast = outcome.ast;
 			kept |= outcome.retain;
@@ -251,7 +264,7 @@ fn render(manager: &PluginManager, job: &RenderJob, history: &mut History) -> Re
 fn worker_main(
 	shared: &Shared,
 	manager: &PluginManager,
-	stats: &RenderStats,
+	stats: &LatencyStats,
 	results: &UnboundedSender<Internal>,
 ) {
 	let mut finished = Vec::new();

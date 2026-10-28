@@ -17,7 +17,7 @@ pub struct PluginPatch {
 	pub embeds: Vec<EmbedAction>,
 	pub extra_embeds: Vec<EmbedCard>,
 	pub hidden_attachments: Vec<u64>,
-	pub accessory: Option<ViewTree>,
+	pub accessory: Option<Arc<ViewTree>>,
 }
 
 impl PluginPatch {

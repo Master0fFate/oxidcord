@@ -1,19 +1,11 @@
+use std::sync::Arc;
+
+use plugin_host::CommandEntry;
+
 use crate::data::Data;
 
-pub struct CommandHint {
-	pub name: String,
-	pub description: String,
-}
-
-pub fn list(data: &Data) -> Vec<CommandHint> {
-	data.session()
-		.plugin_commands()
-		.into_iter()
-		.map(|(name, entry)| CommandHint {
-			name,
-			description: entry.description,
-		})
-		.collect()
+pub fn list(data: &Data) -> Arc<[(String, CommandEntry)]> {
+	data.session().plugin_commands()
 }
 
 pub fn parse(data: &Data, text: &str) -> Option<(String, String)> {
@@ -21,7 +13,7 @@ pub fn parse(data: &Data, text: &str) -> Option<(String, String)> {
 	let (name, args) = body.split_once(char::is_whitespace).unwrap_or((body, ""));
 	data.session()
 		.plugin_commands()
-		.iter()
-		.any(|(known, _)| known == name)
+		.binary_search_by(|(known, _)| known.as_str().cmp(name))
+		.is_ok()
 		.then(|| (name.to_owned(), args.trim().to_owned()))
 }

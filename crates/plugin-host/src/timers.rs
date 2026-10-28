@@ -23,6 +23,7 @@ struct Timer {
 struct State {
 	heap: BinaryHeap<Reverse<(Instant, u64)>>,
 	timers: HashMap<u64, Timer>,
+	owned: HashMap<Arc<str>, usize>,
 	targets: HashMap<Arc<str>, Weak<PluginInstance>>,
 	next_id: u64,
 	closed: bool,
@@ -32,6 +33,28 @@ struct State {
 struct Shared {
 	state: Mutex<State>,
 	wake: Condvar,
+}
+
+impl State {
+	fn remove(&mut self, id: u64) {
+		if let Some(timer) = self.timers.remove(&id) {
+			self.release(&timer.plugin_id, 1);
+		}
+	}
+
+	fn release(&mut self, plugin_id: &str, count: usize) {
+		if let Some(owned) = self.owned.get_mut(plugin_id) {
+			*owned = owned.saturating_sub(count);
+			if *owned == 0 {
+				self.owned.remove(plugin_id);
+			}
+		}
+	}
+
+	fn remove_all(&mut self, plugin_id: &str) {
+		self.timers.retain(|_, timer| &*timer.plugin_id != plugin_id);
+		self.owned.remove(plugin_id);
+	}
 }
 
 pub enum TimerError {
@@ -68,14 +91,11 @@ impl Timers {
 		tag: String,
 	) -> Result<u64, TimerError> {
 		let mut state = self.shared.state.lock();
-		let owned = state
-			.timers
-			.values()
-			.filter(|timer| timer.plugin_id == *plugin_id)
-			.count();
-		if owned >= MAX_TIMERS_PER_PLUGIN {
+		let owned = state.owned.entry(Arc::clone(plugin_id)).or_default();
+		if *owned >= MAX_TIMERS_PER_PLUGIN {
 			return Err(TimerError::Limit);
 		}
+		*owned += 1;
 		state.next_id += 1;
 		let id = state.next_id;
 		let due = Instant::now() + delay;
@@ -104,22 +124,18 @@ impl Timers {
 			.get(&id)
 			.is_some_and(|timer| &*timer.plugin_id == plugin_id)
 		{
-			state.timers.remove(&id);
+			state.remove(id);
 		}
 	}
 
 	pub fn clear_plugin(&self, plugin_id: &str) {
-		self.shared
-			.state
-			.lock()
-			.timers
-			.retain(|_, timer| &*timer.plugin_id != plugin_id);
+		self.shared.state.lock().remove_all(plugin_id);
 	}
 
 	pub fn detach(&self, plugin_id: &str) {
 		let mut state = self.shared.state.lock();
 		state.targets.remove(plugin_id);
-		state.timers.retain(|_, timer| &*timer.plugin_id != plugin_id);
+		state.remove_all(plugin_id);
 	}
 }
 
@@ -160,9 +176,7 @@ fn run(shared: &Shared) {
 				timer.due = next;
 				state.heap.push(Reverse((next, id)));
 			}
-			None => {
-				state.timers.remove(&id);
-			}
+			None => state.remove(id),
 		}
 		let target = state.targets.get(&plugin_id).and_then(Weak::upgrade);
 		drop(state);

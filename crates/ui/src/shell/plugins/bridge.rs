@@ -20,7 +20,7 @@ const MAX_CACHED_PATCHES: usize = 512;
 pub struct Surface {
 	pub plugin_id: Arc<str>,
 	pub key: SharedString,
-	pub tree: Rc<ViewTree>,
+	pub tree: Arc<ViewTree>,
 	pub title: SharedString,
 	pub icon: Option<SharedString>,
 	pub legacy: bool,
@@ -28,19 +28,20 @@ pub struct Surface {
 
 pub struct PatchSet {
 	pub patches: Arc<[PluginPatch]>,
-	pub accessories: Vec<Option<Rc<ViewTree>>>,
+	pub accessories: Vec<Option<Arc<ViewTree>>>,
 }
 
 pub type Patched = Rc<PatchSet>;
 
 pub struct MenuGroup {
 	pub plugin_id: Arc<str>,
-	pub items: Vec<MenuItem>,
+	pub items: Arc<[MenuItem]>,
 }
 
 #[derive(Default)]
 struct Cache {
-	revision: (u64, u64),
+	slots_revision: u64,
+	surfaces_revision: u64,
 	slots: HashMap<String, Rc<Vec<Surface>>>,
 	mounts: HashMap<String, Rc<Vec<Surface>>>,
 	contextual: HashMap<(&'static str, ViewContext), Rc<Vec<Surface>>>,
@@ -71,7 +72,7 @@ impl Global for PluginBridge {}
 fn surface_of(
 	plugin_id: &Arc<str>,
 	key: String,
-	tree: ViewTree,
+	tree: Arc<ViewTree>,
 	title: String,
 	icon: Option<String>,
 	legacy: bool,
@@ -79,7 +80,7 @@ fn surface_of(
 	Surface {
 		plugin_id: Arc::clone(plugin_id),
 		key: key.into(),
-		tree: Rc::new(tree),
+		tree,
 		title: title.into(),
 		icon: icon.map(Into::into),
 		legacy,
@@ -115,14 +116,15 @@ impl PluginBridge {
 
 	fn fresh(&self, cx: &App) -> std::cell::RefMut<'_, Cache> {
 		let session = self.data.read(cx).session();
-		let revision = (
-			session.plugin_slots().revision(),
-			session.plugin_mounts().revision(),
-		);
+		let slots_revision = session.plugin_slots().revision();
+		let surfaces_revision = session.plugin_mounts().surfaces_revision();
 		let mut cache = self.cache.borrow_mut();
-		if cache.revision != revision {
-			cache.revision = revision;
+		if cache.slots_revision != slots_revision {
+			cache.slots_revision = slots_revision;
 			cache.slots.clear();
+		}
+		if cache.surfaces_revision != surfaces_revision {
+			cache.surfaces_revision = surfaces_revision;
 			cache.mounts.clear();
 			cache.contextual.clear();
 			cache.requested.clear();
@@ -142,13 +144,13 @@ impl PluginBridge {
 				.session()
 				.plugin_slots()
 				.get(slot)
-				.into_iter()
+				.iter()
 				.filter(|entry| !entry.tree.roots.is_empty())
 				.map(|entry| {
 					surface_of(
 						&entry.plugin_id,
 						String::new(),
-						entry.tree,
+						Arc::clone(&entry.tree),
 						String::new(),
 						None,
 						true,
@@ -171,14 +173,14 @@ impl PluginBridge {
 				.session()
 				.plugin_mounts()
 				.mounted(point)
-				.into_iter()
+				.iter()
 				.map(|mount| {
 					surface_of(
 						&mount.plugin_id,
-						mount.key,
-						mount.tree,
-						mount.options.title,
-						mount.options.icon,
+						mount.key.clone(),
+						Arc::clone(&mount.tree),
+						mount.options.title.clone(),
+						mount.options.icon.clone(),
 						false,
 					)
 				})
@@ -251,8 +253,11 @@ impl PluginBridge {
 				.session()
 				.plugin_mounts()
 				.menu_items(menu)
-				.into_iter()
-				.map(|MenuEntry { plugin_id, items }| MenuGroup { plugin_id, items })
+				.iter()
+				.map(|MenuEntry { plugin_id, items }| MenuGroup {
+					plugin_id: Arc::clone(plugin_id),
+					items: Arc::clone(items),
+				})
 				.collect(),
 		);
 		cache.menus.insert(menu, groups.clone());
@@ -279,10 +284,7 @@ impl PluginBridge {
 			return Some(patched.clone());
 		}
 		let patched: Patched = Rc::new(PatchSet {
-			accessories: current
-				.iter()
-				.map(|patch| patch.accessory.clone().map(Rc::new))
-				.collect(),
+			accessories: current.iter().map(|patch| patch.accessory.clone()).collect(),
 			patches: current,
 		});
 		cache.patches.insert(message_id, patched.clone());
@@ -292,15 +294,15 @@ impl PluginBridge {
 	pub fn accessory_changed(&self, cx: &App) -> bool {
 		let current = self.slot_entries("message-accessory", cx);
 		let mut cache = self.cache.borrow_mut();
-		let changed = cache.accessory.len() != current.len()
-			|| cache
-				.accessory
-				.iter()
-				.zip(current.iter())
-				.any(|(left, right)| left.plugin_id != right.plugin_id || left.tree != right.tree);
-		if changed {
-			cache.accessory = current;
+		if Rc::ptr_eq(&cache.accessory, &current) {
+			return false;
 		}
+		let changed = cache.accessory.len() != current.len()
+			|| cache.accessory.iter().zip(current.iter()).any(|(left, right)| {
+				left.plugin_id != right.plugin_id
+					|| !(Arc::ptr_eq(&left.tree, &right.tree) || left.tree == right.tree)
+			});
+		cache.accessory = current;
 		changed
 	}
 

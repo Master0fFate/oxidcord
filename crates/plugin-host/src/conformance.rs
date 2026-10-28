@@ -489,8 +489,8 @@ fn check_hooks(
 	if manifest.requests(Permission::MessageRender) {
 		let started = Instant::now();
 		let outcome = instance.render_message(
-			message.clone(),
-			md_to_tree(&[markdown::Node::Text("hello".to_owned())]),
+			Arc::new(message.clone()),
+			Arc::new(md_to_tree(&[markdown::Node::Text("hello".to_owned())])),
 		);
 		let elapsed = started.elapsed();
 		match outcome {
@@ -518,7 +518,7 @@ fn check_hooks(
 			content: "hello".to_owned(),
 			reply_to: None,
 		};
-		let outcome = instance.before_send(outgoing);
+		let outcome = instance.before_send(Arc::new(outgoing));
 		record_simple(recorder, "before-send", started.elapsed(), outcome.map(|_| ()));
 	}
 	if manifest.requests(Permission::MessageIntercept) {
@@ -533,7 +533,10 @@ fn check_hooks(
 			mine: false,
 			lifecycle: Lifecycle::Live,
 		};
-		let outcome = instance.intercept(full, md_to_rich(&[markdown::Node::Text("hello".to_owned())]));
+		let outcome = instance.intercept(
+			Arc::new(full),
+			Arc::new(md_to_rich(&[markdown::Node::Text("hello".to_owned())])),
+		);
 		record_simple(
 			recorder,
 			"intercept-message",
@@ -543,12 +546,12 @@ fn check_hooks(
 	}
 	if manifest.requests(Permission::MessageFilter) {
 		let started = Instant::now();
-		let outcome = instance.filter_message(message.clone());
+		let outcome = instance.filter_message(Arc::new(message.clone()));
 		record_simple(recorder, "filter-message", started.elapsed(), outcome.map(|_| ()));
 	}
 	if manifest.requests(Permission::UserDisplay) {
 		let started = Instant::now();
-		let outcome = instance.display_user(Some(3), message.author.clone());
+		let outcome = instance.display_users(Arc::from([(Some(3), message.author.clone())]));
 		record_simple(recorder, "display-user", started.elapsed(), outcome.map(|_| ()));
 	}
 

@@ -9,6 +9,7 @@ mod fetch;
 mod grants;
 mod host_state;
 mod instance;
+mod latency;
 mod manager;
 mod manifest;
 pub mod mounts;
@@ -35,8 +36,10 @@ pub use error::{Error, Result};
 pub use fetch::{Fetcher, is_public};
 pub use grants::{Grants, PluginGrant};
 pub use instance::{CallError, PluginInstance, PluginState};
+pub use latency::LatencyStats;
 pub use manager::{
-	CommandError, EmojiPick, Intercepted, LoadIssue, PluginDebug, PluginInfo, PluginManager, SendDecision,
+	CommandError, EmojiPick, Intercepted, LoadIssue, PluginDebug, PluginInfo, PluginManager, RenderHooks,
+	SendDecision,
 };
 pub use manifest::{API_VERSION, MANIFEST_FILE, Manifest, PermissionRequest};
 pub use mounts::{Mount, Mounts, ViewContext};

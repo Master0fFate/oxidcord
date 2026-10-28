@@ -457,7 +457,7 @@ impl State {
 			.collect()
 	}
 
-	fn member_row(&self, guild: &GuildState, user_id: Snowflake) -> MemberRow {
+	pub fn member_row(&self, guild: &GuildState, user_id: Snowflake) -> MemberRow {
 		let roles = guild
 			.members
 			.get(&user_id)

@@ -5,20 +5,22 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use plugin_host::api::{
-	ChannelSwitch, DisplayOverride, Event as PluginEvent, MessageRef, OutgoingMessage, ReactionEvent,
-	TypingEvent,
+	ChannelSwitch, DisplayOverride, Event as PluginEvent, MessageRef, MessageView, OutgoingMessage,
+	ReactionEvent, TypingEvent,
 };
 use plugin_host::convert::user_view;
-use plugin_host::{PACKAGE_EXTENSION, SendDecision};
+use plugin_host::{PACKAGE_EXTENSION, Permission, SendDecision, SlotEntry};
 use protocol::{DispatchEvent, Message, MessageUpdate, Nonce, PartialEmoji, Snowflake, User};
 use rest::UploadFile;
-use state::{Changes, Event, LocalEvent, MemberSlot, RenderedMessage, UserOverride, apply_update};
+use state::{
+	Changes, Event, LocalEvent, MemberSlot, RenderedMessage, SharedState, UserOverride, apply_update,
+};
 use tokio::runtime::Handle;
-use tokio::sync::mpsc;
+use tokio::sync::{Barrier, mpsc};
 use tokio::time::Instant;
 
 use super::{Core, Internal};
-use crate::broker::{view_of, voice_info};
+use crate::broker::view_of;
 use crate::catalog::{download_plugin, download_theme, fetch_catalog, fetch_theme_catalog, write_theme};
 use crate::command::{Command, ReplyTarget};
 use crate::plugins::{PluginFlags, PluginHub};
@@ -27,21 +29,142 @@ use crate::render::{RenderJob, RenderResult};
 const OVERRIDE_DEBOUNCE: Duration = Duration::from_secs(2);
 const OVERRIDE_BATCH: usize = 200;
 const OVERRIDE_AUTHOR_WINDOW: usize = 100;
+const FILTER_RECHECK: usize = 100;
+const ACCESSORY_SLOT: &str = "message-accessory";
 
 type OverrideEntry = (Option<Snowflake>, Snowflake, Option<UserOverride>);
 
-pub(super) type PluginJob = Box<dyn FnOnce() + Send>;
+type PluginJob = Box<dyn FnOnce() + Send>;
 
-pub(super) fn spawn_plugin_jobs(runtime: &Handle) -> mpsc::UnboundedSender<PluginJob> {
-	let (sender, mut jobs) = mpsc::unbounded_channel::<PluginJob>();
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TaskKind {
+	Lifecycle,
+	Setting,
+	Interactive,
+}
+
+enum LaneItem {
+	Run(PluginJob),
+	Fence(Arc<Barrier>),
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum Lane {
+	Interactive,
+	Background,
+}
+
+pub(super) struct PluginLanes {
+	runtime: Handle,
+	interactive: mpsc::UnboundedSender<LaneItem>,
+	background: mpsc::UnboundedSender<LaneItem>,
+}
+
+async fn run_blocking(job: PluginJob) {
+	if let Err(error) = tokio::task::spawn_blocking(job).await {
+		tracing::warn!(target: "plugin", %error, "plugin job panicked");
+	}
+}
+
+fn spawn_lane(runtime: &Handle) -> mpsc::UnboundedSender<LaneItem> {
+	let (sender, mut items) = mpsc::unbounded_channel::<LaneItem>();
 	runtime.spawn(async move {
-		while let Some(job) = jobs.recv().await {
-			if let Err(error) = tokio::task::spawn_blocking(job).await {
-				tracing::warn!(target: "plugin", %error, "plugin job panicked");
+		while let Some(item) = items.recv().await {
+			match item {
+				LaneItem::Run(job) => run_blocking(job).await,
+				LaneItem::Fence(gate) => {
+					gate.wait().await;
+					gate.wait().await;
+				}
 			}
 		}
 	});
 	sender
+}
+
+fn queue_item(lane: &mpsc::UnboundedSender<LaneItem>, item: LaneItem) {
+	if lane.send(item).is_err() {
+		tracing::warn!(target: "plugin", "plugin job queue is closed");
+	}
+}
+
+impl PluginLanes {
+	pub(super) fn spawn(runtime: &Handle) -> Self {
+		Self {
+			runtime: runtime.clone(),
+			interactive: spawn_lane(runtime),
+			background: spawn_lane(runtime),
+		}
+	}
+
+	pub(super) fn run(&self, lane: Lane, job: impl FnOnce() + Send + 'static) {
+		let lane = match lane {
+			Lane::Interactive => &self.interactive,
+			Lane::Background => &self.background,
+		};
+		queue_item(lane, LaneItem::Run(Box::new(job)));
+	}
+
+	pub(super) fn fenced(&self, job: impl FnOnce() + Send + 'static) {
+		let gate = Arc::new(Barrier::new(3));
+		queue_item(&self.interactive, LaneItem::Fence(Arc::clone(&gate)));
+		queue_item(&self.background, LaneItem::Fence(Arc::clone(&gate)));
+		self.runtime.spawn(async move {
+			gate.wait().await;
+			run_blocking(Box::new(job)).await;
+			gate.wait().await;
+		});
+	}
+}
+
+struct RenderMarks {
+	patches: u64,
+	accessory: Arc<[SlotEntry]>,
+}
+
+impl RenderMarks {
+	fn capture(hub: &PluginHub) -> Self {
+		Self {
+			patches: hub.manager.runtime().patches().revision(),
+			accessory: hub.manager.slots().get(ACCESSORY_SLOT),
+		}
+	}
+
+	fn changed(&self, hub: &PluginHub, state: &SharedState) -> bool {
+		self.patches != hub.manager.runtime().patches().revision()
+			|| !Arc::ptr_eq(&self.accessory, &hub.manager.slots().get(ACCESSORY_SLOT))
+			|| filter_changed(hub, state)
+	}
+}
+
+fn filter_changed(hub: &PluginHub, state: &SharedState) -> bool {
+	if !hub.manager.has_active(Permission::MessageFilter) {
+		return false;
+	}
+	let checks: Vec<(Arc<MessageView>, bool)> = {
+		let state = state.read();
+		let Some(selected) = state.selected() else {
+			return false;
+		};
+		let Some(cache) = state.messages(selected.channel_id) else {
+			return false;
+		};
+		cache
+			.ordered
+			.iter()
+			.rev()
+			.take(FILTER_RECHECK)
+			.filter(|message| !cache.is_deleted(message.id))
+			.filter_map(|message| {
+				let rendered = cache.rendered.get(&message.id)?;
+				let view = view_of(message, || state.channel_guild(selected.channel_id));
+				Some((Arc::new(view), rendered.hidden))
+			})
+			.collect()
+	};
+	checks
+		.iter()
+		.any(|(view, hidden)| hub.manager.filter_message(view) == *hidden)
 }
 
 fn emoji_text(emoji: &PartialEmoji) -> String {
@@ -123,16 +246,10 @@ impl Core {
 		let hub = Arc::clone(&self.hub);
 		let internal = self.internal.clone();
 		let safe_mode = self.safe_mode;
-		self.queue_plugin_job(move || {
+		self.plugin_lanes.fenced(move || {
 			hub.load_all(safe_mode);
 			let _ = internal.send(Internal::PluginsChanged);
 		});
-	}
-
-	fn queue_plugin_job(&self, job: impl FnOnce() + Send + 'static) {
-		if self.plugin_jobs.send(Box::new(job)).is_err() {
-			tracing::warn!(target: "plugin", "plugin job queue is closed");
-		}
 	}
 
 	pub(super) fn on_plugins_changed(&mut self) {
@@ -144,6 +261,7 @@ impl Core {
 		}
 		self.epoch += 1;
 		self.render_worker.set_epoch(self.epoch);
+		self.overrides_generation += 1;
 		self.apply_local(LocalEvent::UserOverridesCleared);
 		let selected = self.state.read().selected();
 		if let Some(selected) = selected {
@@ -155,6 +273,18 @@ impl Core {
 			plugin_slots: true,
 			..Changes::default()
 		});
+	}
+
+	pub(super) fn on_surfaces_changed(&mut self, rerender: bool) {
+		if rerender {
+			self.epoch += 1;
+			self.render_worker.set_epoch(self.epoch);
+			let selected = self.state.read().selected();
+			if let Some(selected) = selected {
+				self.rerender_stale(selected.channel_id);
+			}
+		}
+		self.on_slots_changed();
 	}
 
 	pub(super) fn on_slots_changed(&mut self) {
@@ -253,7 +383,7 @@ impl Core {
 			let status = if connected { "connected" } else { "disconnected" };
 			self.hub
 				.manager
-				.dispatch_event(&PluginEvent::Connection(status.to_owned()));
+				.dispatch_event(PluginEvent::Connection(status.to_owned()));
 		}
 	}
 
@@ -261,7 +391,7 @@ impl Core {
 		if !self.flags.events {
 			return;
 		}
-		let info = voice_info(&self.state.read());
+		let info = self.voice_cache.get(&self.state);
 		if info == self.last_voice_info {
 			return;
 		}
@@ -275,7 +405,7 @@ impl Core {
 		if self.flags.events {
 			self.hub
 				.manager
-				.dispatch_event(&PluginEvent::ChannelSwitched(ChannelSwitch {
+				.dispatch_event(PluginEvent::ChannelSwitched(ChannelSwitch {
 					guild_id: guild_id.map(Snowflake::get),
 					channel_id: channel_id.get(),
 				}));
@@ -283,11 +413,10 @@ impl Core {
 	}
 
 	pub(super) fn forward_dispatch(&self, event: &DispatchEvent) {
-		if !self.flags.events {
+		if !self.flags.timeline {
 			return;
 		}
-		let events = self.plugin_events(event);
-		for event in &events {
+		for event in self.plugin_events(event) {
 			self.hub.manager.dispatch_event(event);
 		}
 	}
@@ -355,6 +484,7 @@ impl Core {
 		content: String,
 		reply_to: Option<ReplyTarget>,
 		files: Vec<UploadFile>,
+		skip_hook: Option<String>,
 	) {
 		let manager = Arc::clone(&self.hub.manager);
 		let internal = self.internal.clone();
@@ -364,7 +494,7 @@ impl Core {
 			reply_to: reply_to.map(|reply| reply.message.get()),
 		};
 		self.runtime.spawn_blocking(move || {
-			let decision = manager.before_send(outgoing);
+			let decision = manager.before_send(outgoing, skip_hook.as_deref());
 			let _ = internal.send(Internal::BeforeSend {
 				nonce,
 				channel_id,
@@ -438,22 +568,28 @@ impl Core {
 		self.overrides_busy = true;
 		let manager = Arc::clone(&self.hub.manager);
 		let internal = self.internal.clone();
-		self.runtime.spawn_blocking(move || {
-			let entries: Vec<OverrideEntry> = targets
-				.into_iter()
-				.map(|(guild_id, user)| {
-					let over = manager
-						.display_user(guild_id.map(Snowflake::get), &user_view(&user))
-						.and_then(to_override);
-					(guild_id, user.id, over)
-				})
+		let epoch = self.overrides_generation;
+		self.plugin_lanes.run(Lane::Background, move || {
+			let users: Vec<(Option<u64>, plugin_host::api::User)> = targets
+				.iter()
+				.map(|(guild_id, user)| (guild_id.map(Snowflake::get), user_view(user)))
 				.collect();
-			let _ = internal.send(Internal::Overrides(entries));
+			let entries: Vec<OverrideEntry> = manager
+				.display_users(&users)
+				.into_iter()
+				.zip(targets)
+				.map(|(over, (guild_id, user))| (guild_id, user.id, over.and_then(to_override)))
+				.collect();
+			let _ = internal.send(Internal::Overrides { epoch, entries });
 		});
 	}
 
-	pub(super) fn on_overrides(&mut self, entries: Vec<OverrideEntry>) {
+	pub(super) fn on_overrides(&mut self, epoch: u64, entries: Vec<OverrideEntry>) {
 		self.overrides_busy = false;
+		if epoch != self.overrides_generation {
+			self.schedule_overrides(Duration::ZERO);
+			return;
+		}
 		let more = entries.len() >= OVERRIDE_BATCH;
 		self.apply_local(LocalEvent::UserOverrides { entries });
 		if more {
@@ -496,21 +632,28 @@ impl Core {
 
 	fn plugin_task(
 		&self,
+		kind: TaskKind,
 		what: &'static str,
-		reload: bool,
 		task: impl FnOnce(&PluginHub) -> Result<()> + Send + 'static,
 	) {
 		let hub = Arc::clone(&self.hub);
 		let internal = self.internal.clone();
-		self.queue_plugin_job(move || {
+		let state = self.state.clone();
+		let job = move || {
+			let marks = (kind == TaskKind::Interactive).then(|| RenderMarks::capture(&hub));
 			let outcome = task(&hub);
 			hub.record(what, outcome);
-			let _ = internal.send(if reload {
-				Internal::PluginsChanged
-			} else {
-				Internal::SlotsChanged
+			let _ = internal.send(match marks {
+				Some(marks) => Internal::SurfacesChanged {
+					rerender: marks.changed(&hub, &state),
+				},
+				None => Internal::PluginsChanged,
 			});
-		});
+		};
+		match kind {
+			TaskKind::Lifecycle => self.plugin_lanes.fenced(job),
+			TaskKind::Setting | TaskKind::Interactive => self.plugin_lanes.run(Lane::Interactive, job),
+		}
 	}
 
 	pub(super) fn on_plugin_command(&mut self, command: Command) {
@@ -519,7 +662,7 @@ impl Core {
 				name,
 				args,
 				channel_id,
-			} => self.plugin_task("plugin command", true, move |hub| {
+			} => self.plugin_task(TaskKind::Interactive, "plugin command", move |hub| {
 				hub.manager.command(&name, &args, channel_id.get())?;
 				Ok(())
 			}),
@@ -528,13 +671,13 @@ impl Core {
 				id,
 				payload,
 			} => {
-				self.plugin_task("plugin action", true, move |hub| {
+				self.plugin_task(TaskKind::Interactive, "plugin action", move |hub| {
 					hub.manager.ui_action(&plugin_id, &id, &payload)?;
 					Ok(())
 				});
 			}
 			Command::PluginViewEvent { plugin_id, event } => {
-				self.plugin_task("plugin view event", true, move |hub| {
+				self.plugin_task(TaskKind::Interactive, "plugin view event", move |hub| {
 					hub.manager.view_event(&plugin_id, event)?;
 					Ok(())
 				});
@@ -544,14 +687,14 @@ impl Core {
 				menu,
 				key,
 				context,
-			} => self.plugin_task("plugin menu item", true, move |hub| {
+			} => self.plugin_task(TaskKind::Interactive, "plugin menu item", move |hub| {
 				hub.manager.menu_item(&plugin_id, &menu, &key, context)?;
 				Ok(())
 			}),
 			Command::PluginRenderView { point, context } => {
 				let hub = Arc::clone(&self.hub);
 				let internal = self.internal.clone();
-				self.queue_plugin_job(move || {
+				self.plugin_lanes.run(Lane::Background, move || {
 					if hub.manager.render_views(&point, context) {
 						let _ = internal.send(Internal::SlotsChanged);
 					}
@@ -560,41 +703,47 @@ impl Core {
 			Command::PluginEmojiPick { emoji, channel_id } => {
 				let hub = Arc::clone(&self.hub);
 				let internal = self.internal.clone();
-				self.queue_plugin_job(move || {
+				self.plugin_lanes.run(Lane::Interactive, move || {
 					hub.manager.pick_emoji(&emoji, channel_id.get());
 					let _ = internal.send(Internal::SlotsChanged);
 				});
 			}
-			Command::PluginEnable(id) => self.plugin_task("enable plugin", true, move |hub| {
+			Command::PluginEnable(id) => self.plugin_task(TaskKind::Lifecycle, "enable plugin", move |hub| {
 				hub.manager.enable(&id)?;
 				hub.sync_themes();
 				Ok(())
 			}),
-			Command::PluginDisable(id) => self.plugin_task("disable plugin", true, move |hub| {
-				hub.manager.disable(&id)?;
-				hub.sync_themes();
-				Ok(())
-			}),
-			Command::PluginReload(id) => self.plugin_task("reload plugin", true, move |hub| {
+			Command::PluginDisable(id) => {
+				self.plugin_task(TaskKind::Lifecycle, "disable plugin", move |hub| {
+					hub.manager.disable(&id)?;
+					hub.sync_themes();
+					Ok(())
+				})
+			}
+			Command::PluginReload(id) => self.plugin_task(TaskKind::Lifecycle, "reload plugin", move |hub| {
 				hub.manager.reload(&id)?;
 				hub.sync_themes();
 				Ok(())
 			}),
 			Command::PluginInstall { path } => {
-				self.plugin_task("install plugin", true, move |hub| hub.install(&path, None));
+				self.plugin_task(TaskKind::Lifecycle, "install plugin", move |hub| {
+					hub.install(&path, None)
+				});
 			}
 			Command::PluginUninstall(id) => {
-				self.plugin_task("uninstall plugin", true, move |hub| hub.uninstall(&id));
+				self.plugin_task(TaskKind::Lifecycle, "uninstall plugin", move |hub| {
+					hub.uninstall(&id)
+				});
 			}
 			Command::PluginGrant {
 				id,
 				permissions,
 				hosts,
-			} => self.plugin_task("grant permissions", true, move |hub| {
+			} => self.plugin_task(TaskKind::Lifecycle, "grant permissions", move |hub| {
 				hub.grant(&id, &permissions, &hosts)
 			}),
 			Command::PluginSetSetting { id, key, value } => {
-				self.plugin_task("plugin setting", true, move |hub| {
+				self.plugin_task(TaskKind::Setting, "plugin setting", move |hub| {
 					hub.manager.set_setting(&id, &key, &value)?;
 					Ok(())
 				});

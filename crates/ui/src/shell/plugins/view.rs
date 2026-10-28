@@ -383,14 +383,14 @@ fn tip(style: Option<&Style>) -> Option<SharedString> {
 
 #[derive(Clone)]
 pub struct Ctx {
-	pub tree: Rc<ViewTree>,
+	pub tree: Arc<ViewTree>,
 	pub scope: Scope,
 }
 
 impl Ctx {
-	pub fn new(tree: &Rc<ViewTree>, scope: Scope) -> Self {
+	pub fn new(tree: &Arc<ViewTree>, scope: Scope) -> Self {
 		Self {
-			tree: Rc::clone(tree),
+			tree: Arc::clone(tree),
 			scope,
 		}
 	}
@@ -419,7 +419,7 @@ impl Ctx {
 			declared: Rc::new(declared),
 		});
 		Ctx {
-			tree: Rc::clone(&self.tree),
+			tree: Arc::clone(&self.tree),
 			scope,
 		}
 	}

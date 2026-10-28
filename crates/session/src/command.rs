@@ -54,6 +54,12 @@ pub enum Command {
 		files: Vec<UploadFile>,
 		by_plugin: Option<String>,
 	},
+	SendAsUser {
+		plugin_id: String,
+		channel_id: Snowflake,
+		content: String,
+		reply_to: Option<ReplyTarget>,
+	},
 	EditMessage {
 		channel_id: Snowflake,
 		message_id: Snowflake,

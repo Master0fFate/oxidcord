@@ -22,6 +22,7 @@ use tokio::runtime::Handle;
 use tokio::sync::mpsc;
 use tokio::time::{Instant, sleep_until};
 
+use crate::broker::VoiceCache;
 use crate::command::{Command, ReplyTarget};
 use crate::config::VoiceIo;
 use crate::notifier::Notifier;
@@ -132,6 +133,9 @@ pub(crate) enum Internal {
 	},
 	Rendered(Vec<RenderResult>),
 	PluginsChanged,
+	SurfacesChanged {
+		rerender: bool,
+	},
 	SlotsChanged,
 	CatalogChanged,
 	BeforeSend {
@@ -142,7 +146,10 @@ pub(crate) enum Internal {
 		files: Vec<UploadFile>,
 		decision: SendDecision,
 	},
-	Overrides(Vec<(Option<Snowflake>, Snowflake, Option<UserOverride>)>),
+	Overrides {
+		epoch: u64,
+		entries: Vec<(Option<Snowflake>, Snowflake, Option<UserOverride>)>,
+	},
 	MicTestLevel {
 		generation: u64,
 		level: f32,
@@ -164,6 +171,7 @@ pub(crate) struct CoreParts {
 	pub(crate) runtime: Handle,
 	pub(crate) search: SharedSearch,
 	pub(crate) stats: Arc<Stats>,
+	pub(crate) voice_cache: Arc<VoiceCache>,
 	pub(crate) voice_io: VoiceIo,
 	pub(crate) shared_voice: SharedVoice,
 	pub(crate) video: SharedVideo,
@@ -197,13 +205,15 @@ pub(crate) struct Core {
 	custom_status: Option<CustomStatus>,
 	hub: Arc<PluginHub>,
 	render_worker: RenderWorker,
-	plugin_jobs: mpsc::UnboundedSender<plugin_link::PluginJob>,
+	plugin_lanes: plugin_link::PluginLanes,
+	voice_cache: Arc<VoiceCache>,
 	safe_mode: bool,
 	locale: String,
 	flags: PluginFlags,
 	epoch: u64,
 	overrides_due: Option<Instant>,
 	overrides_busy: bool,
+	overrides_generation: u64,
 	mic_test: MicTestRun,
 	token: Arc<Token>,
 	account_saved: bool,
@@ -236,7 +246,7 @@ struct CustomStatus {
 impl Core {
 	pub(crate) fn new(parts: CoreParts) -> Self {
 		let persist = Persistor::spawn(parts.store.clone(), &parts.runtime);
-		let plugin_jobs = plugin_link::spawn_plugin_jobs(&parts.runtime);
+		let plugin_lanes = plugin_link::PluginLanes::spawn(&parts.runtime);
 		let render_worker = RenderWorker::spawn(
 			Arc::clone(&parts.hub.manager),
 			Arc::clone(&parts.hub.stats),
@@ -266,13 +276,15 @@ impl Core {
 			custom_status: None,
 			hub: parts.hub,
 			render_worker,
-			plugin_jobs,
+			plugin_lanes,
+			voice_cache: parts.voice_cache,
 			safe_mode: parts.safe_mode,
 			locale: parts.locale,
 			flags: PluginFlags::default(),
 			epoch: INITIAL_EPOCH,
 			overrides_due: None,
 			overrides_busy: false,
+			overrides_generation: 0,
 			mic_test: MicTestRun::default(),
 			token: parts.token,
 			account_saved: false,
@@ -407,6 +419,9 @@ impl Core {
 			self.render_messages(fresh);
 		}
 		self.watch_overrides(&changes);
+		if changes.voice_session || !changes.voice.is_empty() {
+			self.voice_cache.invalidate();
+		}
 		if changes.voice_session {
 			self.forward_voice();
 		}
@@ -607,6 +622,7 @@ impl Core {
 			} => self.on_voice_levels(generation, input, output),
 			Internal::Rendered(results) => self.on_rendered(results),
 			Internal::PluginsChanged => self.on_plugins_changed(),
+			Internal::SurfacesChanged { rerender } => self.on_surfaces_changed(rerender),
 			Internal::SlotsChanged => self.on_slots_changed(),
 			Internal::CatalogChanged => self.on_catalog_changed(),
 			Internal::BeforeSend {
@@ -617,7 +633,7 @@ impl Core {
 				files,
 				decision,
 			} => self.on_before_send(nonce, channel_id, content, reply_to, files, decision),
-			Internal::Overrides(entries) => self.on_overrides(entries),
+			Internal::Overrides { epoch, entries } => self.on_overrides(epoch, entries),
 			Internal::MicTestLevel {
 				generation,
 				level,
@@ -688,7 +704,13 @@ impl Core {
 				reply_to,
 				files,
 				by_plugin,
-			} => self.send_message(channel_id, content, reply_to, files, by_plugin),
+			} => self.send_message(channel_id, content, reply_to, files, by_plugin, None),
+			Command::SendAsUser {
+				plugin_id,
+				channel_id,
+				content,
+				reply_to,
+			} => self.send_message(channel_id, content, reply_to, Vec::new(), None, Some(plugin_id)),
 			Command::EditMessage {
 				channel_id,
 				message_id,
@@ -1029,6 +1051,7 @@ impl Core {
 		reply_to: Option<ReplyTarget>,
 		files: Vec<UploadFile>,
 		by_plugin: Option<String>,
+		skip_hook: Option<String>,
 	) {
 		if !self.send_allowed(channel_id) {
 			return;
@@ -1049,7 +1072,7 @@ impl Core {
 			by_plugin: by_plugin.clone(),
 		});
 		if by_plugin.is_none() && self.flags.send && !content.is_empty() {
-			self.hook_before_send(nonce, channel_id, content, reply_to, files);
+			self.hook_before_send(nonce, channel_id, content, reply_to, files, skip_hook);
 		} else {
 			self.dispatch_send(nonce, channel_id, content, reply_to, files);
 		}

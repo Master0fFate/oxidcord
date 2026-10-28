@@ -6,14 +6,13 @@ use std::sync::Arc;
 use anyhow::{Context, Result, bail, ensure};
 use parking_lot::Mutex;
 use plugin_host::catalog::{Catalog, CatalogEntry, ThemeCatalog};
-use plugin_host::{Grants, Package, Permission, PluginManager, PluginState, THEME_FILE};
+use plugin_host::{Grants, LatencyStats, Package, Permission, PluginManager, PluginState, THEME_FILE};
 use store::Store;
-
-use crate::render::RenderStats;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct PluginFlags {
 	pub(crate) events: bool,
+	pub(crate) timeline: bool,
 	pub(crate) render: bool,
 	pub(crate) filter: bool,
 	pub(crate) send: bool,
@@ -32,7 +31,7 @@ pub(crate) struct PluginHub {
 	pub(crate) manager: Arc<PluginManager>,
 	pub(crate) grants: Arc<Grants>,
 	pub(crate) store: Arc<Store>,
-	pub(crate) stats: Arc<RenderStats>,
+	pub(crate) stats: Arc<LatencyStats>,
 	themes: Mutex<Vec<PathBuf>>,
 	catalog: Mutex<Option<Arc<Catalog>>>,
 	catalog_error: Mutex<Option<String>>,
@@ -47,7 +46,7 @@ impl PluginHub {
 			manager,
 			grants,
 			store,
-			stats: Arc::new(RenderStats::default()),
+			stats: Arc::new(LatencyStats::default()),
 			themes: Mutex::new(Vec::new()),
 			catalog: Mutex::new(None),
 			catalog_error: Mutex::new(None),
@@ -60,6 +59,7 @@ impl PluginHub {
 	pub(crate) fn flags(&self) -> PluginFlags {
 		PluginFlags {
 			events: self.manager.has_instances(),
+			timeline: self.manager.has_timeline_events(),
 			render: self.manager.has_active(Permission::MessageRender),
 			filter: self.manager.has_active(Permission::MessageFilter),
 			send: self.manager.has_active(Permission::MessageSend),

@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use std::sync::mpsc::{SyncSender, sync_channel};
@@ -33,6 +33,10 @@ pub enum PluginState {
 }
 
 impl PluginState {
+	pub(crate) fn is_active(self) -> bool {
+		matches!(self, Self::Loaded | Self::Crashed)
+	}
+
 	fn to_u8(self) -> u8 {
 		match self {
 			Self::Loaded => 0,
@@ -74,6 +78,7 @@ pub enum CallError {
 
 pub struct Health {
 	state: AtomicU8,
+	revision: Arc<AtomicU64>,
 	crashes: Mutex<VecDeque<Instant>>,
 	total_crashes: AtomicU64,
 	calls: AtomicU64,
@@ -83,9 +88,10 @@ pub struct Health {
 }
 
 impl Health {
-	pub fn new(state: PluginState) -> Self {
+	pub fn new(state: PluginState, revision: Arc<AtomicU64>) -> Self {
 		Self {
 			state: AtomicU8::new(state.to_u8()),
+			revision,
 			crashes: Mutex::new(VecDeque::new()),
 			total_crashes: AtomicU64::new(0),
 			calls: AtomicU64::new(0),
@@ -100,7 +106,10 @@ impl Health {
 	}
 
 	pub fn set_state(&self, state: PluginState) {
-		self.state.store(state.to_u8(), Ordering::Release);
+		let before = PluginState::from_u8(self.state.swap(state.to_u8(), Ordering::AcqRel));
+		if before.is_active() != state.is_active() {
+			self.revision.fetch_add(1, Ordering::AcqRel);
+		}
 	}
 
 	pub fn total_crashes(&self) -> u64 {
@@ -172,17 +181,14 @@ fn backoff_for(config: &RuntimeConfig, crashes_in_window: usize) -> Duration {
 
 pub enum CallKind {
 	Init,
-	Event(Event),
+	Event(Arc<Event>),
 	RenderMessage {
-		msg: MessageView,
-		ast: MdTree,
+		msg: Arc<MessageView>,
+		ast: Arc<MdTree>,
 	},
-	BeforeSend(OutgoingMessage),
-	FilterMessage(MessageView),
-	DisplayUser {
-		guild_id: Option<u64>,
-		user: User,
-	},
+	BeforeSend(Arc<OutgoingMessage>),
+	FilterMessage(Arc<MessageView>),
+	DisplayUsers(Arc<[(Option<u64>, User)]>),
 	UiAction {
 		id: String,
 		payload: String,
@@ -208,8 +214,8 @@ pub enum CallKind {
 		context: UiContext,
 	},
 	Intercept {
-		msg: MessageFull,
-		content: RichTree,
+		msg: Arc<MessageFull>,
+		content: Arc<RichTree>,
 	},
 	Timer {
 		id: u64,
@@ -221,9 +227,22 @@ pub enum CallKind {
 	},
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Priority {
+	Interactive,
+	Background,
+}
+
 impl CallKind {
-	fn is_event(&self) -> bool {
-		matches!(self, Self::Event(_) | Self::Timer { .. })
+	fn priority(&self) -> Priority {
+		match self {
+			Self::DisplayUsers(_) => Priority::Background,
+			_ => Priority::Interactive,
+		}
+	}
+
+	fn is_measured(&self) -> bool {
+		self.priority() == Priority::Interactive && !matches!(self, Self::Init)
 	}
 
 	fn is_gesture(&self) -> bool {
@@ -240,7 +259,9 @@ impl CallKind {
 			Self::RenderMessage { .. } => timeouts.render_message,
 			Self::BeforeSend(_) => timeouts.before_send,
 			Self::FilterMessage(_) => timeouts.filter_message,
-			Self::DisplayUser { .. } => timeouts.display_user,
+			Self::DisplayUsers(batch) => {
+				timeouts.display_user + timeouts.display_item * u32::try_from(batch.len()).unwrap_or(u32::MAX)
+			}
 			Self::UiAction { .. } => timeouts.ui_action,
 			Self::Command { .. } => timeouts.command,
 			Self::SettingsSchema => timeouts.settings_schema,
@@ -259,7 +280,7 @@ pub enum Output {
 	Render(Option<MdTree>),
 	Send(SendDecision),
 	Filter(bool),
-	Display(Option<DisplayOverride>),
+	Displays(Vec<Option<DisplayOverride>>),
 	Ui(UiTree),
 	Command(Result<(), String>),
 	Schema(String),
@@ -282,8 +303,28 @@ struct Call {
 }
 
 struct QueueState {
-	items: VecDeque<Call>,
+	interactive: VecDeque<Call>,
+	background: VecDeque<Call>,
+	events: VecDeque<Call>,
+	timers: HashSet<u64>,
 	closed: bool,
+}
+
+impl QueueState {
+	fn forget(&mut self, call: &Call) {
+		if let CallKind::Timer { id, .. } = &call.kind {
+			self.timers.remove(id);
+		}
+	}
+
+	fn push_event(&mut self, call: Call, cap: usize) {
+		if self.events.len() >= cap
+			&& let Some(oldest) = self.events.pop_front()
+		{
+			self.forget(&oldest);
+		}
+		self.events.push_back(call);
+	}
 }
 
 struct CallQueue {
@@ -296,7 +337,10 @@ impl CallQueue {
 	fn new(event_cap: usize) -> Self {
 		Self {
 			state: Mutex::new(QueueState {
-				items: VecDeque::new(),
+				interactive: VecDeque::new(),
+				background: VecDeque::new(),
+				events: VecDeque::new(),
+				timers: HashSet::new(),
 				closed: false,
 			}),
 			ready: Condvar::new(),
@@ -313,13 +357,7 @@ impl CallQueue {
 		if state.closed {
 			return false;
 		}
-		let events = state.items.iter().filter(|item| item.kind.is_event()).count();
-		if events >= self.event_cap
-			&& let Some(oldest) = state.items.iter().position(|item| item.kind.is_event())
-		{
-			state.items.remove(oldest);
-		}
-		state.items.push_back(call);
+		state.push_event(call, self.event_cap);
 		drop(state);
 		self.ready.notify_one();
 		true
@@ -329,26 +367,25 @@ impl CallQueue {
 		let CallKind::Timer { id, .. } = &call.kind else {
 			return false;
 		};
-		let queued = self
-			.state
-			.lock()
-			.items
-			.iter()
-			.any(|item| matches!(&item.kind, CallKind::Timer { id: other, .. } if other == id));
-		!queued && self.push_event(call)
-	}
-
-	fn push_interactive(&self, call: Call) -> bool {
 		let mut state = self.state.lock();
-		if state.closed || state.items.iter().filter(|item| !item.kind.is_event()).count() >= self.event_cap {
+		if state.closed || !state.timers.insert(*id) {
 			return false;
 		}
-		let position = state
-			.items
-			.iter()
-			.position(|item| item.kind.is_event())
-			.unwrap_or(state.items.len());
-		state.items.insert(position, call);
+		state.push_event(call, self.event_cap);
+		drop(state);
+		self.ready.notify_one();
+		true
+	}
+
+	fn push_call(&self, call: Call) -> bool {
+		let mut state = self.state.lock();
+		if state.closed || state.interactive.len() + state.background.len() >= self.event_cap {
+			return false;
+		}
+		match call.kind.priority() {
+			Priority::Interactive => state.interactive.push_back(call),
+			Priority::Background => state.background.push_back(call),
+		}
 		drop(state);
 		self.ready.notify_one();
 		true
@@ -360,7 +397,14 @@ impl CallQueue {
 			if state.closed {
 				return None;
 			}
-			if let Some(call) = state.items.pop_front() {
+			if let Some(call) = state.interactive.pop_front() {
+				return Some(call);
+			}
+			if let Some(call) = state.background.pop_front() {
+				return Some(call);
+			}
+			if let Some(call) = state.events.pop_front() {
+				state.forget(&call);
 				return Some(call);
 			}
 			self.ready.wait(&mut state);
@@ -370,7 +414,10 @@ impl CallQueue {
 	fn close(&self) {
 		let mut state = self.state.lock();
 		state.closed = true;
-		state.items.clear();
+		state.interactive.clear();
+		state.background.clear();
+		state.events.clear();
+		state.timers.clear();
 		drop(state);
 		self.ready.notify_all();
 	}
@@ -457,9 +504,17 @@ impl WorkerContext {
 				.map(Output::Render),
 			CallKind::BeforeSend(msg) => guest.call_before_send(&mut *store, &msg).map(Output::Send),
 			CallKind::FilterMessage(msg) => guest.call_filter_message(&mut *store, &msg).map(Output::Filter),
-			CallKind::DisplayUser { guild_id, user } => guest
-				.call_display_user(&mut *store, guild_id, &user)
-				.map(Output::Display),
+			CallKind::DisplayUsers(batch) => {
+				let ticks = self.epoch_ticks(self.runtime.config.timeouts.display_item);
+				batch
+					.iter()
+					.map(|(guild_id, user)| {
+						store.set_epoch_deadline(ticks);
+						guest.call_display_user(&mut *store, *guild_id, user)
+					})
+					.collect::<wasmtime::Result<Vec<_>>>()
+					.map(Output::Displays)
+			}
 			CallKind::UiAction { id, payload } => guest
 				.call_on_ui_action(&mut *store, &id, &payload)
 				.map(Output::Ui),
@@ -577,7 +632,10 @@ fn worker_main(context: WorkerContext, queue: Arc<CallQueue>) {
 			}
 			reply.started.store(true, Ordering::Release);
 		}
-		let result = context.run(&mut running, &mut restart_at, kind, timeout);
+		let result = {
+			let _busy = context.runtime.activity.enter();
+			context.run(&mut running, &mut restart_at, kind, timeout)
+		};
 		if let Some(reply) = reply
 			&& reply.sender.send(result).is_err()
 			&& context.health.state() == PluginState::Loaded
@@ -689,7 +747,7 @@ impl PluginInstance {
 		Ok(queue)
 	}
 
-	pub fn post_event(&self, event: Event) {
+	pub fn post_event(&self, event: Arc<Event>) {
 		let Ok(queue) = self.queue() else {
 			return;
 		};
@@ -716,6 +774,16 @@ impl PluginInstance {
 	}
 
 	pub fn call(&self, kind: CallKind) -> Result<Output, CallError> {
+		let measured = kind.is_measured();
+		let issued = Instant::now();
+		let result = self.call_queued(kind);
+		if measured && result.is_ok() {
+			self.runtime.services.latency.record(issued.elapsed());
+		}
+		result
+	}
+
+	fn call_queued(&self, kind: CallKind) -> Result<Output, CallError> {
 		let queue = self.queue()?;
 		let timeout = kind.timeout(&self.runtime.config.timeouts);
 		let (sender, receiver) = sync_channel(1);
@@ -731,7 +799,7 @@ impl PluginInstance {
 			timeout,
 			reply: Some(reply),
 		};
-		if !queue.push_interactive(call) {
+		if !queue.push_call(call) {
 			return Err(CallError::Busy);
 		}
 		match receiver.recv_timeout(timeout + self.runtime.config.caller_grace) {
@@ -774,34 +842,37 @@ fn mismatch() -> CallError {
 }
 
 impl PluginInstance {
-	pub fn render_message(&self, msg: MessageView, ast: MdTree) -> Result<Option<MdTree>, CallError> {
+	pub fn render_message(
+		&self,
+		msg: Arc<MessageView>,
+		ast: Arc<MdTree>,
+	) -> Result<Option<MdTree>, CallError> {
 		match self.call(CallKind::RenderMessage { msg, ast })? {
 			Output::Render(tree) => Ok(tree),
 			_ => Err(mismatch()),
 		}
 	}
 
-	pub fn before_send(&self, msg: OutgoingMessage) -> Result<SendDecision, CallError> {
+	pub fn before_send(&self, msg: Arc<OutgoingMessage>) -> Result<SendDecision, CallError> {
 		match self.call(CallKind::BeforeSend(msg))? {
 			Output::Send(decision) => Ok(decision),
 			_ => Err(mismatch()),
 		}
 	}
 
-	pub fn filter_message(&self, msg: MessageView) -> Result<bool, CallError> {
+	pub fn filter_message(&self, msg: Arc<MessageView>) -> Result<bool, CallError> {
 		match self.call(CallKind::FilterMessage(msg))? {
 			Output::Filter(keep) => Ok(keep),
 			_ => Err(mismatch()),
 		}
 	}
 
-	pub fn display_user(
+	pub fn display_users(
 		&self,
-		guild_id: Option<u64>,
-		user: User,
-	) -> Result<Option<DisplayOverride>, CallError> {
-		match self.call(CallKind::DisplayUser { guild_id, user })? {
-			Output::Display(over) => Ok(over),
+		batch: Arc<[(Option<u64>, User)]>,
+	) -> Result<Vec<Option<DisplayOverride>>, CallError> {
+		match self.call(CallKind::DisplayUsers(batch))? {
+			Output::Displays(overrides) => Ok(overrides),
 			_ => Err(mismatch()),
 		}
 	}
@@ -841,7 +912,7 @@ impl PluginInstance {
 	}
 
 	pub fn call_event(&self, event: Event) -> Result<(), CallError> {
-		self.call(CallKind::Event(event)).map(|_| ())
+		self.call(CallKind::Event(Arc::new(event))).map(|_| ())
 	}
 }
 
@@ -864,7 +935,11 @@ impl PluginInstance {
 		}
 	}
 
-	pub fn intercept(&self, msg: MessageFull, content: RichTree) -> Result<MessagePatch, CallError> {
+	pub fn intercept(
+		&self,
+		msg: Arc<MessageFull>,
+		content: Arc<RichTree>,
+	) -> Result<MessagePatch, CallError> {
 		match self.call(CallKind::Intercept { msg, content })? {
 			Output::Patch(patch) => Ok(*patch),
 			_ => Err(mismatch()),

@@ -533,14 +533,14 @@ impl Composer {
 				}
 			}
 			Trigger::Command => {
-				for hint in command_list(data) {
-					if let Some(hit) = rank(&hint.name) {
+				for (name, entry) in command_list(data).iter() {
+					if let Some(hit) = rank(name) {
 						found.push((
 							hit,
 							Suggestion {
-								label: format!("/{}", hint.name),
-								detail: Some(hint.description),
-								insert: format!("/{} ", hint.name),
+								label: format!("/{name}"),
+								detail: Some(entry.description.clone()),
+								insert: format!("/{name} "),
 								visual: Visual::Channel(IconKind::Plugins),
 							},
 						));

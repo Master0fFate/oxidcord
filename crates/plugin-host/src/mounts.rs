@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use parking_lot::RwLock;
@@ -74,7 +74,7 @@ impl ViewContext {
 pub struct Mount {
 	pub plugin_id: Arc<str>,
 	pub key: String,
-	pub tree: ViewTree,
+	pub tree: Arc<ViewTree>,
 	pub options: MountOptions,
 }
 
@@ -87,7 +87,7 @@ pub struct Provider {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MenuEntry {
 	pub plugin_id: Arc<str>,
-	pub items: Vec<MenuItem>,
+	pub items: Arc<[MenuItem]>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -114,24 +114,68 @@ pub enum Overlay {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Contextual {
 	Pending,
-	Ready(Option<ViewTree>),
+	Ready(Option<Arc<ViewTree>>),
+}
+
+pub struct Requested {
+	pub plugin_id: Arc<str>,
+	pub stamp: u64,
 }
 
 type ViewKey = (Arc<str>, &'static str, ViewContext);
+type StampKey = (Arc<str>, &'static str);
+
+static NO_MOUNTS: LazyLock<Arc<[Mount]>> = LazyLock::new(|| Arc::from([]));
+static NO_PROVIDERS: LazyLock<Arc<[Provider]>> = LazyLock::new(|| Arc::from([]));
+static NO_MENUS: LazyLock<Arc<[MenuEntry]>> = LazyLock::new(|| Arc::from([]));
 
 #[derive(Default)]
 struct Inner {
-	mounts: HashMap<&'static str, Vec<Mount>>,
-	providers: HashMap<&'static str, Vec<Provider>>,
+	mounts: HashMap<&'static str, Arc<[Mount]>>,
+	counts: HashMap<Arc<str>, usize>,
+	providers: HashMap<&'static str, Arc<[Provider]>>,
 	views: HashMap<ViewKey, Contextual>,
-	menus: HashMap<&'static str, Vec<MenuEntry>>,
+	stamps: HashMap<StampKey, u64>,
+	next_stamp: u64,
+	menus: HashMap<&'static str, Arc<[MenuEntry]>>,
 	overlays: VecDeque<Overlay>,
+}
+
+impl Inner {
+	fn stamp_of(&self, plugin_id: &Arc<str>, point: &'static str) -> u64 {
+		self.stamps
+			.get(&(Arc::clone(plugin_id), point))
+			.copied()
+			.unwrap_or(0)
+	}
+
+	fn restamp(&mut self, plugin_id: &Arc<str>, point: &'static str) {
+		self.next_stamp += 1;
+		self.stamps
+			.insert((Arc::clone(plugin_id), point), self.next_stamp);
+	}
+
+	fn release(&mut self, plugin_id: &str, count: usize) {
+		if let Some(owned) = self.counts.get_mut(plugin_id) {
+			*owned = owned.saturating_sub(count);
+			if *owned == 0 {
+				self.counts.remove(plugin_id);
+			}
+		}
+	}
+}
+
+fn edit<T: Clone>(list: &mut Arc<[T]>, change: impl FnOnce(&mut Vec<T>)) {
+	let mut items = list.to_vec();
+	change(&mut items);
+	*list = items.into();
 }
 
 #[derive(Default)]
 pub struct Mounts {
 	inner: RwLock<Inner>,
-	revision: AtomicU64,
+	surfaces: AtomicU64,
+	overlays: AtomicU64,
 }
 
 pub enum MountError {
@@ -140,47 +184,60 @@ pub enum MountError {
 }
 
 impl Mounts {
-	pub fn revision(&self) -> u64 {
-		self.revision.load(Ordering::Acquire)
+	pub fn surfaces_revision(&self) -> u64 {
+		self.surfaces.load(Ordering::Acquire)
 	}
 
-	fn bump(&self) {
-		self.revision.fetch_add(1, Ordering::AcqRel);
+	pub fn overlays_revision(&self) -> u64 {
+		self.overlays.load(Ordering::Acquire)
 	}
 
-	pub fn mounted(&self, point: &str) -> Vec<Mount> {
-		self.inner.read().mounts.get(point).cloned().unwrap_or_default()
+	fn bump_surfaces(&self) {
+		self.surfaces.fetch_add(1, Ordering::AcqRel);
+	}
+
+	fn bump_overlays(&self) {
+		self.overlays.fetch_add(1, Ordering::AcqRel);
+	}
+
+	pub fn mounted(&self, point: &str) -> Arc<[Mount]> {
+		self.inner
+			.read()
+			.mounts
+			.get(point)
+			.map_or_else(|| Arc::clone(&NO_MOUNTS), Arc::clone)
 	}
 
 	pub fn mount(&self, point: &'static str, mount: Mount) -> Result<(), MountError> {
-		let mut inner = self.inner.write();
-		let owned = inner
-			.mounts
-			.values()
-			.flatten()
-			.filter(|existing| existing.plugin_id == mount.plugin_id)
-			.count();
-		let list = inner.mounts.entry(point).or_default();
-		match list
-			.iter_mut()
-			.find(|existing| existing.plugin_id == mount.plugin_id && existing.key == mount.key)
-		{
-			Some(existing) if *existing == mount => return Ok(()),
-			Some(existing) => *existing = mount,
-			None if owned >= MAX_MOUNTS_PER_PLUGIN => return Err(MountError::Limit),
+		let mut guard = self.inner.write();
+		let Inner { mounts, counts, .. } = &mut *guard;
+		let list = mounts.entry(point).or_insert_with(|| Arc::clone(&NO_MOUNTS));
+		let existing = list
+			.iter()
+			.position(|existing| existing.plugin_id == mount.plugin_id && existing.key == mount.key);
+		match existing {
+			Some(index) if list[index] == mount => return Ok(()),
+			Some(index) => edit(list, |items| items[index] = mount),
 			None => {
-				list.push(mount);
-				list.sort_by(|left, right| {
-					(left.options.order, &left.plugin_id, &left.key).cmp(&(
-						right.options.order,
-						&right.plugin_id,
-						&right.key,
-					))
+				let owned = counts.entry(Arc::clone(&mount.plugin_id)).or_default();
+				if *owned >= MAX_MOUNTS_PER_PLUGIN {
+					return Err(MountError::Limit);
+				}
+				*owned += 1;
+				edit(list, |items| {
+					items.push(mount);
+					items.sort_by(|left, right| {
+						(left.options.order, &left.plugin_id, &left.key).cmp(&(
+							right.options.order,
+							&right.plugin_id,
+							&right.key,
+						))
+					});
 				});
 			}
 		}
-		drop(inner);
-		self.bump();
+		drop(guard);
+		self.bump_surfaces();
 		Ok(())
 	}
 
@@ -191,63 +248,72 @@ impl Mounts {
 		key: &str,
 		tree: ViewTree,
 	) -> Result<(), MountError> {
-		let mut inner = self.inner.write();
-		let existing = inner
-			.mounts
-			.get_mut(point)
-			.and_then(|list| {
-				list.iter_mut()
-					.find(|mount| &*mount.plugin_id == plugin_id && mount.key == key)
-			})
+		let mut guard = self.inner.write();
+		let list = guard.mounts.get_mut(point).ok_or(MountError::Missing)?;
+		let index = list
+			.iter()
+			.position(|mount| &*mount.plugin_id == plugin_id && mount.key == key)
 			.ok_or(MountError::Missing)?;
-		if existing.tree == tree {
+		if *list[index].tree == tree {
 			return Ok(());
 		}
-		existing.tree = tree;
-		drop(inner);
-		self.bump();
+		let tree = Arc::new(tree);
+		edit(list, |items| items[index].tree = tree);
+		drop(guard);
+		self.bump_surfaces();
 		Ok(())
 	}
 
 	pub fn unmount(&self, point: &'static str, plugin_id: &str, key: &str) {
-		let mut inner = self.inner.write();
-		let Some(list) = inner.mounts.get_mut(point) else {
+		let mut guard = self.inner.write();
+		let Some(list) = guard.mounts.get_mut(point) else {
 			return;
 		};
-		let before = list.len();
-		list.retain(|mount| !(&*mount.plugin_id == plugin_id && mount.key == key));
-		let changed = list.len() != before;
-		drop(inner);
-		if changed {
-			self.bump();
-		}
+		let Some(index) = list
+			.iter()
+			.position(|mount| &*mount.plugin_id == plugin_id && mount.key == key)
+		else {
+			return;
+		};
+		edit(list, |items| {
+			items.remove(index);
+		});
+		guard.release(plugin_id, 1);
+		drop(guard);
+		self.bump_surfaces();
 	}
 
 	pub fn provide(&self, point: &'static str, provider: Provider) {
-		let mut inner = self.inner.write();
-		let list = inner.providers.entry(point).or_default();
-		match list
-			.iter_mut()
-			.find(|existing| existing.plugin_id == provider.plugin_id)
-		{
-			Some(existing) => *existing = provider,
-			None => list.push(provider),
-		}
-		list.sort_by(|left, right| {
-			(left.options.order, &left.plugin_id).cmp(&(right.options.order, &right.plugin_id))
+		let mut guard = self.inner.write();
+		let plugin_id = Arc::clone(&provider.plugin_id);
+		let list = guard
+			.providers
+			.entry(point)
+			.or_insert_with(|| Arc::clone(&NO_PROVIDERS));
+		edit(list, |items| {
+			match items
+				.iter_mut()
+				.find(|existing| existing.plugin_id == provider.plugin_id)
+			{
+				Some(existing) => *existing = provider,
+				None => items.push(provider),
+			}
+			items.sort_by(|left, right| {
+				(left.options.order, &left.plugin_id).cmp(&(right.options.order, &right.plugin_id))
+			});
 		});
-		inner.views.retain(|(_, cached, _), _| *cached != point);
-		drop(inner);
-		self.bump();
+		guard.restamp(&plugin_id, point);
+		guard.views.retain(|(_, cached, _), _| *cached != point);
+		drop(guard);
+		self.bump_surfaces();
 	}
 
-	pub fn providers(&self, point: &str) -> Vec<Provider> {
+	pub fn providers(&self, point: &str) -> Arc<[Provider]> {
 		self.inner
 			.read()
 			.providers
 			.get(point)
-			.cloned()
-			.unwrap_or_default()
+			.map_or_else(|| Arc::clone(&NO_PROVIDERS), Arc::clone)
 	}
 
 	pub fn contextual(
@@ -260,7 +326,7 @@ impl Mounts {
 			.providers
 			.get(point)
 			.into_iter()
-			.flatten()
+			.flat_map(|providers| providers.iter())
 			.map(|provider| {
 				let cached = inner
 					.views
@@ -271,23 +337,29 @@ impl Mounts {
 			.collect()
 	}
 
-	pub fn request(&self, point: &'static str, context: ViewContext) -> Vec<Arc<str>> {
-		let mut inner = self.inner.write();
-		let wanted: Vec<Arc<str>> = inner
+	pub fn request(&self, point: &'static str, context: ViewContext) -> Vec<Requested> {
+		let mut guard = self.inner.write();
+		let inner = &mut *guard;
+		let wanted: Vec<Requested> = inner
 			.providers
 			.get(point)
 			.into_iter()
-			.flatten()
-			.map(|provider| Arc::clone(&provider.plugin_id))
+			.flat_map(|providers| providers.iter())
+			.map(|provider| &provider.plugin_id)
 			.filter(|plugin_id| !inner.views.contains_key(&(Arc::clone(plugin_id), point, context)))
+			.map(|plugin_id| Requested {
+				plugin_id: Arc::clone(plugin_id),
+				stamp: inner.stamp_of(plugin_id, point),
+			})
 			.collect();
 		if inner.views.len() + wanted.len() > MAX_CACHED_VIEWS {
 			inner.views.clear();
 		}
-		for plugin_id in &wanted {
-			inner
-				.views
-				.insert((Arc::clone(plugin_id), point, context), Contextual::Pending);
+		for requested in &wanted {
+			inner.views.insert(
+				(Arc::clone(&requested.plugin_id), point, context),
+				Contextual::Pending,
+			);
 		}
 		wanted
 	}
@@ -299,40 +371,67 @@ impl Mounts {
 		context: ViewContext,
 		tree: Option<ViewTree>,
 	) {
-		self.inner
-			.write()
-			.views
-			.insert((Arc::clone(plugin_id), point, context), Contextual::Ready(tree));
-		self.bump();
+		self.inner.write().views.insert(
+			(Arc::clone(plugin_id), point, context),
+			Contextual::Ready(tree.map(Arc::new)),
+		);
+		self.bump_surfaces();
 	}
 
-	pub fn invalidate(&self, plugin_id: &str, point: &'static str) {
+	pub fn store_requested_view(
+		&self,
+		requested: &Requested,
+		point: &'static str,
+		context: ViewContext,
+		tree: Option<ViewTree>,
+	) -> bool {
 		let mut inner = self.inner.write();
+		if inner.stamp_of(&requested.plugin_id, point) != requested.stamp {
+			return false;
+		}
+		inner.views.insert(
+			(Arc::clone(&requested.plugin_id), point, context),
+			Contextual::Ready(tree.map(Arc::new)),
+		);
+		drop(inner);
+		self.bump_surfaces();
+		true
+	}
+
+	pub fn invalidate(&self, plugin_id: &Arc<str>, point: &'static str) {
+		let mut inner = self.inner.write();
+		inner.restamp(plugin_id, point);
 		let before = inner.views.len();
 		inner
 			.views
-			.retain(|(owner, cached, _), _| !(&**owner == plugin_id && *cached == point));
+			.retain(|(owner, cached, _), _| !(owner == plugin_id && *cached == point));
 		let changed = inner.views.len() != before;
 		drop(inner);
 		if changed {
-			self.bump();
+			self.bump_surfaces();
 		}
 	}
 
 	pub fn set_menu(&self, menu: &'static str, entry: MenuEntry) {
 		let mut inner = self.inner.write();
-		let list = inner.menus.entry(menu).or_default();
-		list.retain(|existing| existing.plugin_id != entry.plugin_id);
-		if !entry.items.is_empty() {
-			list.push(entry);
-			list.sort_by(|left, right| left.plugin_id.cmp(&right.plugin_id));
-		}
+		let list = inner.menus.entry(menu).or_insert_with(|| Arc::clone(&NO_MENUS));
+		edit(list, |items| {
+			items.retain(|existing| existing.plugin_id != entry.plugin_id);
+			if !entry.items.is_empty() {
+				items.push(entry);
+				items.sort_by(|left, right| left.plugin_id.cmp(&right.plugin_id));
+			}
+		});
 		drop(inner);
-		self.bump();
+		self.bump_surfaces();
 	}
 
-	pub fn menu_items(&self, menu: &str) -> Vec<MenuEntry> {
-		self.inner.read().menus.get(menu).cloned().unwrap_or_default()
+	pub fn menu_items(&self, menu: &str) -> Arc<[MenuEntry]> {
+		self.inner
+			.read()
+			.menus
+			.get(menu)
+			.map_or_else(|| Arc::clone(&NO_MENUS), Arc::clone)
 	}
 
 	pub fn push_overlay(&self, overlay: Overlay) {
@@ -342,28 +441,37 @@ impl Mounts {
 		}
 		inner.overlays.push_back(overlay);
 		drop(inner);
-		self.bump();
+		self.bump_overlays();
 	}
 
 	pub fn take_overlays(&self) -> Vec<Overlay> {
-		let mut inner = self.inner.write();
-		if inner.overlays.is_empty() {
+		if self.inner.read().overlays.is_empty() {
 			return Vec::new();
 		}
-		inner.overlays.drain(..).collect()
+		self.inner.write().overlays.drain(..).collect()
 	}
 
 	pub fn clear_plugin(&self, plugin_id: &str) {
 		let mut inner = self.inner.write();
 		for list in inner.mounts.values_mut() {
-			list.retain(|mount| &*mount.plugin_id != plugin_id);
+			if list.iter().any(|mount| &*mount.plugin_id == plugin_id) {
+				edit(list, |items| items.retain(|mount| &*mount.plugin_id != plugin_id));
+			}
 		}
 		for list in inner.providers.values_mut() {
-			list.retain(|provider| &*provider.plugin_id != plugin_id);
+			if list.iter().any(|provider| &*provider.plugin_id == plugin_id) {
+				edit(list, |items| {
+					items.retain(|provider| &*provider.plugin_id != plugin_id)
+				});
+			}
 		}
 		for list in inner.menus.values_mut() {
-			list.retain(|entry| &*entry.plugin_id != plugin_id);
+			if list.iter().any(|entry| &*entry.plugin_id == plugin_id) {
+				edit(list, |items| items.retain(|entry| &*entry.plugin_id != plugin_id));
+			}
 		}
+		inner.counts.remove(plugin_id);
+		inner.stamps.retain(|(owner, _), _| &**owner != plugin_id);
 		inner.views.retain(|(owner, _, _), _| &**owner != plugin_id);
 		inner.overlays.retain(|overlay| match overlay {
 			Overlay::Toast { plugin_id: owner, .. }
@@ -372,6 +480,7 @@ impl Mounts {
 			| Overlay::Insert { plugin_id: owner, .. } => &**owner != plugin_id,
 		});
 		drop(inner);
-		self.bump();
+		self.bump_surfaces();
+		self.bump_overlays();
 	}
 }

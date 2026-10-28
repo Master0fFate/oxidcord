@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use markdown::Node;
@@ -36,6 +36,7 @@ const INTERCEPT_BUDGET: Duration = Duration::from_millis(150);
 const INTERCEPT_BREAKER: u32 = 3;
 const MAX_INSERT_BYTES: usize = 2_000;
 const MAX_TOAST_TEXT: usize = 200;
+const DISPLAY_CHUNK: usize = 50;
 
 pub struct Intercepted {
 	pub ast: Vec<Node>,
@@ -118,7 +119,66 @@ impl LoadedPlugin {
 	}
 
 	fn is_active(&self) -> bool {
-		matches!(self.health.state(), PluginState::Loaded | PluginState::Crashed)
+		self.health.state().is_active()
+	}
+}
+
+#[derive(Clone)]
+struct HookEntry {
+	id: Arc<str>,
+	plugin: Arc<LoadedPlugin>,
+	instance: Arc<PluginInstance>,
+	images: Arc<ImagePolicy>,
+	private: bool,
+	timeline: bool,
+	retain: bool,
+	basic: bool,
+	voice: bool,
+}
+
+impl HookEntry {
+	fn sees(&self, guild_id: Option<u64>) -> bool {
+		guild_id.is_some() || self.private
+	}
+
+	fn sees_event(&self, event: &Event) -> bool {
+		let timeline = |guild_id: Option<u64>| self.timeline && self.sees(guild_id);
+		match event {
+			Event::MessageCreated(message) | Event::MessageUpdated(message) => timeline(message.guild_id),
+			Event::MessageDeleted(message) => timeline(message.guild_id),
+			Event::ReactionAdded(reaction) => timeline(reaction.message.guild_id),
+			Event::Typing(_) => self.timeline,
+			Event::ChannelSwitched(switch) => self.basic && self.sees(switch.guild_id),
+			Event::VoiceChanged(info) => self.voice && self.sees(info.guild_id),
+			Event::SettingChanged(_) | Event::Connection(_) => true,
+		}
+	}
+}
+
+#[derive(Default)]
+struct HookSets {
+	stamp: (u64, u64),
+	events: Vec<HookEntry>,
+	render: Vec<HookEntry>,
+	filter: Vec<HookEntry>,
+	intercept: Vec<HookEntry>,
+	send: Vec<HookEntry>,
+	display: Vec<HookEntry>,
+	emoji: Vec<HookEntry>,
+	hidden_channels: bool,
+	hidden_typing: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RenderHooks {
+	pub filter: bool,
+	pub render: bool,
+	pub intercept: bool,
+}
+
+impl RenderHooks {
+	pub fn any(self) -> bool {
+		self.filter || self.render || self.intercept
 	}
 }
 
@@ -126,6 +186,8 @@ pub struct PluginManager {
 	runtime: Runtime,
 	plugins: RwLock<Vec<Arc<LoadedPlugin>>>,
 	safe_mode: Mutex<bool>,
+	hook_revision: Arc<AtomicU64>,
+	hooks: RwLock<Arc<HookSets>>,
 }
 
 impl PluginManager {
@@ -134,7 +196,81 @@ impl PluginManager {
 			runtime,
 			plugins: RwLock::new(Vec::new()),
 			safe_mode: Mutex::new(false),
+			hook_revision: Arc::new(AtomicU64::new(0)),
+			hooks: RwLock::new(Arc::new(HookSets {
+				stamp: (u64::MAX, u64::MAX),
+				..HookSets::default()
+			})),
 		}
+	}
+
+	fn rehook(&self) {
+		self.hook_revision.fetch_add(1, Ordering::AcqRel);
+	}
+
+	fn hooks(&self) -> Arc<HookSets> {
+		let stamp = (
+			self.hook_revision.load(Ordering::Acquire),
+			self.runtime.grants().revision(),
+		);
+		{
+			let current = self.hooks.read();
+			if current.stamp == stamp {
+				return Arc::clone(&current);
+			}
+		}
+		let mut slot = self.hooks.write();
+		if slot.stamp != stamp {
+			*slot = Arc::new(self.build_hooks(stamp));
+		}
+		Arc::clone(&slot)
+	}
+
+	fn build_hooks(&self, stamp: (u64, u64)) -> HookSets {
+		let grants = self.runtime.grants();
+		let mut sets = HookSets {
+			stamp,
+			..HookSets::default()
+		};
+		for plugin in self.plugins.read().iter() {
+			if !plugin.is_active() {
+				continue;
+			}
+			let Some(instance) = plugin.instance() else {
+				continue;
+			};
+			let name = plugin.manifest.id.as_str();
+			let has = |permission| grants.has(name, permission);
+			let ext = instance.is_ext();
+			let entry = HookEntry {
+				id: Arc::from(name),
+				plugin: Arc::clone(plugin),
+				instance,
+				images: grants.image_policy(name),
+				private: has(Permission::ContextPrivate),
+				timeline: has(Permission::ContextTimeline),
+				retain: has(Permission::MessageRetain),
+				basic: has(Permission::ContextBasic),
+				voice: has(Permission::ContextVoice),
+			};
+			sets.hidden_channels |= has(Permission::ChannelsHidden);
+			sets.hidden_typing |= has(Permission::TypingHidden);
+			let targets = [
+				(Permission::MessageRender, true, &mut sets.render),
+				(Permission::MessageFilter, true, &mut sets.filter),
+				(Permission::MessageIntercept, ext, &mut sets.intercept),
+				(Permission::MessageSend, true, &mut sets.send),
+				(Permission::UserDisplay, true, &mut sets.display),
+				(Permission::Composer, ext, &mut sets.emoji),
+			];
+			for (permission, capable, set) in targets {
+				if capable && has(permission) {
+					set.push(entry.clone());
+				}
+			}
+			sets.events.push(entry);
+		}
+		sets
 	}
 
 	pub fn runtime(&self) -> &Runtime {
@@ -145,8 +281,12 @@ impl PluginManager {
 		self.runtime.slots()
 	}
 
-	pub fn commands(&self) -> Vec<(String, CommandEntry)> {
+	pub fn commands(&self) -> Arc<[(String, CommandEntry)]> {
 		self.runtime.commands().list()
+	}
+
+	pub fn interactive_call_p95_ms(&self) -> Option<f64> {
+		self.runtime.latency().p95_ms()
 	}
 
 	pub fn load_all(&self, plugins_dir: &Path, safe_mode: bool) -> Vec<LoadIssue> {
@@ -166,6 +306,7 @@ impl PluginManager {
 		for plugin in previous {
 			self.retire(&plugin);
 		}
+		self.rehook();
 		for plugin in self.plugins.read().iter() {
 			if let Err(error) = self.start(plugin) {
 				tracing::warn!(target: "plugin", plugin = %plugin.manifest.id, "{error}");
@@ -194,6 +335,7 @@ impl PluginManager {
 				});
 			}
 		}
+		self.rehook();
 		self.start(&plugin)?;
 		Ok(id)
 	}
@@ -204,6 +346,7 @@ impl PluginManager {
 		self.plugins
 			.write()
 			.retain(|loaded| !Arc::ptr_eq(loaded, &plugin));
+		self.rehook();
 		Ok(plugin.dir.clone())
 	}
 
@@ -222,17 +365,25 @@ impl PluginManager {
 	}
 
 	pub fn has_active(&self, permission: Permission) -> bool {
-		let grants = self.runtime.grants();
-		self.plugins.read().iter().any(|plugin| {
-			plugin.is_active() && plugin.instance().is_some() && grants.has(&plugin.manifest.id, permission)
-		})
+		let sets = self.hooks();
+		match permission {
+			Permission::MessageRender => !sets.render.is_empty(),
+			Permission::MessageFilter => !sets.filter.is_empty(),
+			Permission::MessageSend => !sets.send.is_empty(),
+			Permission::UserDisplay => !sets.display.is_empty(),
+			other => {
+				let grants = self.runtime.grants();
+				sets.events.iter().any(|entry| grants.has(&entry.id, other))
+			}
+		}
 	}
 
 	pub fn has_instances(&self) -> bool {
-		self.plugins
-			.read()
-			.iter()
-			.any(|plugin| plugin.is_active() && plugin.instance().is_some())
+		!self.hooks().events.is_empty()
+	}
+
+	pub fn has_timeline_events(&self) -> bool {
+		self.hooks().events.iter().any(|entry| entry.timeline)
 	}
 
 	pub fn set_setting(&self, id: &str, key: &str, value: &str) -> Result<()> {
@@ -271,7 +422,7 @@ impl PluginManager {
 			manifest,
 			dir: dir.to_owned(),
 			trust,
-			health: Arc::new(Health::new(state)),
+			health: Arc::new(Health::new(state, Arc::clone(&self.hook_revision))),
 			instance: Mutex::new(None),
 			load_error,
 			component,
@@ -296,6 +447,7 @@ impl PluginManager {
 		self.runtime.timers().attach(&id, Arc::downgrade(&instance));
 		*plugin.instance.lock() = Some(Arc::clone(&instance));
 		plugin.health.set_state(PluginState::Loaded);
+		self.rehook();
 		instance
 			.start()
 			.map_err(|error| Error::wasm(format!("{}: {error}", plugin.manifest.id)))
@@ -311,6 +463,7 @@ impl PluginManager {
 		self.runtime.mounts().clear_plugin(id);
 		self.runtime.patches().clear_plugin(id);
 		self.runtime.timers().detach(id);
+		self.rehook();
 	}
 
 	fn find(&self, id: &str) -> Result<Arc<LoadedPlugin>> {
@@ -359,6 +512,8 @@ impl PluginManager {
 		plugins.sort_by(|left, right| {
 			(left.manifest.priority, &left.manifest.id).cmp(&(right.manifest.priority, &right.manifest.id))
 		});
+		drop(plugins);
+		self.rehook();
 	}
 
 	pub fn list(&self) -> Vec<PluginInfo> {
@@ -378,10 +533,15 @@ impl PluginManager {
 					trust: plugin.trust,
 					enabled: grant.enabled,
 					needs_prompt: grants.requires_reprompt(&plugin.manifest),
-					granted: grant.permissions.into_iter().collect(),
+					granted: grant.permissions.iter().copied().collect(),
 					network_hosts: plugin.manifest.network_hosts.clone(),
 					image_hosts: plugin.manifest.image_hosts.clone(),
-					granted_hosts: grant.network_hosts.into_iter().chain(grant.image_hosts).collect(),
+					granted_hosts: grant
+						.network_hosts
+						.iter()
+						.chain(&grant.image_hosts)
+						.cloned()
+						.collect(),
 					error: plugin.load_error.clone().or_else(|| plugin.health.last_error()),
 					crashes: plugin.health.total_crashes(),
 				}
@@ -413,157 +573,128 @@ impl PluginManager {
 			.ok_or_else(|| Error::NotRunning(id.to_owned()))
 	}
 
-	fn active(&self, permission: Permission) -> Vec<(Arc<LoadedPlugin>, Arc<PluginInstance>)> {
-		let grants = self.runtime.grants();
-		self.plugins
-			.read()
-			.iter()
-			.filter(|plugin| plugin.is_active())
-			.filter(|plugin| grants.has(&plugin.manifest.id, permission))
-			.filter_map(|plugin| Some((Arc::clone(plugin), plugin.instance()?)))
-			.collect()
-	}
-
-	fn active_for_message(
-		&self,
-		permission: Permission,
-		guild_id: Option<u64>,
-	) -> Vec<(Arc<LoadedPlugin>, Arc<PluginInstance>)> {
-		let grants = self.runtime.grants();
-		let mut plugins = self.active(permission);
-		if guild_id.is_none() {
-			plugins.retain(|(plugin, _)| grants.has(&plugin.manifest.id, Permission::ContextPrivate));
-		}
-		plugins
-	}
-
-	pub fn dispatch_event(&self, event: &Event) {
-		let grants = self.runtime.grants();
-		let targets: Vec<_> = self
-			.plugins
-			.read()
-			.iter()
-			.filter(|plugin| plugin.is_active())
-			.filter(|plugin| event_visible(grants, &plugin.manifest.id, event))
-			.filter_map(|plugin| plugin.instance())
-			.collect();
-		for instance in targets {
-			instance.post_event(event.clone());
+	pub fn dispatch_event(&self, event: Event) {
+		let sets = self.hooks();
+		let event = Arc::new(event);
+		for entry in sets.events.iter().filter(|entry| entry.sees_event(&event)) {
+			entry.instance.post_event(Arc::clone(&event));
 		}
 	}
 
 	pub fn dispatch_voice_changed(&self, info: VoiceInfo) {
-		self.dispatch_event(&Event::VoiceChanged(info));
+		self.dispatch_event(Event::VoiceChanged(info));
 	}
 
-	pub fn render_message(&self, view: &MessageView, ast: Vec<Node>) -> Vec<Node> {
-		let plugins = self.active_for_message(Permission::MessageRender, view.guild_id);
+	pub fn render_hooks(&self, guild_id: Option<u64>) -> RenderHooks {
+		let sets = self.hooks();
+		let visible = |entries: &[HookEntry]| entries.iter().any(|entry| entry.sees(guild_id));
+		RenderHooks {
+			filter: visible(&sets.filter),
+			render: visible(&sets.render),
+			intercept: visible(&sets.intercept),
+		}
+	}
+
+	pub fn render_message(&self, view: &Arc<MessageView>, ast: Vec<Node>) -> Vec<Node> {
+		let sets = self.hooks();
+		let plugins = sets.render.iter().filter(|entry| entry.sees(view.guild_id));
 		render_chain(plugins, view, &ast).unwrap_or(ast)
 	}
 
-	pub fn render_deleted(&self, view: &MessageView, ast: &[Node]) -> Option<Vec<Node>> {
-		let grants = self.runtime.grants();
-		let mut plugins = self.active_for_message(Permission::MessageRender, view.guild_id);
-		plugins.retain(|(plugin, _)| grants.has(&plugin.manifest.id, Permission::ContextTimeline));
+	pub fn render_deleted(&self, view: &Arc<MessageView>, ast: &[Node]) -> Option<Vec<Node>> {
+		let sets = self.hooks();
+		let plugins = sets
+			.render
+			.iter()
+			.filter(|entry| entry.sees(view.guild_id) && entry.timeline);
 		render_chain(plugins, view, ast)
 	}
 
 	pub fn has_message_log(&self) -> bool {
-		let grants = self.runtime.grants();
-		let legacy = self
-			.active(Permission::MessageRender)
-			.iter()
-			.any(|(plugin, _)| grants.has(&plugin.manifest.id, Permission::ContextTimeline));
-		legacy
-			|| self
-				.interceptors()
-				.iter()
-				.any(|(plugin, _)| grants.has(&plugin.manifest.id, Permission::MessageRetain))
+		let sets = self.hooks();
+		sets.render.iter().any(|entry| entry.timeline) || sets.intercept.iter().any(|entry| entry.retain)
 	}
 
 	pub fn has_intercept(&self) -> bool {
-		!self.interceptors().is_empty()
+		!self.hooks().intercept.is_empty()
 	}
 
 	pub fn reveals_hidden_channels(&self) -> bool {
-		!self.active(Permission::ChannelsHidden).is_empty()
+		self.hooks().hidden_channels
 	}
 
 	pub fn hides_typing(&self) -> bool {
-		!self.active(Permission::TypingHidden).is_empty()
+		self.hooks().hidden_typing
 	}
 
 	pub fn has_emoji_pick(&self) -> bool {
-		self.active(Permission::Composer)
+		!self.hooks().emoji.is_empty()
+	}
+
+	fn image_policy(&self, plugin_id: &str) -> Arc<ImagePolicy> {
+		self.runtime.grants().image_policy(plugin_id)
+	}
+
+	pub fn intercept(&self, full: MessageFull, ast: Vec<Node>) -> Intercepted {
+		let sets = self.hooks();
+		let guild_id = full.view.guild_id;
+		let mut plugins = sets
+			.intercept
 			.iter()
-			.any(|(_, instance)| instance.is_ext())
-	}
-
-	fn interceptors(&self) -> Vec<(Arc<LoadedPlugin>, Arc<PluginInstance>)> {
-		let mut plugins = self.active(Permission::MessageIntercept);
-		plugins.retain(|(_, instance)| instance.is_ext());
-		plugins
-	}
-
-	fn image_policy(&self, plugin_id: &str) -> ImagePolicy {
-		ImagePolicy::new(false, self.runtime.grants().get(plugin_id).image_hosts)
-	}
-
-	pub fn intercept(&self, mut full: MessageFull, ast: Vec<Node>) -> Intercepted {
-		let grants = self.runtime.grants();
-		let mut plugins = self.interceptors();
-		if full.view.guild_id.is_none() {
-			plugins.retain(|(plugin, _)| grants.has(&plugin.manifest.id, Permission::ContextPrivate));
-		}
+			.filter(|entry| entry.sees(guild_id))
+			.peekable();
 		let mut outcome = Intercepted {
 			ast,
 			retain: false,
 			patches: Vec::new(),
 		};
-		if plugins.is_empty() {
+		if plugins.peek().is_none() {
 			return outcome;
 		}
 		let deleted = matches!(full.lifecycle, Lifecycle::Deleted(_));
 		let embed_count = full.embeds.len();
 		let started = Instant::now();
-		for (plugin, instance) in plugins {
+		let mut content = Arc::new(md_to_rich(&outcome.ast));
+		let mut shared = Arc::new(full);
+		for entry in plugins {
 			if started.elapsed() >= INTERCEPT_BUDGET {
 				tracing::debug!(target: "plugin", "intercept budget spent, remaining plugins skipped");
 				break;
 			}
-			if plugin.intercept_timeouts.load(Ordering::Relaxed) >= INTERCEPT_BREAKER {
+			if entry.plugin.intercept_timeouts.load(Ordering::Relaxed) >= INTERCEPT_BREAKER {
 				continue;
 			}
-			let content = md_to_rich(&outcome.ast);
-			let patch = match instance.intercept(full.clone(), content) {
+			let patch = match entry
+				.instance
+				.intercept(Arc::clone(&shared), Arc::clone(&content))
+			{
 				Ok(patch) => {
-					plugin.intercept_timeouts.store(0, Ordering::Relaxed);
+					entry.plugin.intercept_timeouts.store(0, Ordering::Relaxed);
 					patch
 				}
 				Err(error) => {
 					if matches!(error, CallError::Timeout)
-						&& plugin.intercept_timeouts.fetch_add(1, Ordering::Relaxed) + 1 == INTERCEPT_BREAKER
+						&& entry.plugin.intercept_timeouts.fetch_add(1, Ordering::Relaxed) + 1
+							== INTERCEPT_BREAKER
 					{
-						tracing::warn!(target: "plugin", plugin = %plugin.manifest.id, "intercept-message disabled after repeated timeouts");
+						tracing::warn!(target: "plugin", plugin = %entry.id, "intercept-message disabled after repeated timeouts");
 					}
-					tracing::debug!(target: "plugin", plugin = %plugin.manifest.id, "intercept skipped: {error}");
+					tracing::debug!(target: "plugin", plugin = %entry.id, "intercept skipped: {error}");
 					continue;
 				}
 			};
-			let id: Arc<str> = Arc::from(plugin.manifest.id.as_str());
 			let SanitizedPatch {
-				content,
+				content: replaced,
 				retain,
 				patch,
-			} = sanitize_patch(&id, patch, embed_count, &self.image_policy(&id));
-			if let Some(content) = content {
-				full.view.content = markdown::Document {
-					nodes: content.clone(),
-				}
-				.plain_text();
-				outcome.ast = content;
+			} = sanitize_patch(&entry.id, patch, embed_count, &entry.images);
+			if let Some(nodes) = replaced {
+				let document = markdown::Document { nodes };
+				Arc::make_mut(&mut shared).view.content = document.plain_text();
+				outcome.ast = document.nodes;
+				content = Arc::new(md_to_rich(&outcome.ast));
 			}
-			if deleted && retain && grants.has(&id, Permission::MessageRetain) {
+			if deleted && retain && entry.retain {
 				outcome.retain = true;
 			}
 			outcome.patches.extend(patch);
@@ -635,7 +766,8 @@ impl PluginManager {
 		};
 		let surfaces = self.runtime.mounts();
 		let wanted = surfaces.request(point, context);
-		for plugin_id in &wanted {
+		for requested in &wanted {
+			let plugin_id = &requested.plugin_id;
 			let tree = match self.instance(plugin_id) {
 				Ok(instance) => match instance.render_view(point.to_owned(), context.to_api(None)) {
 					Ok(tree) => tree.map(|tree| sanitize_view(&tree, &self.image_policy(plugin_id))),
@@ -646,8 +778,8 @@ impl PluginManager {
 				},
 				Err(_) => None,
 			};
-			surfaces.store_view(
-				plugin_id,
+			surfaces.store_requested_view(
+				requested,
 				point,
 				context,
 				tree.filter(|tree| !tree.roots.is_empty()),
@@ -673,43 +805,41 @@ impl PluginManager {
 	}
 
 	pub fn emoji_pick(&self, emoji: &EmojiRef, channel_id: u64) -> EmojiPick {
-		for (plugin, instance) in self.active(Permission::Composer) {
-			if !instance.is_ext() {
-				continue;
-			}
-			match instance.emoji_pick(emoji.clone(), channel_id) {
+		for entry in &self.hooks().emoji {
+			match entry.instance.emoji_pick(emoji.clone(), channel_id) {
 				Ok(PickVerdict::Default) => {}
 				Ok(PickVerdict::Insert(text)) if !text.is_empty() && text.len() <= MAX_INSERT_BYTES => {
 					return EmojiPick::Insert {
-						by: plugin.manifest.id.clone(),
+						by: entry.plugin.manifest.id.clone(),
 						text,
 					};
 				}
 				Ok(PickVerdict::Insert(_)) => {
-					tracing::warn!(target: "plugin", plugin = %plugin.manifest.id, "rejected emoji insert");
+					tracing::warn!(target: "plugin", plugin = %entry.id, "rejected emoji insert");
 				}
 				Ok(PickVerdict::Block(reason)) => {
 					return EmojiPick::Blocked {
-						by: plugin.manifest.id.clone(),
+						by: entry.plugin.manifest.id.clone(),
 						reason: clip(&reason, MAX_TOAST_TEXT),
 					};
 				}
 				Err(error) => {
-					tracing::debug!(target: "plugin", plugin = %plugin.manifest.id, "emoji pick skipped: {error}");
+					tracing::debug!(target: "plugin", plugin = %entry.id, "emoji pick skipped: {error}");
 				}
 			}
 		}
 		EmojiPick::Default
 	}
 
-	pub fn before_send(&self, outgoing: OutgoingMessage) -> SendDecision {
-		let mut current = outgoing;
+	pub fn before_send(&self, outgoing: OutgoingMessage, skip: Option<&str>) -> SendDecision {
+		let sets = self.hooks();
+		let mut current = Arc::new(outgoing);
 		let mut replaced_by: Option<String> = None;
-		for (plugin, instance) in self.active(Permission::MessageSend) {
-			let decision = match instance.before_send(current.clone()) {
+		for entry in sets.send.iter().filter(|entry| Some(&*entry.id) != skip) {
+			let decision = match entry.instance.before_send(Arc::clone(&current)) {
 				Ok(decision) => decision,
 				Err(error) => {
-					tracing::debug!(target: "plugin", plugin = %plugin.manifest.id, "before-send skipped: {error}");
+					tracing::debug!(target: "plugin", plugin = %entry.id, "before-send skipped: {error}");
 					continue;
 				}
 			};
@@ -717,7 +847,7 @@ impl PluginManager {
 				GuestDecision::Pass => {}
 				GuestDecision::Cancel(reason) => {
 					return SendDecision::Cancelled {
-						by: plugin.manifest.id.clone(),
+						by: entry.plugin.manifest.id.clone(),
 						reason,
 					};
 				}
@@ -728,43 +858,63 @@ impl PluginManager {
 						&& !message.content.is_empty()
 						&& message.content.len() <= MAX_OUTGOING_BYTES
 					{
-						current = message;
-						replaced_by = Some(plugin.manifest.id.clone());
+						current = Arc::new(message);
+						replaced_by = Some(entry.plugin.manifest.id.clone());
 					} else {
-						tracing::warn!(target: "plugin", plugin = %plugin.manifest.id, "rejected rewritten message");
+						tracing::warn!(target: "plugin", plugin = %entry.id, "rejected rewritten message");
 					}
 				}
 			}
 		}
 		match replaced_by {
-			Some(by) => SendDecision::Replaced { by, msg: current },
+			Some(by) => SendDecision::Replaced {
+				by,
+				msg: Arc::try_unwrap(current).unwrap_or_else(|shared| (*shared).clone()),
+			},
 			None => SendDecision::Pass,
 		}
 	}
 
-	pub fn filter_message(&self, view: &MessageView) -> bool {
-		self.active_for_message(Permission::MessageFilter, view.guild_id)
-			.into_iter()
-			.all(|(plugin, instance)| match instance.filter_message(view.clone()) {
+	pub fn filter_message(&self, view: &Arc<MessageView>) -> bool {
+		self.hooks()
+			.filter
+			.iter()
+			.filter(|entry| entry.sees(view.guild_id))
+			.all(|entry| match entry.instance.filter_message(Arc::clone(view)) {
 				Ok(keep) => keep,
 				Err(error) => {
-					tracing::debug!(target: "plugin", plugin = %plugin.manifest.id, "filter skipped: {error}");
+					tracing::debug!(target: "plugin", plugin = %entry.id, "filter skipped: {error}");
 					true
 				}
 			})
 	}
 
-	pub fn display_user(&self, guild_id: Option<u64>, user: &User) -> Option<DisplayOverride> {
-		for (plugin, instance) in self.active(Permission::UserDisplay) {
-			match instance.display_user(guild_id, user.clone()) {
-				Ok(Some(over)) => return Some(sanitize_override(over)),
-				Ok(None) => {}
-				Err(error) => {
-					tracing::debug!(target: "plugin", plugin = %plugin.manifest.id, "display skipped: {error}");
+	pub fn display_users(&self, users: &[(Option<u64>, User)]) -> Vec<Option<DisplayOverride>> {
+		let sets = self.hooks();
+		let mut resolved: Vec<Option<DisplayOverride>> = vec![None; users.len()];
+		for entry in &sets.display {
+			let pending: Vec<usize> = (0..users.len())
+				.filter(|&index| resolved[index].is_none())
+				.collect();
+			for chunk in pending.chunks(DISPLAY_CHUNK) {
+				let batch: Arc<[(Option<u64>, User)]> =
+					chunk.iter().map(|&index| users[index].clone()).collect();
+				match entry.instance.display_users(batch) {
+					Ok(overrides) => {
+						for (&index, over) in chunk.iter().zip(overrides) {
+							resolved[index] = over.map(sanitize_override);
+						}
+					}
+					Err(error) => {
+						tracing::debug!(target: "plugin", plugin = %entry.id, "display skipped: {error}");
+					}
 				}
 			}
+			if resolved.iter().all(Option::is_some) {
+				break;
+			}
 		}
-		None
+		resolved
 	}
 
 	pub fn ui_action(&self, plugin_id: &str, id: &str, payload: &str) -> Result<bool> {
@@ -798,50 +948,27 @@ impl PluginManager {
 	}
 }
 
-fn event_visible(grants: &crate::grants::Grants, id: &str, event: &Event) -> bool {
-	let timeline = |guild_id: Option<u64>| {
-		grants.has(id, Permission::ContextTimeline)
-			&& (guild_id.is_some() || grants.has(id, Permission::ContextPrivate))
-	};
-	match event {
-		Event::MessageCreated(message) | Event::MessageUpdated(message) => timeline(message.guild_id),
-		Event::MessageDeleted(message) => timeline(message.guild_id),
-		Event::ReactionAdded(reaction) => timeline(reaction.message.guild_id),
-		Event::Typing(_) => grants.has(id, Permission::ContextTimeline),
-		Event::ChannelSwitched(switch) => {
-			grants.has(id, Permission::ContextBasic)
-				&& (switch.guild_id.is_some() || grants.has(id, Permission::ContextPrivate))
-		}
-		Event::VoiceChanged(info) => {
-			grants.has(id, Permission::ContextVoice)
-				&& (info.guild_id.is_some() || grants.has(id, Permission::ContextPrivate))
-		}
-		Event::SettingChanged(_) | Event::Connection(_) => true,
-	}
-}
-
-fn render_chain(
-	plugins: Vec<(Arc<LoadedPlugin>, Arc<PluginInstance>)>,
-	view: &MessageView,
+fn render_chain<'a>(
+	plugins: impl Iterator<Item = &'a HookEntry>,
+	view: &Arc<MessageView>,
 	ast: &[Node],
 ) -> Option<Vec<Node>> {
-	if plugins.is_empty() {
-		return None;
-	}
-	let mut tree = md_to_tree(ast);
+	let mut plugins = plugins.peekable();
+	plugins.peek()?;
+	let mut tree = Arc::new(md_to_tree(ast));
 	let mut changed = false;
-	for (plugin, instance) in plugins {
-		match instance.render_message(view.clone(), tree.clone()) {
+	for entry in plugins {
+		match entry.instance.render_message(Arc::clone(view), Arc::clone(&tree)) {
 			Ok(Some(output)) if tree_to_md(&output).is_some() => {
-				tree = output;
+				tree = Arc::new(output);
 				changed = true;
 			}
 			Ok(Some(_)) => {
-				tracing::warn!(target: "plugin", plugin = %plugin.manifest.id, "invalid markdown tree ignored");
+				tracing::warn!(target: "plugin", plugin = %entry.id, "invalid markdown tree ignored");
 			}
 			Ok(None) => {}
 			Err(error) => {
-				tracing::debug!(target: "plugin", plugin = %plugin.manifest.id, "render skipped: {error}");
+				tracing::debug!(target: "plugin", plugin = %entry.id, "render skipped: {error}");
 			}
 		}
 	}

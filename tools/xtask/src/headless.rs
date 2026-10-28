@@ -573,6 +573,7 @@ async fn scenario(
 		.filter(|plugin| plugin.state == PluginState::Loaded)
 		.count();
 	let render_p95 = harness.session.plugin_render_ms_p95().unwrap_or_default();
+	let call_p95 = harness.session.plugin_call_ms_p95().unwrap_or_default();
 	println!(
 		"{}",
 		json!({
@@ -596,6 +597,8 @@ async fn scenario(
 			"voice_frames_echoed": voice_frames_echoed,
 			"plugins_loaded": plugins_loaded,
 			"plugin_render_ms_p95": (render_p95 * 100.0).round() / 100.0,
+			"render_message_p95_ms": (render_p95 * 1000.0).round() / 1000.0,
+			"interactive_call_p95_ms": (call_p95 * 1000.0).round() / 1000.0,
 		})
 	);
 	ensure!(

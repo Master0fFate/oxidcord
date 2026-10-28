@@ -49,14 +49,14 @@ struct PendingGrant {
 struct Toast {
 	id: u64,
 	plugin: Arc<str>,
-	tree: Rc<ViewTree>,
+	tree: Arc<ViewTree>,
 	legacy: bool,
 }
 
 struct Modal {
 	plugin: Arc<str>,
 	title: SharedString,
-	tree: Rc<ViewTree>,
+	tree: Arc<ViewTree>,
 }
 
 pub enum PluginUiEvent {
@@ -64,16 +64,17 @@ pub enum PluginUiEvent {
 	PageChanged,
 }
 
-type Shown = Option<(Arc<str>, Rc<ViewTree>)>;
+type Shown = Option<(Arc<str>, Arc<ViewTree>)>;
 type Page = (Arc<str>, SharedString);
 
 pub struct PluginUi {
 	data: Entity<Data>,
 	toasts: Vec<Toast>,
-	toast_seen: HashMap<Arc<str>, Rc<ViewTree>>,
+	toast_seen: HashMap<Arc<str>, Arc<ViewTree>>,
 	modal: Option<Modal>,
 	page: Option<Page>,
 	next_toast: u64,
+	overlays_seen: u64,
 	dismissed_modal: Shown,
 	dismissed_popover: Shown,
 	anchor: Option<Point<Pixels>>,
@@ -99,6 +100,7 @@ impl PluginUi {
 			modal: None,
 			page: None,
 			next_toast: 0,
+			overlays_seen: 0,
 			dismissed_modal: None,
 			dismissed_popover: None,
 			anchor: None,
@@ -285,11 +287,17 @@ impl PluginUi {
 	}
 
 	fn drain_overlays(&mut self, cx: &mut Context<Self>) {
-		let overlays = self.data.read(cx).session().plugin_mounts().take_overlays();
+		let mounts = self.data.read(cx).session().plugin_mounts();
+		let revision = mounts.overlays_revision();
+		if revision == self.overlays_seen {
+			return;
+		}
+		self.overlays_seen = revision;
+		let overlays = mounts.take_overlays();
 		for overlay in overlays {
 			match overlay {
 				Overlay::Toast { plugin_id, tree, ttl } => {
-					self.push_toast(plugin_id, Rc::new(tree), false, ttl, cx)
+					self.push_toast(plugin_id, Arc::new(tree), false, ttl, cx)
 				}
 				Overlay::Modal {
 					plugin_id,
@@ -299,7 +307,7 @@ impl PluginUi {
 					self.modal = Some(Modal {
 						plugin: plugin_id,
 						title: title.into(),
-						tree: Rc::new(tree),
+						tree: Arc::new(tree),
 					});
 				}
 				Overlay::Modal {
@@ -308,7 +316,7 @@ impl PluginUi {
 					tree,
 				} => {
 					if let Some(modal) = self.modal.as_mut().filter(|modal| modal.plugin == plugin_id) {
-						modal.tree = Rc::new(tree);
+						modal.tree = Arc::new(tree);
 					}
 				}
 				Overlay::Close { plugin_id } => {
@@ -324,7 +332,7 @@ impl PluginUi {
 	fn push_toast(
 		&mut self,
 		plugin: Arc<str>,
-		tree: Rc<ViewTree>,
+		tree: Arc<ViewTree>,
 		legacy: bool,
 		ttl: Duration,
 		cx: &mut Context<Self>,
@@ -373,10 +381,10 @@ impl PluginUi {
 				continue;
 			}
 			self.toast_seen
-				.insert(Arc::clone(&entry.plugin_id), Rc::clone(&entry.tree));
+				.insert(Arc::clone(&entry.plugin_id), Arc::clone(&entry.tree));
 			self.push_toast(
 				Arc::clone(&entry.plugin_id),
-				Rc::clone(&entry.tree),
+				Arc::clone(&entry.tree),
 				true,
 				TOAST_LIFETIME,
 				cx,

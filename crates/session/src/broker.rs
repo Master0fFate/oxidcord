@@ -1,5 +1,7 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
+use parking_lot::Mutex;
 use plugin_host::HostBroker;
 use plugin_host::api::model::{EmojiInfo, EmojiRef, Lifecycle, MessageFull, StickerInfo};
 use plugin_host::api::{
@@ -8,7 +10,7 @@ use plugin_host::api::{
 };
 use plugin_host::convert::{message_full, message_view, user_view};
 use protocol::{Snowflake, StatusKind, Sticker};
-use state::{ChannelMessages, MemberListRow, SharedState, State};
+use state::{ChannelMessages, MemberSlot, SharedState, State};
 use tokio::sync::mpsc;
 
 use crate::command::{Command, ReplyTarget};
@@ -38,8 +40,33 @@ impl BrokerSink for NoopSink {
 	}
 }
 
+#[derive(Default)]
+pub(crate) struct VoiceCache {
+	revision: AtomicU64,
+	cached: Mutex<Option<(u64, Option<VoiceInfo>)>>,
+}
+
+impl VoiceCache {
+	pub(crate) fn invalidate(&self) {
+		self.revision.fetch_add(1, Ordering::AcqRel);
+	}
+
+	pub(crate) fn get(&self, state: &SharedState) -> Option<VoiceInfo> {
+		let revision = self.revision.load(Ordering::Acquire);
+		if let Some((cached, info)) = &*self.cached.lock()
+			&& *cached == revision
+		{
+			return info.clone();
+		}
+		let info = voice_info(&state.read());
+		*self.cached.lock() = Some((revision, info.clone()));
+		info
+	}
+}
+
 pub(crate) struct SessionBroker {
 	pub(crate) state: SharedState,
+	pub(crate) voice: Arc<VoiceCache>,
 	pub(crate) commands: mpsc::Sender<Command>,
 	pub(crate) internal: mpsc::UnboundedSender<Internal>,
 	pub(crate) sink: Arc<dyn BrokerSink>,
@@ -285,62 +312,67 @@ impl HostBroker for SessionBroker {
 		guild_id: u64,
 		limit: u32,
 	) -> Result<Vec<MemberSummary>, HostError> {
-		let guild_id = Snowflake(guild_id);
 		let state = self.state.read();
-		let guild = state.guild(guild_id).ok_or(HostError::Unavailable)?;
-		Ok(state
-			.member_rows(guild_id)
-			.into_iter()
-			.filter_map(|row| match row {
-				MemberListRow::Member(member) => Some(member),
-				MemberListRow::Group { .. } => None,
+		let guild = state.guild(Snowflake(guild_id)).ok_or(HostError::Unavailable)?;
+		Ok(guild
+			.member_list
+			.slots
+			.iter()
+			.filter_map(|slot| match slot {
+				MemberSlot::Member(user_id) => Some(*user_id),
+				MemberSlot::Group { .. } | MemberSlot::Empty => None,
 			})
 			.take(limit as usize)
-			.map(|member| MemberSummary {
-				user_id: member.user_id.get(),
-				display_name: member.display,
-				roles: guild
-					.members
-					.get(&member.user_id)
-					.map(|entry| entry.roles.iter().map(|role| role.get()).collect())
-					.unwrap_or_default(),
-				status: member.status.as_str().to_owned(),
+			.map(|user_id| {
+				let member = state.member_row(guild, user_id);
+				MemberSummary {
+					user_id: member.user_id.get(),
+					display_name: member.display,
+					roles: guild
+						.members
+						.get(&member.user_id)
+						.map(|entry| entry.roles.iter().map(|role| role.get()).collect())
+						.unwrap_or_default(),
+					status: member.status.as_str().to_owned(),
+				}
 			})
 			.collect())
 	}
 
 	fn voice_state(&self, _plugin: &str) -> Result<Option<VoiceInfo>, HostError> {
-		Ok(voice_info(&self.state.read()))
+		Ok(self.voice.get(&self.state))
 	}
 
 	fn surfaces_changed(&self) {
 		let _ = self.internal.send(Internal::SlotsChanged);
 	}
 
-	fn send_as_user(&self, _plugin: &str, msg: OutgoingMessage) -> Result<(), HostError> {
-		self.queue(Command::SendMessage {
+	fn send_as_user(&self, plugin: &str, msg: OutgoingMessage) -> Result<(), HostError> {
+		self.queue(Command::SendAsUser {
+			plugin_id: plugin.to_owned(),
 			channel_id: Snowflake(msg.channel_id),
 			content: msg.content,
 			reply_to: msg.reply_to.map(|id| ReplyTarget {
 				message: Snowflake(id),
 				mention: true,
 			}),
-			files: Vec::new(),
-			by_plugin: None,
 		})
 	}
 
-	fn list_emojis(&self, _plugin: &str, channel_id: Option<u64>) -> Result<Vec<EmojiInfo>, HostError> {
+	fn list_emojis(
+		&self,
+		_plugin: &str,
+		channel_id: Option<u64>,
+		limit: u32,
+	) -> Result<Vec<EmojiInfo>, HostError> {
 		let state = self.state.read();
 		let channel = channel_id
 			.map(Snowflake)
 			.or_else(|| state.selected().map(|selected| selected.channel_id));
 		let guild = channel.and_then(|channel| state.channel_guild(channel));
 		Ok(state
-			.emoji_catalog(guild)
-			.guilds
-			.into_iter()
-			.flat_map(|section| section.emojis)
+			.catalog_emojis(guild)
+			.take(limit as usize)
 			.map(|emoji| EmojiInfo {
 				emoji: EmojiRef {
 					id: Some(emoji.id.get()),

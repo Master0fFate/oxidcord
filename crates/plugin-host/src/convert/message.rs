@@ -152,7 +152,8 @@ pub fn sanitize_patch(
 		.accessory
 		.as_ref()
 		.map(|tree| sanitize_view(tree, images))
-		.filter(|tree| !tree.roots.is_empty());
+		.filter(|tree| !tree.roots.is_empty())
+		.map(Arc::new);
 	let plugin_patch = PluginPatch {
 		plugin_id: Arc::clone(plugin_id),
 		visibility,

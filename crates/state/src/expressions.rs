@@ -8,6 +8,7 @@ use protocol::{
 use serde::{Deserialize, Serialize};
 
 use crate::changes::Changes;
+use crate::guild::GuildState;
 use crate::permissions::DM_PERMISSIONS;
 use crate::state::State;
 
@@ -236,18 +237,28 @@ impl State {
 			.is_some_and(|kind| kind != PremiumType::None)
 	}
 
-	pub fn emoji_catalog(&self, guild_id: Option<Snowflake>) -> EmojiCatalog {
-		let nitro = self.has_nitro();
-		let permissions = guild_id
+	fn emoji_guilds(&self, guild_id: Option<Snowflake>) -> impl Iterator<Item = &GuildState> {
+		let current = guild_id.and_then(|id| self.guilds.get(&id));
+		let others = self
+			.guilds
+			.values()
+			.filter(move |guild| Some(guild.id) != guild_id);
+		current.into_iter().chain(others)
+	}
+
+	fn emoji_permissions(&self, guild_id: Option<Snowflake>) -> Permissions {
+		guild_id
 			.zip(self.current_user_id())
 			.map_or(DM_PERMISSIONS, |(guild_id, me)| {
 				self.guild_permissions(guild_id, me)
-			});
-		let current = guild_id.and_then(|id| self.guilds.get(&id));
-		let others = self.guilds.values().filter(|guild| Some(guild.id) != guild_id);
-		let guilds = current
-			.into_iter()
-			.chain(others)
+			})
+	}
+
+	pub fn emoji_catalog(&self, guild_id: Option<Snowflake>) -> EmojiCatalog {
+		let nitro = self.has_nitro();
+		let permissions = self.emoji_permissions(guild_id);
+		let guilds = self
+			.emoji_guilds(guild_id)
 			.map(|guild| GuildEmojis {
 				guild_id: guild.id,
 				name: guild.name.clone(),
@@ -264,6 +275,17 @@ impl State {
 			unicode: &UNICODE_SECTIONS,
 			guilds,
 		}
+	}
+
+	pub fn catalog_emojis(&self, guild_id: Option<Snowflake>) -> impl Iterator<Item = CatalogEmoji> {
+		let nitro = self.has_nitro();
+		let permissions = self.emoji_permissions(guild_id);
+		self.emoji_guilds(guild_id).flat_map(move |guild| {
+			guild
+				.emojis
+				.iter()
+				.filter_map(move |emoji| catalog_emoji(emoji, guild.id, guild_id, nitro, permissions))
+		})
 	}
 
 	pub fn can_use_emoji(&self, emoji: &CatalogEmoji, channel_id: Snowflake) -> bool {
