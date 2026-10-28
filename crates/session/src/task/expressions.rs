@@ -6,6 +6,7 @@ use serde::Serialize;
 use state::{EmojiRef, Loaded, RECENT_CAP};
 
 use super::commands::image_mime;
+use super::outgoing::Outgoing;
 use super::{Command, Core};
 use crate::persist::{self, Job};
 
@@ -129,27 +130,12 @@ impl Core {
 			Command::SendGif { channel_id, gif } => {
 				let url = gif.url.clone();
 				self.remember_gif(gif);
-				self.send_message(channel_id, url, None, Vec::new(), None, None);
+				self.send_message(channel_id, Outgoing::plain(url), None, None);
 			}
 			Command::SendSticker {
 				channel_id,
 				sticker_id,
-			} => {
-				if !self.send_allowed(channel_id) {
-					return;
-				}
-				let known = self.state.read().find_sticker(sticker_id).cloned();
-				if let Some(sticker) = known {
-					self.remember_sticker(sticker);
-				}
-				let body = CreateMessage {
-					sticker_ids: vec![sticker_id],
-					..CreateMessage::default()
-				};
-				self.spawn_action("send sticker", move |rest| async move {
-					rest.create_message(channel_id, body).await.map(drop)
-				});
-			}
+			} => self.send_sticker(channel_id, sticker_id),
 			Command::CreateSticker {
 				guild_id,
 				name,
@@ -290,6 +276,29 @@ impl Core {
 		promote(&mut recent, gif, |left, right| left.id == right.id);
 		self.store_recent(persist::RECENT_GIFS_KEY, &recent);
 		self.on_loaded(Loaded::RecentGifs(recent));
+	}
+
+	pub(super) fn send_sticker(&mut self, channel_id: Snowflake, sticker_id: Snowflake) {
+		if !self.send_allowed(channel_id) {
+			return;
+		}
+		self.note_stickers(&[sticker_id]);
+		let body = CreateMessage {
+			sticker_ids: vec![sticker_id],
+			..CreateMessage::default()
+		};
+		self.spawn_action("send sticker", move |rest| async move {
+			rest.create_message(channel_id, body).await.map(drop)
+		});
+	}
+
+	pub(super) fn note_stickers(&mut self, stickers: &[Snowflake]) {
+		for &sticker_id in stickers {
+			let known = self.state.read().find_sticker(sticker_id).cloned();
+			if let Some(sticker) = known {
+				self.remember_sticker(sticker);
+			}
+		}
 	}
 
 	fn remember_sticker(&mut self, sticker: Sticker) {

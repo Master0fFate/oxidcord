@@ -1,4 +1,4 @@
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use std::sync::mpsc::{SyncSender, sync_channel};
@@ -10,8 +10,8 @@ use wasmtime::component::Component;
 use wasmtime::{Store, Trap, UpdateDeadline};
 
 use crate::api::model::{
-	Badge, ChannelClick, ChannelDetail, ClientEvent, DisplayOverrideFull, EmojiInfo, EmojiRef, LinkVerdict,
-	MessageClick, MessageFull, MessageMeta, MessagePatch, MessagePatchExt, NotificationInfo,
+	Badge, ChannelClick, ChannelDetail, ClientEvent, ContextDetail, DisplayOverrideFull, EmojiInfo, EmojiRef,
+	LinkVerdict, MessageClick, MessageFull, MessageMeta, MessagePatch, MessagePatchExt, NotificationInfo,
 	NotificationVerdict, OutgoingFull, PickVerdict, Presence, RichTree, SendDecisionFull, UiContext,
 	ViewEvent, ViewReply, ViewTree,
 };
@@ -29,7 +29,6 @@ const WORKER_STACK_BYTES: usize = 4 * 1024 * 1024;
 
 pub type DisplayRequest = (Option<u64>, User, Option<Presence>);
 pub type InterceptItem = (MessageFull, MessageMeta, RichTree);
-pub type InterceptAnswer = (Arc<str>, Vec<(usize, MessagePatchExt)>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PluginState {
@@ -116,6 +115,10 @@ impl Health {
 			last_error: Mutex::new(None),
 			blocked: Mutex::new(Blocked::default()),
 		}
+	}
+
+	pub fn invalidate_hooks(&self) {
+		self.revision.fetch_add(1, Ordering::AcqRel);
 	}
 
 	pub fn begin_blocking(&self) {
@@ -245,15 +248,17 @@ pub enum CallKind {
 		key: String,
 		value: String,
 	},
-	ViewEvent(ViewEvent),
+	ViewEvent(ViewEvent, Option<ContextDetail>),
 	MenuItem {
 		menu: String,
 		key: String,
 		context: UiContext,
+		detail: Option<ContextDetail>,
 	},
 	RenderView {
 		point: String,
 		context: UiContext,
+		detail: Option<ContextDetail>,
 	},
 	Intercept {
 		msg: Arc<MessageFull>,
@@ -324,7 +329,7 @@ impl CallKind {
 			self,
 			Self::UiAction { .. }
 				| Self::Command { .. }
-				| Self::ViewEvent(_)
+				| Self::ViewEvent(..)
 				| Self::MenuItem { .. }
 				| Self::Keybind(_)
 				| Self::BadgeClick { .. }
@@ -352,6 +357,15 @@ impl CallKind {
 				| Self::Notification(_)
 				| Self::BadgeClick { .. }
 		)
+	}
+
+	fn detail(&self) -> Option<ContextDetail> {
+		match self {
+			Self::ViewEvent(_, detail) | Self::MenuItem { detail, .. } | Self::RenderView { detail, .. } => {
+				detail.clone()
+			}
+			_ => None,
+		}
 	}
 
 	fn context(&self) -> CallContext {
@@ -387,7 +401,7 @@ impl CallKind {
 			Self::Command { .. } => timeouts.command,
 			Self::SettingsSchema => timeouts.settings_schema,
 			Self::Setting { .. } => timeouts.on_event,
-			Self::ViewEvent(_) | Self::MenuItem { .. } => timeouts.view_event,
+			Self::ViewEvent(..) | Self::MenuItem { .. } => timeouts.view_event,
 			Self::RenderView { .. } => timeouts.render_view,
 			Self::Intercept { .. } => timeouts.intercept_message,
 			Self::Timer { .. } => timeouts.timer,
@@ -458,21 +472,30 @@ struct QueueState {
 	background: VecDeque<Call>,
 	events: VecDeque<Call>,
 	timers: HashSet<u64>,
+	drafts: HashMap<u64, String>,
 	closed: bool,
 }
 
 impl QueueState {
-	fn forget(&mut self, call: &Call) {
-		if let CallKind::Timer { id, .. } = &call.kind {
-			self.timers.remove(id);
+	fn release(&mut self, call: &mut Call) {
+		match &mut call.kind {
+			CallKind::Timer { id, .. } => {
+				self.timers.remove(id);
+			}
+			CallKind::DraftChange { channel_id, text } => {
+				if let Some(latest) = self.drafts.remove(channel_id) {
+					*text = latest;
+				}
+			}
+			_ => {}
 		}
 	}
 
 	fn push_event(&mut self, call: Call, cap: usize) {
 		if self.events.len() >= cap
-			&& let Some(oldest) = self.events.pop_front()
+			&& let Some(mut oldest) = self.events.pop_front()
 		{
-			self.forget(&oldest);
+			self.release(&mut oldest);
 		}
 		self.events.push_back(call);
 	}
@@ -492,6 +515,7 @@ impl CallQueue {
 				background: VecDeque::new(),
 				events: VecDeque::new(),
 				timers: HashSet::new(),
+				drafts: HashMap::new(),
 				closed: false,
 			}),
 			ready: Condvar::new(),
@@ -528,6 +552,27 @@ impl CallQueue {
 		true
 	}
 
+	fn push_draft(&self, channel_id: u64, text: String, timeout: Duration) -> bool {
+		let mut state = self.state.lock();
+		if state.closed {
+			return false;
+		}
+		if state.drafts.insert(channel_id, text).is_none() {
+			let call = Call {
+				kind: CallKind::DraftChange {
+					channel_id,
+					text: String::new(),
+				},
+				timeout,
+				reply: None,
+			};
+			state.push_event(call, self.event_cap);
+		}
+		drop(state);
+		self.ready.notify_one();
+		true
+	}
+
 	fn push_call(&self, call: Call) -> bool {
 		let mut state = self.state.lock();
 		if state.closed || state.interactive.len() + state.background.len() >= self.event_cap {
@@ -554,8 +599,8 @@ impl CallQueue {
 			if let Some(call) = state.background.pop_front() {
 				return Some(call);
 			}
-			if let Some(call) = state.events.pop_front() {
-				state.forget(&call);
+			if let Some(mut call) = state.events.pop_front() {
+				state.release(&mut call);
 				return Some(call);
 			}
 			self.ready.wait(&mut state);
@@ -569,6 +614,7 @@ impl CallQueue {
 		state.background.clear();
 		state.events.clear();
 		state.timers.clear();
+		state.drafts.clear();
 		drop(state);
 		self.ready.notify_all();
 	}
@@ -684,6 +730,7 @@ impl WorkerContext {
 		let gesture = kind.is_gesture();
 		store.data_mut().mark_blocked_time();
 		store.data_mut().set_context(kind.context());
+		store.data_mut().set_detail(kind.detail());
 		if gesture {
 			store.data_mut().begin_gesture();
 		}
@@ -873,14 +920,19 @@ fn execute_hook(
 	kind: CallKind,
 ) -> wasmtime::Result<Output> {
 	match (hooks, kind) {
-		(Some(hooks), CallKind::ViewEvent(event)) => {
+		(Some(hooks), CallKind::ViewEvent(event, _)) => {
 			hooks.call_on_view_event(&mut *store, &event).map(Output::Reply)
 		}
-		(None, CallKind::ViewEvent(_)) => Ok(Output::Reply(quiet_reply())),
-		(Some(hooks), CallKind::MenuItem { menu, key, context }) => hooks
+		(None, CallKind::ViewEvent(..)) => Ok(Output::Reply(quiet_reply())),
+		(
+			Some(hooks),
+			CallKind::MenuItem {
+				menu, key, context, ..
+			},
+		) => hooks
 			.call_on_menu_item(&mut *store, &menu, &key, &context)
 			.map(|()| Output::Done),
-		(Some(hooks), CallKind::RenderView { point, context }) => hooks
+		(Some(hooks), CallKind::RenderView { point, context, .. }) => hooks
 			.call_render_view(&mut *store, &point, &context)
 			.map(Output::View),
 		(None, CallKind::RenderView { .. }) => Ok(Output::View(None)),
@@ -1087,7 +1139,13 @@ impl PluginInstance {
 	}
 
 	pub fn post_draft_change(&self, channel_id: u64, text: String) {
-		self.post_interactive(CallKind::DraftChange { channel_id, text });
+		if self.pre.hooks2.is_none() {
+			return;
+		}
+		let Ok(queue) = self.queue() else {
+			return;
+		};
+		queue.push_draft(channel_id, text, self.runtime.config.timeouts.draft_change);
 	}
 
 	pub fn post_message_click(&self, click: MessageClick) {
@@ -1263,19 +1321,44 @@ impl PluginInstance {
 }
 
 impl PluginInstance {
-	pub fn view_event(&self, event: ViewEvent) -> Result<ViewReply, CallError> {
-		match self.call(CallKind::ViewEvent(event))? {
+	pub fn view_event(
+		&self,
+		event: ViewEvent,
+		detail: Option<ContextDetail>,
+	) -> Result<ViewReply, CallError> {
+		match self.call(CallKind::ViewEvent(event, detail))? {
 			Output::Reply(reply) => Ok(reply),
 			_ => Err(mismatch()),
 		}
 	}
 
-	pub fn menu_item(&self, menu: String, key: String, context: UiContext) -> Result<(), CallError> {
-		self.call(CallKind::MenuItem { menu, key, context }).map(|_| ())
+	pub fn menu_item(
+		&self,
+		menu: String,
+		key: String,
+		context: UiContext,
+		detail: Option<ContextDetail>,
+	) -> Result<(), CallError> {
+		self.call(CallKind::MenuItem {
+			menu,
+			key,
+			context,
+			detail,
+		})
+		.map(|_| ())
 	}
 
-	pub fn render_view(&self, point: String, context: UiContext) -> Result<Option<ViewTree>, CallError> {
-		match self.call(CallKind::RenderView { point, context })? {
+	pub fn render_view(
+		&self,
+		point: String,
+		context: UiContext,
+		detail: Option<ContextDetail>,
+	) -> Result<Option<ViewTree>, CallError> {
+		match self.call(CallKind::RenderView {
+			point,
+			context,
+			detail,
+		})? {
 			Output::View(tree) => Ok(tree),
 			_ => Err(mismatch()),
 		}

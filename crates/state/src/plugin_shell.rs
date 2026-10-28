@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 
 use protocol::Snowflake;
@@ -87,12 +87,43 @@ pub struct DmSectionView {
 	pub collapsed: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BadgeColor {
+	Token(String),
+	Rgba(u32),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginBadge {
+	pub icon: Option<String>,
+	pub image: Option<String>,
+	pub label: Option<String>,
+	pub tooltip: String,
+	pub color: Option<BadgeColor>,
+	pub key: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AutocompleteOrder {
+	pub query: String,
+	pub order: Vec<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChannelDecoration {
+	pub plugin_id: String,
+	pub badges: Vec<PluginBadge>,
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct PluginShell {
 	pub(crate) intents: VecDeque<QueuedIntent>,
 	pub(crate) intent_count: u64,
 	pub(crate) client_options: ClientOptions,
 	pub(crate) dm_sections: Vec<DmSectionView>,
+	pub(crate) autocomplete: Option<AutocompleteOrder>,
+	pub(crate) decorations: HashMap<Snowflake, Vec<ChannelDecoration>>,
+	pub(crate) hold_alerts: bool,
 }
 
 impl PluginShell {
@@ -126,5 +157,20 @@ impl State {
 
 	pub fn dm_sections(&self) -> &[DmSectionView] {
 		&self.plugin_shell.dm_sections
+	}
+
+	pub fn autocomplete_order(&self, query: &str) -> Option<&[u32]> {
+		self.plugin_shell
+			.autocomplete
+			.as_ref()
+			.filter(|answer| answer.query == query)
+			.map(|answer| answer.order.as_slice())
+	}
+
+	pub fn channel_decorations(&self, channel_id: Snowflake) -> &[ChannelDecoration] {
+		self.plugin_shell
+			.decorations
+			.get(&channel_id)
+			.map_or(&[], Vec::as_slice)
 	}
 }

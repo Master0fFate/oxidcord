@@ -653,7 +653,7 @@ impl DispatchEvent {
 			"USER_SETTINGS_UPDATE" => Self::UserSettingsUpdate(decode(name, data)?),
 			"USER_SETTINGS_PROTO_UPDATE" => Self::UserSettingsProtoUpdate(decode(name, data)?),
 			"USER_GUILD_SETTINGS_UPDATE" => Self::UserGuildSettingsUpdate(decode(name, data)?),
-			"RELATIONSHIP_ADD" => Self::RelationshipAdd(decode(name, data)?),
+			"RELATIONSHIP_ADD" | "RELATIONSHIP_UPDATE" => Self::RelationshipAdd(decode(name, data)?),
 			"RELATIONSHIP_REMOVE" => Self::RelationshipRemove(decode(name, data)?),
 			"VOICE_STATE_UPDATE" => Self::VoiceStateUpdate(decode(name, data)?),
 			"VOICE_SERVER_UPDATE" => Self::VoiceServerUpdate(decode(name, data)?),

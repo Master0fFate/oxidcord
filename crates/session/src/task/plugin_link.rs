@@ -4,27 +4,29 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
+use plugin_host::api::model::{Color, Presence};
 use plugin_host::api::{
-	ChannelSwitch, DisplayOverride, Event as PluginEvent, MessageRef, MessageView, OutgoingMessage,
-	ReactionEvent, TypingEvent,
+	ChannelSwitch, DisplayOverride, Event as PluginEvent, MessageRef, MessageView, ReactionEvent, TypingEvent,
 };
 use plugin_host::convert::user_view;
-use plugin_host::{PACKAGE_EXTENSION, Permission, SendDecision, SlotEntry};
+use plugin_host::{DisplayAnswer, FullSendDecision, PACKAGE_EXTENSION, Permission, SlotEntry};
 use protocol::{DispatchEvent, Message, MessageUpdate, Nonce, PartialEmoji, Snowflake, User};
-use rest::UploadFile;
 use state::{
-	Changes, Event, LocalEvent, MemberSlot, RenderedMessage, SharedState, UserOverride, apply_update,
+	BadgeColor, Changes, Event, LocalEvent, MemberSlot, PluginBadge, RenderedMessage, SharedState,
+	UserOverride, apply_update,
 };
 use tokio::runtime::Handle;
 use tokio::sync::{Barrier, mpsc};
 use tokio::time::Instant;
 
+use super::outgoing::Outgoing;
 use super::{Core, Internal};
 use crate::broker::view_of;
 use crate::catalog::{download_plugin, download_theme, fetch_catalog, fetch_theme_catalog, write_theme};
-use crate::command::{Command, ReplyTarget};
+use crate::command::Command;
 use crate::plugins::{PluginFlags, PluginHub};
 use crate::render::{RenderJob, RenderResult};
+use crate::views::{message_meta, presence};
 
 const OVERRIDE_DEBOUNCE: Duration = Duration::from_secs(2);
 const OVERRIDE_BATCH: usize = 200;
@@ -33,6 +35,7 @@ const FILTER_RECHECK: usize = 100;
 const ACCESSORY_SLOT: &str = "message-accessory";
 
 type OverrideEntry = (Option<Snowflake>, Snowflake, Option<UserOverride>);
+type OverrideTarget = (Option<Snowflake>, User, Option<Presence>);
 
 type PluginJob = Box<dyn FnOnce() + Send>;
 
@@ -167,7 +170,7 @@ fn filter_changed(hub: &PluginHub, state: &SharedState) -> bool {
 		.any(|(view, hidden)| hub.manager.filter_message(view) == *hidden)
 }
 
-fn emoji_text(emoji: &PartialEmoji) -> String {
+pub(super) fn emoji_text(emoji: &PartialEmoji) -> String {
 	match (&emoji.name, emoji.id) {
 		(Some(name), Some(id)) => format!("{name}:{id}"),
 		(Some(name), None) => name.clone(),
@@ -176,7 +179,25 @@ fn emoji_text(emoji: &PartialEmoji) -> String {
 	}
 }
 
-fn to_override(over: DisplayOverride) -> Option<UserOverride> {
+fn plugin_color(color: Color) -> BadgeColor {
+	match color {
+		Color::Token(token) => BadgeColor::Token(token),
+		Color::Rgba(rgba) => BadgeColor::Rgba(rgba),
+	}
+}
+
+pub(super) fn plugin_badge(badge: plugin_host::api::model::Badge) -> PluginBadge {
+	PluginBadge {
+		icon: badge.icon,
+		image: badge.image,
+		label: badge.label,
+		tooltip: badge.tooltip,
+		color: badge.color.map(plugin_color),
+		key: badge.key,
+	}
+}
+
+fn legacy_override(over: DisplayOverride) -> Option<UserOverride> {
 	let color = over
 		.color
 		.as_deref()
@@ -185,7 +206,35 @@ fn to_override(over: DisplayOverride) -> Option<UserOverride> {
 		name: over.name,
 		color,
 		badge: over.badge,
+		plugin: None,
+		suffix: None,
+		badges: Vec::new(),
+		avatar: None,
+		banner: None,
+		decoration: None,
+		pronouns: None,
 	})
+}
+
+fn to_override(answer: DisplayAnswer) -> Option<UserOverride> {
+	match answer {
+		DisplayAnswer::Legacy(over) => legacy_override(over),
+		DisplayAnswer::Full(plugin, over) => Some(UserOverride {
+			name: over.name,
+			color: match over.color {
+				Some(Color::Rgba(rgba)) => Some(rgba >> 8),
+				_ => None,
+			},
+			badge: None,
+			plugin: Some(plugin.to_string()),
+			suffix: over.suffix,
+			badges: over.badges.into_iter().map(plugin_badge).collect(),
+			avatar: over.avatar,
+			banner: over.banner,
+			decoration: over.decoration,
+			pronouns: over.pronouns,
+		}),
+	}
 }
 
 fn uncached_update(update: &MessageUpdate) -> Option<Message> {
@@ -263,6 +312,7 @@ impl Core {
 		self.render_worker.set_epoch(self.epoch);
 		self.overrides_generation += 1;
 		self.apply_local(LocalEvent::UserOverridesCleared);
+		self.sync_plugin_hooks();
 		let selected = self.state.read().selected();
 		if let Some(selected) = selected {
 			self.rerender_stale(selected.channel_id);
@@ -315,6 +365,7 @@ impl Core {
 			.collect();
 		let mut jobs = Vec::new();
 		let intercept = self.flags.intercept;
+		let with_meta = self.flags.hooks.intercept_ext;
 		let mut state = self.state.write();
 		let me = state.current_user_id();
 		for (message, mut rendered) in parsed {
@@ -335,6 +386,7 @@ impl Core {
 					deleted,
 					mine: me == Some(message.author.id),
 					intercept,
+					meta: with_meta.then(|| message_meta(&state, state.messages(channel_id), &message)),
 				});
 			}
 			state.apply(&Event::Local(LocalEvent::MessageRendered {
@@ -482,26 +534,18 @@ impl Core {
 		&self,
 		nonce: Nonce,
 		channel_id: Snowflake,
-		content: String,
-		reply_to: Option<ReplyTarget>,
-		files: Vec<UploadFile>,
+		outgoing: Outgoing,
 		skip_hook: Option<String>,
 	) {
 		let manager = Arc::clone(&self.hub.manager);
 		let internal = self.internal.clone();
-		let outgoing = OutgoingMessage {
-			channel_id: channel_id.get(),
-			content: content.clone(),
-			reply_to: reply_to.map(|reply| reply.message.get()),
-		};
+		let full = outgoing.to_full(channel_id);
 		self.runtime.spawn_blocking(move || {
-			let decision = manager.before_send(outgoing, skip_hook.as_deref());
+			let decision = manager.before_send(full, skip_hook.as_deref());
 			let _ = internal.send(Internal::BeforeSend {
 				nonce,
 				channel_id,
-				content,
-				reply_to,
-				files,
+				outgoing,
 				decision,
 			});
 		});
@@ -511,25 +555,38 @@ impl Core {
 		&mut self,
 		nonce: Nonce,
 		channel_id: Snowflake,
-		content: String,
-		reply_to: Option<ReplyTarget>,
-		files: Vec<UploadFile>,
-		decision: SendDecision,
+		outgoing: Outgoing,
+		decision: FullSendDecision,
 	) {
 		match decision {
-			SendDecision::Pass => self.dispatch_send(nonce, channel_id, content, reply_to, files),
-			SendDecision::Replaced { by, msg } => {
+			FullSendDecision::Pass => self.dispatch_send(nonce, channel_id, outgoing),
+			FullSendDecision::Replaced { by, msg } => {
+				let outgoing = {
+					let state = self.state.read();
+					outgoing.rewritten(msg, |sticker| {
+						state
+							.find_sticker(sticker)
+							.is_some_and(|known| known.available != Some(false))
+					})
+				};
 				self.apply_local(LocalEvent::PendingAltered {
 					nonce: nonce.clone(),
-					content: msg.content.clone(),
+					content: outgoing.content.clone(),
 					by,
 				});
-				self.dispatch_send(nonce, channel_id, msg.content, reply_to, files);
+				self.dispatch_send(nonce, channel_id, outgoing);
 			}
-			SendDecision::Cancelled { by, reason } => self.apply_local(LocalEvent::PendingFailed {
-				nonce,
-				reason: Some(format!("{by}: {reason}")),
-			}),
+			FullSendDecision::Cancelled { by, reason } => {
+				let reason = format!("{by}: {reason}");
+				if outgoing.shows_pending() {
+					self.apply_local(LocalEvent::PendingFailed {
+						nonce,
+						reason: Some(reason),
+					});
+				} else {
+					self.reject(reason);
+				}
+			}
 		}
 	}
 
@@ -571,15 +628,17 @@ impl Core {
 		let internal = self.internal.clone();
 		let epoch = self.overrides_generation;
 		self.plugin_lanes.run(Lane::Background, move || {
-			let users: Vec<(Option<u64>, plugin_host::api::User)> = targets
-				.iter()
-				.map(|(guild_id, user)| (guild_id.map(Snowflake::get), user_view(user)))
-				.collect();
+			let mut users = Vec::with_capacity(targets.len());
+			let mut keys = Vec::with_capacity(targets.len());
+			for (guild_id, user, presence) in targets {
+				users.push((guild_id.map(Snowflake::get), user_view(&user), presence));
+				keys.push((guild_id, user.id));
+			}
 			let entries: Vec<OverrideEntry> = manager
 				.display_users(&users)
 				.into_iter()
-				.zip(targets)
-				.map(|(over, (guild_id, user))| (guild_id, user.id, over.and_then(to_override)))
+				.zip(keys)
+				.map(|(answer, (guild_id, user_id))| (guild_id, user_id, answer.and_then(to_override)))
 				.collect();
 			let _ = internal.send(Internal::Overrides { epoch, entries });
 		});
@@ -601,7 +660,8 @@ impl Core {
 		}
 	}
 
-	fn override_targets(&self) -> Vec<(Option<Snowflake>, User)> {
+	fn override_targets(&self) -> Vec<OverrideTarget> {
+		let with_presence = self.flags.hooks.presence_events;
 		let state = self.state.read();
 		let Some(selected) = state.selected() else {
 			return Vec::new();
@@ -614,7 +674,11 @@ impl Core {
 				&& (!state.has_override_entry(guild_id, user.id) || self.invalidated_users.contains(&user.id))
 				&& seen.insert(user.id)
 			{
-				targets.push((guild_id, user.clone()));
+				targets.push((
+					guild_id,
+					user.clone(),
+					with_presence.then(|| presence(&state, user.id)).flatten(),
+				));
 			}
 		};
 		if let Some(cache) = state.messages(selected.channel_id) {
@@ -680,9 +744,13 @@ impl Core {
 					Ok(())
 				});
 			}
-			Command::PluginViewEvent { plugin_id, event } => {
+			Command::PluginViewEvent {
+				plugin_id,
+				event,
+				detail,
+			} => {
 				self.plugin_task(TaskKind::Interactive, "plugin view event", move |hub| {
-					hub.manager.view_event(&plugin_id, event)?;
+					hub.manager.view_event(&plugin_id, event, detail)?;
 					Ok(())
 				});
 			}
@@ -691,15 +759,20 @@ impl Core {
 				menu,
 				key,
 				context,
+				detail,
 			} => self.plugin_task(TaskKind::Interactive, "plugin menu item", move |hub| {
-				hub.manager.menu_item(&plugin_id, &menu, &key, context)?;
+				hub.manager.menu_item(&plugin_id, &menu, &key, context, detail)?;
 				Ok(())
 			}),
-			Command::PluginRenderView { point, context } => {
+			Command::PluginRenderView {
+				point,
+				context,
+				detail,
+			} => {
 				let hub = Arc::clone(&self.hub);
 				let internal = self.internal.clone();
 				self.plugin_lanes.run(Lane::Background, move || {
-					if hub.manager.render_views(&point, context) {
+					if hub.manager.render_views(&point, context, detail) {
 						let _ = internal.send(Internal::SlotsChanged);
 					}
 				});
@@ -712,6 +785,28 @@ impl Core {
 					let _ = internal.send(Internal::SlotsChanged);
 				});
 			}
+			Command::PluginAutocompleteEmoji { query, candidates } => {
+				self.request_autocomplete(query, candidates);
+			}
+			Command::PluginMessageClick(click) => self.hub.manager.message_click(&click),
+			Command::PluginChannelClick(click) => self.hub.manager.channel_click(&click),
+			Command::PluginLinkClick { url, context, reply } => {
+				let hub = Arc::clone(&self.hub);
+				self.plugin_lanes.run(Lane::Interactive, move || {
+					reply.send(hub.manager.link_click(&url, &context));
+				});
+			}
+			Command::PluginKeybind { chord } => {
+				let bound = self.hub.manager.runtime().keybinds().lookup(&chord);
+				if let Some((plugin_id, id)) = bound {
+					self.hub.manager.keybind(&plugin_id, &id);
+				}
+			}
+			Command::PluginBadgeClick {
+				plugin_id,
+				user_id,
+				key,
+			} => self.hub.manager.badge_click(&plugin_id, user_id.get(), &key),
 			Command::PluginEnable(id) => self.plugin_task(TaskKind::Lifecycle, "enable plugin", move |hub| {
 				hub.manager.enable(&id)?;
 				hub.sync_themes();

@@ -228,6 +228,7 @@ pub fn fire(scope: &Scope, key: &str, event: Fire, cx: &mut App) {
 						kind,
 						context: context_of(*context),
 					},
+					detail: None,
 				},
 				cx,
 			);

@@ -4,7 +4,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use parking_lot::RwLock;
 
-use crate::api::model::{Annotation, Decoration, EmbedAction, EmbedCard, ViewTree, Visibility};
+use crate::api::model::{
+	Annotation, AttachmentLayout, AttachmentOverride, CodeBlockNode, Decoration, EmbedAction, EmbedCard,
+	ViewTree, Visibility,
+};
 
 const MAX_PATCHED_MESSAGES: usize = 20_000;
 
@@ -18,6 +21,12 @@ pub struct PluginPatch {
 	pub extra_embeds: Vec<EmbedCard>,
 	pub hidden_attachments: Vec<u64>,
 	pub accessory: Option<Arc<ViewTree>>,
+	pub attachments: Vec<AttachmentOverride>,
+	pub layout: Option<AttachmentLayout>,
+	pub reply_annotation: Option<String>,
+	pub reveal_spoilers: bool,
+	pub tooltip: Option<String>,
+	pub code_blocks: Vec<(u32, CodeBlockNode)>,
 }
 
 impl PluginPatch {
@@ -29,6 +38,12 @@ impl PluginPatch {
 			&& self.extra_embeds.is_empty()
 			&& self.hidden_attachments.is_empty()
 			&& self.accessory.is_none()
+			&& self.attachments.is_empty()
+			&& self.layout.is_none()
+			&& self.reply_annotation.is_none()
+			&& !self.reveal_spoilers
+			&& self.tooltip.is_none()
+			&& self.code_blocks.is_empty()
 	}
 }
 

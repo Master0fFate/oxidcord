@@ -263,6 +263,7 @@ impl Harness {
 			content: sent.to_owned(),
 			reply_to: None,
 			files: Vec::new(),
+			stickers: Vec::new(),
 			by_plugin: None,
 		});
 		self.until("the sent message to replace its pending row", |state| {

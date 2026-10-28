@@ -358,6 +358,7 @@ impl HostBroker for SessionBroker {
 				mention: true,
 			}),
 			files: Vec::new(),
+			stickers: Vec::new(),
 			by_plugin: Some(plugin.to_owned()),
 		})?;
 		Ok(0)
@@ -1138,6 +1139,7 @@ impl HostBroker for SessionBroker {
 				mention: true,
 			}),
 			files: files.into_iter().map(upload_file).collect(),
+			stickers: Vec::new(),
 			by_plugin: Some(plugin.to_owned()),
 		})
 	}

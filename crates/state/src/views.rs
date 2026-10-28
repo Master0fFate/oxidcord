@@ -4,6 +4,8 @@ use chrono::{DateTime, NaiveDate, Utc};
 use protocol::{ChannelType, Message, Snowflake, StatusKind};
 use smallvec::SmallVec;
 
+use crate::plugin_shell::PluginBadge;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GuildSummary {
 	pub id: Snowflake,
@@ -61,6 +63,13 @@ pub struct UserOverride {
 	pub name: Option<String>,
 	pub color: Option<u32>,
 	pub badge: Option<String>,
+	pub plugin: Option<String>,
+	pub suffix: Option<String>,
+	pub badges: Vec<PluginBadge>,
+	pub avatar: Option<String>,
+	pub banner: Option<String>,
+	pub decoration: Option<String>,
+	pub pronouns: Option<String>,
 }
 
 #[derive(Debug, Clone)]

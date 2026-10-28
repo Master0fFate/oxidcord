@@ -17,7 +17,7 @@ use crate::guild::GuildState;
 use crate::loaded::Lazy;
 use crate::messages::ChannelMessages;
 use crate::notifications::Alert;
-use crate::plugin_shell::PluginShell;
+use crate::plugin_shell::{AutocompleteOrder, PluginShell};
 use crate::settings::GuildFolder;
 use crate::views::RenderedMessage;
 use crate::views::UserOverride;
@@ -176,6 +176,10 @@ impl State {
 
 	pub fn relationships(&self) -> impl Iterator<Item = &Relationship> {
 		self.relationships.values()
+	}
+
+	pub fn relationship(&self, user_id: Snowflake) -> Option<&Relationship> {
+		self.relationships.get(&user_id)
 	}
 
 	pub fn read_state(&self, channel_id: Snowflake) -> Option<&ReadState> {
@@ -529,6 +533,41 @@ impl State {
 				if self.plugin_shell.client_options != *options {
 					self.plugin_shell.client_options = *options;
 					changes.client_options = true;
+				}
+			}
+			LocalEvent::AlertHold(hold) => self.plugin_shell.hold_alerts = *hold,
+			LocalEvent::AlertResolved { id, verdict } => {
+				changes.alerts = self.resolve_alert(*id, verdict);
+			}
+			LocalEvent::AutocompleteOrder { query, order } => {
+				self.plugin_shell.autocomplete = Some(AutocompleteOrder {
+					query: query.clone(),
+					order: order.clone(),
+				});
+				changes.autocomplete = true;
+			}
+			LocalEvent::ChannelDecorations { entries } => {
+				for (channel_id, decorations) in entries {
+					let current = self.plugin_shell.decorations.get(channel_id);
+					if current.map(Vec::as_slice).unwrap_or_default() == decorations.as_slice() {
+						continue;
+					}
+					if decorations.is_empty() {
+						self.plugin_shell.decorations.remove(channel_id);
+					} else {
+						self.plugin_shell
+							.decorations
+							.insert(*channel_id, decorations.clone());
+					}
+					self.mark_channel_dirty(*channel_id, &mut changes);
+				}
+			}
+			LocalEvent::DecorationsCleared => {
+				if !self.plugin_shell.decorations.is_empty() {
+					self.plugin_shell.decorations.clear();
+					changes.guild_list = true;
+					changes.private_channels = true;
+					changes.channel_lists.mark_all();
 				}
 			}
 			LocalEvent::DmSectionsChanged(sections) => {

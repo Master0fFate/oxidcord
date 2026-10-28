@@ -228,6 +228,13 @@ fn alert_notification(state: &State, alert: &Alert, show_content: bool) -> Notif
 	} else {
 		String::new()
 	};
+	let (title, body) = match &alert.text {
+		Some((title, body)) => (
+			title.clone(),
+			if show_content { body.clone() } else { String::new() },
+		),
+		None => (title, body),
+	};
 	Notification {
 		title,
 		body,
@@ -1009,7 +1016,7 @@ impl Shell {
 	fn raise_alerts(&mut self, window: &Window, cx: &mut Context<Self>) {
 		let settings = (self.backend.read)().notifications;
 		let viewing = self.channel.filter(|_| window.is_window_active());
-		let notifications: Vec<(Snowflake, Notification)> = {
+		let (notifications, audible): (Vec<(Snowflake, Notification)>, bool) = {
 			let data = self.data.read(cx);
 			let state = data.state();
 			let seen = std::mem::replace(&mut self.seen_alert, state.last_alert_id());
@@ -1023,20 +1030,20 @@ impl Shell {
 			if alerts.peek().is_none() {
 				return;
 			}
-			if settings.enabled {
-				alerts
-					.map(|alert| {
-						(
-							alert.message.channel_id,
-							alert_notification(&state, alert, settings.show_content),
-						)
-					})
-					.collect()
-			} else {
-				Vec::new()
+			let mut audible = false;
+			let mut notifications = Vec::new();
+			for alert in alerts {
+				audible |= alert.sound;
+				if settings.enabled {
+					notifications.push((
+						alert.message.channel_id,
+						alert_notification(&state, alert, settings.show_content),
+					));
+				}
 			}
+			(notifications, audible)
 		};
-		if settings.sounds && !crate::data::streamer_mode(cx).mutes_sounds() {
+		if audible && settings.sounds && !crate::data::streamer_mode(cx).mutes_sounds() {
 			platform::sound::play_chime();
 		}
 		for (channel, notification) in notifications {

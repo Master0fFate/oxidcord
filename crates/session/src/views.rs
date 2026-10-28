@@ -65,7 +65,10 @@ fn activity(activity: &protocol::Activity) -> ActivityView {
 }
 
 pub(crate) fn presence(state: &State, user_id: Snowflake) -> Option<Presence> {
-	let presence = state.presence(user_id)?;
+	Some(presence_view(user_id, state.presence(user_id)?))
+}
+
+pub(crate) fn presence_view(user_id: Snowflake, presence: &protocol::Presence) -> Presence {
 	let platforms = presence
 		.client_status
 		.as_ref()
@@ -81,12 +84,12 @@ pub(crate) fn presence(state: &State, user_id: Snowflake) -> Option<Presence> {
 			.collect()
 		})
 		.unwrap_or_default();
-	Some(Presence {
+	Presence {
 		user_id: user_id.get(),
 		status: presence.status.as_str().to_owned(),
 		platforms,
 		activities: presence.activities.iter().map(activity).collect(),
-	})
+	}
 }
 
 pub(crate) fn read_state(unread: ChannelUnread) -> ReadState {

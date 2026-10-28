@@ -649,27 +649,20 @@ impl Composer {
 			mention: direct || reply.mention,
 		});
 		let data = self.data.read(cx);
-		if !text.is_empty() || !files.is_empty() {
-			match parse_command(data, &text).filter(|_| files.is_empty()) {
-				Some((name, args)) => data.send(Command::RunPluginCommand {
-					name,
-					args,
-					channel_id: channel,
-				}),
-				None => data.send(Command::SendMessage {
-					channel_id: channel,
-					content: text,
-					reply_to,
-					files,
-					by_plugin: None,
-				}),
-			}
-		}
-		for sticker_id in stickers {
-			data.send(Command::SendSticker {
+		match parse_command(data, &text).filter(|_| files.is_empty() && stickers.is_empty()) {
+			Some((name, args)) => data.send(Command::RunPluginCommand {
+				name,
+				args,
 				channel_id: channel,
-				sticker_id,
-			});
+			}),
+			None => data.send(Command::SendMessage {
+				channel_id: channel,
+				content: text,
+				reply_to,
+				files,
+				stickers,
+				by_plugin: None,
+			}),
 		}
 		data.send(Command::SetDraft {
 			channel_id: channel,

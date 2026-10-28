@@ -30,9 +30,12 @@ pub use loaded::{
 };
 pub use member_list::{MemberList, MemberSlot};
 pub use messages::{ChannelMessages, MESSAGE_CAP, PendingMessage, apply_update};
-pub use notifications::{Alert, ChannelUnread};
+pub use notifications::{Alert, AlertVerdict, ChannelUnread};
 pub use permissions::DM_PERMISSIONS;
-pub use plugin_shell::{ClientOptions, DmSectionView, QueuedIntent, UiIntent};
+pub use plugin_shell::{
+	AutocompleteOrder, BadgeColor, ChannelDecoration, ClientOptions, DmSectionView, PluginBadge,
+	QueuedIntent, UiIntent,
+};
 pub use settings::{GuildFolder, RailEntry, guild_folders_settings};
 pub use state::{Rejection, Selection, SessionInfo, SharedState, State, TYPING_TIMEOUT};
 pub use threads::ForumPost;

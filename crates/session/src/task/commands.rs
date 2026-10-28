@@ -525,7 +525,10 @@ impl Core {
 				.spawn_load("user settings", move |rest| async move {
 					Ok(Loaded::UserSettings(rest.patch_user_settings(changes).await?))
 				}),
-			Command::SetGuildLayout(layout) => self.set_guild_layout(&layout),
+			Command::SetGuildLayout(layout) => {
+				self.set_guild_layout(&layout);
+				self.note_list_changed();
+			}
 			Command::CreateGuild { name, icon } => {
 				self.select_created_guild = true;
 				self.spawn_action("create server", move |rest| async move {

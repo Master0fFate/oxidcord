@@ -548,6 +548,7 @@ impl Timeline {
 					mention: true,
 				}),
 				files: Vec::new(),
+				stickers: Vec::new(),
 				by_plugin: None,
 			}),
 			RowAction::OpenEmoji { message_id, at } => cx.emit(TimelineEvent::OpenEmoji { message_id, at }),

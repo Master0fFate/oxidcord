@@ -2,13 +2,15 @@ use std::sync::Arc;
 
 use markdown::Node;
 use protocol::{Message, PartialEmoji, Snowflake};
+use url::Url;
 
 use super::md::rich_to_md;
-use super::view::{ImagePolicy, clip, sanitize_card, sanitize_color, sanitize_view, valid_icon};
+use super::view::{ImagePolicy, clip, clip_line, sanitize_card, sanitize_color, sanitize_view, valid_icon};
 use crate::api::MessageView;
 use crate::api::model::{
-	Annotation, AttachmentInfo, Decoration, EmbedAction, EmbedInfo, EmojiRef, Lifecycle, MessageFull,
-	MessagePatch, MessagePatchExt, ReactionInfo, StickerInfo, Visibility,
+	Annotation, AttachmentInfo, AttachmentOverride, CodeBlockNode, Decoration, EmbedAction, EmbedInfo,
+	EmojiRef, Lifecycle, MessageFull, MessagePatch, MessagePatchExt, ReactionInfo, StickerInfo, StyledSpan,
+	Visibility,
 };
 use crate::patches::PluginPatch;
 
@@ -16,6 +18,13 @@ const MAX_ANNOTATIONS: usize = 4;
 const MAX_EXTRA_EMBEDS: usize = 3;
 const MAX_HIDDEN_ATTACHMENTS: usize = 10;
 const MAX_REASON: usize = 200;
+const MAX_EXT_TEXT: usize = 200;
+const MAX_ALT: usize = 1_000;
+const MAX_ATTACHMENT_OVERRIDES: usize = 10;
+const MAX_CODE_LINES: usize = 2_000;
+const MAX_CODE_SPANS: usize = 400;
+const MAX_SPAN_CHILDREN: usize = 256;
+const MAX_LANGUAGE: usize = 32;
 
 pub fn emoji_ref(emoji: &PartialEmoji) -> EmojiRef {
 	EmojiRef {
@@ -101,12 +110,151 @@ fn reason(text: &str) -> String {
 		.collect()
 }
 
+pub struct ExtContext<'a> {
+	pub attachments: &'a [AttachmentInfo],
+	pub code_blocks: usize,
+}
+
 pub fn sanitize_patch(
 	plugin_id: &Arc<str>,
 	patch: MessagePatch,
 	embed_count: usize,
 	images: &ImagePolicy,
 ) -> SanitizedPatch {
+	let (content, retain, plugin_patch) = sanitize_base(plugin_id, patch, embed_count, images);
+	SanitizedPatch {
+		content,
+		retain,
+		patch: (!plugin_patch.is_empty()).then_some(plugin_patch),
+	}
+}
+
+pub fn sanitize_patch_ext(
+	plugin_id: &Arc<str>,
+	patch: MessagePatchExt,
+	embed_count: usize,
+	images: &ImagePolicy,
+	context: &ExtContext<'_>,
+) -> SanitizedPatch {
+	let MessagePatchExt {
+		base,
+		attachments,
+		layout,
+		reply_annotation,
+		reveal_spoilers,
+		tooltip,
+		code_blocks,
+	} = patch;
+	let (content, retain, mut plugin_patch) = sanitize_base(plugin_id, base, embed_count, images);
+	plugin_patch.attachments = attachment_overrides(attachments, context.attachments);
+	plugin_patch.layout = layout;
+	plugin_patch.reply_annotation = reply_annotation
+		.map(|text| clip_line(&text, MAX_EXT_TEXT))
+		.filter(|text| !text.trim().is_empty());
+	plugin_patch.reveal_spoilers = reveal_spoilers;
+	plugin_patch.tooltip = tooltip
+		.map(|text| clip_line(&text, MAX_EXT_TEXT))
+		.filter(|text| !text.trim().is_empty());
+	plugin_patch.code_blocks = code_block_overrides(code_blocks, context.code_blocks);
+	SanitizedPatch {
+		content,
+		retain,
+		patch: (!plugin_patch.is_empty()).then_some(plugin_patch),
+	}
+}
+
+fn same_host(replacement: &str, original: &str) -> bool {
+	let (Ok(replacement), Ok(original)) = (Url::parse(replacement), Url::parse(original)) else {
+		return false;
+	};
+	replacement.scheme() == "https"
+		&& replacement.username().is_empty()
+		&& replacement.password().is_none()
+		&& replacement.host_str().is_some()
+		&& replacement.host_str() == original.host_str()
+}
+
+fn attachment_overrides(
+	overrides: Vec<AttachmentOverride>,
+	known: &[AttachmentInfo],
+) -> Vec<AttachmentOverride> {
+	let mut kept: Vec<AttachmentOverride> = Vec::new();
+	for over in overrides {
+		if kept.len() == MAX_ATTACHMENT_OVERRIDES {
+			break;
+		}
+		let Some(original) = known.iter().find(|attachment| attachment.id == over.id) else {
+			continue;
+		};
+		if kept.iter().any(|existing| existing.id == over.id) {
+			continue;
+		}
+		let kept_over = AttachmentOverride {
+			id: over.id,
+			blur: over.blur,
+			alt: over
+				.alt
+				.map(|text| clip_line(&text, MAX_ALT))
+				.filter(|text| !text.trim().is_empty()),
+			tooltip: over
+				.tooltip
+				.map(|text| clip_line(&text, MAX_EXT_TEXT))
+				.filter(|text| !text.trim().is_empty()),
+			url: over.url.filter(|url| same_host(url, &original.url)),
+			hidden: over.hidden,
+		};
+		kept.push(kept_over);
+	}
+	kept
+}
+
+fn code_block_overrides(blocks: Vec<(u32, CodeBlockNode)>, count: usize) -> Vec<(u32, CodeBlockNode)> {
+	let mut kept: Vec<(u32, CodeBlockNode)> = Vec::new();
+	let mut lines_left = MAX_CODE_LINES;
+	for (index, block) in blocks {
+		if lines_left == 0 {
+			break;
+		}
+		if index as usize >= count || kept.iter().any(|(taken, _)| *taken == index) {
+			continue;
+		}
+		let lines: Vec<Vec<StyledSpan>> = block
+			.lines
+			.into_iter()
+			.take(lines_left)
+			.map(|line| {
+				line.into_iter()
+					.take(MAX_CODE_SPANS)
+					.map(|span| StyledSpan {
+						children: span.children.into_iter().take(MAX_SPAN_CHILDREN).collect(),
+						color: span.color.as_ref().and_then(sanitize_color),
+						background: span.background.as_ref().and_then(sanitize_color),
+						mono: span.mono,
+					})
+					.collect()
+			})
+			.collect();
+		lines_left -= lines.len();
+		kept.push((
+			index,
+			CodeBlockNode {
+				language: block
+					.language
+					.map(|language| clip_line(&language, MAX_LANGUAGE))
+					.filter(|language| !language.trim().is_empty()),
+				lines,
+			},
+		));
+	}
+	kept
+}
+
+fn sanitize_base(
+	plugin_id: &Arc<str>,
+	patch: MessagePatch,
+	embed_count: usize,
+	images: &ImagePolicy,
+) -> (Option<Vec<Node>>, bool, PluginPatch) {
 	let content = patch.content.as_ref().map(|tree| rich_to_md(tree, images));
 	let visibility = match patch.visibility {
 		Visibility::Shown => Visibility::Shown,
@@ -163,12 +311,14 @@ pub fn sanitize_patch(
 		extra_embeds,
 		hidden_attachments,
 		accessory,
+		attachments: Vec::new(),
+		layout: None,
+		reply_annotation: None,
+		reveal_spoilers: false,
+		tooltip: None,
+		code_blocks: Vec::new(),
 	};
-	SanitizedPatch {
-		content,
-		retain: patch.retain,
-		patch: (!plugin_patch.is_empty()).then_some(plugin_patch),
-	}
+	(content, patch.retain, plugin_patch)
 }
 
 pub fn empty_patch_ext() -> MessagePatchExt {

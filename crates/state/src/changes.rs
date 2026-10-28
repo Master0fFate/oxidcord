@@ -92,6 +92,7 @@ pub struct Changes {
 	pub intents: bool,
 	pub client_options: bool,
 	pub dm_sections: bool,
+	pub autocomplete: bool,
 }
 
 impl Changes {
@@ -125,6 +126,7 @@ impl Changes {
 			intents: true,
 			client_options: true,
 			dm_sections: true,
+			autocomplete: true,
 		}
 	}
 
@@ -148,7 +150,8 @@ impl Changes {
 			|| self.rejected
 			|| self.intents
 			|| self.client_options
-			|| self.dm_sections)
+			|| self.dm_sections
+			|| self.autocomplete)
 			&& self.channel_lists.is_empty()
 			&& self.messages.is_empty()
 			&& self.members.is_empty()
@@ -180,6 +183,7 @@ impl Changes {
 		self.intents |= other.intents;
 		self.client_options |= other.client_options;
 		self.dm_sections |= other.dm_sections;
+		self.autocomplete |= other.autocomplete;
 		self.channel_lists.merge(&other.channel_lists);
 		self.messages.merge(&other.messages);
 		self.members.merge(&other.members);

@@ -5,7 +5,7 @@ use std::time::Duration;
 use plugin_host::api::model::{ClientOption, DmSection};
 use plugin_host::{Invalidation, Navigation, Permission, PickedPath};
 use protocol::{Permissions, Snowflake};
-use state::{Changes, ClientOptions, DmSectionView, LoadDirection, LocalEvent, UiIntent};
+use state::{ClientOptions, DmSectionView, LoadDirection, LocalEvent, UiIntent};
 
 use super::actions::{channel_notification_body, guild_notification_body};
 use super::{Command, Core, Internal, PAGE_SIZE, page_query};
@@ -13,6 +13,7 @@ use crate::broker::is_private;
 use crate::command::{LoadResult, Reply};
 use crate::persist::Job;
 use crate::render::RenderJob;
+use crate::views::message_meta;
 
 const SAVE_LIMIT_BYTES: i64 = 100 * 1024 * 1024;
 const MAX_INVALIDATED: usize = 1_024;
@@ -453,7 +454,7 @@ impl Core {
 				self.invalidated_users.insert(Snowflake(user_id));
 				self.schedule_overrides(Duration::ZERO);
 			}
-			Invalidation::Channel(channel_id) => self.mark_decorations_stale(Snowflake(channel_id)),
+			Invalidation::Channel(channel_id) => self.decoration_stale(Snowflake(channel_id)),
 		}
 	}
 
@@ -475,24 +476,14 @@ impl Core {
 				deleted: cache.is_deleted(message_id),
 				mine: state.current_user_id() == Some(message.author.id),
 				intercept: self.flags.intercept,
+				meta: self
+					.flags
+					.hooks
+					.intercept_ext
+					.then(|| message_meta(&state, Some(cache), &message)),
 				message,
 			}
 		};
 		self.render_worker.submit(vec![job]);
-	}
-
-	fn mark_decorations_stale(&mut self, channel_id: Snowflake) {
-		if self.stale_decorations.len() >= MAX_INVALIDATED {
-			self.stale_decorations.clear();
-		}
-		self.stale_decorations.insert(channel_id);
-		let mut changes = Changes::default();
-		match self.state.read().channel_guild(channel_id) {
-			Some(guild_id) => {
-				changes.channel_lists.insert(guild_id);
-			}
-			None => changes.private_channels = true,
-		}
-		self.notifier.push(changes);
 	}
 }

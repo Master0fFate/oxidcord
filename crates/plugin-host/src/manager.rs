@@ -7,26 +7,28 @@ use std::time::{Duration, Instant};
 use markdown::Node;
 use parking_lot::{Mutex, RwLock};
 use semver::Version;
+use url::Url;
 
-use crate::api::model::SendDecisionFull;
 use crate::api::model::{
-	Badge, ChannelClick, ChannelDetail, ClientEvent, DisplayOverrideFull, EmojiInfo, EmojiRef, Lifecycle,
-	LinkVerdict, MessageClick, MessageFull, MessageMeta, MessagePatchExt, NodeKind, NotificationInfo,
-	NotificationVerdict, OutgoingFull, PickVerdict, PluginSummary, Presence, RichTree, TextNode, TextSize,
-	Tone, UiContext, ViewEvent, ViewNode, ViewReply, ViewTree, Weight,
+	Badge, ChannelClick, ChannelDetail, ClientEvent, ContextDetail, DisplayOverrideFull, EmojiInfo, EmojiRef,
+	Lifecycle, LinkVerdict, MessageClick, MessageFull, MessageMeta, NodeKind, NotificationInfo,
+	NotificationOverride, NotificationVerdict, OutgoingFull, PickVerdict, PluginSummary, Presence, RichNode,
+	RichTree, SendDecisionFull, TextNode, TextSize, Tone, UiContext, ViewEvent, ViewNode, ViewReply,
+	ViewTree, Weight,
 };
 use crate::api::{
-	DisplayOverride, Event, MessageView, OutgoingMessage, SendDecision as GuestDecision, User, VoiceInfo,
+	DisplayOverride, Event, MdNode, MessageView, OutgoingMessage, SendDecision as GuestDecision, User,
+	VoiceInfo,
 };
 use crate::convert::{
-	ImagePolicy, SanitizedPatch, clip, md_to_rich, md_to_tree, sanitize_patch, sanitize_view, tree_to_md,
-	upgrade_ui_tree, validate_ui_tree,
+	ExtContext, ImagePolicy, SanitizedPatch, clip, clip_line, md_to_rich, md_to_tree, sanitize_badges,
+	sanitize_display_full, sanitize_patch, sanitize_patch_ext, sanitize_view, tree_to_md, upgrade_ui_tree,
+	validate_ui_tree, web_url,
 };
 use crate::error::{Error, Result};
 use crate::hook::Hook;
 use crate::instance::{
-	CallError, CallKind, DisplayRequest, Health, InterceptAnswer, InterceptItem, Output, PluginInstance,
-	PluginState,
+	CallError, CallKind, DisplayRequest, Health, InterceptItem, Output, PluginInstance, PluginState,
 };
 use crate::manifest::{Manifest, PermissionRequest};
 use crate::mounts::{self, Overlay, ViewContext};
@@ -40,7 +42,14 @@ const MAX_OUTGOING_BYTES: usize = 4_000;
 const MAX_DISPLAY_NAME_CHARS: usize = 80;
 const MAX_BADGE_CHARS: usize = 16;
 const INTERCEPT_BUDGET: Duration = Duration::from_millis(150);
-const INTERCEPT_BREAKER: u32 = 3;
+const INTERCEPT_BATCH_BUDGET: Duration = Duration::from_millis(750);
+const BREAKER_LIMIT: u32 = 3;
+const MAX_STICKERS: usize = 3;
+const MAX_ATTACHMENT_NAME: usize = 255;
+const MAX_NOTIFICATION_TITLE: usize = 100;
+const MAX_NOTIFICATION_BODY: usize = 500;
+const MAX_LINK_BYTES: usize = 2_048;
+const MAX_SELECTION_BYTES: usize = 4_000;
 const MAX_INSERT_BYTES: usize = 2_000;
 const MAX_TOAST_TEXT: usize = 200;
 const DISPLAY_CHUNK: usize = 50;
@@ -50,6 +59,37 @@ pub struct Intercepted {
 	pub ast: Vec<Node>,
 	pub retain: bool,
 	pub patches: Vec<PluginPatch>,
+}
+
+pub struct InterceptInput {
+	pub full: MessageFull,
+	pub ast: Vec<Node>,
+	pub meta: Option<MessageMeta>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum DisplayAnswer {
+	Legacy(DisplayOverride),
+	Full(Arc<str>, DisplayOverrideFull),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChannelBadges {
+	pub plugin_id: Arc<str>,
+	pub badges: Vec<Vec<Badge>>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct HookFlags {
+	pub notification: bool,
+	pub draft: bool,
+	pub decorate: bool,
+	pub autocomplete: bool,
+	pub link_click: bool,
+	pub client_events: bool,
+	pub presence_events: bool,
+	pub read_state_events: bool,
+	pub intercept_ext: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,13 +103,6 @@ pub enum EmojiPick {
 pub enum FullSendDecision {
 	Pass,
 	Replaced { by: String, msg: OutgoingFull },
-	Cancelled { by: String, reason: String },
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum SendDecision {
-	Pass,
-	Replaced { by: String, msg: OutgoingMessage },
 	Cancelled { by: String, reason: String },
 }
 
@@ -119,6 +152,46 @@ pub enum CommandError {
 	Call(#[from] CallError),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Breaker {
+	Intercept,
+	Send,
+	Display,
+	Notification,
+	LinkClick,
+	Autocomplete,
+	Decorate,
+}
+
+impl Breaker {
+	const COUNT: usize = 7;
+
+	fn label(self) -> &'static str {
+		match self {
+			Self::Intercept => "intercept",
+			Self::Send => "before-send",
+			Self::Display => "display-user",
+			Self::Notification => "notification",
+			Self::LinkClick => "link-click",
+			Self::Autocomplete => "autocomplete-emoji",
+			Self::Decorate => "decorate-channel",
+		}
+	}
+
+	fn of(hook: Hook) -> Option<Self> {
+		match hook {
+			Hook::Intercept => Some(Self::Intercept),
+			Hook::BeforeSend => Some(Self::Send),
+			Hook::DisplayUser => Some(Self::Display),
+			Hook::Notification => Some(Self::Notification),
+			Hook::LinkClick => Some(Self::LinkClick),
+			Hook::AutocompleteEmoji => Some(Self::Autocomplete),
+			Hook::DecorateChannel => Some(Self::Decorate),
+			Hook::DraftChange | Hook::MessageClick | Hook::ChannelClick => None,
+		}
+	}
+}
+
 struct LoadedPlugin {
 	manifest: Arc<Manifest>,
 	dir: PathBuf,
@@ -127,7 +200,7 @@ struct LoadedPlugin {
 	instance: Mutex<Option<Arc<PluginInstance>>>,
 	load_error: Option<String>,
 	component: Option<wasmtime::component::Component>,
-	intercept_timeouts: AtomicU32,
+	breakers: [AtomicU32; Breaker::COUNT],
 }
 
 impl LoadedPlugin {
@@ -137,6 +210,24 @@ impl LoadedPlugin {
 
 	fn is_active(&self) -> bool {
 		self.health.state().is_active()
+	}
+
+	fn tripped(&self, breaker: Breaker) -> bool {
+		self.breakers[breaker as usize].load(Ordering::Relaxed) >= BREAKER_LIMIT
+	}
+
+	fn succeeded(&self, breaker: Breaker) {
+		self.breakers[breaker as usize].store(0, Ordering::Relaxed);
+	}
+
+	fn failed(&self, breaker: Breaker, error: &CallError) {
+		tracing::debug!(target: "plugin", plugin = %self.manifest.id, hook = breaker.label(), "skipped: {error}");
+		if matches!(error, CallError::Timeout)
+			&& self.breakers[breaker as usize].fetch_add(1, Ordering::Relaxed) + 1 == BREAKER_LIMIT
+		{
+			tracing::warn!(target: "plugin", plugin = %self.manifest.id, hook = breaker.label(), "hook disabled after repeated timeouts");
+			self.health.invalidate_hooks();
+		}
 	}
 }
 
@@ -155,6 +246,9 @@ struct HookEntry {
 	presence: bool,
 	directory: bool,
 	read_state: bool,
+	ext_send: bool,
+	ext_display: bool,
+	ext_intercept: bool,
 }
 
 impl HookEntry {
@@ -175,7 +269,7 @@ impl HookEntry {
 		}
 	}
 
-	fn sees_client_event(&self, event: &ClientEvent) -> bool {
+	fn sees_client_event(&self, event: &ClientEvent, private_scope: bool) -> bool {
 		match event {
 			ClientEvent::RelationshipChanged(_) | ClientEvent::RelationshipRemoved(_) => self.relationships,
 			ClientEvent::GuildJoined(_)
@@ -186,7 +280,7 @@ impl HookEntry {
 			ClientEvent::PresenceChanged(_) | ClientEvent::IdleChanged(_) => self.presence,
 			ClientEvent::ReactionRemoved(reaction) => self.timeline && self.sees(reaction.message.guild_id),
 			ClientEvent::MessageAcked((message, _)) => self.timeline && self.sees(message.guild_id),
-			ClientEvent::UnreadChanged(_) => self.read_state,
+			ClientEvent::UnreadChanged(_) => self.read_state && (self.private || !private_scope),
 			ClientEvent::Ready => true,
 		}
 	}
@@ -210,9 +304,6 @@ struct HookSets {
 	message_click: Vec<HookEntry>,
 	channel_click: Vec<HookEntry>,
 	link_click: Vec<HookEntry>,
-	display_full: Vec<HookEntry>,
-	send_full: Vec<HookEntry>,
-	intercept_ext: Vec<HookEntry>,
 	hidden_channels: bool,
 	hidden_typing: bool,
 }
@@ -291,6 +382,12 @@ impl PluginManager {
 			let has = |permission| grants.has(name, permission);
 			let ext = instance.is_ext();
 			let hooks2 = instance.has_hooks2();
+			let declares = |hook: Hook| {
+				hooks2
+					&& plugin.manifest.hooks.contains(&hook)
+					&& has(hook.permission())
+					&& Breaker::of(hook).is_none_or(|breaker| !plugin.tripped(breaker))
+			};
 			let entry = HookEntry {
 				id: Arc::from(name),
 				plugin: Arc::clone(plugin),
@@ -305,15 +402,30 @@ impl PluginManager {
 				presence: has(Permission::ContextPresence),
 				directory: has(Permission::ContextDirectory),
 				read_state: has(Permission::ContextReadState),
+				ext_send: declares(Hook::BeforeSend),
+				ext_display: declares(Hook::DisplayUser),
+				ext_intercept: declares(Hook::Intercept),
 			};
 			sets.hidden_channels |= has(Permission::ChannelsHidden);
 			sets.hidden_typing |= has(Permission::TypingHidden);
 			let targets = [
 				(Permission::MessageRender, true, &mut sets.render),
 				(Permission::MessageFilter, true, &mut sets.filter),
-				(Permission::MessageIntercept, ext, &mut sets.intercept),
-				(Permission::MessageSend, true, &mut sets.send),
-				(Permission::UserDisplay, true, &mut sets.display),
+				(
+					Permission::MessageIntercept,
+					ext && !plugin.tripped(Breaker::Intercept),
+					&mut sets.intercept,
+				),
+				(
+					Permission::MessageSend,
+					!plugin.tripped(Breaker::Send),
+					&mut sets.send,
+				),
+				(
+					Permission::UserDisplay,
+					!plugin.tripped(Breaker::Display),
+					&mut sets.display,
+				),
 				(Permission::Composer, ext, &mut sets.emoji),
 			];
 			for (permission, capable, set) in targets {
@@ -322,7 +434,6 @@ impl PluginManager {
 				}
 			}
 			if hooks2 {
-				let declared = &plugin.manifest.hooks;
 				let targets = [
 					(Hook::DraftChange, &mut sets.draft),
 					(Hook::AutocompleteEmoji, &mut sets.autocomplete),
@@ -331,12 +442,9 @@ impl PluginManager {
 					(Hook::MessageClick, &mut sets.message_click),
 					(Hook::ChannelClick, &mut sets.channel_click),
 					(Hook::LinkClick, &mut sets.link_click),
-					(Hook::DisplayUser, &mut sets.display_full),
-					(Hook::BeforeSend, &mut sets.send_full),
-					(Hook::Intercept, &mut sets.intercept_ext),
 				];
 				for (hook, set) in targets {
-					if declared.contains(&hook) && has(hook.permission()) {
+					if declares(hook) {
 						set.push(entry.clone());
 					}
 				}
@@ -345,6 +453,21 @@ impl PluginManager {
 			sets.events.push(entry);
 		}
 		sets
+	}
+
+	pub fn hook_flags(&self) -> HookFlags {
+		let sets = self.hooks();
+		HookFlags {
+			notification: !sets.notification.is_empty(),
+			draft: !sets.draft.is_empty(),
+			decorate: !sets.decorate.is_empty(),
+			autocomplete: !sets.autocomplete.is_empty(),
+			link_click: !sets.link_click.is_empty(),
+			client_events: !sets.events2.is_empty(),
+			presence_events: sets.events2.iter().any(|entry| entry.presence),
+			read_state_events: sets.events2.iter().any(|entry| entry.read_state),
+			intercept_ext: sets.intercept.iter().any(|entry| entry.ext_intercept),
+		}
 	}
 
 	pub fn runtime(&self) -> &Runtime {
@@ -500,7 +623,7 @@ impl PluginManager {
 			instance: Mutex::new(None),
 			load_error,
 			component,
-			intercept_timeouts: AtomicU32::new(0),
+			breakers: std::array::from_fn(|_| AtomicU32::new(0)),
 		}))
 	}
 
@@ -734,72 +857,51 @@ impl PluginManager {
 		self.runtime.grants().image_policy(plugin_id)
 	}
 
-	pub fn intercept(&self, full: MessageFull, ast: Vec<Node>) -> Intercepted {
+	pub fn intercept_many(&self, inputs: Vec<InterceptInput>) -> Vec<Intercepted> {
 		let sets = self.hooks();
-		let guild_id = full.view.guild_id;
-		let mut plugins = sets
-			.intercept
-			.iter()
-			.filter(|entry| entry.sees(guild_id))
-			.peekable();
-		let mut outcome = Intercepted {
-			ast,
-			retain: false,
-			patches: Vec::new(),
-		};
-		if plugins.peek().is_none() {
-			return outcome;
+		if sets.intercept.is_empty() {
+			return inputs
+				.into_iter()
+				.map(|input| Intercepted {
+					ast: input.ast,
+					retain: false,
+					patches: Vec::new(),
+				})
+				.collect();
 		}
-		let deleted = matches!(full.lifecycle, Lifecycle::Deleted(_));
-		let embed_count = full.embeds.len();
+		let mut work: Vec<InterceptWork> = inputs.into_iter().map(InterceptWork::new).collect();
 		let started = Instant::now();
-		let mut content = Arc::new(md_to_rich(&outcome.ast));
-		let mut shared = Arc::new(full);
-		for entry in plugins {
-			if started.elapsed() >= INTERCEPT_BUDGET {
+		let budget = INTERCEPT_BUDGET
+			.saturating_mul(u32::try_from(work.len()).unwrap_or(u32::MAX))
+			.min(INTERCEPT_BATCH_BUDGET);
+		for entry in &sets.intercept {
+			if started.elapsed() >= budget {
 				tracing::debug!(target: "plugin", "intercept budget spent, remaining plugins skipped");
 				break;
 			}
-			if intercept_tripped(entry) {
+			if entry.plugin.tripped(Breaker::Intercept) {
 				continue;
 			}
-			let patch = match entry
-				.instance
-				.intercept(Arc::clone(&shared), Arc::clone(&content))
-			{
-				Ok(patch) => {
-					entry.plugin.intercept_timeouts.store(0, Ordering::Relaxed);
-					patch
-				}
-				Err(error) => {
-					note_intercept_failure(entry, &error);
-					continue;
-				}
-			};
-			let SanitizedPatch {
-				content: replaced,
-				retain,
-				patch,
-			} = sanitize_patch(&entry.id, patch, embed_count, &entry.images);
-			if let Some(nodes) = replaced {
-				let document = markdown::Document { nodes };
-				Arc::make_mut(&mut shared).view.content = document.plain_text();
-				outcome.ast = document.nodes;
-				content = Arc::new(md_to_rich(&outcome.ast));
+			let visible: Vec<usize> = (0..work.len())
+				.filter(|&index| entry.sees(work[index].full.view.guild_id))
+				.collect();
+			if visible.is_empty() {
+				continue;
 			}
-			if deleted && retain && entry.retain {
-				outcome.retain = true;
+			if entry.ext_intercept {
+				intercept_ext(entry, &mut work, &visible);
+			} else {
+				intercept_plain(entry, &mut work, &visible);
 			}
-			outcome.patches.extend(patch);
 		}
-		outcome
+		work.into_iter().map(|item| item.outcome).collect()
 	}
 
 	pub fn store_patches(&self, message_id: u64, patches: Vec<PluginPatch>) {
 		self.runtime.patches().set(message_id, patches);
 	}
 
-	pub fn view_event(&self, plugin_id: &str, event: ViewEvent) -> Result<()> {
+	pub fn view_event(&self, plugin_id: &str, event: ViewEvent, detail: Option<ContextDetail>) -> Result<()> {
 		let instance = self.instance(plugin_id)?;
 		let point = event.point.clone();
 		let mount = event.mount.clone();
@@ -810,7 +912,7 @@ impl PluginManager {
 			user_id: event.context.user_id,
 		};
 		let reply = instance
-			.view_event(event)
+			.view_event(event, detail.map(sanitize_detail))
 			.map_err(|error| Error::wasm(format!("{plugin_id}: {error}")))?;
 		self.apply_reply(plugin_id, &point, &mount, context, reply);
 		Ok(())
@@ -847,28 +949,43 @@ impl PluginManager {
 		}
 	}
 
-	pub fn menu_item(&self, plugin_id: &str, menu: &str, key: &str, context: UiContext) -> Result<()> {
+	pub fn menu_item(
+		&self,
+		plugin_id: &str,
+		menu: &str,
+		key: &str,
+		context: UiContext,
+		detail: Option<ContextDetail>,
+	) -> Result<()> {
 		self.instance(plugin_id)?
-			.menu_item(menu.to_owned(), key.to_owned(), context)
+			.menu_item(
+				menu.to_owned(),
+				key.to_owned(),
+				context,
+				detail.map(sanitize_detail),
+			)
 			.map_err(|error| Error::wasm(format!("{plugin_id}: {error}")))
 	}
 
-	pub fn render_views(&self, point: &str, context: ViewContext) -> bool {
+	pub fn render_views(&self, point: &str, context: ViewContext, detail: Option<ContextDetail>) -> bool {
 		let Some(point) = mounts::context_point(point) else {
 			return false;
 		};
 		let surfaces = self.runtime.mounts();
 		let wanted = surfaces.request(point, context);
+		let detail = detail.map(sanitize_detail);
 		for requested in &wanted {
 			let plugin_id = &requested.plugin_id;
 			let tree = match self.instance(plugin_id) {
-				Ok(instance) => match instance.render_view(point.to_owned(), context.to_api(None)) {
-					Ok(tree) => tree.map(|tree| sanitize_view(&tree, &self.image_policy(plugin_id))),
-					Err(error) => {
-						tracing::debug!(target: "plugin", plugin = %plugin_id, "render-view skipped: {error}");
-						None
+				Ok(instance) => {
+					match instance.render_view(point.to_owned(), context.to_api(None), detail.clone()) {
+						Ok(tree) => tree.map(|tree| sanitize_view(&tree, &self.image_policy(plugin_id))),
+						Err(error) => {
+							tracing::debug!(target: "plugin", plugin = %plugin_id, "render-view skipped: {error}");
+							None
+						}
 					}
-				},
+				}
 				Err(_) => None,
 			};
 			surfaces.store_requested_view(
@@ -924,233 +1041,69 @@ impl PluginManager {
 		EmojiPick::Default
 	}
 
-	pub fn before_send(&self, outgoing: OutgoingMessage, skip: Option<&str>) -> SendDecision {
+	pub fn before_send(&self, outgoing: OutgoingFull, skip: Option<&str>) -> FullSendDecision {
 		let sets = self.hooks();
-		let mut current = Arc::new(outgoing);
+		let mut current = outgoing;
 		let mut replaced_by: Option<String> = None;
 		for entry in sets.send.iter().filter(|entry| Some(&*entry.id) != skip) {
-			let decision = match entry.instance.before_send(Arc::clone(&current)) {
-				Ok(decision) => decision,
-				Err(error) => {
-					tracing::debug!(target: "plugin", plugin = %entry.id, "before-send skipped: {error}");
-					continue;
-				}
+			let step = if entry.ext_send {
+				send_full_step(entry, &current)
+			} else {
+				send_plain_step(entry, &current)
 			};
-			match decision {
-				GuestDecision::Pass => {}
-				GuestDecision::Cancel(reason) => {
-					return SendDecision::Cancelled {
+			match step {
+				SendStep::Keep => {}
+				SendStep::Cancel(reason) => {
+					return FullSendDecision::Cancelled {
 						by: entry.plugin.manifest.id.clone(),
 						reason,
 					};
 				}
-				GuestDecision::Replace(message) => {
-					let keeps_target =
-						message.channel_id == current.channel_id && message.reply_to == current.reply_to;
-					if keeps_target
-						&& !message.content.is_empty()
-						&& message.content.len() <= MAX_OUTGOING_BYTES
-					{
-						current = Arc::new(message);
-						replaced_by = Some(entry.plugin.manifest.id.clone());
-					} else {
-						tracing::warn!(target: "plugin", plugin = %entry.id, "rejected rewritten message");
-					}
+				SendStep::Replace(next) => {
+					current = next;
+					replaced_by = Some(entry.plugin.manifest.id.clone());
 				}
 			}
 		}
 		match replaced_by {
-			Some(by) => SendDecision::Replaced {
-				by,
-				msg: Arc::try_unwrap(current).unwrap_or_else(|shared| (*shared).clone()),
-			},
-			None => SendDecision::Pass,
-		}
-	}
-
-	pub fn before_send_full(&self, outgoing: OutgoingFull, skip: Option<&str>) -> FullSendDecision {
-		let sets = self.hooks();
-		let mut current = Arc::new(outgoing);
-		let mut replaced_by: Option<String> = None;
-		for entry in sets.send_full.iter().filter(|entry| Some(&*entry.id) != skip) {
-			let decision = match entry.instance.before_send_full(Arc::clone(&current)) {
-				Ok(decision) => decision,
-				Err(error) => {
-					tracing::debug!(target: "plugin", plugin = %entry.id, "before-send-full skipped: {error}");
-					continue;
-				}
-			};
-			match decision {
-				SendDecisionFull::Pass => {}
-				SendDecisionFull::Cancel(reason) => {
-					return FullSendDecision::Cancelled {
-						by: entry.plugin.manifest.id.clone(),
-						reason: clip(&reason, MAX_TOAST_TEXT),
-					};
-				}
-				SendDecisionFull::Replace(mut message) => {
-					message.content = clip(&message.content, MAX_OUTGOING_BYTES);
-					let keeps_target = message.channel_id == current.channel_id
-						&& message.reply_to == current.reply_to
-						&& keeps_attachments(&current, &message);
-					let has_body = !message.content.is_empty()
-						|| !message.attachments.is_empty()
-						|| !message.stickers.is_empty();
-					if keeps_target && has_body {
-						current = Arc::new(message);
-						replaced_by = Some(entry.plugin.manifest.id.clone());
-					} else {
-						tracing::warn!(target: "plugin", plugin = %entry.id, "rejected rewritten message");
-					}
-				}
-			}
-		}
-		match replaced_by {
-			Some(by) => FullSendDecision::Replaced {
-				by,
-				msg: Arc::try_unwrap(current).unwrap_or_else(|shared| (*shared).clone()),
-			},
+			Some(by) => FullSendDecision::Replaced { by, msg: current },
 			None => FullSendDecision::Pass,
 		}
 	}
 
-	pub fn display_users_full(
-		&self,
-		users: &[(Option<u64>, User, Option<Presence>)],
-	) -> Vec<Option<DisplayOverrideFull>> {
-		let sets = self.hooks();
-		let mut resolved: Vec<Option<DisplayOverrideFull>> = vec![None; users.len()];
-		for entry in &sets.display_full {
-			let pending: Vec<usize> = (0..users.len())
-				.filter(|&index| resolved[index].is_none())
-				.collect();
-			for chunk in pending.chunks(DISPLAY_CHUNK) {
-				let batch: Arc<[DisplayRequest]> = chunk
-					.iter()
-					.map(|&index| {
-						let (guild_id, user, presence) = &users[index];
-						(
-							*guild_id,
-							user.clone(),
-							presence.clone().filter(|_| entry.presence),
-						)
-					})
-					.collect();
-				match entry.instance.display_users_full(batch) {
-					Ok(overrides) => {
-						for (&index, over) in chunk.iter().zip(overrides) {
-							resolved[index] = over;
-						}
-					}
-					Err(error) => {
-						tracing::debug!(target: "plugin", plugin = %entry.id, "display-user-full skipped: {error}");
-					}
-				}
-			}
-			if resolved.iter().all(Option::is_some) {
-				break;
-			}
-		}
-		resolved
-	}
-
-	pub fn intercept_ext(
-		&self,
-		full: &Arc<MessageFull>,
-		meta: &Arc<MessageMeta>,
-		content: &Arc<RichTree>,
-	) -> Vec<(Arc<str>, MessagePatchExt)> {
-		let sets = self.hooks();
-		let started = Instant::now();
-		let mut patches = Vec::new();
-		for entry in sets
-			.intercept_ext
-			.iter()
-			.filter(|entry| entry.sees(full.view.guild_id))
-		{
-			if started.elapsed() >= INTERCEPT_BUDGET {
-				break;
-			}
-			if intercept_tripped(entry) {
-				continue;
-			}
-			match entry
-				.instance
-				.intercept_ext(Arc::clone(full), Arc::clone(meta), Arc::clone(content))
-			{
-				Ok(patch) => {
-					entry.plugin.intercept_timeouts.store(0, Ordering::Relaxed);
-					patches.push((Arc::clone(&entry.id), patch));
-				}
-				Err(error) => note_intercept_failure(entry, &error),
-			}
-		}
-		patches
-	}
-
-	pub fn intercept_batch_ext(&self, items: &Arc<[InterceptItem]>) -> Vec<InterceptAnswer> {
-		let sets = self.hooks();
-		let mut answers = Vec::new();
-		for entry in &sets.intercept_ext {
-			if intercept_tripped(entry) {
-				continue;
-			}
-			let visible: Vec<usize> = (0..items.len())
-				.filter(|&index| entry.sees(items[index].0.view.guild_id))
-				.collect();
-			if visible.is_empty() {
-				continue;
-			}
-			let batch: Arc<[InterceptItem]> = if visible.len() == items.len() {
-				Arc::clone(items)
-			} else {
-				visible.iter().map(|&index| items[index].clone()).collect()
-			};
-			match entry.instance.intercept_batch_ext(batch) {
-				Ok(patches) if patches.len() == visible.len() => {
-					entry.plugin.intercept_timeouts.store(0, Ordering::Relaxed);
-					answers.push((Arc::clone(&entry.id), visible.into_iter().zip(patches).collect()));
-				}
-				Ok(_) => {
-					tracing::warn!(target: "plugin", plugin = %entry.id, "intercept-messages-ext answered the wrong number of patches");
-				}
-				Err(error) => note_intercept_failure(entry, &error),
-			}
-		}
-		answers
-	}
-
-	pub fn dispatch_client_event(&self, event: ClientEvent) {
+	pub fn dispatch_client_event(&self, event: ClientEvent, private_scope: bool) {
 		let sets = self.hooks();
 		let event = Arc::new(event);
 		for entry in sets
 			.events2
 			.iter()
-			.filter(|entry| entry.sees_client_event(&event))
+			.filter(|entry| entry.sees_client_event(&event, private_scope))
 		{
 			entry.instance.post_client_event(Arc::clone(&event));
 		}
 	}
 
-	pub fn message_click(&self, click: MessageClick) {
+	pub fn message_click(&self, click: &MessageClick) {
+		let watchers = self.runtime.watches().message_targets(click);
 		for entry in self
 			.hooks()
 			.message_click
 			.iter()
-			.filter(|entry| entry.sees(click.message.guild_id))
+			.filter(|entry| entry.sees(click.message.guild_id) && watchers.contains(&entry.id))
 		{
-			entry.instance.post_message_click(click);
+			entry.instance.post_message_click(*click);
 		}
 	}
 
-	pub fn channel_click(&self, click: ChannelClick) {
+	pub fn channel_click(&self, click: &ChannelClick) {
+		let watchers = self.runtime.watches().channel_targets(click);
 		for entry in self
 			.hooks()
 			.channel_click
 			.iter()
-			.filter(|entry| entry.sees(click.guild_id))
+			.filter(|entry| entry.sees(click.guild_id) && watchers.contains(&entry.id))
 		{
-			entry.instance.post_channel_click(click);
+			entry.instance.post_channel_click(*click);
 		}
 	}
 
@@ -1161,20 +1114,38 @@ impl PluginManager {
 		for entry in sets
 			.link_click
 			.iter()
-			.filter(|entry| entry.sees(context.guild_id))
+			.filter(|entry| entry.sees(context.guild_id) && !entry.plugin.tripped(Breaker::LinkClick))
 		{
 			if started.elapsed() >= budget {
 				break;
 			}
 			match entry.instance.link_click(url.to_owned(), context.clone()) {
-				Ok(LinkVerdict::Pass) => {}
-				Ok(verdict) => return verdict,
-				Err(error) => {
-					tracing::debug!(target: "plugin", plugin = %entry.id, "link click skipped: {error}");
+				Ok(LinkVerdict::Pass) => entry.plugin.succeeded(Breaker::LinkClick),
+				Ok(LinkVerdict::Consume) => return LinkVerdict::Consume,
+				Ok(LinkVerdict::Open(target)) => {
+					entry.plugin.succeeded(Breaker::LinkClick);
+					if self.openable(&entry.id, &target) {
+						return LinkVerdict::Open(target);
+					}
+					tracing::warn!(target: "plugin", plugin = %entry.id, "rejected link verdict");
 				}
+				Err(error) => entry.plugin.failed(Breaker::LinkClick, &error),
 			}
 		}
 		LinkVerdict::Pass
+	}
+
+	fn openable(&self, plugin_id: &str, target: &str) -> bool {
+		if target.len() > MAX_LINK_BYTES {
+			return false;
+		}
+		Url::parse(target).is_ok_and(|parsed| {
+			matches!(parsed.scheme(), "http" | "https")
+				|| self
+					.runtime
+					.grants()
+					.allows_url_scheme(plugin_id, parsed.scheme())
+		})
 	}
 
 	pub fn draft_change(&self, channel_id: u64, guild_id: Option<u64>, text: &str) {
@@ -1199,11 +1170,15 @@ impl PluginManager {
 			if started.elapsed() >= budget {
 				break;
 			}
+			if entry.plugin.tripped(Breaker::Autocomplete) {
+				continue;
+			}
 			match entry
 				.instance
 				.autocomplete_emoji(query.to_owned(), Arc::clone(&shared))
 			{
 				Ok(order) => {
+					entry.plugin.succeeded(Breaker::Autocomplete);
 					let mut seen = BTreeSet::new();
 					let order: Vec<u32> = order
 						.into_iter()
@@ -1213,49 +1188,71 @@ impl PluginManager {
 						return order;
 					}
 				}
-				Err(error) => {
-					tracing::debug!(target: "plugin", plugin = %entry.id, "autocomplete skipped: {error}");
-				}
+				Err(error) => entry.plugin.failed(Breaker::Autocomplete, &error),
 			}
 		}
 		Vec::new()
 	}
 
-	pub fn decorate_channels(&self, channels: &Arc<[ChannelDetail]>) -> Vec<Vec<Badge>> {
+	pub fn decorate_channels(&self, channels: &Arc<[ChannelDetail]>) -> Vec<ChannelBadges> {
 		let sets = self.hooks();
-		let mut decorated: Vec<Vec<Badge>> = vec![Vec::new(); channels.len()];
+		let mut answers = Vec::new();
 		for entry in &sets.decorate {
-			match entry.instance.decorate_channels(Arc::clone(channels)) {
-				Ok(badges) if badges.len() == channels.len() => {
-					for (target, mut extra) in decorated.iter_mut().zip(badges) {
-						target.append(&mut extra);
+			if entry.plugin.tripped(Breaker::Decorate) {
+				continue;
+			}
+			let visible: Vec<usize> = (0..channels.len())
+				.filter(|&index| entry.sees(channels[index].guild_id))
+				.collect();
+			if visible.is_empty() {
+				continue;
+			}
+			let batch: Arc<[ChannelDetail]> = if visible.len() == channels.len() {
+				Arc::clone(channels)
+			} else {
+				visible.iter().map(|&index| channels[index].clone()).collect()
+			};
+			match entry.instance.decorate_channels(batch) {
+				Ok(badges) if badges.len() == visible.len() => {
+					entry.plugin.succeeded(Breaker::Decorate);
+					let mut per_channel = vec![Vec::new(); channels.len()];
+					for (&index, list) in visible.iter().zip(badges) {
+						per_channel[index] = sanitize_badges(list, &entry.images);
 					}
+					answers.push(ChannelBadges {
+						plugin_id: Arc::clone(&entry.id),
+						badges: per_channel,
+					});
 				}
 				Ok(_) => {
 					tracing::warn!(target: "plugin", plugin = %entry.id, "decorate-channel answered the wrong number of channels");
 				}
-				Err(error) => {
-					tracing::debug!(target: "plugin", plugin = %entry.id, "decorate skipped: {error}");
-				}
+				Err(error) => entry.plugin.failed(Breaker::Decorate, &error),
 			}
 		}
-		decorated
+		answers
 	}
 
 	pub fn notification(&self, info: &NotificationInfo) -> NotificationVerdict {
 		let sets = self.hooks();
 		let started = Instant::now();
 		let budget = self.runtime.config().timeouts.notification;
-		for entry in sets.notification.iter().filter(|entry| entry.sees(info.guild_id)) {
+		for entry in sets
+			.notification
+			.iter()
+			.filter(|entry| entry.sees(info.guild_id) && !entry.plugin.tripped(Breaker::Notification))
+		{
 			if started.elapsed() >= budget {
 				break;
 			}
-			match entry.instance.notification(*info) {
-				Ok(NotificationVerdict::Allow) => {}
-				Ok(verdict) => return verdict,
-				Err(error) => {
-					tracing::debug!(target: "plugin", plugin = %entry.id, "notification skipped: {error}");
-				}
+			let outcome = entry.instance.notification(*info);
+			match &outcome {
+				Ok(_) => entry.plugin.succeeded(Breaker::Notification),
+				Err(error) => entry.plugin.failed(Breaker::Notification, error),
+			}
+			match settle_notification(outcome) {
+				NotificationVerdict::Allow => {}
+				verdict => return verdict,
 			}
 		}
 		NotificationVerdict::Allow
@@ -1291,25 +1288,27 @@ impl PluginManager {
 			})
 	}
 
-	pub fn display_users(&self, users: &[(Option<u64>, User)]) -> Vec<Option<DisplayOverride>> {
+	pub fn display_users(
+		&self,
+		users: &[(Option<u64>, User, Option<Presence>)],
+	) -> Vec<Option<DisplayAnswer>> {
 		let sets = self.hooks();
-		let mut resolved: Vec<Option<DisplayOverride>> = vec![None; users.len()];
+		let mut resolved: Vec<Option<DisplayAnswer>> = vec![None; users.len()];
 		for entry in &sets.display {
+			if entry.plugin.tripped(Breaker::Display) {
+				continue;
+			}
 			let pending: Vec<usize> = (0..users.len())
 				.filter(|&index| resolved[index].is_none())
 				.collect();
 			for chunk in pending.chunks(DISPLAY_CHUNK) {
-				let batch: Arc<[(Option<u64>, User)]> =
-					chunk.iter().map(|&index| users[index].clone()).collect();
-				match entry.instance.display_users(batch) {
-					Ok(overrides) => {
-						for (&index, over) in chunk.iter().zip(overrides) {
-							resolved[index] = over.map(sanitize_override);
-						}
-					}
-					Err(error) => {
-						tracing::debug!(target: "plugin", plugin = %entry.id, "display skipped: {error}");
-					}
+				let failed = if entry.ext_display {
+					display_full_chunk(entry, users, chunk, &mut resolved)
+				} else {
+					display_legacy_chunk(entry, users, chunk, &mut resolved)
+				};
+				if failed && entry.plugin.tripped(Breaker::Display) {
+					break;
 				}
 			}
 			if resolved.iter().all(Option::is_some) {
@@ -1350,17 +1349,340 @@ impl PluginManager {
 	}
 }
 
-fn intercept_tripped(entry: &HookEntry) -> bool {
-	entry.plugin.intercept_timeouts.load(Ordering::Relaxed) >= INTERCEPT_BREAKER
+struct InterceptWork {
+	full: Arc<MessageFull>,
+	meta: Arc<MessageMeta>,
+	content: Arc<RichTree>,
+	outcome: Intercepted,
+	deleted: bool,
+	embed_count: usize,
 }
 
-fn note_intercept_failure(entry: &HookEntry, error: &CallError) {
-	if matches!(error, CallError::Timeout)
-		&& entry.plugin.intercept_timeouts.fetch_add(1, Ordering::Relaxed) + 1 == INTERCEPT_BREAKER
-	{
-		tracing::warn!(target: "plugin", plugin = %entry.id, "intercept-message disabled after repeated timeouts");
+fn fallback_meta(full: &MessageFull) -> MessageMeta {
+	MessageMeta {
+		guild_id: full.view.guild_id,
+		reply_to: None,
+		flags: full.view.flags,
+		latency_ms: None,
+		author_color: None,
+		pinned: false,
+		edited_ms: None,
+		nsfw_channel: false,
 	}
-	tracing::debug!(target: "plugin", plugin = %entry.id, "intercept skipped: {error}");
+}
+
+fn code_block_count(tree: &RichTree) -> usize {
+	tree.nodes
+		.iter()
+		.filter(|node| matches!(node, RichNode::Md(MdNode::CodeBlock(_))))
+		.count()
+}
+
+impl InterceptWork {
+	fn new(input: InterceptInput) -> Self {
+		let InterceptInput { full, ast, meta } = input;
+		Self {
+			deleted: matches!(full.lifecycle, Lifecycle::Deleted(_)),
+			embed_count: full.embeds.len(),
+			content: Arc::new(md_to_rich(&ast)),
+			meta: Arc::new(meta.unwrap_or_else(|| fallback_meta(&full))),
+			full: Arc::new(full),
+			outcome: Intercepted {
+				ast,
+				retain: false,
+				patches: Vec::new(),
+			},
+		}
+	}
+
+	fn absorb(&mut self, entry: &HookEntry, sanitized: SanitizedPatch) {
+		let SanitizedPatch {
+			content: replaced,
+			retain,
+			patch,
+		} = sanitized;
+		if let Some(nodes) = replaced {
+			let document = markdown::Document { nodes };
+			Arc::make_mut(&mut self.full).view.content = document.plain_text();
+			self.outcome.ast = document.nodes;
+			self.content = Arc::new(md_to_rich(&self.outcome.ast));
+		}
+		if self.deleted && retain && entry.retain {
+			self.outcome.retain = true;
+		}
+		self.outcome.patches.extend(patch);
+	}
+}
+
+fn intercept_plain(entry: &HookEntry, work: &mut [InterceptWork], visible: &[usize]) {
+	for &index in visible {
+		let item = &mut work[index];
+		match entry
+			.instance
+			.intercept(Arc::clone(&item.full), Arc::clone(&item.content))
+		{
+			Ok(patch) => {
+				entry.plugin.succeeded(Breaker::Intercept);
+				let sanitized = sanitize_patch(&entry.id, patch, item.embed_count, &entry.images);
+				item.absorb(entry, sanitized);
+			}
+			Err(error) => {
+				entry.plugin.failed(Breaker::Intercept, &error);
+				if entry.plugin.tripped(Breaker::Intercept) {
+					break;
+				}
+			}
+		}
+	}
+}
+
+fn intercept_ext(entry: &HookEntry, work: &mut [InterceptWork], visible: &[usize]) {
+	let answers = match visible {
+		[index] => {
+			let item = &work[*index];
+			entry
+				.instance
+				.intercept_ext(
+					Arc::clone(&item.full),
+					Arc::clone(&item.meta),
+					Arc::clone(&item.content),
+				)
+				.map(|patch| vec![patch])
+		}
+		_ => {
+			let batch: Arc<[InterceptItem]> = visible
+				.iter()
+				.map(|&index| {
+					let item = &work[index];
+					(
+						MessageFull::clone(&item.full),
+						*item.meta,
+						RichTree::clone(&item.content),
+					)
+				})
+				.collect();
+			entry.instance.intercept_batch_ext(batch)
+		}
+	};
+	match answers {
+		Ok(patches) if patches.len() == visible.len() => {
+			entry.plugin.succeeded(Breaker::Intercept);
+			for (&index, patch) in visible.iter().zip(patches) {
+				let item = &mut work[index];
+				let sanitized = sanitize_patch_ext(
+					&entry.id,
+					patch,
+					item.embed_count,
+					&entry.images,
+					&ExtContext {
+						attachments: &item.full.attachments,
+						code_blocks: code_block_count(&item.content),
+					},
+				);
+				item.absorb(entry, sanitized);
+			}
+		}
+		Ok(_) => {
+			tracing::warn!(target: "plugin", plugin = %entry.id, "intercept-ext answered the wrong number of patches");
+		}
+		Err(error) => entry.plugin.failed(Breaker::Intercept, &error),
+	}
+}
+
+fn display_full_chunk(
+	entry: &HookEntry,
+	users: &[(Option<u64>, User, Option<Presence>)],
+	chunk: &[usize],
+	resolved: &mut [Option<DisplayAnswer>],
+) -> bool {
+	let batch: Arc<[DisplayRequest]> = chunk
+		.iter()
+		.map(|&index| {
+			let (guild_id, user, presence) = &users[index];
+			(
+				*guild_id,
+				user.clone(),
+				presence.clone().filter(|_| entry.presence),
+			)
+		})
+		.collect();
+	match entry.instance.display_users_full(batch) {
+		Ok(overrides) => {
+			entry.plugin.succeeded(Breaker::Display);
+			for (&index, over) in chunk.iter().zip(overrides) {
+				resolved[index] = over
+					.and_then(|over| sanitize_display_full(over, &entry.images))
+					.map(|over| DisplayAnswer::Full(Arc::clone(&entry.id), over));
+			}
+			false
+		}
+		Err(error) => {
+			entry.plugin.failed(Breaker::Display, &error);
+			true
+		}
+	}
+}
+
+fn display_legacy_chunk(
+	entry: &HookEntry,
+	users: &[(Option<u64>, User, Option<Presence>)],
+	chunk: &[usize],
+	resolved: &mut [Option<DisplayAnswer>],
+) -> bool {
+	let batch: Arc<[(Option<u64>, User)]> = chunk
+		.iter()
+		.map(|&index| {
+			let (guild_id, user, _) = &users[index];
+			(*guild_id, user.clone())
+		})
+		.collect();
+	match entry.instance.display_users(batch) {
+		Ok(overrides) => {
+			entry.plugin.succeeded(Breaker::Display);
+			for (&index, over) in chunk.iter().zip(overrides) {
+				resolved[index] = over.map(|over| DisplayAnswer::Legacy(sanitize_override(over)));
+			}
+			false
+		}
+		Err(error) => {
+			entry.plugin.failed(Breaker::Display, &error);
+			true
+		}
+	}
+}
+
+enum SendStep {
+	Keep,
+	Cancel(String),
+	Replace(OutgoingFull),
+}
+
+fn send_full_step(entry: &HookEntry, current: &OutgoingFull) -> SendStep {
+	if entry.plugin.tripped(Breaker::Send) {
+		return SendStep::Keep;
+	}
+	match entry.instance.before_send_full(Arc::new(current.clone())) {
+		Ok(decision) => {
+			entry.plugin.succeeded(Breaker::Send);
+			match decision {
+				SendDecisionFull::Pass => SendStep::Keep,
+				SendDecisionFull::Cancel(reason) => SendStep::Cancel(clip(&reason, MAX_TOAST_TEXT)),
+				SendDecisionFull::Replace(message) => match checked_replacement(current, message) {
+					Some(message) if message != *current => SendStep::Replace(message),
+					Some(_) => SendStep::Keep,
+					None => {
+						tracing::warn!(target: "plugin", plugin = %entry.id, "rejected rewritten message");
+						SendStep::Keep
+					}
+				},
+			}
+		}
+		Err(error) => {
+			entry.plugin.failed(Breaker::Send, &error);
+			SendStep::Keep
+		}
+	}
+}
+
+fn send_plain_step(entry: &HookEntry, current: &OutgoingFull) -> SendStep {
+	if current.content.is_empty() || entry.plugin.tripped(Breaker::Send) {
+		return SendStep::Keep;
+	}
+	let message = Arc::new(OutgoingMessage {
+		channel_id: current.channel_id,
+		content: current.content.clone(),
+		reply_to: current.reply_to,
+	});
+	match entry.instance.before_send(message) {
+		Ok(GuestDecision::Pass) => SendStep::Keep,
+		Ok(GuestDecision::Cancel(reason)) => SendStep::Cancel(reason),
+		Ok(GuestDecision::Replace(message)) => {
+			let keeps_target =
+				message.channel_id == current.channel_id && message.reply_to == current.reply_to;
+			if keeps_target && !message.content.is_empty() && message.content.len() <= MAX_OUTGOING_BYTES {
+				SendStep::Replace(OutgoingFull {
+					content: message.content,
+					..current.clone()
+				})
+			} else {
+				tracing::warn!(target: "plugin", plugin = %entry.id, "rejected rewritten message");
+				SendStep::Keep
+			}
+		}
+		Err(error) => {
+			tracing::debug!(target: "plugin", plugin = %entry.id, "before-send skipped: {error}");
+			SendStep::Keep
+		}
+	}
+}
+
+fn file_name(name: &str) -> Option<String> {
+	let base = name.rsplit(['/', '\\']).next().unwrap_or_default();
+	let cleaned = clip_line(base, MAX_ATTACHMENT_NAME);
+	(!cleaned.trim().is_empty()).then_some(cleaned)
+}
+
+pub(crate) fn checked_replacement(before: &OutgoingFull, mut after: OutgoingFull) -> Option<OutgoingFull> {
+	if after.channel_id != before.channel_id
+		|| after.reply_to != before.reply_to
+		|| !keeps_attachments(before, &after)
+	{
+		return None;
+	}
+	after.content = clip(&after.content, MAX_OUTGOING_BYTES);
+	for attachment in &mut after.attachments {
+		let original = before
+			.attachments
+			.iter()
+			.find(|original| original.handle == attachment.handle)?;
+		attachment.size = original.size;
+		attachment.content_type.clone_from(&original.content_type);
+		attachment.name = file_name(&attachment.name).unwrap_or_else(|| original.name.clone());
+	}
+	let mut seen = BTreeSet::new();
+	after.stickers.retain(|sticker| seen.insert(*sticker));
+	after.stickers.truncate(MAX_STICKERS);
+	let has_body =
+		!after.content.trim().is_empty() || !after.attachments.is_empty() || !after.stickers.is_empty();
+	has_body.then_some(after)
+}
+
+pub(crate) fn settle_notification(
+	outcome: std::result::Result<NotificationVerdict, CallError>,
+) -> NotificationVerdict {
+	match outcome {
+		Ok(NotificationVerdict::Replace(over)) => {
+			sanitize_notification(over).map_or(NotificationVerdict::Allow, NotificationVerdict::Replace)
+		}
+		Ok(verdict) => verdict,
+		Err(_) => NotificationVerdict::Allow,
+	}
+}
+
+fn sanitize_notification(over: NotificationOverride) -> Option<NotificationOverride> {
+	let title = clip_line(&over.title, MAX_NOTIFICATION_TITLE);
+	if title.trim().is_empty() {
+		return None;
+	}
+	let body = clip(&over.body, MAX_NOTIFICATION_BODY)
+		.chars()
+		.filter(|character| *character == '\n' || !character.is_control())
+		.collect();
+	Some(NotificationOverride {
+		title,
+		body,
+		sound: over.sound,
+	})
+}
+
+fn sanitize_detail(detail: ContextDetail) -> ContextDetail {
+	ContextDetail {
+		selection: detail
+			.selection
+			.map(|selection| clip(&selection, MAX_SELECTION_BYTES)),
+		image_url: detail.image_url.filter(|url| web_url(url)),
+		..detail
+	}
 }
 
 fn keeps_attachments(before: &OutgoingFull, after: &OutgoingFull) -> bool {

@@ -2,7 +2,8 @@ use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
 use plugin_host::api::model::{
-	ClientOption, DmSection, EmojiRef, MessageFull, NotificationSettings, UiContext, UserProfile, ViewEvent,
+	ChannelClick, ClientOption, ContextDetail, DmSection, EmojiInfo, EmojiRef, LinkVerdict, MessageClick,
+	MessageFull, NotificationSettings, UiContext, UserProfile, ViewEvent,
 };
 use plugin_host::api::{HostError, User as PluginUser};
 use plugin_host::{Navigation, Permission, PickedPath, ViewContext};
@@ -105,6 +106,7 @@ pub enum Command {
 		content: String,
 		reply_to: Option<ReplyTarget>,
 		files: Vec<UploadFile>,
+		stickers: Vec<Snowflake>,
 		by_plugin: Option<String>,
 	},
 	SendAsUser {
@@ -228,20 +230,42 @@ pub enum Command {
 	PluginViewEvent {
 		plugin_id: String,
 		event: ViewEvent,
+		detail: Option<ContextDetail>,
 	},
 	PluginMenuItem {
 		plugin_id: String,
 		menu: String,
 		key: String,
 		context: UiContext,
+		detail: Option<ContextDetail>,
 	},
 	PluginRenderView {
 		point: String,
 		context: ViewContext,
+		detail: Option<ContextDetail>,
 	},
 	PluginEmojiPick {
 		emoji: EmojiRef,
 		channel_id: Snowflake,
+	},
+	PluginAutocompleteEmoji {
+		query: String,
+		candidates: Vec<EmojiInfo>,
+	},
+	PluginMessageClick(MessageClick),
+	PluginChannelClick(ChannelClick),
+	PluginLinkClick {
+		url: String,
+		context: UiContext,
+		reply: Reply<LinkVerdict>,
+	},
+	PluginKeybind {
+		chord: String,
+	},
+	PluginBadgeClick {
+		plugin_id: String,
+		user_id: Snowflake,
+		key: String,
 	},
 	PluginEnable(String),
 	PluginDisable(String),

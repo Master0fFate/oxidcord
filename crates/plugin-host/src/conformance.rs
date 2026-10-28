@@ -8,7 +8,8 @@ use store::{Paths, Store};
 use crate::api::model::{
 	ChannelClick, ChannelDetail, ClickKind, ClickTarget, ClickWatch, ClientOption, DmSection, EmojiInfo,
 	EmojiRef, Keybind, Lifecycle, MessageClick, MessageFull, MessageMeta, Modifiers, NotificationInfo,
-	NotificationKind, NotificationSettings, OutgoingFull, UiContext,
+	NotificationKind, NotificationOverride, NotificationSettings, NotificationVerdict, OutgoingAttachment,
+	OutgoingFull, UiContext,
 };
 use crate::api::{
 	Event, FetchRequest, HostError, MessageRef, MessageView, OutgoingMessage, SettingChange, UiTree, User,
@@ -23,7 +24,7 @@ use crate::grants::{Grants, PluginGrant};
 use crate::hook::Hook;
 use crate::host_state::HostState;
 use crate::instance::{CallError, CallKind, Output, PluginInstance};
-use crate::manager::PluginManager;
+use crate::manager::{PluginManager, checked_replacement, settle_notification};
 use crate::manifest::Manifest;
 use crate::package::{Package, discover};
 use crate::permission::Permission;
@@ -710,7 +711,103 @@ fn check_host_gating(runtime: &Runtime) -> Vec<Check> {
 			format!("first rate-limited call was {other:?}, expected 4"),
 		),
 	}
+	check_send_enforcement(&mut recorder);
+	check_notification_rules(&mut recorder);
 	recorder.checks
+}
+
+fn full_message() -> OutgoingFull {
+	OutgoingFull {
+		channel_id: 2,
+		content: "hello".to_owned(),
+		reply_to: Some(7),
+		mention_reply: true,
+		silent: false,
+		attachments: vec![OutgoingAttachment {
+			handle: 0,
+			name: "photo.png".to_owned(),
+			size: 4,
+			content_type: Some("image/png".to_owned()),
+			spoiler: false,
+		}],
+		stickers: Vec::new(),
+	}
+}
+
+fn check_send_enforcement(recorder: &mut Recorder) {
+	let started = Instant::now();
+	let before = full_message();
+	let other_channel = OutgoingFull {
+		channel_id: 3,
+		..full_message()
+	};
+	let other_reply = OutgoingFull {
+		reply_to: None,
+		..full_message()
+	};
+	let mut other_handle = full_message();
+	other_handle.attachments[0].handle = 9;
+	let mut renamed = full_message();
+	renamed.attachments[0].name = "../../secret.png".to_owned();
+	renamed.attachments[0].spoiler = true;
+	renamed.attachments[0].size = 999;
+	renamed.stickers = vec![5, 5, 6, 7, 8];
+	renamed.silent = true;
+	let accepted = checked_replacement(&before, renamed);
+	let rejected = [other_channel, other_reply, other_handle]
+		.into_iter()
+		.all(|after| checked_replacement(&before, after).is_none());
+	let rewritten_ok = accepted.is_some_and(|after| {
+		after.attachments[0].name == "secret.png"
+			&& after.attachments[0].spoiler
+			&& after.attachments[0].size == 4
+			&& after.stickers == [5, 6, 7]
+			&& after.silent
+	});
+	if rejected && rewritten_ok {
+		recorder.pass(
+			"before-send-full replace enforcement",
+			started.elapsed(),
+			"channel, reply and attachment set are pinned, names sanitized",
+		);
+	} else {
+		recorder.fail(
+			"before-send-full replace enforcement",
+			started.elapsed(),
+			format!("rejected={rejected} rewritten_ok={rewritten_ok}"),
+		);
+	}
+}
+
+fn check_notification_rules(recorder: &mut Recorder) {
+	let started = Instant::now();
+	let timed_out = settle_notification(Err(CallError::Timeout)) == NotificationVerdict::Allow;
+	let empty_title = settle_notification(Ok(NotificationVerdict::Replace(NotificationOverride {
+		title: String::new(),
+		body: "x".to_owned(),
+		sound: true,
+	}))) == NotificationVerdict::Allow;
+	let clipped = matches!(
+		settle_notification(Ok(NotificationVerdict::Replace(NotificationOverride {
+			title: "t".repeat(300),
+			body: "b".repeat(900),
+			sound: false,
+		}))),
+		NotificationVerdict::Replace(over) if over.title.len() == 100 && over.body.len() == 500 && !over.sound
+	);
+	if timed_out && empty_title && clipped {
+		recorder.pass(
+			"notification verdict rules",
+			started.elapsed(),
+			"timeout counts as allow, text clipped to 100 and 500",
+		);
+	} else {
+		recorder.fail(
+			"notification verdict rules",
+			started.elapsed(),
+			format!("timed_out={timed_out} empty_title={empty_title} clipped={clipped}"),
+		);
+	}
 }
 
 fn sample_message() -> MessageView {

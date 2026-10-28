@@ -6,7 +6,9 @@ use std::sync::Arc;
 use anyhow::{Context, Result, bail, ensure};
 use parking_lot::Mutex;
 use plugin_host::catalog::{Catalog, CatalogEntry, ThemeCatalog};
-use plugin_host::{Grants, LatencyStats, Package, Permission, PluginManager, PluginState, THEME_FILE};
+use plugin_host::{
+	Grants, HookFlags, LatencyStats, Package, Permission, PluginManager, PluginState, THEME_FILE,
+};
 use store::Store;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -19,6 +21,7 @@ pub(crate) struct PluginFlags {
 	pub(crate) display: bool,
 	pub(crate) logs: bool,
 	pub(crate) intercept: bool,
+	pub(crate) hooks: HookFlags,
 }
 
 impl PluginFlags {
@@ -66,6 +69,7 @@ impl PluginHub {
 			display: self.manager.has_active(Permission::UserDisplay),
 			logs: self.manager.has_message_log(),
 			intercept: self.manager.has_intercept(),
+			hooks: self.manager.hook_flags(),
 		}
 	}
 

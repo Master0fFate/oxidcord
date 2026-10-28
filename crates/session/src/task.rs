@@ -9,17 +9,17 @@ use gateway::{GatewayEvent, GatewayHandle};
 use parking_lot::Mutex;
 use plugin_host::api::VoiceInfo;
 use plugin_host::api::model::DmSection;
-use plugin_host::{Invalidation, SendDecision};
+use plugin_host::{FullSendDecision, Invalidation};
 use protocol::{
 	AllowedMentions, Channel, ChannelType, CreateMessage, DISCORD_EPOCH_MS, DispatchEvent, EditMessage,
-	Message, MessageAck, MessageReference, MessagesQuery, Nonce, Snowflake, Token, User,
+	Message, MessageAck, MessageFlags, MessageReference, MessagesQuery, Nonce, Snowflake, Token, User,
 };
+use rest::RestClient;
 use rest::api::SearchQuery;
-use rest::{RestClient, UploadFile};
 use serde_json::{Value, json};
 use state::{
-	Changes, ClientOptions, Event, LoadDirection, Loaded, LocalEvent, SharedState, TYPING_TIMEOUT, UiIntent,
-	UserOverride,
+	AlertVerdict, Changes, ChannelDecoration, ClientOptions, Event, LoadDirection, Loaded, LocalEvent,
+	SharedState, TYPING_TIMEOUT, UiIntent, UserOverride,
 };
 use store::Store;
 use tokio::runtime::Handle;
@@ -27,7 +27,7 @@ use tokio::sync::mpsc;
 use tokio::time::{Instant, sleep_until};
 
 use crate::broker::{BrokerSink, VoiceCache};
-use crate::command::{Command, ReplyTarget};
+use crate::command::Command;
 use crate::config::VoiceIo;
 use crate::loads::PluginLoads;
 use crate::marks::ClientMarks;
@@ -42,7 +42,9 @@ mod actions;
 mod commands;
 mod expressions;
 mod mic_test;
+mod outgoing;
 mod plugin_actions;
+mod plugin_hooks;
 mod plugin_link;
 mod plugin_load;
 mod streams;
@@ -50,6 +52,7 @@ mod video;
 mod voice_link;
 
 use mic_test::MicTestRun;
+use outgoing::Outgoing;
 pub(crate) use plugin_load::PluginAnswer;
 use streams::StreamLink;
 pub(crate) use video::SharedVideo;
@@ -154,10 +157,20 @@ pub(crate) enum Internal {
 	BeforeSend {
 		nonce: Nonce,
 		channel_id: Snowflake,
-		content: String,
-		reply_to: Option<ReplyTarget>,
-		files: Vec<UploadFile>,
-		decision: SendDecision,
+		outgoing: Outgoing,
+		decision: FullSendDecision,
+	},
+	AlertVerdict {
+		id: u64,
+		verdict: AlertVerdict,
+	},
+	AutocompleteOrder {
+		query: String,
+		order: Vec<u32>,
+	},
+	Decorated {
+		generation: u64,
+		entries: Vec<(Snowflake, Vec<ChannelDecoration>)>,
 	},
 	Overrides {
 		epoch: u64,
@@ -251,7 +264,7 @@ pub(crate) struct Core {
 	plugin_options: BTreeMap<String, ClientOptions>,
 	plugin_dm_sections: BTreeMap<String, Vec<DmSection>>,
 	invalidated_users: HashSet<Snowflake>,
-	stale_decorations: HashSet<Snowflake>,
+	hooks: plugin_hooks::HookState,
 }
 
 fn page_query(
@@ -332,7 +345,7 @@ impl Core {
 			plugin_options: BTreeMap::new(),
 			plugin_dm_sections: BTreeMap::new(),
 			invalidated_users: HashSet::new(),
-			stale_decorations: HashSet::new(),
+			hooks: plugin_hooks::HookState::default(),
 		}
 	}
 
@@ -350,6 +363,7 @@ impl Core {
 			let flush_at = self.notifier.deadline();
 			let expire_at = self.typing_expiry;
 			let overrides_at = self.overrides_due;
+			let hooks_at = self.hooks.next_deadline();
 			tokio::select! {
 				event = gateway_events.recv(), if gateway_open => match event {
 					Some(event) => self.on_gateway(event),
@@ -372,6 +386,9 @@ impl Core {
 				}
 				() = sleep_until(overrides_at.unwrap_or_else(Instant::now)), if overrides_at.is_some() => {
 					self.refresh_overrides();
+				}
+				() = sleep_until(hooks_at.unwrap_or_else(Instant::now)), if hooks_at.is_some() => {
+					self.on_hook_timer();
 				}
 			}
 		}
@@ -474,6 +491,9 @@ impl Core {
 		if changes.own_status {
 			self.publish_presence();
 		}
+		if changes.alerts {
+			self.dispatch_pending_alerts();
+		}
 		self.notifier.push(changes);
 	}
 
@@ -483,6 +503,11 @@ impl Core {
 
 	fn apply_dispatch(&mut self, event: &DispatchEvent) {
 		self.apply(Event::Dispatch(event));
+		match event {
+			DispatchEvent::MessageCreate(message) => self.note_unread(message.channel_id),
+			DispatchEvent::MessageAck(ack) => self.note_unread(ack.channel_id),
+			_ => {}
+		}
 	}
 
 	fn expire_typing(&mut self) {
@@ -500,6 +525,7 @@ impl Core {
 			GatewayEvent::Ready(ready) => {
 				self.marks.record("ready");
 				self.apply(Event::Ready(&ready));
+				self.note_ready();
 				let stale = {
 					let state = self.state.read();
 					state
@@ -548,8 +574,10 @@ impl Core {
 	}
 
 	fn on_dispatch(&mut self, event: DispatchEvent) {
+		let probe = self.probe_dispatch(&event);
 		self.apply_dispatch(&event);
 		self.forward_dispatch(&event);
+		self.forward_client_events(&event, probe);
 		match event {
 			DispatchEvent::MessageCreate(message) => {
 				let channel_id = message.channel_id;
@@ -673,11 +701,12 @@ impl Core {
 			Internal::BeforeSend {
 				nonce,
 				channel_id,
-				content,
-				reply_to,
-				files,
+				outgoing,
 				decision,
-			} => self.on_before_send(nonce, channel_id, content, reply_to, files, decision),
+			} => self.on_before_send(nonce, channel_id, outgoing, decision),
+			Internal::AlertVerdict { id, verdict } => self.on_alert_verdict(id, verdict),
+			Internal::AutocompleteOrder { query, order } => self.on_autocomplete_order(query, order),
+			Internal::Decorated { generation, entries } => self.on_decorated(generation, entries),
 			Internal::Overrides { epoch, entries } => self.on_overrides(epoch, entries),
 			Internal::MicTestLevel {
 				generation,
@@ -753,14 +782,34 @@ impl Core {
 				content,
 				reply_to,
 				files,
+				stickers,
 				by_plugin,
-			} => self.send_message(channel_id, content, reply_to, files, by_plugin, None),
+			} => self.send_message(
+				channel_id,
+				Outgoing {
+					content,
+					reply_to,
+					files,
+					stickers,
+					silent: false,
+				},
+				by_plugin,
+				None,
+			),
 			Command::SendAsUser {
 				plugin_id,
 				channel_id,
 				content,
 				reply_to,
-			} => self.send_message(channel_id, content, reply_to, Vec::new(), None, Some(plugin_id)),
+			} => self.send_message(
+				channel_id,
+				Outgoing {
+					reply_to,
+					..Outgoing::plain(content)
+				},
+				None,
+				Some(plugin_id),
+			),
 			Command::EditMessage {
 				channel_id,
 				message_id,
@@ -810,6 +859,7 @@ impl Core {
 					channel_id,
 					content: content.clone(),
 				});
+				self.forward_draft(channel_id, &content);
 				self.apply_local(LocalEvent::DraftChanged { channel_id, content });
 			}
 			Command::SetPresence {
@@ -902,6 +952,12 @@ impl Core {
 			| Command::PluginMenuItem { .. }
 			| Command::PluginRenderView { .. }
 			| Command::PluginEmojiPick { .. }
+			| Command::PluginAutocompleteEmoji { .. }
+			| Command::PluginMessageClick(_)
+			| Command::PluginChannelClick(_)
+			| Command::PluginLinkClick { .. }
+			| Command::PluginKeybind { .. }
+			| Command::PluginBadgeClick { .. }
 			| Command::PluginEnable(_)
 			| Command::PluginDisable(_)
 			| Command::PluginReload(_)
@@ -953,6 +1009,9 @@ impl Core {
 			&& self.selected_guild != Some(guild_id)
 		{
 			self.subscribe(guild_id, Some(channel_id));
+		}
+		if self.selected_guild != guild_id {
+			self.schedule_decorations();
 		}
 		self.selected_guild = guild_id;
 		let (has_messages, has_draft) = {
@@ -1119,9 +1178,7 @@ impl Core {
 	fn send_message(
 		&mut self,
 		channel_id: Snowflake,
-		content: String,
-		reply_to: Option<ReplyTarget>,
-		files: Vec<UploadFile>,
+		outgoing: Outgoing,
 		by_plugin: Option<String>,
 		skip_hook: Option<String>,
 	) {
@@ -1133,31 +1190,42 @@ impl Core {
 			return;
 		};
 		if by_plugin.is_none() {
-			self.remember_message_emoji(&content);
+			self.remember_message_emoji(&outgoing.content);
 		}
 		let nonce = self.next_nonce();
-		self.apply_local(LocalEvent::PendingMessage {
-			channel_id,
-			nonce: nonce.clone(),
-			content: content.clone(),
-			author: Box::new(author),
-			by_plugin: by_plugin.clone(),
-		});
-		if by_plugin.is_none() && self.flags.send && !content.is_empty() {
-			self.hook_before_send(nonce, channel_id, content, reply_to, files, skip_hook);
+		if outgoing.shows_pending() {
+			self.apply_local(LocalEvent::PendingMessage {
+				channel_id,
+				nonce: nonce.clone(),
+				content: outgoing.content.clone(),
+				author: Box::new(author),
+				by_plugin: by_plugin.clone(),
+			});
+		}
+		if by_plugin.is_none() && self.flags.send && outgoing.has_payload() {
+			self.hook_before_send(nonce, channel_id, outgoing, skip_hook);
 		} else {
-			self.dispatch_send(nonce, channel_id, content, reply_to, files);
+			self.dispatch_send(nonce, channel_id, outgoing);
 		}
 	}
 
-	fn dispatch_send(
-		&mut self,
-		nonce: Nonce,
-		channel_id: Snowflake,
-		content: String,
-		reply_to: Option<ReplyTarget>,
-		files: Vec<UploadFile>,
-	) {
+	fn dispatch_send(&mut self, nonce: Nonce, channel_id: Snowflake, outgoing: Outgoing) {
+		if !outgoing.has_payload() {
+			return;
+		}
+		let Outgoing {
+			content,
+			reply_to,
+			files,
+			stickers,
+			silent,
+		} = outgoing;
+		let (inline, loose) = if files.is_empty() {
+			(stickers, Vec::new())
+		} else {
+			(Vec::new(), stickers)
+		};
+		self.note_stickers(&inline);
 		let body = CreateMessage {
 			content: (!content.is_empty()).then_some(content),
 			nonce: Some(nonce.0.clone()),
@@ -1176,6 +1244,8 @@ impl Core {
 				replied_user: Some(false),
 				..AllowedMentions::default()
 			}),
+			flags: silent.then_some(MessageFlags::SUPPRESS_NOTIFICATIONS),
+			sticker_ids: inline,
 			..CreateMessage::default()
 		};
 		let rest = self.rest.clone();
@@ -1191,6 +1261,9 @@ impl Core {
 				let _ = internal.send(Internal::SendFailed(nonce));
 			}
 		});
+		for sticker_id in loose {
+			self.send_sticker(channel_id, sticker_id);
+		}
 	}
 
 	fn typing(&mut self, channel_id: Snowflake) {

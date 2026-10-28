@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use parking_lot::RwLock;
 
-use crate::api::model::{ClickKind, ClickWatch};
+use crate::api::model::{ChannelClick, ClickKind, ClickTarget, ClickWatch, MessageClick, Modifiers};
 
 const MAX_WATCH_KINDS: usize = 3;
 const MAX_WATCH_TARGETS: usize = 16;
@@ -36,6 +36,18 @@ fn sanitized(watch: ClickWatch) -> Option<ClickWatch> {
 		modifiers: watch.modifiers,
 		targets,
 	})
+}
+
+fn same_target(left: &ClickTarget, right: &ClickTarget) -> bool {
+	std::mem::discriminant(left) == std::mem::discriminant(right)
+}
+
+fn matches(watch: &ClickWatch, kind: ClickKind, modifiers: Modifiers, target: Option<&ClickTarget>) -> bool {
+	watch.kinds.contains(&kind)
+		&& watch.modifiers == modifiers
+		&& target.is_none_or(|target| {
+			watch.targets.is_empty() || watch.targets.iter().any(|wanted| same_target(wanted, target))
+		})
 }
 
 fn store(map: &mut HashMap<Arc<str>, ClickWatch>, plugin_id: &Arc<str>, watch: ClickWatch) {
@@ -75,6 +87,26 @@ impl Watches {
 
 	pub fn channel_watchers(&self) -> Vec<(Arc<str>, ClickWatch)> {
 		snapshot(&self.inner.read().channels)
+	}
+
+	pub fn message_targets(&self, click: &MessageClick) -> Vec<Arc<str>> {
+		self.inner
+			.read()
+			.messages
+			.iter()
+			.filter(|(_, watch)| matches(watch, click.kind, click.modifiers, Some(&click.target)))
+			.map(|(plugin_id, _)| Arc::clone(plugin_id))
+			.collect()
+	}
+
+	pub fn channel_targets(&self, click: &ChannelClick) -> Vec<Arc<str>> {
+		self.inner
+			.read()
+			.channels
+			.iter()
+			.filter(|(_, watch)| matches(watch, click.kind, click.modifiers, None))
+			.map(|(plugin_id, _)| Arc::clone(plugin_id))
+			.collect()
 	}
 
 	pub fn clear_plugin(&self, plugin_id: &str) {

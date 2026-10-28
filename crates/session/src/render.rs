@@ -6,9 +6,9 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use parking_lot::{Condvar, Mutex};
-use plugin_host::api::model::Lifecycle;
+use plugin_host::api::model::{Lifecycle, MessageMeta};
 use plugin_host::convert::{DELETED_FLAG, clip, message_full};
-use plugin_host::{LatencyStats, PluginManager};
+use plugin_host::{InterceptInput, LatencyStats, PluginManager};
 use protocol::{Message, Snowflake};
 use state::RenderedMessage;
 use tokio::sync::mpsc::UnboundedSender;
@@ -20,6 +20,7 @@ const FLUSH_INTERVAL: Duration = Duration::from_millis(30);
 const HISTORY_CAPACITY: usize = 2_000;
 const HISTORY_VERSIONS: usize = 10;
 const HISTORY_CHARS: usize = 2_000;
+const EXT_BATCH: usize = 16;
 
 pub(crate) struct RenderJob {
 	pub(crate) message: Arc<Message>,
@@ -28,6 +29,7 @@ pub(crate) struct RenderJob {
 	pub(crate) deleted: bool,
 	pub(crate) mine: bool,
 	pub(crate) intercept: bool,
+	pub(crate) meta: Option<MessageMeta>,
 }
 
 pub(crate) struct RenderResult {
@@ -142,15 +144,27 @@ impl Drop for RenderWorker {
 	}
 }
 
-fn next_job(shared: &Shared) -> Option<(RenderJob, bool)> {
+fn next_batch(shared: &Shared, manager: &PluginManager) -> Option<(Vec<RenderJob>, bool)> {
 	let mut queue = shared.queue.lock();
 	loop {
 		if queue.closed {
 			return None;
 		}
 		let selected = shared.selected.load(Ordering::Acquire);
-		if let Some(job) = queue.take_best(selected) {
-			return Some((job, queue.by_sequence.is_empty()));
+		if let Some(first) = queue.take_best(selected) {
+			let limit = if manager.hook_flags().intercept_ext {
+				EXT_BATCH
+			} else {
+				1
+			};
+			let mut jobs = vec![first];
+			while jobs.len() < limit {
+				match queue.take_best(selected) {
+					Some(job) => jobs.push(job),
+					None => break,
+				}
+			}
+			return Some((jobs, queue.by_sequence.is_empty()));
 		}
 		shared.ready.wait(&mut queue);
 	}
@@ -212,53 +226,112 @@ impl History {
 	}
 }
 
-fn render(manager: &PluginManager, job: &RenderJob, history: &mut History) -> RenderedMessage {
+struct Awaiting {
+	message_id: Snowflake,
+	kept: bool,
+	deleted: bool,
+	revision: u64,
+}
+
+enum Stage {
+	Done(RenderedMessage),
+	Intercept {
+		awaiting: Awaiting,
+		input: Box<InterceptInput>,
+	},
+}
+
+fn prepare(manager: &PluginManager, job: &RenderJob, history: &mut History) -> Stage {
 	let message = &job.message;
 	let hooks = manager.render_hooks(job.guild_id.map(Snowflake::get));
 	if !hooks.filter && !hooks.render && !job.intercept {
 		manager.store_patches(message.id.get(), Vec::new());
-		return RenderedMessage {
+		return Stage::Done(RenderedMessage {
 			ast: markdown::parse(&message.content).nodes,
 			hidden: job.deleted,
 			deleted: job.deleted,
 			revision: job.epoch,
-		};
+		});
 	}
 	let mut view = view_of(message, || job.guild_id);
 	if job.deleted {
 		view.flags |= DELETED_FLAG;
 	}
 	let view = Arc::new(view);
-	let mut hidden = !manager.filter_message(&view);
 	let mut ast = markdown::parse(&message.content).nodes;
-	let mut patches = Vec::new();
-	if !hidden {
-		let mut kept = !job.deleted;
-		if job.deleted {
-			if let Some(rendered) = manager.render_deleted(&view, &ast) {
-				ast = rendered;
-				kept = true;
+	if !manager.filter_message(&view) {
+		manager.store_patches(message.id.get(), Vec::new());
+		return Stage::Done(RenderedMessage {
+			ast,
+			hidden: true,
+			deleted: job.deleted,
+			revision: job.epoch,
+		});
+	}
+	let mut kept = !job.deleted;
+	if job.deleted {
+		if let Some(rendered) = manager.render_deleted(&view, &ast) {
+			ast = rendered;
+			kept = true;
+		}
+	} else {
+		ast = manager.render_message(&view, ast);
+	}
+	if !job.intercept {
+		manager.store_patches(message.id.get(), Vec::new());
+		return Stage::Done(RenderedMessage {
+			ast,
+			hidden: !kept,
+			deleted: job.deleted,
+			revision: job.epoch,
+		});
+	}
+	let lifecycle = history.observe(message, job.deleted);
+	let view = Arc::try_unwrap(view).unwrap_or_else(|shared| (*shared).clone());
+	Stage::Intercept {
+		awaiting: Awaiting {
+			message_id: message.id,
+			kept,
+			deleted: job.deleted,
+			revision: job.epoch,
+		},
+		input: Box::new(InterceptInput {
+			full: message_full(message, view, job.mine, lifecycle),
+			ast,
+			meta: job.meta,
+		}),
+	}
+}
+
+fn render_batch(manager: &PluginManager, jobs: &[RenderJob], history: &mut History) -> Vec<RenderedMessage> {
+	let mut staged: Vec<Result<RenderedMessage, Awaiting>> = Vec::with_capacity(jobs.len());
+	let mut inputs = Vec::new();
+	for job in jobs {
+		match prepare(manager, job, history) {
+			Stage::Done(rendered) => staged.push(Ok(rendered)),
+			Stage::Intercept { awaiting, input } => {
+				inputs.push(*input);
+				staged.push(Err(awaiting));
 			}
-		} else {
-			ast = manager.render_message(&view, ast);
 		}
-		if job.intercept {
-			let lifecycle = history.observe(message, job.deleted);
-			let view = Arc::try_unwrap(view).unwrap_or_else(|shared| (*shared).clone());
-			let outcome = manager.intercept(message_full(message, view, job.mine, lifecycle), ast);
-			ast = outcome.ast;
-			kept |= outcome.retain;
-			patches = outcome.patches;
-		}
-		hidden = !kept;
 	}
-	manager.store_patches(message.id.get(), patches);
-	RenderedMessage {
-		ast,
-		hidden,
-		deleted: job.deleted,
-		revision: job.epoch,
-	}
+	let mut outcomes = manager.intercept_many(inputs).into_iter();
+	staged
+		.into_iter()
+		.filter_map(|entry| match entry {
+			Ok(rendered) => Some(rendered),
+			Err(awaiting) => {
+				let outcome = outcomes.next()?;
+				manager.store_patches(awaiting.message_id.get(), outcome.patches);
+				Some(RenderedMessage {
+					ast: outcome.ast,
+					hidden: !(awaiting.kept || outcome.retain),
+					deleted: awaiting.deleted,
+					revision: awaiting.revision,
+				})
+			}
+		})
+		.collect()
 }
 
 fn worker_main(
@@ -270,15 +343,20 @@ fn worker_main(
 	let mut finished = Vec::new();
 	let mut history = History::default();
 	let mut last_flush = Instant::now();
-	while let Some((job, drained)) = next_job(shared) {
-		if job.epoch == shared.epoch.load(Ordering::Acquire) {
+	while let Some((mut jobs, drained)) = next_batch(shared, manager) {
+		let current = shared.epoch.load(Ordering::Acquire);
+		jobs.retain(|job| job.epoch == current);
+		if !jobs.is_empty() {
 			let started = Instant::now();
-			let rendered = Arc::new(render(manager, &job, &mut history));
-			stats.record(started.elapsed());
-			finished.push(RenderResult {
-				message: job.message,
-				rendered,
-			});
+			let rendered = render_batch(manager, &jobs, &mut history);
+			let per_message = started.elapsed() / u32::try_from(jobs.len()).unwrap_or(1);
+			for (job, rendered) in jobs.into_iter().zip(rendered) {
+				stats.record(per_message);
+				finished.push(RenderResult {
+					message: job.message,
+					rendered: Arc::new(rendered),
+				});
+			}
 		}
 		if !finished.is_empty() && (drained || last_flush.elapsed() >= FLUSH_INTERVAL) {
 			if results

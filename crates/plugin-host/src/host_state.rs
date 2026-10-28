@@ -172,6 +172,7 @@ pub struct HostState {
 	storage: PluginStorage,
 	gesture_sends: Option<u8>,
 	context: CallContext,
+	detail: Option<ContextDetail>,
 	picked: BTreeMap<u64, PathBuf>,
 	next_pick: u64,
 	blocked_mark: Duration,
@@ -195,6 +196,7 @@ impl HostState {
 			storage,
 			gesture_sends: None,
 			context: CallContext::Init,
+			detail: None,
 			picked: BTreeMap::new(),
 			next_pick: 1,
 			blocked_mark: Duration::ZERO,
@@ -233,6 +235,10 @@ impl HostState {
 
 	pub(crate) fn set_context(&mut self, context: CallContext) {
 		self.context = context;
+	}
+
+	pub(crate) fn set_detail(&mut self, detail: Option<ContextDetail>) {
+		self.detail = detail;
 	}
 
 	fn blocked_total(&self) -> Duration {
@@ -714,7 +720,11 @@ impl ui::Host for HostState {
 	}
 
 	fn context_detail(&mut self) -> Option<ContextDetail> {
-		None
+		if self.services.grants.has(&self.plugin, Permission::UiMount) {
+			self.detail.clone()
+		} else {
+			None
+		}
 	}
 
 	fn watch_clicks(&mut self, watch: ClickWatch) -> Result<(), HostError> {

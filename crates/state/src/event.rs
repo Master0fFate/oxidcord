@@ -4,7 +4,8 @@ use std::time::Duration;
 use protocol::{DispatchEvent, Message, Nonce, Ready, ReadySupplemental, Snowflake, StatusKind, User};
 
 use crate::loaded::Loaded;
-use crate::plugin_shell::{ClientOptions, DmSectionView, UiIntent};
+use crate::notifications::AlertVerdict;
+use crate::plugin_shell::{ChannelDecoration, ClientOptions, DmSectionView, UiIntent};
 use crate::views::{RenderedMessage, UserOverride};
 use crate::voice::{StreamInfo, VideoKind, VoiceStatus};
 
@@ -114,6 +115,19 @@ pub enum LocalEvent {
 	UiIntent(UiIntent),
 	ClientOptionsChanged(ClientOptions),
 	DmSectionsChanged(Vec<DmSectionView>),
+	AlertHold(bool),
+	AlertResolved {
+		id: u64,
+		verdict: AlertVerdict,
+	},
+	AutocompleteOrder {
+		query: String,
+		order: Vec<u32>,
+	},
+	ChannelDecorations {
+		entries: Vec<(Snowflake, Vec<ChannelDecoration>)>,
+	},
+	DecorationsCleared,
 }
 
 #[derive(Debug)]

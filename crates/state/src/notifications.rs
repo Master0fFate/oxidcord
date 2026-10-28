@@ -17,6 +17,22 @@ pub struct Alert {
 	pub id: u64,
 	pub guild_id: Option<Snowflake>,
 	pub message: Arc<Message>,
+	pub mentions_me: bool,
+	pub pending: bool,
+	pub sound: bool,
+	pub text: Option<(String, String)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AlertVerdict {
+	Allow,
+	Silent,
+	Suppress,
+	Replace {
+		title: String,
+		body: String,
+		sound: bool,
+	},
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -107,7 +123,47 @@ impl State {
 	}
 
 	pub fn alerts_after(&self, seen: u64) -> impl Iterator<Item = &Alert> {
-		self.alerts.iter().filter(move |alert| alert.id > seen)
+		self.alerts
+			.iter()
+			.filter(move |alert| alert.id > seen && !alert.pending)
+	}
+
+	pub fn pending_alerts(&self) -> Vec<Alert> {
+		self.alerts
+			.iter()
+			.filter(|alert| alert.pending)
+			.cloned()
+			.collect()
+	}
+
+	pub(crate) fn resolve_alert(&mut self, id: u64, verdict: &AlertVerdict) -> bool {
+		let Some(position) = self
+			.alerts
+			.iter()
+			.position(|alert| alert.id == id && alert.pending)
+		else {
+			return false;
+		};
+		if *verdict == AlertVerdict::Suppress {
+			self.alerts.remove(position);
+			return true;
+		}
+		let Some(mut alert) = self.alerts.remove(position) else {
+			return false;
+		};
+		alert.pending = false;
+		match verdict {
+			AlertVerdict::Silent => alert.sound = false,
+			AlertVerdict::Replace { title, body, sound } => {
+				alert.text = Some((title.clone(), body.clone()));
+				alert.sound = *sound;
+			}
+			AlertVerdict::Allow | AlertVerdict::Suppress => {}
+		}
+		self.alert_count += 1;
+		alert.id = self.alert_count;
+		self.alerts.push_back(alert);
+		true
 	}
 
 	pub fn last_alert_id(&self) -> u64 {
@@ -196,10 +252,15 @@ impl State {
 			self.alerts.pop_front();
 		}
 		self.alert_count += 1;
+		let mentions_me = self.mentions_me(&message, guild_id);
 		self.alerts.push_back(Alert {
 			id: self.alert_count,
 			guild_id,
 			message,
+			mentions_me,
+			pending: self.plugin_shell.hold_alerts,
+			sound: true,
+			text: None,
 		});
 	}
 

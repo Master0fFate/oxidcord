@@ -236,6 +236,7 @@ impl PluginBridge {
 			self.data.read(cx).send(Command::PluginRenderView {
 				point: point.to_owned(),
 				context,
+				detail: None,
 			});
 		}
 		cache.contextual.insert((point, context), entries.clone());

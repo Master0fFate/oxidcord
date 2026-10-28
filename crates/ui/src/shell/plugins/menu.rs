@@ -137,6 +137,7 @@ fn entry(
 				menu: name.to_owned(),
 				key: key.clone(),
 				context: context.clone(),
+				detail: None,
 			},
 			cx,
 		);
