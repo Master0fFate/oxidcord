@@ -374,6 +374,7 @@ impl Composer {
 		let text = self.input.read(cx).value();
 		if !text.is_empty()
 			&& let Some(channel) = self.channel
+			&& !self.data.read(cx).session().plugins().hides_typing()
 			&& self
 				.last_typing
 				.is_none_or(|sent| sent.elapsed() > TYPING_INTERVAL)

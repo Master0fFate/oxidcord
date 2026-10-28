@@ -116,6 +116,7 @@ The consent dialog groups permissions by tier. Low tier permissions are collapse
 | `actions-navigate` | low | `open-channel` |
 | `actions-notify` | low | `notify` |
 | `channels-hidden` | low | Channels the account cannot open stay in the channel list, dimmed and locked |
+| `typing-hidden` | low | Your typing indicator is not sent to other people while the plugin is enabled |
 | `context-timeline` | medium | Message, reaction and typing events, `channel-messages`, `get-message`, `channel-messages-full` |
 | `context-directory` | medium | `list-guilds`, `list-channels`, `list-members` |
 | `context-members` | medium | `display-name` |

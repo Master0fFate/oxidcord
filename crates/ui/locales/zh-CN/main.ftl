@@ -405,6 +405,7 @@ perm-composer = 你选择内容时向消息框中插入文本。
 perm-context-expressions = 读取你的账号可用的表情和贴纸。
 perm-actions-send-user = 以你的身份发送消息且不带插件标记。
 perm-channels-hidden = 在频道列表中显示你无法打开的频道。
+perm-typing-hidden = 对其他人隐藏你正在输入。
 perm-high = 高风险
 perm-image-hosts = 图片主机
 perm-low-summary = { $count } 项低风险权限

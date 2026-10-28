@@ -405,6 +405,7 @@ perm-composer = 何かを選んだときにメッセージ欄へテキストを�
 perm-context-expressions = アカウントで使える絵文字とスタンプの読み取り。
 perm-actions-send-user = プラグインの表示なしであなたとしてメッセージを送信。
 perm-channels-hidden = 開けないチャンネルもチャンネル一覧に表示する。
+perm-typing-hidden = 入力中であることを他の人に見せない。
 perm-high = 高リスク
 perm-image-hosts = 画像ホスト
 perm-low-summary = 低リスクの権限 { $count }個

@@ -437,6 +437,7 @@ perm-composer = Vkládat text do pole zprávy, když něco vybereš.
 perm-context-expressions = Číst emoji a nálepky, které může tvůj účet používat.
 perm-actions-send-user = Posílat zprávy tvým jménem bez označení pluginu.
 perm-channels-hidden = Zobrazovat v seznamu kanály, které nemůžeš otevřít.
+perm-typing-hidden = Skrýt, že píšeš, před ostatními.
 perm-high = Vysoké riziko
 perm-image-hosts = Hostitelé obrázků
 perm-low-summary = { $count ->

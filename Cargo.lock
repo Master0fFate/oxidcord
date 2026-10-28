@@ -9629,6 +9629,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "silent-type"
+version = "0.4.2"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
 name = "simd-adler32"
 version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"

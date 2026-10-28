@@ -1,0 +1,13 @@
+id = "dev.oxidcord.silent-type"
+name = "Silent Type"
+version = "0.1.0"
+api = "^1.0"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Hides that you are typing. Others never see the typing indicator for you."
+entry = "silent_type.wasm"
+min_host = "0.4.2"
+
+[[permissions]]
+permission = "typing-hidden"
+reason = "Stops Oxidcord from telling other people when you are typing."

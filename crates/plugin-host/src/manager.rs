@@ -489,6 +489,10 @@ impl PluginManager {
 		!self.active(Permission::ChannelsHidden).is_empty()
 	}
 
+	pub fn hides_typing(&self) -> bool {
+		!self.active(Permission::TypingHidden).is_empty()
+	}
+
 	pub fn has_emoji_pick(&self) -> bool {
 		self.active(Permission::Composer)
 			.iter()

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-10-27T03:51:48Z",
+  "generated_at": "2026-10-28T04:07:36Z",
   "plugins": [
     {
       "id": "dev.oxidcord.fake-nitro",
@@ -134,6 +134,19 @@
       "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.see-hidden-channels-0.1.0.oxidcord-plugin",
       "sha256": "bfa941e0798c91c567387b5b0ca68e4fb241b9749a1c477ce21f5d6c6ef054d3",
       "length": 36134,
+      "reviewed": true
+    },
+    {
+      "id": "dev.oxidcord.silent-type",
+      "name": "Silent Type",
+      "version": "0.1.0",
+      "description": "Hides that you are typing. Others never see the typing indicator for you.",
+      "permissions": [
+        "typing-hidden"
+      ],
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.silent-type-0.1.0.oxidcord-plugin",
+      "sha256": "8f37542033a952c89f7d9c8130561378fcbbe54c32d80dae1bfc64613a169bdc",
+      "length": 36112,
       "reviewed": true
     },
     {

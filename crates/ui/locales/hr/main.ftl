@@ -436,6 +436,7 @@ perm-composer = Umetanje teksta u okvir za poruku kada nešto odaberete.
 perm-context-expressions = Čitanje emojija i naljepnica koje vaš račun može koristiti.
 perm-actions-send-user = Slanje poruka u vaše ime bez oznake dodatka.
 perm-channels-hidden = Prikaz kanala koje ne možete otvoriti na popisu kanala.
+perm-typing-hidden = Skrivanje od drugih da tipkate.
 perm-high = Visok rizik
 perm-image-hosts = Poslužitelji slika
 perm-low-summary = { $count ->

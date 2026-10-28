@@ -445,6 +445,7 @@ perm-composer = Вставлять текст в поле сообщения, к
 perm-context-expressions = Видеть эмодзи и стикеры, доступные вашей учётной записи.
 perm-actions-send-user = Отправлять сообщения от вашего имени без пометки плагина.
 perm-channels-hidden = Показывать в списке каналы, которые вы не можете открыть.
+perm-typing-hidden = Скрывать от других, что вы печатаете.
 perm-high = Высокий риск
 perm-image-hosts = Узлы изображений
 perm-low-summary = { $count ->

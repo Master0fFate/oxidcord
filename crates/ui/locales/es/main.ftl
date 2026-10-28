@@ -429,6 +429,7 @@ perm-composer = Escribir texto en el cuadro de mensaje cuando eliges algo.
 perm-context-expressions = Leer los emojis y stickers que puede usar tu cuenta.
 perm-actions-send-user = Enviar mensajes en tu nombre sin marca de plugin.
 perm-channels-hidden = Mostrar en la lista canales que no puedes abrir.
+perm-typing-hidden = Ocultar a los demás que estás escribiendo.
 perm-high = Riesgo alto
 perm-image-hosts = Hosts de imágenes
 perm-low-summary = { $count ->
