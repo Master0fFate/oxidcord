@@ -7,6 +7,7 @@ use gpui_component::dialog::DialogFooter;
 use plugin_host::api::model::LinkVerdict;
 use url::Url;
 
+use super::plugins::LinkOrigin;
 use super::{SettingsBackend, plugins};
 use crate::i18n::{ArgValue, Translate as _};
 use crate::theme::{Theme, rem};
@@ -44,7 +45,13 @@ fn launch(url: &str) {
 	}
 }
 
-pub fn open_link(url: &str, backend: &Rc<SettingsBackend>, window: &mut Window, cx: &mut App) {
+pub fn open_link(
+	url: &str,
+	origin: LinkOrigin,
+	backend: &Rc<SettingsBackend>,
+	window: &mut Window,
+	cx: &mut App,
+) {
 	if !plugins::link_hook_declared(cx) {
 		open_checked(url, backend, window, cx);
 		return;
@@ -52,6 +59,7 @@ pub fn open_link(url: &str, backend: &Rc<SettingsBackend>, window: &mut Window, 
 	let (original, backend) = (url.to_owned(), backend.clone());
 	plugins::defer_link(
 		url,
+		origin,
 		move |verdict, window, cx| match verdict {
 			LinkVerdict::Pass => open_checked(&original, &backend, window, cx),
 			LinkVerdict::Open(replacement) => open_replacement(&replacement, &backend, window, cx),

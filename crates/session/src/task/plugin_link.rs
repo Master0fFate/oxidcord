@@ -43,7 +43,6 @@ type PluginJob = Box<dyn FnOnce() + Send>;
 enum TaskKind {
 	Lifecycle,
 	Setting,
-	Interactive,
 }
 
 enum LaneItem {
@@ -55,12 +54,14 @@ enum LaneItem {
 pub(super) enum Lane {
 	Interactive,
 	Background,
+	Gesture,
 }
 
 pub(super) struct PluginLanes {
 	runtime: Handle,
 	interactive: mpsc::UnboundedSender<LaneItem>,
 	background: mpsc::UnboundedSender<LaneItem>,
+	gesture: mpsc::UnboundedSender<LaneItem>,
 }
 
 async fn run_blocking(job: PluginJob) {
@@ -97,6 +98,7 @@ impl PluginLanes {
 			runtime: runtime.clone(),
 			interactive: spawn_lane(runtime),
 			background: spawn_lane(runtime),
+			gesture: spawn_lane(runtime),
 		}
 	}
 
@@ -104,14 +106,16 @@ impl PluginLanes {
 		let lane = match lane {
 			Lane::Interactive => &self.interactive,
 			Lane::Background => &self.background,
+			Lane::Gesture => &self.gesture,
 		};
 		queue_item(lane, LaneItem::Run(Box::new(job)));
 	}
 
 	pub(super) fn fenced(&self, job: impl FnOnce() + Send + 'static) {
-		let gate = Arc::new(Barrier::new(3));
+		let gate = Arc::new(Barrier::new(4));
 		queue_item(&self.interactive, LaneItem::Fence(Arc::clone(&gate)));
 		queue_item(&self.background, LaneItem::Fence(Arc::clone(&gate)));
+		queue_item(&self.gesture, LaneItem::Fence(Arc::clone(&gate)));
 		self.runtime.spawn(async move {
 			gate.wait().await;
 			run_blocking(Box::new(job)).await;
@@ -133,11 +137,20 @@ impl RenderMarks {
 		}
 	}
 
-	fn changed(&self, hub: &PluginHub, state: &SharedState) -> bool {
+	fn changed(&self, hub: &PluginHub, state: &SharedState, actor: Option<&str>) -> bool {
 		self.patches != hub.manager.runtime().patches().revision()
 			|| !Arc::ptr_eq(&self.accessory, &hub.manager.slots().get(ACCESSORY_SLOT))
-			|| filter_changed(hub, state)
+			|| (can_filter(hub, actor) && filter_changed(hub, state))
 	}
+}
+
+fn can_filter(hub: &PluginHub, actor: Option<&str>) -> bool {
+	actor.is_none_or(|plugin_id| {
+		hub.manager
+			.runtime()
+			.grants()
+			.has(plugin_id, Permission::MessageFilter)
+	})
 }
 
 fn filter_changed(hub: &PluginHub, state: &SharedState) -> bool {
@@ -469,8 +482,14 @@ impl Core {
 		if !self.flags.timeline {
 			return;
 		}
+		let private_scope = match event {
+			DispatchEvent::TypingStart(typing) => {
+				self.state.read().channel_guild(typing.channel_id).is_none()
+			}
+			_ => false,
+		};
 		for event in self.plugin_events(event) {
-			self.hub.manager.dispatch_event(event);
+			self.hub.manager.dispatch_event_scoped(event, private_scope);
 		}
 	}
 
@@ -706,22 +725,33 @@ impl Core {
 	) {
 		let hub = Arc::clone(&self.hub);
 		let internal = self.internal.clone();
-		let state = self.state.clone();
 		let job = move || {
-			let marks = (kind == TaskKind::Interactive).then(|| RenderMarks::capture(&hub));
 			let outcome = task(&hub);
 			hub.record(what, outcome);
-			let _ = internal.send(match marks {
-				Some(marks) => Internal::SurfacesChanged {
-					rerender: marks.changed(&hub, &state),
-				},
-				None => Internal::PluginsChanged,
-			});
+			let _ = internal.send(Internal::PluginsChanged);
 		};
 		match kind {
 			TaskKind::Lifecycle => self.plugin_lanes.fenced(job),
-			TaskKind::Setting | TaskKind::Interactive => self.plugin_lanes.run(Lane::Interactive, job),
+			TaskKind::Setting => self.plugin_lanes.run(Lane::Interactive, job),
 		}
+	}
+
+	fn interactive_task(
+		&self,
+		actor: Option<String>,
+		what: &'static str,
+		task: impl FnOnce(&PluginHub) -> Result<()> + Send + 'static,
+	) {
+		let hub = Arc::clone(&self.hub);
+		let internal = self.internal.clone();
+		let state = self.state.clone();
+		self.plugin_lanes.run(Lane::Gesture, move || {
+			let marks = RenderMarks::capture(&hub);
+			let outcome = task(&hub);
+			hub.record(what, outcome);
+			let rerender = marks.changed(&hub, &state, actor.as_deref());
+			let _ = internal.send(Internal::SurfacesChanged { rerender });
+		});
 	}
 
 	pub(super) fn on_plugin_command(&mut self, command: Command) {
@@ -730,7 +760,7 @@ impl Core {
 				name,
 				args,
 				channel_id,
-			} => self.plugin_task(TaskKind::Interactive, "plugin command", move |hub| {
+			} => self.interactive_task(None, "plugin command", move |hub| {
 				hub.manager.command(&name, &args, channel_id.get())?;
 				Ok(())
 			}),
@@ -739,7 +769,8 @@ impl Core {
 				id,
 				payload,
 			} => {
-				self.plugin_task(TaskKind::Interactive, "plugin action", move |hub| {
+				let actor = Some(plugin_id.clone());
+				self.interactive_task(actor, "plugin action", move |hub| {
 					hub.manager.ui_action(&plugin_id, &id, &payload)?;
 					Ok(())
 				});
@@ -749,7 +780,8 @@ impl Core {
 				event,
 				detail,
 			} => {
-				self.plugin_task(TaskKind::Interactive, "plugin view event", move |hub| {
+				let actor = Some(plugin_id.clone());
+				self.interactive_task(actor, "plugin view event", move |hub| {
 					hub.manager.view_event(&plugin_id, event, detail)?;
 					Ok(())
 				});
@@ -760,10 +792,13 @@ impl Core {
 				key,
 				context,
 				detail,
-			} => self.plugin_task(TaskKind::Interactive, "plugin menu item", move |hub| {
-				hub.manager.menu_item(&plugin_id, &menu, &key, context, detail)?;
-				Ok(())
-			}),
+			} => {
+				let actor = Some(plugin_id.clone());
+				self.interactive_task(actor, "plugin menu item", move |hub| {
+					hub.manager.menu_item(&plugin_id, &menu, &key, context, detail)?;
+					Ok(())
+				});
+			}
 			Command::PluginRenderView {
 				point,
 				context,
@@ -785,8 +820,12 @@ impl Core {
 					let _ = internal.send(Internal::SlotsChanged);
 				});
 			}
-			Command::PluginAutocompleteEmoji { query, candidates } => {
-				self.request_autocomplete(query, candidates);
+			Command::PluginAutocompleteEmoji {
+				query,
+				generation,
+				candidates,
+			} => {
+				self.request_autocomplete(query, generation, candidates);
 			}
 			Command::PluginMessageClick(click) => self.hub.manager.message_click(&click),
 			Command::PluginChannelClick(click) => self.hub.manager.channel_click(&click),

@@ -35,6 +35,7 @@ use crate::lookup::avatar_for;
 use crate::theme::{Theme, rem, with_alpha};
 
 const DRAFT_DELAY: Duration = Duration::from_millis(500);
+const AUTOCOMPLETE_RESORT_WINDOW: Duration = Duration::from_millis(300);
 const TYPING_INTERVAL: Duration = Duration::from_secs(5);
 const MAX_SUGGESTIONS: usize = 8;
 const MAX_CANDIDATES: usize = 200;
@@ -109,7 +110,8 @@ pub struct Composer {
 	typing: Vec<SharedString>,
 	autocomplete: Option<Autocomplete>,
 	emoji_candidates: Vec<Suggestion>,
-	emoji_query: String,
+	emoji_generation: u64,
+	emoji_requested: Instant,
 	emoji_tokens: EmojiTokens,
 	draft_task: Option<Task<()>>,
 	last_typing: Option<Instant>,
@@ -194,7 +196,8 @@ impl Composer {
 			typing: Vec::new(),
 			autocomplete: None,
 			emoji_candidates: Vec::new(),
-			emoji_query: String::new(),
+			emoji_generation: 0,
+			emoji_requested: Instant::now(),
 			emoji_tokens: EmojiTokens::default(),
 			draft_task: None,
 			last_typing: None,
@@ -444,9 +447,11 @@ impl Composer {
 	fn plugin_emoji(&mut self, query: &str, cx: &mut Context<Self>) -> Vec<Suggestion> {
 		let all = self.suggestions(Trigger::Emoji, query, MAX_CANDIDATES, cx);
 		let candidates: Vec<EmojiInfo> = all.iter().filter_map(|item| item.emoji.clone()).collect();
-		self.emoji_query = query.to_owned();
+		self.emoji_generation += 1;
+		self.emoji_requested = Instant::now();
 		self.data.read(cx).send(Command::PluginAutocompleteEmoji {
 			query: query.to_owned(),
+			generation: self.emoji_generation,
 			candidates,
 		});
 		let shown = all.iter().take(MAX_SUGGESTIONS).cloned().collect();
@@ -455,14 +460,21 @@ impl Composer {
 	}
 
 	pub fn on_autocomplete(&mut self, _: &mut Window, cx: &mut Context<Self>) {
-		if self.emoji_candidates.is_empty() || self.autocomplete.is_none() {
+		let untouched = self
+			.autocomplete
+			.as_ref()
+			.is_some_and(|popup| popup.selected == 0);
+		if self.emoji_candidates.is_empty()
+			|| !untouched
+			|| self.emoji_requested.elapsed() >= AUTOCOMPLETE_RESORT_WINDOW
+		{
 			return;
 		}
 		let order = self
 			.data
 			.read(cx)
 			.state()
-			.autocomplete_order(&self.emoji_query)
+			.autocomplete_order(self.emoji_generation)
 			.map(<[u32]>::to_vec);
 		let Some(order) = order else {
 			return;
@@ -486,7 +498,6 @@ impl Composer {
 			&& !sorted.is_empty()
 		{
 			popup.items = sorted;
-			popup.selected = 0;
 			cx.notify();
 		}
 	}

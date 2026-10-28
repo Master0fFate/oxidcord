@@ -32,6 +32,23 @@ impl<K, V> Default for Flights<K, V> {
 	}
 }
 
+struct Lead<'a, K: Hash + Eq, V> {
+	flights: &'a Flights<K, V>,
+	key: K,
+	flight: Arc<Flight<V>>,
+}
+
+impl<K: Hash + Eq, V> Drop for Lead<'_, K, V> {
+	fn drop(&mut self) {
+		self.flight
+			.result
+			.lock()
+			.get_or_insert(Err(HostError::Unavailable));
+		self.flight.done.notify_all();
+		self.flights.active.lock().remove(&self.key);
+	}
+}
+
 impl<K: Hash + Eq + Clone, V: Clone> Flights<K, V> {
 	pub(crate) fn run(&self, key: K, load: impl FnOnce() -> Result<V, HostError>) -> Result<V, HostError> {
 		let (flight, leads) = {
@@ -49,10 +66,13 @@ impl<K: Hash + Eq + Clone, V: Clone> Flights<K, V> {
 			}
 		};
 		if leads {
+			let lead = Lead {
+				flights: self,
+				key,
+				flight,
+			};
 			let result = load();
-			*flight.result.lock() = Some(result.clone());
-			flight.done.notify_all();
-			self.active.lock().remove(&key);
+			*lead.flight.result.lock() = Some(result.clone());
 			return result;
 		}
 		let deadline = Instant::now() + LOAD_TIMEOUT;

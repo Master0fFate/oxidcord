@@ -250,6 +250,7 @@ pub enum Command {
 	},
 	PluginAutocompleteEmoji {
 		query: String,
+		generation: u64,
 		candidates: Vec<EmojiInfo>,
 	},
 	PluginMessageClick(MessageClick),

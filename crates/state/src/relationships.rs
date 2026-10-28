@@ -60,29 +60,40 @@ impl State {
 		(self.guilds.len(), members, self.relationships.len())
 	}
 
-	pub fn implicit_relationships(&self) -> Vec<Snowflake> {
+	pub fn member_ids(&self) -> Vec<Snowflake> {
+		self.guilds
+			.values()
+			.flat_map(|guild| guild.members.keys().copied())
+			.collect()
+	}
+
+	pub fn implicit_among(&self, shared: Vec<Snowflake>) -> Vec<Snowflake> {
 		let me = self.current_user_id();
-		let mut shared: HashMap<Snowflake, u8> = HashMap::new();
-		for guild in self.guilds.values() {
-			for user_id in guild.members.keys() {
-				let count = shared.entry(*user_id).or_default();
-				*count = count.saturating_add(1);
-			}
-		}
 		let mut found: Vec<Snowflake> = shared
 			.into_iter()
-			.filter(|(user_id, count)| {
-				*count >= IMPLICIT_MUTUAL_GUILDS
-					&& Some(*user_id) != me
+			.filter(|user_id| {
+				Some(*user_id) != me
 					&& !self.relationships.contains_key(user_id)
 					&& self
 						.users
 						.get(user_id)
 						.is_some_and(|user| !user.bot.unwrap_or(false))
 			})
-			.map(|(user_id, _)| user_id)
 			.collect();
 		found.sort_unstable();
 		found
 	}
+}
+
+pub fn shared_members(member_ids: Vec<Snowflake>) -> Vec<Snowflake> {
+	let mut shared: HashMap<Snowflake, u8> = HashMap::new();
+	for user_id in member_ids {
+		let count = shared.entry(user_id).or_default();
+		*count = count.saturating_add(1);
+	}
+	shared
+		.into_iter()
+		.filter(|(_, count)| *count >= IMPLICIT_MUTUAL_GUILDS)
+		.map(|(user_id, _)| user_id)
+		.collect()
 }

@@ -30,6 +30,7 @@ use super::composer::{Composer, ComposerEvent};
 use super::links;
 use super::message::{ImageTarget, ReactionRequests};
 use super::pickers::{Picker, PickerEvent, PickerTab, SkinTone};
+use super::plugins::LinkOrigin;
 use super::server_settings::{Page, ServerSettings, ServerSettingsEvent};
 use super::settings::SettingsBackend;
 use super::threads::{
@@ -411,7 +412,7 @@ impl Community {
 	}
 
 	pub fn open_help(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-		links::open_link(HELP_URL, &self.backend, window, cx);
+		links::open_link(HELP_URL, LinkOrigin::default(), &self.backend, window, cx);
 	}
 
 	fn thread_or_channel(&self, cx: &gpui::App) -> Option<Snowflake> {
@@ -681,7 +682,7 @@ impl Community {
 
 	fn on_thread_timeline(&mut self, event: &TimelineEvent, window: &mut Window, cx: &mut Context<Self>) {
 		match event {
-			TimelineEvent::OpenLink(url) => links::open_link(url, &self.backend, window, cx),
+			TimelineEvent::OpenLink(url, origin) => links::open_link(url, *origin, &self.backend, window, cx),
 			TimelineEvent::OpenImage(target) => cx.emit(CommunityEvent::OpenImage(target.clone())),
 			TimelineEvent::OpenProfile { user, at } => {
 				cx.emit(CommunityEvent::OpenProfile { user: *user, at: *at })

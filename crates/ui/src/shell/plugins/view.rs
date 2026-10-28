@@ -24,6 +24,7 @@ use plugin_host::api::model::{
 use protocol::Snowflake;
 use session::Command;
 
+use super::LinkOrigin;
 use super::bridge::{PluginBridge, act, detail_of, flush_inputs, forget_input, note_input, remember_anchor};
 use super::icon::{self, PluginIcon};
 use crate::components::{Avatar, Divider, SectionHeader, tooltip};
@@ -797,7 +798,7 @@ fn link_element(label: &str, url: &str, id: SharedString, theme: &Theme) -> AnyE
 		.child(label.to_owned())
 		.on_click(move |_, window, cx| {
 			let backend = cx.global::<PluginBridge>().backend().clone();
-			links::open_link(&url, &backend, window, cx);
+			links::open_link(&url, LinkOrigin::default(), &backend, window, cx);
 		})
 		.into_any_element()
 }

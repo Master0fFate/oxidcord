@@ -165,7 +165,7 @@ pub(crate) enum Internal {
 		verdict: AlertVerdict,
 	},
 	AutocompleteOrder {
-		query: String,
+		generation: u64,
 		order: Vec<u32>,
 	},
 	Decorated {
@@ -705,7 +705,9 @@ impl Core {
 				decision,
 			} => self.on_before_send(nonce, channel_id, outgoing, decision),
 			Internal::AlertVerdict { id, verdict } => self.on_alert_verdict(id, verdict),
-			Internal::AutocompleteOrder { query, order } => self.on_autocomplete_order(query, order),
+			Internal::AutocompleteOrder { generation, order } => {
+				self.on_autocomplete_order(generation, order)
+			}
 			Internal::Decorated { generation, entries } => self.on_decorated(generation, entries),
 			Internal::Overrides { epoch, entries } => self.on_overrides(epoch, entries),
 			Internal::MicTestLevel {

@@ -19,6 +19,7 @@ const IDLE_THRESHOLD_SECS: u64 = 600;
 const EVENT_TICK: Duration = Duration::from_millis(100);
 const AUTOCOMPLETE_DEBOUNCE: Duration = Duration::from_millis(100);
 const DECORATE_DEBOUNCE: Duration = Duration::from_millis(200);
+const ALERT_DEADLINE: Duration = Duration::from_millis(500);
 const UNREAD_BACKLOG: usize = 256;
 const DECORATE_LIMIT: usize = 300;
 const DMS_DECORATED: usize = 100;
@@ -40,13 +41,14 @@ pub(super) struct HookState {
 	unread_queued: HashSet<Snowflake>,
 	list_dirty: bool,
 	flush_due: Option<Instant>,
-	autocomplete: Option<(String, Vec<EmojiInfo>)>,
+	autocomplete: Option<(String, u64, Vec<EmojiInfo>)>,
 	autocomplete_due: Option<Instant>,
 	decorations_due: Option<Instant>,
 	decorating: bool,
 	decorated: HashSet<Snowflake>,
 	generation: u64,
 	notified_alert: u64,
+	alert_deadlines: VecDeque<(u64, Instant)>,
 }
 
 impl HookState {
@@ -56,6 +58,7 @@ impl HookState {
 			self.flush_due,
 			self.autocomplete_due,
 			self.decorations_due,
+			self.alert_deadlines.front().map(|(_, due)| *due),
 		]
 		.into_iter()
 		.flatten()
@@ -345,24 +348,29 @@ impl Core {
 			.draft_change(channel_id.get(), guild_id.map(Snowflake::get), content);
 	}
 
-	pub(super) fn request_autocomplete(&mut self, query: String, candidates: Vec<EmojiInfo>) {
+	pub(super) fn request_autocomplete(
+		&mut self,
+		query: String,
+		generation: u64,
+		candidates: Vec<EmojiInfo>,
+	) {
 		if !self.flags.hooks.autocomplete {
 			return;
 		}
-		self.hooks.autocomplete = Some((query, candidates));
+		self.hooks.autocomplete = Some((query, generation, candidates));
 		self.hooks.autocomplete_due = Some(Instant::now() + AUTOCOMPLETE_DEBOUNCE);
 	}
 
 	fn run_autocomplete(&mut self) {
 		self.hooks.autocomplete_due = None;
-		let Some((query, candidates)) = self.hooks.autocomplete.take() else {
+		let Some((query, generation, candidates)) = self.hooks.autocomplete.take() else {
 			return;
 		};
 		let manager = Arc::clone(&self.hub.manager);
 		let internal = self.internal.clone();
 		self.plugin_lanes.run(Lane::Interactive, move || {
 			let order = manager.autocomplete_emoji(&query, &candidates);
-			let _ = internal.send(Internal::AutocompleteOrder { query, order });
+			let _ = internal.send(Internal::AutocompleteOrder { generation, order });
 		});
 	}
 
@@ -458,8 +466,8 @@ impl Core {
 		self.apply_local(LocalEvent::ChannelDecorations { entries });
 	}
 
-	pub(super) fn on_autocomplete_order(&mut self, query: String, order: Vec<u32>) {
-		self.apply_local(LocalEvent::AutocompleteOrder { query, order });
+	pub(super) fn on_autocomplete_order(&mut self, generation: u64, order: Vec<u32>) {
+		self.apply_local(LocalEvent::AutocompleteOrder { generation, order });
 	}
 
 	pub(super) fn dispatch_pending_alerts(&mut self) {
@@ -476,6 +484,9 @@ impl Core {
 		for alert in fresh {
 			self.hooks.notified_alert = self.hooks.notified_alert.max(alert.id);
 			let info = self.notification_info(&alert);
+			self.hooks
+				.alert_deadlines
+				.push_back((info.id, Instant::now() + ALERT_DEADLINE));
 			let manager = Arc::clone(&self.hub.manager);
 			let internal = self.internal.clone();
 			self.plugin_lanes.run(Lane::Interactive, move || {
@@ -514,12 +525,19 @@ impl Core {
 	}
 
 	pub(super) fn on_alert_verdict(&mut self, id: u64, verdict: AlertVerdict) {
+		self.hooks.alert_deadlines.retain(|(pending, _)| *pending != id);
 		self.apply_local(LocalEvent::AlertResolved { id, verdict });
 	}
 
 	pub(super) fn on_hook_timer(&mut self) {
 		let now = Instant::now();
 		let due = |at: Option<Instant>| at.is_some_and(|at| at <= now);
+		while let Some((id, _)) = self.hooks.alert_deadlines.pop_front_if(|(_, at)| *at <= now) {
+			self.apply_local(LocalEvent::AlertResolved {
+				id,
+				verdict: AlertVerdict::Allow,
+			});
+		}
 		if due(self.hooks.flush_due) {
 			self.flush_client_events();
 		}

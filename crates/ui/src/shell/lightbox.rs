@@ -9,6 +9,7 @@ use media::SizeHint;
 use super::SettingsBackend;
 use super::links;
 use super::message::ImageTarget;
+use super::plugins::LinkOrigin;
 use crate::components::IconButton;
 use crate::i18n::Translate as _;
 use crate::icons::IconKind;
@@ -84,7 +85,9 @@ pub fn lightbox(
 						.icon_size(rem(22.))
 						.color(theme.interactive_active)
 						.tooltip(cx.t("lightbox-open"))
-						.on_click(move |_, window, cx| links::open_link(&url, &backend, window, cx)),
+						.on_click(move |_, window, cx| {
+							links::open_link(&url, LinkOrigin::default(), &backend, window, cx)
+						}),
 				)
 				.child(
 					IconButton::new("lightbox-close", IconKind::Close)

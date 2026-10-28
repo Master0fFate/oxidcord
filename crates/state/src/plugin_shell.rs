@@ -105,7 +105,7 @@ pub struct PluginBadge {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AutocompleteOrder {
-	pub query: String,
+	pub generation: u64,
 	pub order: Vec<u32>,
 }
 
@@ -159,11 +159,11 @@ impl State {
 		&self.plugin_shell.dm_sections
 	}
 
-	pub fn autocomplete_order(&self, query: &str) -> Option<&[u32]> {
+	pub fn autocomplete_order(&self, generation: u64) -> Option<&[u32]> {
 		self.plugin_shell
 			.autocomplete
 			.as_ref()
-			.filter(|answer| answer.query == query)
+			.filter(|answer| answer.generation == generation)
 			.map(|answer| answer.order.as_slice())
 	}
 

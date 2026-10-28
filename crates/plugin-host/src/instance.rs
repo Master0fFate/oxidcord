@@ -375,9 +375,14 @@ impl CallKind {
 			Self::RenderMessage { .. } | Self::FilterMessage(_) | Self::RenderView { .. } => {
 				CallContext::Render
 			}
-			Self::Intercept { .. } | Self::InterceptExt { .. } | Self::InterceptBatchExt(_) => {
-				CallContext::Intercept
-			}
+			Self::Intercept { .. }
+			| Self::InterceptExt { .. }
+			| Self::InterceptBatchExt(_)
+			| Self::BeforeSend(_)
+			| Self::BeforeSendFull(_)
+			| Self::EmojiPick { .. }
+			| Self::Setting { .. }
+			| Self::SettingsSchema => CallContext::Intercept,
 			Self::DisplayUsers(_) | Self::DisplayUsersFull(_) => CallContext::Display,
 			Self::DecorateChannels(_) => CallContext::Decorate,
 			Self::AutocompleteEmoji { .. } => CallContext::Autocomplete,

@@ -36,6 +36,7 @@ pub use plugin_shell::{
 	AutocompleteOrder, BadgeColor, ChannelDecoration, ClientOptions, DmSectionView, PluginBadge,
 	QueuedIntent, UiIntent,
 };
+pub use relationships::shared_members;
 pub use settings::{GuildFolder, RailEntry, guild_folders_settings};
 pub use state::{Rejection, Selection, SessionInfo, SharedState, State, TYPING_TIMEOUT};
 pub use threads::ForumPost;

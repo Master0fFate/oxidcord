@@ -539,9 +539,9 @@ impl State {
 			LocalEvent::AlertResolved { id, verdict } => {
 				changes.alerts = self.resolve_alert(*id, verdict);
 			}
-			LocalEvent::AutocompleteOrder { query, order } => {
+			LocalEvent::AutocompleteOrder { generation, order } => {
 				self.plugin_shell.autocomplete = Some(AutocompleteOrder {
-					query: query.clone(),
+					generation: *generation,
 					order: order.clone(),
 				});
 				changes.autocomplete = true;

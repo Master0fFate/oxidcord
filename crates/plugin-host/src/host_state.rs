@@ -258,6 +258,17 @@ impl HostState {
 		fresh
 	}
 
+	fn blocking<T>(&self, run: impl FnOnce(&dyn HostBroker) -> T) -> T {
+		if let Some(health) = &self.health {
+			health.begin_blocking();
+		}
+		let result = run(self.services.broker.as_ref());
+		if let Some(health) = &self.health {
+			health.end_blocking();
+		}
+		result
+	}
+
 	fn loads(&self) -> Result<(), HostError> {
 		match self.context {
 			CallContext::Event | CallContext::Timer | CallContext::UserAction => Ok(()),
@@ -910,7 +921,7 @@ impl client::Host for HostState {
 		}
 		self.loads()?;
 		within_rate(self.rate.lookup.take())?;
-		self.services.broker.load_profile(&self.plugin, user_id)
+		self.blocking(|broker| broker.load_profile(&self.plugin, user_id))
 	}
 
 	fn list_sessions(&mut self) -> Result<Vec<AuthSession>, HostError> {
@@ -941,10 +952,8 @@ impl client::Host for HostState {
 		}
 		self.loads()?;
 		within_rate(self.rate.fetch_message.take())?;
-		let message = self
-			.services
-			.broker
-			.load_message(&self.plugin, channel_id, message_id, private)?;
+		let message =
+			self.blocking(|broker| broker.load_message(&self.plugin, channel_id, message_id, private))?;
 		Ok(message.filter(|message| self.visible(message)))
 	}
 
@@ -968,9 +977,7 @@ impl client::Host for HostState {
 		}
 		self.loads()?;
 		within_rate(self.rate.reaction_users.take())?;
-		self.services
-			.broker
-			.load_reaction_users(&self.plugin, &m, &emoji, limit, private)
+		self.blocking(|broker| broker.load_reaction_users(&self.plugin, &m, &emoji, limit, private))
 	}
 
 	fn fetch_user(&mut self, user_id: u64) -> Result<Option<User>, HostError> {
@@ -980,25 +987,22 @@ impl client::Host for HostState {
 		}
 		self.loads()?;
 		within_rate(self.rate.lookup.take())?;
-		self.services.broker.load_user(&self.plugin, user_id)
+		self.blocking(|broker| broker.load_user(&self.plugin, user_id))
 	}
 
 	fn attachment_bytes(&mut self, m: MessageRef, attachment_id: u64) -> Result<Vec<u8>, HostError> {
 		self.require(Permission::ContextAttachments)?;
 		self.loads()?;
 		within_rate(self.rate.attachment_bytes.take())?;
-		self.services
-			.broker
-			.attachment_bytes(&self.plugin, &m, attachment_id, self.has_private_access())
+		let private = self.has_private_access();
+		self.blocking(|broker| broker.attachment_bytes(&self.plugin, &m, attachment_id, private))
 	}
 
 	fn avatar_bytes(&mut self, user_id: u64, size: u32) -> Result<Vec<u8>, HostError> {
 		self.require(Permission::ContextAttachments)?;
 		self.loads()?;
 		within_rate(self.rate.attachment_bytes.take())?;
-		self.services
-			.broker
-			.avatar_bytes(&self.plugin, user_id, cdn_size(size))
+		self.blocking(|broker| broker.avatar_bytes(&self.plugin, user_id, cdn_size(size)))
 	}
 
 	fn list_favorite_emojis(&mut self) -> Result<Vec<EmojiRef>, HostError> {
@@ -1083,28 +1087,36 @@ impl client::Host for HostState {
 		self.require(Permission::ActionsCompose)?;
 		self.require_gesture()?;
 		within_rate(self.rate.action.take())?;
-		self.services.broker.start_reply(&self.plugin, &m, mention)
+		self.services
+			.broker
+			.start_reply(&self.plugin, &m, mention, self.has_private_access())
 	}
 
 	fn start_edit(&mut self, m: MessageRef) -> Result<(), HostError> {
 		self.require(Permission::ActionsCompose)?;
 		self.require_gesture()?;
 		within_rate(self.rate.action.take())?;
-		self.services.broker.start_edit(&self.plugin, &m)
+		self.services
+			.broker
+			.start_edit(&self.plugin, &m, self.has_private_access())
 	}
 
 	fn jump_to_message(&mut self, m: MessageRef) -> Result<(), HostError> {
 		self.require(Permission::ActionsCompose)?;
 		self.require_gesture()?;
 		within_rate(self.rate.action.take())?;
-		self.services.broker.jump_to_message(&self.plugin, &m)
+		self.services
+			.broker
+			.jump_to_message(&self.plugin, &m, self.has_private_access())
 	}
 
 	fn jump_to_top(&mut self, channel_id: u64) -> Result<(), HostError> {
 		self.require(Permission::ActionsCompose)?;
 		self.require_gesture()?;
 		within_rate(self.rate.action.take())?;
-		self.services.broker.jump_to_top(&self.plugin, channel_id)
+		self.services
+			.broker
+			.jump_to_top(&self.plugin, channel_id, self.has_private_access())
 	}
 
 	fn edit_message(&mut self, m: MessageRef, content: String) -> Result<(), HostError> {
@@ -1114,14 +1126,18 @@ impl client::Host for HostState {
 			return Err(invalid("message content length"));
 		}
 		within_rate(self.rate.action.take())?;
-		self.services.broker.edit_message(&self.plugin, &m, content)
+		self.services
+			.broker
+			.edit_message(&self.plugin, &m, content, self.has_private_access())
 	}
 
 	fn delete_message(&mut self, m: MessageRef) -> Result<(), HostError> {
 		self.require(Permission::ActionsDelete)?;
 		self.require_gesture()?;
 		within_rate(self.rate.action.take())?;
-		self.services.broker.delete_message(&self.plugin, &m)
+		self.services
+			.broker
+			.delete_message(&self.plugin, &m, self.has_private_access())
 	}
 
 	fn react(&mut self, m: MessageRef, emoji: EmojiRef, burst: bool) -> Result<(), HostError> {
@@ -1133,7 +1149,9 @@ impl client::Host for HostState {
 			return Err(invalid("emoji length"));
 		}
 		within_rate(self.rate.add_reaction.take())?;
-		self.services.broker.react(&self.plugin, &m, &emoji, burst)
+		self.services
+			.broker
+			.react(&self.plugin, &m, &emoji, burst, self.has_private_access())
 	}
 
 	fn remove_reaction(&mut self, m: MessageRef, emoji: EmojiRef) -> Result<(), HostError> {
@@ -1142,21 +1160,16 @@ impl client::Host for HostState {
 			return Err(invalid("emoji length"));
 		}
 		within_rate(self.rate.add_reaction.take())?;
-		self.services.broker.remove_reaction(&self.plugin, &m, &emoji)
+		self.services
+			.broker
+			.remove_reaction(&self.plugin, &m, &emoji, self.has_private_access())
 	}
 
 	fn pick_files(&mut self, multiple: bool) -> Result<Vec<PickedFile>, HostError> {
 		self.require(Permission::ActionsUpload)?;
 		self.require_gesture()?;
 		within_rate(self.rate.action.take())?;
-		let health = self.health.clone();
-		if let Some(health) = &health {
-			health.begin_blocking();
-		}
-		let picked = self.services.broker.pick_files(&self.plugin, multiple);
-		if let Some(health) = &health {
-			health.end_blocking();
-		}
+		let picked = self.blocking(|broker| broker.pick_files(&self.plugin, multiple));
 		let limit = if multiple { MAX_PICKED_HANDLES } else { 1 };
 		Ok(picked?
 			.into_iter()

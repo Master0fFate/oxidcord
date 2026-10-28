@@ -9,7 +9,7 @@ use state::{ClientOptions, DmSectionView, LoadDirection, LocalEvent, UiIntent};
 
 use super::actions::{channel_notification_body, guild_notification_body};
 use super::{Command, Core, Internal, PAGE_SIZE, page_query};
-use crate::broker::is_private;
+use crate::broker::is_known_dm;
 use crate::command::{LoadResult, Reply};
 use crate::persist::Job;
 use crate::render::RenderJob;
@@ -267,6 +267,9 @@ impl Core {
 	}
 
 	fn set_client_option(&mut self, plugin_id: String, option: ClientOption) {
+		if !self.settings_plugins().contains(&plugin_id) {
+			return;
+		}
 		let mut options = self.options_of(&plugin_id);
 		options.overlay(&option_state(option));
 		self.plugin_options.insert(plugin_id.clone(), options);
@@ -288,6 +291,9 @@ impl Core {
 	}
 
 	fn set_dm_sections(&mut self, plugin_id: String, sections: Vec<DmSection>) {
+		if !self.settings_plugins().contains(&plugin_id) {
+			return;
+		}
 		let sections: Vec<DmSection> = {
 			let state = self.state.read();
 			sections
@@ -295,7 +301,7 @@ impl Core {
 				.map(|section| {
 					let mut channels: Vec<u64> = Vec::with_capacity(section.channels.len());
 					for id in section.channels {
-						if is_private(&state, Snowflake(id)) && !channels.contains(&id) {
+						if is_known_dm(&state, Snowflake(id)) && !channels.contains(&id) {
 							channels.push(id);
 						}
 					}

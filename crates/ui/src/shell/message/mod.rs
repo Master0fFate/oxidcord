@@ -148,6 +148,10 @@ pub struct ImageTarget {
 #[derive(Clone)]
 pub enum RowAction {
 	OpenLink(String),
+	OpenMessageLink {
+		url: String,
+		message_id: u64,
+	},
 	Download(String),
 	ToggleSpoiler(u64, usize),
 	OpenImage(ImageTarget),

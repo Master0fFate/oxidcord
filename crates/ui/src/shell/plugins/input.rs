@@ -13,6 +13,13 @@ use super::bridge::PluginBridge;
 
 const LINK_VERDICT_WAIT: Duration = Duration::from_millis(300);
 
+#[derive(Clone, Copy, Default)]
+pub struct LinkOrigin {
+	pub guild: Option<Snowflake>,
+	pub channel: Option<Snowflake>,
+	pub message: Option<Snowflake>,
+}
+
 pub fn client_options(cx: &App) -> ClientOptions {
 	cx.try_global::<PluginBridge>()
 		.map(|bridge| *bridge.data().read(cx).state().client_options())
@@ -111,8 +118,8 @@ fn send_message_click(
 	let Some(bridge) = cx.try_global::<PluginBridge>() else {
 		return false;
 	};
-	let watches = bridge.data().read(cx).session().plugin_watches();
-	if !watches.watches_messages() {
+	let session = bridge.data().read(cx).session();
+	if !session.plugin_watches().watches_messages() {
 		return false;
 	}
 	let click = MessageClick {
@@ -121,7 +128,7 @@ fn send_message_click(
 		modifiers,
 		target,
 	};
-	if watches.message_targets(&click).is_empty() {
+	if !session.plugins().click_watchers(&click) {
 		return false;
 	}
 	bridge.send(Command::PluginMessageClick(click), cx);
@@ -132,8 +139,8 @@ pub fn channel_click(guild: Option<Snowflake>, channel: Snowflake, event: &Click
 	let Some(bridge) = cx.try_global::<PluginBridge>() else {
 		return false;
 	};
-	let watches = bridge.data().read(cx).session().plugin_watches();
-	if !watches.watches_channels() {
+	let session = bridge.data().read(cx).session();
+	if !session.plugin_watches().watches_channels() {
 		return false;
 	}
 	let click = ChannelClick {
@@ -142,7 +149,7 @@ pub fn channel_click(guild: Option<Snowflake>, channel: Snowflake, event: &Click
 		kind: kind_of(event),
 		modifiers: modifiers_of(event.modifiers()),
 	};
-	if watches.channel_targets(&click).is_empty() {
+	if !session.plugins().channel_click_watchers(&click) {
 		return false;
 	}
 	bridge.send(Command::PluginChannelClick(click), cx);
@@ -206,6 +213,7 @@ pub fn link_hook_declared(cx: &App) -> bool {
 
 pub fn defer_link(
 	url: &str,
+	origin: LinkOrigin,
 	resolved: impl FnOnce(LinkVerdict, &mut Window, &mut App) + 'static,
 	window: &mut Window,
 	cx: &mut App,
@@ -215,9 +223,9 @@ pub fn defer_link(
 		Command::PluginLinkClick {
 			url: url.to_owned(),
 			context: UiContext {
-				guild_id: None,
-				channel_id: None,
-				message_id: None,
+				guild_id: origin.guild.map(Snowflake::get),
+				channel_id: origin.channel.map(Snowflake::get),
+				message_id: origin.message.map(Snowflake::get),
 				user_id: None,
 				url: Some(url.to_owned()),
 			},

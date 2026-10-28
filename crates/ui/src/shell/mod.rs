@@ -1123,7 +1123,7 @@ impl Shell {
 
 	fn on_timeline(&mut self, event: &TimelineEvent, window: &mut Window, cx: &mut Context<Self>) {
 		match event {
-			TimelineEvent::OpenLink(url) => links::open_link(url, &self.backend, window, cx),
+			TimelineEvent::OpenLink(url, origin) => links::open_link(url, *origin, &self.backend, window, cx),
 			TimelineEvent::OpenImage(target) => {
 				self.overlay = Some(Overlay::Lightbox(target.clone()));
 				cx.notify();

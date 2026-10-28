@@ -20,6 +20,7 @@ use crate::api::{
 	DisplayOverride, Event, MdNode, MessageView, OutgoingMessage, SendDecision as GuestDecision, User,
 	VoiceInfo,
 };
+use crate::broker::HostBroker;
 use crate::convert::{
 	ExtContext, ImagePolicy, SanitizedPatch, clip, clip_line, md_to_rich, md_to_tree, sanitize_badges,
 	sanitize_display_full, sanitize_patch, sanitize_patch_ext, sanitize_view, tree_to_md, upgrade_ui_tree,
@@ -197,6 +198,7 @@ struct LoadedPlugin {
 	dir: PathBuf,
 	trust: Trust,
 	health: Arc<Health>,
+	broker: Arc<dyn HostBroker>,
 	instance: Mutex<Option<Arc<PluginInstance>>>,
 	load_error: Option<String>,
 	component: Option<wasmtime::component::Component>,
@@ -227,6 +229,7 @@ impl LoadedPlugin {
 		{
 			tracing::warn!(target: "plugin", plugin = %self.manifest.id, hook = breaker.label(), "hook disabled after repeated timeouts");
 			self.health.invalidate_hooks();
+			self.broker.hooks_changed();
 		}
 	}
 }
@@ -620,6 +623,7 @@ impl PluginManager {
 			dir: dir.to_owned(),
 			trust,
 			health: Arc::new(Health::new(state, Arc::clone(&self.hook_revision))),
+			broker: Arc::clone(&self.runtime.shared().services.broker),
 			instance: Mutex::new(None),
 			load_error,
 			component,
@@ -796,9 +800,14 @@ impl PluginManager {
 	}
 
 	pub fn dispatch_event(&self, event: Event) {
+		self.dispatch_event_scoped(event, false);
+	}
+
+	pub fn dispatch_event_scoped(&self, event: Event, private_scope: bool) {
 		let sets = self.hooks();
 		let event = Arc::new(event);
-		for entry in sets.events.iter().filter(|entry| entry.sees_event(&event)) {
+		let visible = |entry: &&HookEntry| entry.sees_event(&event) && (entry.private || !private_scope);
+		for entry in sets.events.iter().filter(visible) {
 			entry.instance.post_event(Arc::clone(&event));
 		}
 	}
@@ -901,10 +910,16 @@ impl PluginManager {
 		self.runtime.patches().set(message_id, patches);
 	}
 
+	fn hides_private(&self, plugin_id: &str, guild_id: Option<u64>) -> bool {
+		guild_id.is_none() && !self.runtime.grants().has(plugin_id, Permission::ContextPrivate)
+	}
+
 	pub fn view_event(&self, plugin_id: &str, event: ViewEvent, detail: Option<ContextDetail>) -> Result<()> {
 		let instance = self.instance(plugin_id)?;
 		let point = event.point.clone();
 		let mount = event.mount.clone();
+		let hide_private = self.hides_private(plugin_id, event.context.guild_id);
+		let detail = detail.map(|detail| sanitize_detail(detail, hide_private));
 		let context = ViewContext {
 			guild_id: event.context.guild_id,
 			channel_id: event.context.channel_id,
@@ -913,7 +928,7 @@ impl PluginManager {
 			attachment_id: detail.as_ref().and_then(|detail| detail.attachment_id),
 		};
 		let reply = instance
-			.view_event(event, detail.map(sanitize_detail))
+			.view_event(event, detail)
 			.map_err(|error| Error::wasm(format!("{plugin_id}: {error}")))?;
 		self.apply_reply(plugin_id, &point, &mount, context, reply);
 		Ok(())
@@ -927,7 +942,9 @@ impl PluginManager {
 			if let Some(point) = mounts::static_point(point) {
 				surfaces.update(point, plugin_id, mount, tree).ok();
 			} else if let Some(point) = mounts::context_point(point) {
-				surfaces.store_view(&owner, point, context, Some(tree));
+				if !self.hides_private(plugin_id, context.guild_id) {
+					surfaces.store_view(&owner, point, context, Some(tree));
+				}
 			} else if point == "modal" {
 				surfaces.push_overlay(Overlay::Modal {
 					plugin_id: Arc::clone(&owner),
@@ -958,12 +975,13 @@ impl PluginManager {
 		context: UiContext,
 		detail: Option<ContextDetail>,
 	) -> Result<()> {
+		let hide_private = self.hides_private(plugin_id, context.guild_id);
 		self.instance(plugin_id)?
 			.menu_item(
 				menu.to_owned(),
 				key.to_owned(),
 				context,
-				detail.map(sanitize_detail),
+				detail.map(|detail| sanitize_detail(detail, hide_private)),
 			)
 			.map_err(|error| Error::wasm(format!("{plugin_id}: {error}")))
 	}
@@ -974,10 +992,12 @@ impl PluginManager {
 		};
 		let surfaces = self.runtime.mounts();
 		let wanted = surfaces.request(point, context);
-		let detail = detail.map(sanitize_detail);
+		let detail = detail.map(|detail| sanitize_detail(detail, false));
 		for requested in &wanted {
 			let plugin_id = &requested.plugin_id;
+			let hide_private = self.hides_private(plugin_id, context.guild_id);
 			let tree = match self.instance(plugin_id) {
+				Ok(_) if hide_private => None,
 				Ok(instance) => {
 					match instance.render_view(point.to_owned(), context.to_api(None), detail.clone()) {
 						Ok(tree) => tree.map(|tree| sanitize_view(&tree, &self.image_policy(plugin_id))),
@@ -1082,6 +1102,22 @@ impl PluginManager {
 		{
 			entry.instance.post_client_event(Arc::clone(&event));
 		}
+	}
+
+	pub fn click_watchers(&self, click: &MessageClick) -> bool {
+		let watchers = self.runtime.watches().message_targets(click);
+		self.hooks()
+			.message_click
+			.iter()
+			.any(|entry| entry.sees(click.message.guild_id) && watchers.contains(&entry.id))
+	}
+
+	pub fn channel_click_watchers(&self, click: &ChannelClick) -> bool {
+		let watchers = self.runtime.watches().channel_targets(click);
+		self.hooks()
+			.channel_click
+			.iter()
+			.any(|entry| entry.sees(click.guild_id) && watchers.contains(&entry.id))
 	}
 
 	pub fn message_click(&self, click: &MessageClick) {
@@ -1613,7 +1649,7 @@ fn send_plain_step(entry: &HookEntry, current: &OutgoingFull) -> SendStep {
 	});
 	match entry.instance.before_send(message) {
 		Ok(GuestDecision::Pass) => SendStep::Keep,
-		Ok(GuestDecision::Cancel(reason)) => SendStep::Cancel(reason),
+		Ok(GuestDecision::Cancel(reason)) => SendStep::Cancel(clip(&reason, MAX_TOAST_TEXT)),
 		Ok(GuestDecision::Replace(message)) => {
 			let keeps_target =
 				message.channel_id == current.channel_id && message.reply_to == current.reply_to;
@@ -1693,12 +1729,14 @@ fn sanitize_notification(over: NotificationOverride) -> Option<NotificationOverr
 	})
 }
 
-fn sanitize_detail(detail: ContextDetail) -> ContextDetail {
+fn sanitize_detail(detail: ContextDetail, hide_private: bool) -> ContextDetail {
 	ContextDetail {
 		selection: detail
 			.selection
+			.filter(|_| !hide_private)
 			.map(|selection| clip(&selection, MAX_SELECTION_BYTES)),
-		image_url: detail.image_url.filter(|url| web_url(url)),
+		image_url: detail.image_url.filter(|url| !hide_private && web_url(url)),
+		attachment_id: detail.attachment_id.filter(|_| !hide_private),
 		..detail
 	}
 }

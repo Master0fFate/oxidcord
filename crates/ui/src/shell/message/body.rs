@@ -325,7 +325,10 @@ impl Inline {
 		let message_id = env.message_id;
 		run.on_click(ranges, move |index, window, cx| {
 			let action = match &targets[index] {
-				Click::Link(url) => RowAction::OpenLink(url.clone()),
+				Click::Link(url) => RowAction::OpenMessageLink {
+					url: url.clone(),
+					message_id,
+				},
 				Click::Spoiler(spoiler) => RowAction::ToggleSpoiler(message_id, *spoiler),
 				Click::User(user) => RowAction::OpenProfile {
 					user: *user,

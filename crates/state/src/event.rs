@@ -121,7 +121,7 @@ pub enum LocalEvent {
 		verdict: AlertVerdict,
 	},
 	AutocompleteOrder {
-		query: String,
+		generation: u64,
 		order: Vec<u32>,
 	},
 	ChannelDecorations {

@@ -27,7 +27,7 @@ use super::message::{
 	render_row,
 };
 use super::moderation;
-use super::plugins::{self, PluginBridge};
+use super::plugins::{self, LinkOrigin, PluginBridge};
 use crate::components::{ChatList, ChatListState};
 use crate::data::Data;
 use crate::i18n::Translate as _;
@@ -41,7 +41,7 @@ const OLDER_RETRY: Duration = Duration::from_secs(3);
 const DOCUMENT_CACHE: usize = 256;
 
 pub enum TimelineEvent {
-	OpenLink(String),
+	OpenLink(String, LinkOrigin),
 	OpenImage(ImageTarget),
 	Reply(Snowflake),
 	OpenEmoji {
@@ -402,9 +402,24 @@ impl Timeline {
 		}
 	}
 
+	fn link_origin(&self, message: Option<Snowflake>) -> LinkOrigin {
+		LinkOrigin {
+			guild: self.guild,
+			channel: self.channel,
+			message,
+		}
+	}
+
 	fn on_row_action(&mut self, action: RowAction, window: &mut Window, cx: &mut Context<Self>) {
 		match action {
-			RowAction::OpenLink(url) | RowAction::Download(url) => cx.emit(TimelineEvent::OpenLink(url)),
+			RowAction::OpenLink(url) | RowAction::Download(url) => {
+				let origin = self.link_origin(None);
+				cx.emit(TimelineEvent::OpenLink(url, origin));
+			}
+			RowAction::OpenMessageLink { url, message_id } => {
+				let origin = self.link_origin(Some(Snowflake(message_id)));
+				cx.emit(TimelineEvent::OpenLink(url, origin));
+			}
 			RowAction::ToggleSpoiler(message, index) => {
 				if let (Some(channel), Ok(ordinal)) = (self.channel, u32::try_from(index))
 					&& plugins::message_click_here(

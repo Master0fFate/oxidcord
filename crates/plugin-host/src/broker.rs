@@ -69,6 +69,8 @@ pub trait HostBroker: Send + Sync {
 
 	fn surfaces_changed(&self) {}
 
+	fn hooks_changed(&self) {}
+
 	fn register_command(&self, _plugin: &str, _name: &str, _description: &str) -> Result<(), HostError> {
 		Ok(())
 	}
@@ -311,27 +313,39 @@ pub trait HostBroker: Send + Sync {
 		Err(HostError::Unavailable)
 	}
 
-	fn start_reply(&self, _plugin: &str, _message: &MessageRef, _mention: bool) -> Result<(), HostError> {
+	fn start_reply(
+		&self,
+		_plugin: &str,
+		_message: &MessageRef,
+		_mention: bool,
+		_private: bool,
+	) -> Result<(), HostError> {
 		Err(HostError::Unavailable)
 	}
 
-	fn start_edit(&self, _plugin: &str, _message: &MessageRef) -> Result<(), HostError> {
+	fn start_edit(&self, _plugin: &str, _message: &MessageRef, _private: bool) -> Result<(), HostError> {
 		Err(HostError::Unavailable)
 	}
 
-	fn jump_to_message(&self, _plugin: &str, _message: &MessageRef) -> Result<(), HostError> {
+	fn jump_to_message(&self, _plugin: &str, _message: &MessageRef, _private: bool) -> Result<(), HostError> {
 		Err(HostError::Unavailable)
 	}
 
-	fn jump_to_top(&self, _plugin: &str, _channel_id: u64) -> Result<(), HostError> {
+	fn jump_to_top(&self, _plugin: &str, _channel_id: u64, _private: bool) -> Result<(), HostError> {
 		Err(HostError::Unavailable)
 	}
 
-	fn edit_message(&self, _plugin: &str, _message: &MessageRef, _content: String) -> Result<(), HostError> {
+	fn edit_message(
+		&self,
+		_plugin: &str,
+		_message: &MessageRef,
+		_content: String,
+		_private: bool,
+	) -> Result<(), HostError> {
 		Err(HostError::Unavailable)
 	}
 
-	fn delete_message(&self, _plugin: &str, _message: &MessageRef) -> Result<(), HostError> {
+	fn delete_message(&self, _plugin: &str, _message: &MessageRef, _private: bool) -> Result<(), HostError> {
 		Err(HostError::Unavailable)
 	}
 
@@ -341,6 +355,7 @@ pub trait HostBroker: Send + Sync {
 		_message: &MessageRef,
 		_emoji: &EmojiRef,
 		_burst: bool,
+		_private: bool,
 	) -> Result<(), HostError> {
 		Err(HostError::Unavailable)
 	}
@@ -350,6 +365,7 @@ pub trait HostBroker: Send + Sync {
 		_plugin: &str,
 		_message: &MessageRef,
 		_emoji: &EmojiRef,
+		_private: bool,
 	) -> Result<(), HostError> {
 		Err(HostError::Unavailable)
 	}

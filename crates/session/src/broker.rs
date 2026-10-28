@@ -1,6 +1,7 @@
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
+use std::time::{Duration, Instant};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
@@ -97,13 +98,27 @@ impl VoiceCache {
 	}
 }
 
-type ImplicitUsers = ((usize, usize, usize), Arc<[Snowflake]>);
+const SESSIONS_RETRY: Duration = Duration::from_secs(60);
+const IMPLICIT_MIN_AGE: Duration = Duration::from_secs(30);
+
+type ImplicitUsers = ((usize, usize, usize), Instant, Arc<[Snowflake]>);
 
 #[derive(Default)]
 pub(crate) struct BrokerCaches {
 	implicit: Mutex<Option<ImplicitUsers>>,
-	sessions_requested: AtomicBool,
+	sessions_requested: Mutex<Option<Instant>>,
 	plugins: OnceLock<Weak<PluginManager>>,
+}
+
+impl BrokerCaches {
+	fn session_request_due(&self) -> bool {
+		let mut requested = self.sessions_requested.lock();
+		let due = requested.is_none_or(|at| at.elapsed() >= SESSIONS_RETRY);
+		if due {
+			*requested = Some(Instant::now());
+		}
+		due
+	}
 }
 
 pub(crate) struct SessionBroker {
@@ -232,11 +247,15 @@ pub(crate) fn reaction_key(emoji: &EmojiRef) -> String {
 }
 
 pub(crate) fn is_private(state: &State, channel_id: Snowflake) -> bool {
-	state.channel(channel_id).is_some() && state.channel_guild(channel_id).is_none()
+	state.channel_guild(channel_id).is_none()
+}
+
+pub(crate) fn is_known_dm(state: &State, channel_id: Snowflake) -> bool {
+	state.channel(channel_id).is_some() && is_private(state, channel_id)
 }
 
 fn current_session(sessions: &[state::AuthSession], session_id: &str) -> Option<usize> {
-	let hashed = (!session_id.is_empty())
+	(!session_id.is_empty())
 		.then(|| {
 			let digest = Sha256::digest(session_id.as_bytes());
 			[
@@ -249,14 +268,7 @@ fn current_session(sessions: &[state::AuthSession], session_id: &str) -> Option<
 			sessions
 				.iter()
 				.position(|session| hashes.contains(&session.id_hash))
-		});
-	hashed.or_else(|| {
-		sessions
-			.iter()
-			.enumerate()
-			.max_by_key(|(_, session)| session.last_used)
-			.map(|(index, _)| index)
-	})
+		})
 }
 
 impl SessionBroker {
@@ -334,16 +346,18 @@ impl SessionBroker {
 			.or_else(|| self.loads.fetched_message(channel_id, message_id))
 	}
 
-	fn implicit_users(&self, state: &State) -> Arc<[Snowflake]> {
-		let fingerprint = state.people_fingerprint();
+	fn implicit_users(&self) -> Arc<[Snowflake]> {
+		let fingerprint = self.state.read().people_fingerprint();
 		let mut cache = self.caches.implicit.lock();
-		if let Some((known, users)) = &*cache
-			&& *known == fingerprint
+		if let Some((known, computed, users)) = &*cache
+			&& (*known == fingerprint || computed.elapsed() < IMPLICIT_MIN_AGE)
 		{
 			return Arc::clone(users);
 		}
-		let users: Arc<[Snowflake]> = state.implicit_relationships().into();
-		*cache = Some((fingerprint, Arc::clone(&users)));
+		let member_ids = self.state.read().member_ids();
+		let shared = state::shared_members(member_ids);
+		let users: Arc<[Snowflake]> = self.state.read().implicit_among(shared).into();
+		*cache = Some((fingerprint, Instant::now(), Arc::clone(&users)));
 		users
 	}
 }
@@ -529,6 +543,10 @@ impl HostBroker for SessionBroker {
 		let _ = self.internal.send(Internal::SlotsChanged);
 	}
 
+	fn hooks_changed(&self) {
+		let _ = self.internal.send(Internal::PluginsChanged);
+	}
+
 	fn send_as_user(&self, plugin: &str, msg: OutgoingMessage) -> Result<(), HostError> {
 		self.queue(Command::SendAsUser {
 			plugin_id: plugin.to_owned(),
@@ -626,13 +644,14 @@ impl HostBroker for SessionBroker {
 	}
 
 	fn relationships(&self, _plugin: &str) -> Result<Vec<Relationship>, HostError> {
+		let implicit = self.implicit_users();
 		let state = self.state.read();
 		let mut found: Vec<Relationship> = state
 			.relationships()
 			.filter_map(|relationship| views::relationship(&state, relationship))
 			.collect();
 		found.extend(
-			self.implicit_users(&state)
+			implicit
 				.iter()
 				.take(MAX_IMPLICIT)
 				.filter_map(|user_id| views::implicit(&state, *user_id)),
@@ -726,7 +745,7 @@ impl HostBroker for SessionBroker {
 					.ok_or(HostError::Unavailable)?;
 				Ok(state.permissions_in(guild_id, channel_id, user).bits())
 			}
-			None if private && is_private(&state, channel_id) => Ok(DM_PERMISSIONS.bits()),
+			None if private && is_known_dm(&state, channel_id) => Ok(DM_PERMISSIONS.bits()),
 			None => Err(HostError::Unavailable),
 		}
 	}
@@ -770,7 +789,7 @@ impl HostBroker for SessionBroker {
 		let state = self.state.read();
 		let Some(found) = state.auth_sessions() else {
 			drop(state);
-			if !self.caches.sessions_requested.swap(true, Ordering::AcqRel) {
+			if self.caches.session_request_due() {
 				self.queue(Command::LoadSessions)?;
 			}
 			return Err(HostError::Unavailable);
@@ -1025,7 +1044,14 @@ impl HostBroker for SessionBroker {
 		})
 	}
 
-	fn start_reply(&self, _plugin: &str, message: &MessageRef, mention: bool) -> Result<(), HostError> {
+	fn start_reply(
+		&self,
+		_plugin: &str,
+		message: &MessageRef,
+		mention: bool,
+		private: bool,
+	) -> Result<(), HostError> {
+		self.reachable(Snowflake(message.channel_id), private)?;
 		self.loaded_message(message)?;
 		self.queue(Command::StartReply {
 			channel_id: Snowflake(message.channel_id),
@@ -1034,7 +1060,8 @@ impl HostBroker for SessionBroker {
 		})
 	}
 
-	fn start_edit(&self, _plugin: &str, message: &MessageRef) -> Result<(), HostError> {
+	fn start_edit(&self, _plugin: &str, message: &MessageRef, private: bool) -> Result<(), HostError> {
+		self.reachable(Snowflake(message.channel_id), private)?;
 		self.own_message(message)?;
 		self.queue(Command::StartEdit {
 			channel_id: Snowflake(message.channel_id),
@@ -1042,20 +1069,29 @@ impl HostBroker for SessionBroker {
 		})
 	}
 
-	fn jump_to_message(&self, _plugin: &str, message: &MessageRef) -> Result<(), HostError> {
+	fn jump_to_message(&self, _plugin: &str, message: &MessageRef, private: bool) -> Result<(), HostError> {
+		self.reachable(Snowflake(message.channel_id), private)?;
 		self.queue(Command::JumpToMessage {
 			channel_id: Snowflake(message.channel_id),
 			message_id: Snowflake(message.id),
 		})
 	}
 
-	fn jump_to_top(&self, _plugin: &str, channel_id: u64) -> Result<(), HostError> {
+	fn jump_to_top(&self, _plugin: &str, channel_id: u64, private: bool) -> Result<(), HostError> {
+		self.reachable(Snowflake(channel_id), private)?;
 		self.queue(Command::JumpToTop {
 			channel_id: Snowflake(channel_id),
 		})
 	}
 
-	fn edit_message(&self, _plugin: &str, message: &MessageRef, content: String) -> Result<(), HostError> {
+	fn edit_message(
+		&self,
+		_plugin: &str,
+		message: &MessageRef,
+		content: String,
+		private: bool,
+	) -> Result<(), HostError> {
+		self.reachable(Snowflake(message.channel_id), private)?;
 		self.own_message(message)?;
 		self.queue(Command::EditMessage {
 			channel_id: Snowflake(message.channel_id),
@@ -1064,8 +1100,9 @@ impl HostBroker for SessionBroker {
 		})
 	}
 
-	fn delete_message(&self, _plugin: &str, message: &MessageRef) -> Result<(), HostError> {
+	fn delete_message(&self, _plugin: &str, message: &MessageRef, private: bool) -> Result<(), HostError> {
 		let channel_id = Snowflake(message.channel_id);
+		self.reachable(channel_id, private)?;
 		{
 			let state = self.state.read();
 			let found = self.loaded_in(&state, message)?;
@@ -1092,7 +1129,9 @@ impl HostBroker for SessionBroker {
 		message: &MessageRef,
 		emoji: &EmojiRef,
 		burst: bool,
+		private: bool,
 	) -> Result<(), HostError> {
+		self.reachable(Snowflake(message.channel_id), private)?;
 		self.queue(Command::AddReaction {
 			channel_id: Snowflake(message.channel_id),
 			message_id: Snowflake(message.id),
@@ -1106,7 +1145,9 @@ impl HostBroker for SessionBroker {
 		_plugin: &str,
 		message: &MessageRef,
 		emoji: &EmojiRef,
+		private: bool,
 	) -> Result<(), HostError> {
+		self.reachable(Snowflake(message.channel_id), private)?;
 		self.queue(Command::RemoveReaction {
 			channel_id: Snowflake(message.channel_id),
 			message_id: Snowflake(message.id),

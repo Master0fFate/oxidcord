@@ -23,8 +23,8 @@ pub use self::chrome::{
 pub use self::commands::{list as command_list, parse as parse_command};
 pub use self::identity::{avatar_url, badges, channel_badges, decoration_of, display_name, tags};
 pub use self::input::{
-	autocomplete_declared, channel_click, client_options, defer_link, keybind, link_hook_declared,
-	message_click, message_click_at, message_click_here, watching_messages,
+	LinkOrigin, autocomplete_declared, channel_click, client_options, defer_link, keybind,
+	link_hook_declared, message_click, message_click_at, message_click_here, watching_messages,
 };
 pub use self::menu::{MenuTarget, PluginMenu, has_plugin_items, plugin_menu, plugin_menu_fill};
 pub use self::message::{
