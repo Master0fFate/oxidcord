@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-10-28T04:07:36Z",
+  "generated_at": "2026-10-28T04:12:11Z",
   "plugins": [
     {
       "id": "dev.oxidcord.fake-nitro",
@@ -145,8 +145,8 @@
         "typing-hidden"
       ],
       "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.silent-type-0.1.0.oxidcord-plugin",
-      "sha256": "8f37542033a952c89f7d9c8130561378fcbbe54c32d80dae1bfc64613a169bdc",
-      "length": 36112,
+      "sha256": "53e9162103e88e04d2b0709809cbfd3fdc336583cb4721a6ebe993c6267118b9",
+      "length": 36111,
       "reviewed": true
     },
     {

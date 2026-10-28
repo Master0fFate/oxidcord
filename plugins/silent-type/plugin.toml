@@ -6,7 +6,7 @@ authors = ["fate"]
 license = "MIT OR Apache-2.0"
 description = "Hides that you are typing. Others never see the typing indicator for you."
 entry = "silent_type.wasm"
-min_host = "0.4.2"
+min_host = "0.4.3"
 
 [[permissions]]
 permission = "typing-hidden"
