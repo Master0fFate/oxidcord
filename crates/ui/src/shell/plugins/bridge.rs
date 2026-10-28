@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui::{App, Entity, Global, SharedString};
-use plugin_host::api::model::{MenuItem, ViewTree};
+use plugin_host::api::model::{ContextDetail, MenuItem, MenuWhenExt, ViewTree};
 use plugin_host::mounts::{Contextual, MenuEntry};
 use plugin_host::{PluginPatch, PluginStorage, ViewContext};
 use session::Command;
@@ -36,6 +36,7 @@ pub type Patched = Rc<PatchSet>;
 pub struct MenuGroup {
 	pub plugin_id: Arc<str>,
 	pub items: Arc<[MenuItem]>,
+	pub extra: Arc<[(String, MenuWhenExt)]>,
 }
 
 #[derive(Default)]
@@ -68,6 +69,13 @@ pub struct PluginBridge {
 }
 
 impl Global for PluginBridge {}
+
+pub fn detail_of(context: ViewContext) -> Option<ContextDetail> {
+	context.attachment_id.map(|attachment| ContextDetail {
+		attachment_id: Some(attachment),
+		..super::menu::blank_detail()
+	})
+}
 
 fn surface_of(
 	plugin_id: &Arc<str>,
@@ -236,7 +244,7 @@ impl PluginBridge {
 			self.data.read(cx).send(Command::PluginRenderView {
 				point: point.to_owned(),
 				context,
-				detail: None,
+				detail: detail_of(context),
 			});
 		}
 		cache.contextual.insert((point, context), entries.clone());
@@ -255,10 +263,17 @@ impl PluginBridge {
 				.plugin_mounts()
 				.menu_items(menu)
 				.iter()
-				.map(|MenuEntry { plugin_id, items, .. }| MenuGroup {
-					plugin_id: Arc::clone(plugin_id),
-					items: Arc::clone(items),
-				})
+				.map(
+					|MenuEntry {
+					     plugin_id,
+					     items,
+					     extra,
+					 }| MenuGroup {
+						plugin_id: Arc::clone(plugin_id),
+						items: Arc::clone(items),
+						extra: Arc::clone(extra),
+					},
+				)
 				.collect(),
 		);
 		cache.menus.insert(menu, groups.clone());

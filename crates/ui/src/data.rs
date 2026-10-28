@@ -11,9 +11,21 @@ use store::StreamerModeSettings;
 use crate::shell::PluginStore;
 
 pub fn streamer_mode(cx: &App) -> StreamerModeSettings {
-	cx.try_global::<PluginStore>()
+	let mut settings = cx
+		.try_global::<PluginStore>()
 		.map(|store| store.0.settings.read().streamer_mode.clone())
-		.unwrap_or_default()
+		.unwrap_or_default();
+	match crate::shell::client_options(cx).streamer_mode {
+		Some(true) => {
+			settings.enabled = true;
+			settings.hide_personal = true;
+			settings.hide_invites = true;
+			settings.disable_sounds = true;
+		}
+		Some(false) => settings.enabled = false,
+		None => {}
+	}
+	settings
 }
 
 pub enum DataEvent {

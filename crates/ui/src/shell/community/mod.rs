@@ -499,7 +499,9 @@ impl Community {
 								channel_id: channel,
 								message_id: message,
 								emoji: choice.reaction_key(),
-								burst: false,
+								burst: crate::shell::client_options(cx)
+									.super_react_default
+									.unwrap_or(false),
 							},
 							cx,
 						),

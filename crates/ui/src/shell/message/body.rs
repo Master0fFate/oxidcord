@@ -11,6 +11,7 @@ use gpui::{
 use markdown::highlight::{TokenKind, highlight};
 use markdown::{Color, Document, GuildNavKind, Node, TimestampStyle};
 use media::SizeHint;
+use plugin_host::api::model::{CodeBlockNode, EmojiRef};
 use protocol::Snowflake;
 
 use super::selectable::SelectableRun;
@@ -19,6 +20,7 @@ use crate::format;
 use crate::i18n::Translate as _;
 use crate::images::{Images, frame_id};
 use crate::lookup::Lookup;
+use crate::shell::plugins::{MenuTarget, PatchEffects, plugin_menu, resolve_color};
 use crate::theme::{Theme, rem, with_alpha};
 
 const EMOJI_SIZE: f32 = 22.;
@@ -40,8 +42,12 @@ pub struct BodyEnv<'a> {
 	pub text_size: Option<gpui::Rems>,
 	pub color: Option<gpui::Hsla>,
 	pub prefs: Prefs,
+	patch: Option<&'a PatchEffects>,
+	channel_id: Option<u64>,
+	emoji_menus: Cell<u32>,
 	spoilers: Cell<usize>,
 	paragraphs: Cell<u64>,
+	code_blocks: Cell<u32>,
 }
 
 impl<'a> BodyEnv<'a> {
@@ -64,9 +70,56 @@ impl<'a> BodyEnv<'a> {
 			text_size: None,
 			color: None,
 			prefs,
+			patch: None,
+			channel_id: None,
+			emoji_menus: Cell::new(0),
 			spoilers: Cell::new(0),
 			paragraphs: Cell::new(0),
+			code_blocks: Cell::new(0),
 		}
+	}
+
+	pub fn patch(mut self, patch: Option<&'a PatchEffects>) -> Self {
+		self.patch = patch;
+		self
+	}
+
+	pub fn in_channel(mut self, channel_id: u64) -> Self {
+		self.channel_id = Some(channel_id);
+		self
+	}
+
+	pub(super) fn effects(&self) -> Option<&PatchEffects> {
+		self.patch
+	}
+
+	pub(super) fn channel_id(&self) -> Option<u64> {
+		self.channel_id
+	}
+
+	pub(super) fn channel(&self) -> Option<Snowflake> {
+		self.channel_id.map(Snowflake)
+	}
+
+	pub(super) fn message_at(&self) -> Option<(Option<Snowflake>, Snowflake, Snowflake)> {
+		Some((self.lookup.guild, self.channel()?, Snowflake(self.message_id)))
+	}
+
+	pub(super) fn next_emoji_menu(&self) -> u32 {
+		let index = self.emoji_menus.get();
+		self.emoji_menus.set(index + 1);
+		index
+	}
+
+	pub(super) fn is_revealed(&self, index: usize) -> bool {
+		self.patch.is_some_and(PatchEffects::reveals_spoilers)
+			|| self.revealed.contains(&(self.message_id, index))
+	}
+
+	fn next_code_block(&self) -> u32 {
+		let index = self.code_blocks.get();
+		self.code_blocks.set(index + 1);
+		index
 	}
 
 	pub fn jumbo(mut self, jumbo: bool) -> Self {
@@ -154,6 +207,7 @@ enum Glyph {
 	Emoji {
 		id: u64,
 		animated: bool,
+		name: String,
 	},
 	Image {
 		url: SharedString,
@@ -297,7 +351,24 @@ impl Inline {
 		for emoji in &self.emoji {
 			self.push_chunks(cursor..emoji.at, env, &mut children);
 			children.push(match &emoji.glyph {
-				Glyph::Emoji { id, animated } => emoji_element(*id, *animated, size, cx),
+				Glyph::Emoji { id, animated, name } => plugin_menu(
+					ElementId::NamedInteger(
+						"emoji-menu".into(),
+						(env.message_id << 16) ^ u64::from(env.next_emoji_menu()),
+					),
+					emoji_element(*id, *animated, size, cx),
+					"emoji-context-menu",
+					MenuTarget::emoji(
+						env.lookup.guild,
+						env.channel(),
+						EmojiRef {
+							id: Some(*id),
+							name: name.clone(),
+							animated: *animated,
+						},
+					),
+					cx,
+				),
 				Glyph::Image { url, width, height } => image_element(url, *width, *height, cx),
 				Glyph::Unicode(url) => unicode_element(url, size, cx),
 			});
@@ -506,7 +577,7 @@ impl<'a> Blocks<'a> {
 			}
 			Node::Spoiler(children) => {
 				let index = self.env.next_spoiler();
-				let revealed = self.env.revealed.contains(&(self.env.message_id, index));
+				let revealed = self.env.is_revealed(index);
 				let mut next = Self::styled(style, |h| {
 					if revealed {
 						h.background_color = Some(theme.modifier_active);
@@ -545,11 +616,12 @@ impl<'a> Blocks<'a> {
 			Node::Everyone => self.mention("@everyone".to_owned(), None, style),
 			Node::Here => self.mention("@here".to_owned(), None, style),
 			Node::CommandMention { name, .. } => self.mention(format!("/{name}"), None, style),
-			Node::CustomEmoji { id, animated, .. } => self.inline.emoji.push(EmojiAt {
+			Node::CustomEmoji { id, animated, name } => self.inline.emoji.push(EmojiAt {
 				at: self.inline.text.len(),
 				glyph: Glyph::Emoji {
 					id: *id,
 					animated: *animated,
+					name: name.clone(),
 				},
 			}),
 			Node::InlineImage {
@@ -674,6 +746,11 @@ impl<'a> Blocks<'a> {
 
 	fn code_block(&self, language: &str, code: &str) -> AnyElement {
 		let theme = self.env.theme;
+		let index = self.env.next_code_block();
+		if let Some(block) = self.env.patch.and_then(|patch| patch.code_block(index)) {
+			let (text, runs) = plugin_runs(block, theme);
+			return self.code_frame(text, runs);
+		}
 		let code = code.trim_end().replace('\t', "    ");
 		let mut runs: Vec<(Range<usize>, HighlightStyle)> = Vec::new();
 		let mut covered = 0;
@@ -698,6 +775,11 @@ impl<'a> Blocks<'a> {
 				},
 			));
 		}
+		self.code_frame(code, runs)
+	}
+
+	fn code_frame(&self, code: String, runs: Vec<(Range<usize>, HighlightStyle)>) -> AnyElement {
+		let theme = self.env.theme;
 		div()
 			.mt(theme.space_4)
 			.px(theme.space_12)
@@ -716,6 +798,30 @@ impl<'a> Blocks<'a> {
 			})
 			.into_any_element()
 	}
+}
+
+fn plugin_runs(block: &CodeBlockNode, theme: &Theme) -> (String, Vec<(Range<usize>, HighlightStyle)>) {
+	let mut text = String::new();
+	let mut runs = Vec::new();
+	for (index, line) in block.lines.iter().enumerate() {
+		if index > 0 {
+			text.push('\n');
+		}
+		for span in line {
+			let start = text.len();
+			text.push_str(&span.text);
+			let style = HighlightStyle {
+				color: span.color.as_ref().and_then(|color| resolve_color(color, theme)),
+				font_weight: span.bold.then_some(FontWeight::BOLD),
+				font_style: span.italic.then_some(FontStyle::Italic),
+				..HighlightStyle::default()
+			};
+			if start < text.len() && style != HighlightStyle::default() {
+				runs.push((start..text.len(), style));
+			}
+		}
+	}
+	(text, runs)
 }
 
 fn timestamp_label(unix: i64, style: TimestampStyle, h24: bool, cx: &App) -> String {

@@ -13,6 +13,7 @@ use protocol::Snowflake;
 use session::Command;
 
 use super::account::{self, ProfileData};
+use super::plugins::{self, MenuTarget, plugin_menu};
 use crate::components::{Avatar, Divider};
 use crate::data::{Data, DataEvent};
 use crate::format;
@@ -131,13 +132,36 @@ impl Render for ProfileCard {
 		let (user, guild) = (self.user, self.guild);
 		let cutout = theme.background_floating;
 		let banner = account::banner(&profile, theme.profile_banner_height, &theme, cx);
-		let badges = account::badges_row(&profile.badges, &theme, cx);
+		let plugin_badges = profile
+			.over
+			.as_ref()
+			.map_or_else(Vec::new, |over| plugins::badges(over, self.user, &theme, cx));
+		let decoration = plugins::decoration_of(profile.over.as_ref());
+		let suffix = profile.over.as_ref().and_then(|over| over.suffix.clone());
+		let badges = div()
+			.flex()
+			.items_center()
+			.gap(theme.space_4)
+			.child(account::badges_row(&profile.badges, &theme, cx))
+			.children(plugin_badges);
 		let actions = account::action_row(&profile, &self.data, &close, &theme, cx);
 		let stats = account::stat_line(&profile, &theme, cx);
 		let roles: Vec<_> = profile
 			.roles
 			.iter()
-			.map(|role| account::role_chip(role, &theme))
+			.map(|role| {
+				let chip = account::role_chip(role, &theme);
+				match self.guild {
+					Some(guild) => plugin_menu(
+						("profile-role", role.id.get()),
+						chip,
+						"role-context-menu",
+						MenuTarget::role(guild, role.id, role.own),
+						cx,
+					),
+					None => chip,
+				}
+			})
 			.collect();
 		let bio = profile
 			.bio
@@ -182,6 +206,7 @@ impl Render for ProfileCard {
 								.size(theme.avatar_lg)
 								.url(profile.avatar.clone())
 								.status(profile.status)
+								.decoration(decoration)
 								.cutout(cutout),
 						),
 					)
@@ -202,7 +227,17 @@ impl Render for ProfileCard {
 									.text_size(theme.font_lg)
 									.font_weight(FontWeight::BOLD)
 									.text_color(theme.header_primary)
-									.child(profile.name.clone()),
+									.child(profile.name.clone())
+									.when_some(suffix, |name, suffix| {
+										name.child(
+											div()
+												.ml(theme.space_4)
+												.text_size(theme.font_sm)
+												.font_weight(FontWeight::NORMAL)
+												.text_color(theme.text_muted)
+												.child(suffix),
+										)
+									}),
 							)
 							.child(
 								div()

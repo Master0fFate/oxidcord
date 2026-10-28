@@ -3,7 +3,9 @@ use gpui::{
 	StatefulInteractiveElement as _, Styled as _, div,
 };
 use plugin_host::ViewContext;
-use plugin_host::api::model::{EmbedAction, EmbedCard, NodeKind, Tone, Visibility};
+use plugin_host::api::model::{
+	AttachmentLayout, AttachmentOverride, CodeBlockNode, EmbedAction, EmbedCard, NodeKind, Tone, Visibility,
+};
 use protocol::Snowflake;
 use state::MessageView;
 
@@ -29,6 +31,7 @@ pub fn context_of(view: &MessageView) -> ViewContext {
 		channel_id: Some(message.channel_id.get()),
 		message_id: Some(message.id.get()),
 		user_id: Some(message.author.id.get()),
+		attachment_id: None,
 	}
 }
 
@@ -265,17 +268,63 @@ impl PatchEffects {
 	}
 
 	pub fn hides_attachment(&self, id: Snowflake) -> bool {
-		self.set()
-			.patches
-			.iter()
-			.any(|patch| patch.hidden_attachments.contains(&id.get()))
+		self.set().patches.iter().any(|patch| {
+			patch.hidden_attachments.contains(&id.get())
+				|| patch
+					.attachments
+					.iter()
+					.any(|over| over.id == id.get() && over.hidden)
+		})
 	}
 
 	pub fn touches_media(&self) -> bool {
 		self.set().patches.iter().any(|patch| {
 			!patch.hidden_attachments.is_empty()
+				|| patch
+					.attachments
+					.iter()
+					.any(|over| over.hidden || over.url.is_some())
 				|| patch.embeds.iter().any(|action| *action != EmbedAction::Keep)
 		})
+	}
+
+	pub fn attachment_override(&self, id: Snowflake) -> Option<&AttachmentOverride> {
+		self.set()
+			.patches
+			.iter()
+			.flat_map(|patch| patch.attachments.iter())
+			.find(|over| over.id == id.get())
+	}
+
+	pub fn layout(&self) -> Option<AttachmentLayout> {
+		self.set().patches.iter().find_map(|patch| patch.layout)
+	}
+
+	pub fn reply_annotation(&self) -> Option<&str> {
+		self.set()
+			.patches
+			.iter()
+			.find_map(|patch| patch.reply_annotation.as_deref())
+	}
+
+	pub fn reveals_spoilers(&self) -> bool {
+		self.set().patches.iter().any(|patch| patch.reveal_spoilers)
+	}
+
+	pub fn tooltip(&self) -> Option<&str> {
+		self.set()
+			.patches
+			.iter()
+			.find_map(|patch| patch.tooltip.as_deref())
+	}
+
+	pub fn code_block(&self, index: u32) -> Option<&CodeBlockNode> {
+		self.set()
+			.patches
+			.iter()
+			.flat_map(|patch| patch.code_blocks.iter())
+			.find(|(at, _)| *at == index)
+			.map(|(_, block)| block)
 	}
 
 	pub fn embed_action(&self, index: usize) -> Option<&EmbedAction> {

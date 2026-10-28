@@ -1108,9 +1108,16 @@ interface model {
 		inline-video,
 	}
 
+	record code-span {
+		text: string,
+		color: option<color>,
+		bold: bool,
+		italic: bool,
+	}
+
 	record code-block-node {
 		language: option<string>,
-		lines: list<list<styled-span>>,
+		lines: list<list<code-span>>,
 	}
 
 	record message-patch-ext {

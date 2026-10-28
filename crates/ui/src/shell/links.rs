@@ -4,9 +4,10 @@ use gpui::{App, ParentElement as _, Styled as _, Window, div};
 use gpui_component::WindowExt as _;
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::dialog::DialogFooter;
+use plugin_host::api::model::LinkVerdict;
 use url::Url;
 
-use super::SettingsBackend;
+use super::{SettingsBackend, plugins};
 use crate::i18n::{ArgValue, Translate as _};
 use crate::theme::{Theme, rem};
 
@@ -44,6 +45,32 @@ fn launch(url: &str) {
 }
 
 pub fn open_link(url: &str, backend: &Rc<SettingsBackend>, window: &mut Window, cx: &mut App) {
+	if !plugins::link_hook_declared(cx) {
+		open_checked(url, backend, window, cx);
+		return;
+	}
+	let (original, backend) = (url.to_owned(), backend.clone());
+	plugins::defer_link(
+		url,
+		move |verdict, window, cx| match verdict {
+			LinkVerdict::Pass => open_checked(&original, &backend, window, cx),
+			LinkVerdict::Open(replacement) => open_replacement(&replacement, &backend, window, cx),
+			LinkVerdict::Consume => {}
+		},
+		window,
+		cx,
+	);
+}
+
+fn open_replacement(url: &str, backend: &Rc<SettingsBackend>, window: &mut Window, cx: &mut App) {
+	if url.starts_with("http://") || url.starts_with("https://") {
+		open_checked(url, backend, window, cx);
+	} else if let Err(error) = platform::open::open_plugin_url(url) {
+		tracing::warn!(%error, "could not open the plugin link");
+	}
+}
+
+fn open_checked(url: &str, backend: &Rc<SettingsBackend>, window: &mut Window, cx: &mut App) {
 	let Ok(parsed) = Url::parse(url) else {
 		return;
 	};

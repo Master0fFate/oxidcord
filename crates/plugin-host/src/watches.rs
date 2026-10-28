@@ -81,6 +81,14 @@ impl Watches {
 		self.revision.fetch_add(1, Ordering::AcqRel);
 	}
 
+	pub fn watches_messages(&self) -> bool {
+		!self.inner.read().messages.is_empty()
+	}
+
+	pub fn watches_channels(&self) -> bool {
+		!self.inner.read().channels.is_empty()
+	}
+
 	pub fn message_watchers(&self) -> Vec<(Arc<str>, ClickWatch)> {
 		snapshot(&self.inner.read().messages)
 	}

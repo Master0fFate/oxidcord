@@ -6,9 +6,9 @@ mod row;
 use std::time::Duration;
 
 use gpui::{
-	AnyElement, AppContext as _, Context, Entity, EventEmitter, FontWeight, InteractiveElement as _,
-	IntoElement, ParentElement as _, Pixels, Point, Render, SharedString, StatefulInteractiveElement as _,
-	Styled as _, Subscription, Window, div, prelude::FluentBuilder as _,
+	AnyElement, AppContext as _, Context, ElementId, Entity, EventEmitter, FontWeight,
+	InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Point, Render, SharedString,
+	StatefulInteractiveElement as _, Styled as _, Subscription, Window, div, prelude::FluentBuilder as _,
 };
 use gpui_component::Sizable as _;
 use gpui_component::input::{Input, InputEvent, InputState};
@@ -18,6 +18,7 @@ use state::Changes;
 use state::RelationshipRow;
 
 pub use self::feature::{FeatureKind, FeaturePage};
+use super::plugins;
 use crate::components::Divider;
 use crate::data::Data;
 use crate::i18n::{ArgValue, Translate as _};
@@ -37,6 +38,7 @@ enum Tab {
 	All,
 	Pending,
 	Blocked,
+	Plugin(usize),
 	Add,
 }
 
@@ -49,6 +51,7 @@ impl Tab {
 			Self::All => "friends-tab-all",
 			Self::Pending => "friends-tab-pending",
 			Self::Blocked => "friends-tab-blocked",
+			Self::Plugin(_) => "friends-tab-plugin",
 			Self::Add => "friends-tab-add",
 		}
 	}
@@ -161,8 +164,18 @@ impl FriendsPage {
 			.then_some(self.incoming.len())
 			.filter(|n| *n > 0);
 		let add = tab == Tab::Add;
+		let (id, label): (ElementId, SharedString) = match tab {
+			Tab::Plugin(index) => (
+				(tab.key(), index).into(),
+				plugins::mount_titles("friends-section", cx)
+					.get(index)
+					.cloned()
+					.unwrap_or_default(),
+			),
+			_ => (tab.key().into(), cx.t(tab.key())),
+		};
 		div()
-			.id(tab.key())
+			.id(id)
 			.flex()
 			.items_center()
 			.gap(theme.space_8)
@@ -187,7 +200,7 @@ impl FriendsPage {
 					.hover(|style| style.bg(theme.modifier_hover).text_color(theme.interactive_hover))
 			})
 			.on_click(cx.listener(move |this, _, _, cx| this.select(tab, cx)))
-			.child(cx.t(tab.key()))
+			.child(label)
 			.children(count.map(|count| crate::components::MentionBadge::new(count as u32)))
 			.into_any_element()
 	}
@@ -224,6 +237,10 @@ impl FriendsPage {
 					.items_center()
 					.gap(theme.space_8)
 					.children(Tab::LIST.map(|tab| self.tab_button(tab, theme, cx)))
+					.children(
+						(0..plugins::mount_titles("friends-section", cx).len())
+							.map(|index| self.tab_button(Tab::Plugin(index), theme, cx)),
+					)
 					.child(self.tab_button(Tab::Add, theme, cx)),
 			)
 			.into_any_element()
@@ -289,7 +306,7 @@ impl FriendsPage {
 				self.visible(&self.blocked, false),
 				row::Kind::Blocked,
 			)],
-			Tab::Add => Vec::new(),
+			Tab::Add | Tab::Plugin(_) => Vec::new(),
 		};
 		let empty_key = match self.tab {
 			Tab::Online => "friends-empty-online",
@@ -334,9 +351,25 @@ impl FriendsPage {
 impl Render for FriendsPage {
 	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
+		if let Tab::Plugin(index) = self.tab
+			&& index >= plugins::mount_titles("friends-section", cx).len()
+		{
+			self.tab = Tab::Online;
+		}
 		let header = self.header(&theme, cx);
 		let main = if self.tab == Tab::Add {
 			self.add_form(&theme, cx)
+		} else if let Tab::Plugin(index) = self.tab {
+			div()
+				.id("friends-plugin")
+				.flex()
+				.flex_col()
+				.flex_1()
+				.min_h_0()
+				.p(theme.space_16)
+				.children(plugins::mount_body("friends-section", index, cx))
+				.overflow_y_scrollbar()
+				.into_any_element()
 		} else {
 			div()
 				.flex()

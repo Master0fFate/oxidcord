@@ -10,6 +10,7 @@ use media::SizeHint;
 use protocol::ActivityKind;
 
 use super::account::{StatusMenu, StatusMenuEvent};
+use super::plugins::{self, MenuTarget, PANEL};
 use crate::components::{Avatar, IconButton, tooltip, unicode_emoji};
 use crate::data::{Data, streamer_mode};
 use crate::i18n::{ArgValue, Translate as _};
@@ -258,14 +259,15 @@ impl Render for UserPanel {
 			.on_click(cx.listener(|this, _, _, cx| {
 				this.data.update(cx, |data, cx| data.toggle_deafen(cx));
 			}));
-		div()
+		let row = div()
 			.flex()
 			.flex_none()
 			.items_center()
 			.gap(theme.space_4)
 			.h(theme.user_panel_height)
 			.px(theme.space_8)
-			.child(
+			.child(plugins::plugin_menu_fill(
+				"user-area-menu",
 				div()
 					.id("user-area")
 					.flex()
@@ -315,8 +317,12 @@ impl Render for UserPanel {
 									.children(subtitle_emoji)
 									.children(subtitle.map(|text| div().truncate().child(text))),
 							),
-					),
-			)
+					)
+					.into_any_element(),
+				"account-panel-menu",
+				MenuTarget::account(),
+				cx,
+			))
 			.when(push_to_talk, |panel| {
 				panel.child(
 					div()
@@ -346,6 +352,23 @@ impl Render for UserPanel {
 					.tooltip(cx.t("user-settings"))
 					.on_click(cx.listener(|_, _, _, cx| cx.emit(UserPanelEvent::OpenSettings))),
 			)
-			.children(menu)
+			.children(menu);
+		let mounted = plugins::mount_row("account-panel", PANEL, cx);
+		div()
+			.flex()
+			.flex_col()
+			.flex_none()
+			.when(!mounted.is_empty(), |panel| {
+				panel.child(
+					div()
+						.flex()
+						.items_center()
+						.gap(theme.space_4)
+						.px(theme.space_8)
+						.pt(theme.space_4)
+						.children(mounted),
+				)
+			})
+			.child(row)
 	}
 }

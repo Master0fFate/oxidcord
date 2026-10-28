@@ -8,8 +8,8 @@ use super::md::rich_to_md;
 use super::view::{ImagePolicy, clip, clip_line, sanitize_card, sanitize_color, sanitize_view, valid_icon};
 use crate::api::MessageView;
 use crate::api::model::{
-	Annotation, AttachmentInfo, AttachmentOverride, CodeBlockNode, Decoration, EmbedAction, EmbedInfo,
-	EmojiRef, Lifecycle, MessageFull, MessagePatch, MessagePatchExt, ReactionInfo, StickerInfo, StyledSpan,
+	Annotation, AttachmentInfo, AttachmentOverride, CodeBlockNode, CodeSpan, Decoration, EmbedAction,
+	EmbedInfo, EmojiRef, Lifecycle, MessageFull, MessagePatch, MessagePatchExt, ReactionInfo, StickerInfo,
 	Visibility,
 };
 use crate::patches::PluginPatch;
@@ -23,7 +23,8 @@ const MAX_ALT: usize = 1_000;
 const MAX_ATTACHMENT_OVERRIDES: usize = 10;
 const MAX_CODE_LINES: usize = 2_000;
 const MAX_CODE_SPANS: usize = 400;
-const MAX_SPAN_CHILDREN: usize = 256;
+const MAX_SPAN_TEXT: usize = 512;
+const MAX_CODE_BYTES: usize = 128 * 1024;
 const MAX_LANGUAGE: usize = 32;
 
 pub fn emoji_ref(emoji: &PartialEmoji) -> EmojiRef {
@@ -211,26 +212,32 @@ fn attachment_overrides(
 fn code_block_overrides(blocks: Vec<(u32, CodeBlockNode)>, count: usize) -> Vec<(u32, CodeBlockNode)> {
 	let mut kept: Vec<(u32, CodeBlockNode)> = Vec::new();
 	let mut lines_left = MAX_CODE_LINES;
+	let mut bytes_left = MAX_CODE_BYTES;
 	for (index, block) in blocks {
-		if lines_left == 0 {
+		if lines_left == 0 || bytes_left == 0 {
 			break;
 		}
 		if index as usize >= count || kept.iter().any(|(taken, _)| *taken == index) {
 			continue;
 		}
-		let lines: Vec<Vec<StyledSpan>> = block
+		let lines: Vec<Vec<CodeSpan>> = block
 			.lines
 			.into_iter()
 			.take(lines_left)
 			.map(|line| {
 				line.into_iter()
 					.take(MAX_CODE_SPANS)
-					.map(|span| StyledSpan {
-						children: span.children.into_iter().take(MAX_SPAN_CHILDREN).collect(),
-						color: span.color.as_ref().and_then(sanitize_color),
-						background: span.background.as_ref().and_then(sanitize_color),
-						mono: span.mono,
+					.map(|span| {
+						let text = clip(&span.text, MAX_SPAN_TEXT.min(bytes_left));
+						bytes_left -= text.len();
+						CodeSpan {
+							text,
+							color: span.color.as_ref().and_then(sanitize_color),
+							bold: span.bold,
+							italic: span.italic,
+						}
 					})
+					.filter(|span| !span.text.is_empty())
 					.collect()
 			})
 			.collect();

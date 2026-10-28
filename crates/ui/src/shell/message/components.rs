@@ -346,7 +346,7 @@ impl Builder<'_> {
 			return None;
 		}
 		let index = self.env.next_spoiler();
-		(!self.env.revealed.contains(&(self.env.message_id, index))).then_some(index)
+		(!self.env.is_revealed(index)).then_some(index)
 	}
 
 	fn spoiler_cover(&self, index: usize, height: gpui::Rems) -> AnyElement {
@@ -401,7 +401,7 @@ impl Builder<'_> {
 			width: media.width.unwrap_or_default().max(0) as u32,
 			height: media.height.unwrap_or_default().max(0) as u32,
 		};
-		let pointed = point_media(&target, source);
+		let pointed = point_media(&target, source, None);
 		let dispatch = self.env.dispatch.clone();
 		div()
 			.id(self.id())

@@ -83,7 +83,7 @@ use crate::theme::{Theme, rem};
 
 pub use self::account::DataDir;
 pub use self::login::{LoginEvent, LoginOptions, LoginScreen};
-pub use self::plugins::PluginStore;
+pub use self::plugins::{PluginStore, client_options};
 pub use self::quick_switcher::{
 	Category as SwitcherCategory, Leading as SwitcherLeading, SwitcherEntry, SwitcherTarget,
 };
@@ -518,6 +518,12 @@ impl Shell {
 			},
 		));
 
+		subscriptions.push(cx.intercept_keystrokes(|event, _, cx| {
+			if plugins::keybind(&event.keystroke, cx) {
+				cx.stop_propagation();
+			}
+		}));
+
 		let focus = cx.focus_handle();
 		window.focus(&focus, cx);
 
@@ -826,7 +832,7 @@ impl Shell {
 			state
 				.typing_users(channel, Instant::now())
 				.into_iter()
-				.map(|user| state.display_name(self.guild, user).into())
+				.map(|user| plugins::display_name(&state, self.guild, user).into())
 				.collect()
 		};
 		self.composer
@@ -849,7 +855,13 @@ impl Shell {
 			self.sync_group_header(cx);
 			self.refresh_direct_title(cx);
 		}
-		if changes.private_channels || changes.read_state || changes.presence_any() || changes.relationships {
+		if changes.private_channels
+			|| changes.read_state
+			|| changes.presence_any()
+			|| changes.relationships
+			|| changes.dm_sections
+			|| !changes.members.is_empty()
+		{
 			self.dm_sidebar.update(cx, |sidebar, cx| sidebar.refresh(cx));
 		}
 		if let Some(guild) = self.guild
@@ -905,6 +917,13 @@ impl Shell {
 			self.top_bar.update(cx, |_, cx| cx.notify());
 			cx.notify();
 		}
+		if changes.client_options {
+			self.apply_client_options(window, cx);
+		}
+		if changes.autocomplete {
+			self.composer
+				.update(cx, |composer, cx| composer.on_autocomplete(window, cx));
+		}
 		if changes.read_state || changes.guild_list || changes.private_channels {
 			self.update_mentions(window, cx);
 		}
@@ -914,6 +933,17 @@ impl Shell {
 		if changes.intents {
 			self.consume_intents(window, cx);
 		}
+	}
+
+	fn apply_client_options(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+		self.rail.update(cx, |rail, cx| rail.refresh_options(cx));
+		self.timeline.update(cx, |timeline, cx| timeline.on_options(cx));
+		self.composer.update(cx, |_, cx| cx.notify());
+		self.user_panel.update(cx, |panel, cx| panel.refresh(cx));
+		self.member_list.update(cx, |list, cx| list.refresh(cx));
+		self.set_typing(cx);
+		window.refresh();
+		cx.notify();
 	}
 
 	fn consume_intents(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1044,7 +1074,8 @@ impl Shell {
 			(notifications, audible)
 		};
 		if audible && settings.sounds && !crate::data::streamer_mode(cx).mutes_sounds() {
-			platform::sound::play_chime();
+			let volume = plugins::client_options(cx).notification_volume;
+			platform::sound::play_chime_at(volume.map_or(1., |volume| f32::from(volume.min(100)) / 100.));
 		}
 		for (channel, notification) in notifications {
 			let clicks = self.notification_clicks.clone();
@@ -1097,7 +1128,10 @@ impl Shell {
 				self.overlay = Some(Overlay::Lightbox(target.clone()));
 				cx.notify();
 			}
-			TimelineEvent::Reply(message) => self.start_reply(*message, true, window, cx),
+			TimelineEvent::Reply(message) => {
+				let ping = plugins::client_options(cx).reply_ping_default.unwrap_or(true);
+				self.start_reply(*message, ping, window, cx)
+			}
 			TimelineEvent::OpenEmoji { message_id, at } => {
 				if let Some(channel) = self.channel {
 					let target = PickerTarget::Reaction {

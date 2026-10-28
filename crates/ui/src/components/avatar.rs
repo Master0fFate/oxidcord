@@ -1,11 +1,11 @@
 use gpui::{
-	App, FontWeight, Hsla, IntoElement, ObjectFit, ParentElement as _, Rems, RenderOnce, SharedString,
-	Styled as _, StyledImage as _, Window, div, img, prelude::FluentBuilder as _,
+	App, FontWeight, Hsla, InteractiveElement as _, IntoElement, ObjectFit, ParentElement as _, Rems,
+	RenderOnce, SharedString, Styled as _, StyledImage as _, Window, div, img, prelude::FluentBuilder as _,
 };
 use media::SizeHint;
 
 use super::status_dot::StatusDot;
-use crate::images::Images;
+use crate::images::{Images, frame_id};
 use crate::model::Status;
 use crate::theme::{Theme, rem};
 
@@ -17,7 +17,10 @@ pub struct Avatar {
 	color: Option<Hsla>,
 	status: Option<Status>,
 	cutout: Option<Hsla>,
+	decoration: Option<SharedString>,
 }
+
+const DECORATION_SCALE: f32 = 1.2;
 
 impl Avatar {
 	pub fn new(name: impl Into<SharedString>) -> Self {
@@ -28,6 +31,7 @@ impl Avatar {
 			color: None,
 			status: None,
 			cutout: None,
+			decoration: None,
 		}
 	}
 
@@ -53,6 +57,11 @@ impl Avatar {
 
 	pub fn cutout(mut self, color: Hsla) -> Self {
 		self.cutout = Some(color);
+		self
+	}
+
+	pub fn decoration(mut self, url: Option<SharedString>) -> Self {
+		self.decoration = url;
 		self
 	}
 
@@ -82,6 +91,12 @@ impl RenderOnce for Avatar {
 			.url
 			.as_ref()
 			.and_then(|url| cx.global::<Images>().get(url, SizeHint::square(pixels)));
+		let ring_image = self.decoration.as_ref().and_then(|url| {
+			let pixels = (base * DECORATION_SCALE * 2.).round() as u32;
+			cx.global::<Images>()
+				.get(url, SizeHint::square(pixels))
+				.map(|image| (url.clone(), image))
+		});
 		let circle = div().size(size).rounded_full().overflow_hidden().flex_none();
 		let circle = match image {
 			Some(image) => circle.child(img(image).size_full().rounded_full().object_fit(ObjectFit::Cover)),
@@ -100,6 +115,22 @@ impl RenderOnce for Avatar {
 			.flex_none()
 			.size(size)
 			.child(circle)
+			.when_some(ring_image, |avatar, (url, image)| {
+				let overhang = size * ((DECORATION_SCALE - 1.) / 2.);
+				avatar.child(
+					div()
+						.absolute()
+						.top(-overhang)
+						.left(-overhang)
+						.size(size * DECORATION_SCALE)
+						.child(
+							img(image)
+								.id(frame_id(&url))
+								.size_full()
+								.object_fit(ObjectFit::Contain),
+						),
+				)
+			})
 			.when_some(self.status, |avatar, status| {
 				avatar.child(
 					div()

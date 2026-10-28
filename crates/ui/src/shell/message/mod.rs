@@ -26,18 +26,23 @@ use gpui_component::input::{Textarea, TextareaState};
 use gpui_component::menu::{ContextMenuExt as _, DropdownMenu as _};
 use lru::LruCache;
 use markdown::Document;
+use plugin_host::ViewContext;
+use plugin_host::api::model::ClickTarget;
 use protocol::{Message, MessageType, Snowflake};
-use state::{MessageRow, MessageView, RenderedMessage};
+use state::{ClientOptions, MessageRow, MessageView, RenderedMessage};
 
 pub use self::body::snippet;
 use self::body::{BodyEnv, render_body};
 use self::menu::{MenuSource, capabilities, capture_pointer};
-pub(in crate::shell) use self::menu::{point_link, point_media, with_link_menu};
+pub(in crate::shell) use self::menu::{point_link, point_media, with_attachment_menu, with_link_menu};
 pub use self::reaction_tip::ReactionRequests;
 use super::community;
 use super::incoming;
 use super::inline_emoji::{self, EmojiTokens};
-use super::plugins::{PatchEffects, author_badge, message_actions, message_extras, patch_effects};
+use super::plugins::{
+	INLINE, PatchEffects, author_badge, contextual_inline, decoration_of, message_actions, message_click,
+	message_extras, patch_effects, tags,
+};
 use crate::components::{Avatar, IconButton, tooltip};
 use crate::format;
 use crate::i18n::{ArgValue, Translate as _};
@@ -52,6 +57,7 @@ const SKELETON_ROWS: usize = 4;
 const DELETED_OPACITY: f32 = 0.7;
 const FADED_OPACITY: f32 = 0.5;
 const REVEAL_INDEX: usize = usize::MAX;
+const REPLY_PREVIEW_NODES: usize = 4;
 
 #[derive(Clone, Copy)]
 pub struct Prefs {
@@ -61,6 +67,7 @@ pub struct Prefs {
 	pub time_24h: bool,
 	pub font_scale: f32,
 	pub developer_mode: bool,
+	pub hide_invites: bool,
 }
 
 impl Default for Prefs {
@@ -72,6 +79,7 @@ impl Default for Prefs {
 			time_24h: false,
 			font_scale: 1.,
 			developer_mode: false,
+			hide_invites: false,
 		}
 	}
 }
@@ -89,6 +97,7 @@ impl Prefs {
 			time_24h: settings.chat.time_24h,
 			font_scale: settings.accessibility.font_scale,
 			developer_mode: settings.developer.developer_mode,
+			hide_invites: crate::data::streamer_mode(cx).hides_invites(),
 		}
 	}
 }
@@ -235,6 +244,7 @@ pub struct RowEnv<'a> {
 	pub welcome: &'a Welcome,
 	pub access: MessageAccess,
 	pub selection: &'a HashSet<Snowflake>,
+	pub options: ClientOptions,
 }
 
 pub struct Welcome {
@@ -599,14 +609,19 @@ fn author_color(view: &MessageView, theme: &Theme) -> Hsla {
 	view.author_color.map_or(theme.header_primary, role_color)
 }
 
-fn reply_header(view: &MessageView, env: &RowEnv, cx: &App) -> Option<AnyElement> {
+fn reply_header(
+	view: &MessageView,
+	env: &RowEnv,
+	effects: Option<&PatchEffects>,
+	cx: &App,
+) -> Option<AnyElement> {
 	let theme = env.theme;
 	let message = &view.message;
 	if message.is_forward() {
 		return None;
 	}
 	message.message_reference.as_ref()?.message_id?;
-	let left = |child: AnyElement| {
+	let left = |child: AnyElement, mounted: Vec<AnyElement>| {
 		div()
 			.relative()
 			.flex()
@@ -627,6 +642,7 @@ fn reply_header(view: &MessageView, env: &RowEnv, cx: &App) -> Option<AnyElement
 					.rounded_tl(rem(6.)),
 			)
 			.child(child)
+			.children(mounted)
 			.into_any_element()
 	};
 	let Some(referenced) = &message.referenced_message else {
@@ -637,18 +653,45 @@ fn reply_header(view: &MessageView, env: &RowEnv, cx: &App) -> Option<AnyElement
 				.text_color(theme.text_muted)
 				.child(cx.t("message-reply-deleted"))
 				.into_any_element(),
+			Vec::new(),
 		));
 	};
 	let author = &referenced.author;
-	let name = env.lookup.user(author.id.get());
+	let guild = message.guild_id.or(env.lookup.guild);
+	let state = env.lookup.state;
+	let over = state.user_override(env.lookup.guild, author.id);
+	let name = over
+		.and_then(|over| over.name.clone())
+		.unwrap_or_else(|| env.lookup.user(author.id.get()));
+	let avatar = over
+		.and_then(|over| over.avatar.clone())
+		.unwrap_or_else(|| user_avatar(author, 32));
+	let suffix = over.and_then(|over| over.suffix.clone());
 	let document = markdown::parse(&referenced.content);
 	let text = if referenced.content.is_empty() {
 		cx.t("message-reply-attachment").to_string()
 	} else {
 		snippet(&document, SNIPPET_LENGTH)
 	};
+	let annotation = effects
+		.and_then(PatchEffects::reply_annotation)
+		.map(str::to_owned);
+	let mounted = contextual_inline(
+		"reply-preview",
+		ViewContext {
+			guild_id: guild.map(Snowflake::get),
+			channel_id: Some(message.channel_id.get()),
+			message_id: Some(referenced.id.get()),
+			user_id: Some(author.id.get()),
+			attachment_id: None,
+		},
+		INLINE,
+		REPLY_PREVIEW_NODES,
+		cx,
+	);
 	let target = referenced.id;
 	let dispatch = env.dispatch.clone();
+	let replying = message.clone();
 	Some(left(
 		div()
 			.id(("reply", message.id.get()))
@@ -657,12 +700,14 @@ fn reply_header(view: &MessageView, env: &RowEnv, cx: &App) -> Option<AnyElement
 			.gap(theme.space_4)
 			.min_w_0()
 			.cursor_pointer()
-			.on_click(move |_, window, cx| dispatch(RowAction::JumpTo(target), window, cx))
-			.child(
-				Avatar::new(name.clone())
-					.size(rem(16.))
-					.url(user_avatar(author, 32)),
-			)
+			.on_click(move |event, window, cx| {
+				if message_click(&replying, guild, event, ClickTarget::ReplyPreview, cx) {
+					cx.stop_propagation();
+					return;
+				}
+				dispatch(RowAction::JumpTo(target), window, cx)
+			})
+			.child(Avatar::new(name.clone()).size(rem(16.)).url(avatar))
 			.child(
 				div()
 					.flex_none()
@@ -671,6 +716,13 @@ fn reply_header(view: &MessageView, env: &RowEnv, cx: &App) -> Option<AnyElement
 					.text_color(theme.header_secondary)
 					.child(format!("@{name}")),
 			)
+			.children(suffix.map(|suffix| {
+				div()
+					.flex_none()
+					.text_size(theme.font_tiny)
+					.text_color(theme.text_muted)
+					.child(suffix)
+			}))
 			.child(
 				div()
 					.flex_1()
@@ -680,7 +732,16 @@ fn reply_header(view: &MessageView, env: &RowEnv, cx: &App) -> Option<AnyElement
 					.text_color(theme.text_muted)
 					.child(text),
 			)
+			.children(annotation.map(|annotation| {
+				div()
+					.flex_none()
+					.text_size(theme.font_tiny)
+					.italic()
+					.text_color(theme.text_muted)
+					.child(annotation)
+			}))
 			.into_any_element(),
+		mounted,
 	))
 }
 
@@ -767,9 +828,11 @@ fn toolbar(view: &MessageView, group: SharedString, env: &RowEnv, cx: &App) -> A
 	let reply = env.dispatch.clone();
 	let edit = env.dispatch.clone();
 	let more_menu = MenuSource::new(message, env).into_menu().build();
+	let expanded = env.options.message_toolbar_expanded.unwrap_or(false);
 	div()
-		.invisible()
-		.group_hover(group, |style| style.visible())
+		.when(!expanded, |bar| {
+			bar.invisible().group_hover(group, |style| style.visible())
+		})
 		.absolute()
 		.right(theme.space_16)
 		.top(rem(-2.))
@@ -918,7 +981,17 @@ fn media_source(message: &Arc<Message>, effects: Option<&PatchEffects>) -> Optio
 		.attachments
 		.iter()
 		.filter(|attachment| !effects.hides_attachment(attachment.id))
-		.cloned()
+		.map(|attachment| {
+			let mut shown = attachment.clone();
+			if let Some(url) = effects
+				.attachment_override(attachment.id)
+				.and_then(|over| over.url.clone())
+			{
+				shown.url = Some(url);
+				shown.proxy_url = None;
+			}
+			shown
+		})
 		.collect::<Vec<_>>()
 		.into();
 	filtered.embeds = message
@@ -959,7 +1032,9 @@ fn content_column(
 		message.id.get(),
 		env.revealed,
 		env.prefs,
-	);
+	)
+	.patch(effects)
+	.in_channel(message.channel_id.get());
 	if let Some(editing) = env.editing.filter(|editing| editing.message == message.id) {
 		out.push(editor(editing, env, cx));
 	} else if message.is_forward() {
@@ -993,7 +1068,9 @@ fn content_column(
 		message.id.get(),
 		env.revealed,
 		env.prefs,
-	);
+	)
+	.patch(effects)
+	.in_channel(message.channel_id.get());
 	let filtered = media_source(message, effects);
 	let media_message = filtered.as_ref().unwrap_or(message);
 	if !message.flags.contains(protocol::MessageFlags::IS_COMPONENTS_V2) {
@@ -1018,12 +1095,14 @@ fn content_column(
 	}
 	out.extend(media::stickers(&message.sticker_items, &body_env, cx));
 	out.extend(thread_chip(message, env, cx));
-	out.extend(super::community::invites::cards(
-		&message.content,
-		env.lookup.state,
-		env.theme,
-		cx,
-	));
+	if !env.prefs.hide_invites {
+		out.extend(super::community::invites::cards(
+			&message.content,
+			env.lookup.state,
+			env.theme,
+			cx,
+		));
+	}
 	if message.poll.is_some() {
 		let poll = media::PollView {
 			message,
@@ -1193,14 +1272,25 @@ fn interactive(
 	let selectable = env.access.manage_messages;
 	let selecting = !env.selection.is_empty();
 	let dispatch = env.dispatch.clone();
+	let guild = view.message.guild_id.or(env.lookup.guild);
+	let clicked = view.message.clone();
+	let aux_clicked = view.message.clone();
 	let row = row
 		.capture_any_mouse_down(|_, window, cx| capture_pointer(window, cx))
 		.when(env.selection.contains(&id), |row| {
 			row.bg(crate::theme::with_alpha(env.theme.brand, 0.14))
 		})
 		.on_click(move |event, window, cx| {
+			if message_click(&clicked, guild, event, ClickTarget::Body, cx) {
+				return;
+			}
 			if selectable && (event.modifiers().shift || selecting) {
 				dispatch(RowAction::Select(id), window, cx);
+			}
+		})
+		.on_aux_click(move |event, _, cx| {
+			if event.is_middle_click() {
+				message_click(&aux_clicked, guild, event, ClickTarget::Body, cx);
 			}
 		});
 	row.child(toolbar(view, group, env, cx))
@@ -1213,10 +1303,14 @@ fn message_row(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 	let message = &view.message;
 	let id = message.id.get();
 	let group: SharedString = format!("message-{id}").into();
-	let reply = reply_header(view, env, cx);
-	let has_reply = reply.is_some();
 	let effects = patch_effects(message.id, cx);
+	let reply = reply_header(view, env, effects.as_ref(), cx);
+	let has_reply = reply.is_some();
 	let content = content_column(view, env, effects.as_ref(), cx);
+	let tip = effects
+		.as_ref()
+		.and_then(PatchEffects::tooltip)
+		.map(str::to_owned);
 	let accent = effects.as_ref().and_then(|effects| effects.accent(theme));
 	let tint = effects.as_ref().and_then(|effects| effects.background(theme));
 	let hover = row_hover(view, tint, theme);
@@ -1235,7 +1329,8 @@ fn message_row(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 		.when(view.failed, |row| row.text_color(theme.danger))
 		.when(highlighted(view, tint), |row| mention_highlight(row, theme))
 		.when_some(tint, |row, tint| row.bg(tint))
-		.when_some(accent, |row, accent| row.border_l_2().border_color(accent));
+		.when_some(accent, |row, accent| row.border_l_2().border_color(accent))
+		.when_some(tip, |row, tip| row.tooltip(tooltip(tip)));
 	if view.grouped_with_previous {
 		let row = container
 			.child(
@@ -1259,8 +1354,16 @@ fn message_row(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 	}
 	let name = view.author_display.clone();
 	let author_id = message.author.id;
+	let guild = message.guild_id.or(env.lookup.guild);
+	let over = env.lookup.state.user_override(guild, author_id);
+	let author_tags = over.map_or_else(Vec::new, |over| tags(over, author_id, theme, cx));
+	let avatar = over
+		.and_then(|over| over.avatar.clone())
+		.unwrap_or_else(|| user_avatar(&message.author, 128));
+	let decoration = decoration_of(over);
 	let profile = env.dispatch.clone();
 	let avatar_profile = env.dispatch.clone();
+	let author_message = message.clone();
 	let avatar_color = view.author_color.map_or(theme.brand, role_color);
 	let row = container
 		.mt(theme.space_16)
@@ -1285,8 +1388,9 @@ fn message_row(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 				.child(
 					Avatar::new(name.clone())
 						.size(rem(AVATAR_SIZE))
-						.url(user_avatar(&message.author, 128))
-						.color(avatar_color),
+						.url(avatar)
+						.color(avatar_color)
+						.decoration(decoration),
 				),
 		)
 		.child(
@@ -1304,6 +1408,10 @@ fn message_row(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 						.text_color(author_color(view, theme))
 						.hover(|style| style.underline())
 						.on_click(move |event, window, cx| {
+							if message_click(&author_message, guild, event, ClickTarget::Author, cx) {
+								cx.stop_propagation();
+								return;
+							}
 							profile(
 								RowAction::OpenProfile {
 									user: author_id,
@@ -1315,6 +1423,7 @@ fn message_row(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 						})
 						.child(name),
 				)
+				.children(author_tags)
 				.when(message.author.bot == Some(true), |header| {
 					header.child(bot_tag(cx.t("badge-bot"), theme))
 				})
@@ -1342,6 +1451,16 @@ fn compact_message(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 	let accent = effects.as_ref().and_then(|effects| effects.accent(theme));
 	let tint = effects.as_ref().and_then(|effects| effects.background(theme));
 	let hover = row_hover(view, tint, theme);
+	let tip = effects
+		.as_ref()
+		.and_then(PatchEffects::tooltip)
+		.map(str::to_owned);
+	let guild = message.guild_id.or(env.lookup.guild);
+	let author_tags = env
+		.lookup
+		.state
+		.user_override(guild, message.author.id)
+		.map_or_else(Vec::new, |over| tags(over, message.author.id, theme, cx));
 	let row = div()
 		.id(("message", id))
 		.group(group.clone())
@@ -1356,6 +1475,7 @@ fn compact_message(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 		.when(highlighted(view, tint), |row| mention_highlight(row, theme))
 		.when_some(tint, |row, tint| row.bg(tint))
 		.when_some(accent, |row, accent| row.border_l_2().border_color(accent))
+		.when_some(tip, |row, tip| row.tooltip(tooltip(tip)))
 		.child(
 			div()
 				.flex_none()
@@ -1378,6 +1498,16 @@ fn compact_message(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 				.text_color(author_color(view, theme))
 				.child(view.author_display.clone()),
 		)
+		.children((!author_tags.is_empty()).then(|| {
+			div()
+				.flex()
+				.flex_none()
+				.items_center()
+				.gap(theme.space_4)
+				.pr(theme.space_4)
+				.h(theme.compact_row)
+				.children(author_tags)
+		}))
 		.children(author_badge(view, theme).map(|badge| div().flex_none().pr(theme.space_8).child(badge)))
 		.child(div().flex().flex_col().flex_1().min_w_0().children(content));
 	interactive(row, view, group, env, cx)

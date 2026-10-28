@@ -1,6 +1,6 @@
 use gpui::{Hsla, SharedString};
 use protocol::{RelationshipKind, Snowflake};
-use state::State;
+use state::{State, UserOverride};
 
 use crate::lookup::user_avatar;
 use crate::model::{Status, role_color, status_of};
@@ -13,8 +13,10 @@ pub struct Badge {
 }
 
 pub struct RoleChip {
+	pub id: Snowflake,
 	pub name: String,
 	pub color: Option<Hsla>,
+	pub own: bool,
 }
 
 pub struct MutualGuild {
@@ -59,6 +61,7 @@ pub struct ProfileData {
 	pub relation: Relation,
 	pub mine: bool,
 	pub bot: bool,
+	pub over: Option<UserOverride>,
 }
 
 fn roles(state: &State, guild: Option<Snowflake>, user: Snowflake) -> Vec<RoleChip> {
@@ -75,9 +78,16 @@ fn roles(state: &State, guild: Option<Snowflake>, user: Snowflake) -> Vec<RoleCh
 		.filter_map(|id| guild.roles.get(id))
 		.collect();
 	found.sort_by_key(|role| std::cmp::Reverse(role.position));
+	let mine = state
+		.current_user_id()
+		.and_then(|me| guild.members.get(&me))
+		.map(|member| member.roles.as_slice())
+		.unwrap_or_default();
 	found
 		.into_iter()
 		.map(|role| RoleChip {
+			id: role.id,
+			own: mine.contains(&role.id),
 			name: role.name.clone(),
 			color: u32::try_from(role.color)
 				.ok()
@@ -103,12 +113,15 @@ fn relation(state: &State, user: Snowflake) -> Relation {
 impl ProfileData {
 	pub fn load(state: &State, user_id: Snowflake, guild: Option<Snowflake>) -> Option<Self> {
 		let user = state.user(user_id)?;
+		let over = state.user_override(guild, user_id).cloned();
 		let profile = state.profile(user_id);
 		let guild_state = guild.and_then(|id| state.guild(id));
 		let member = guild_state.and_then(|guild| guild.members.get(&user_id));
 		let member_avatar = member.and_then(|member| member.avatar.as_deref());
-		let avatar = match (guild, member_avatar) {
-			(Some(guild), Some(hash)) => {
+		let override_avatar = over.as_ref().and_then(|over| over.avatar.clone());
+		let avatar = match (override_avatar, guild, member_avatar) {
+			(Some(url), _, _) => url,
+			(None, Some(guild), Some(hash)) => {
 				media::cdn::guild_member_avatar_url(guild.get(), user_id.get(), hash, AVATAR_PIXELS)
 			}
 			_ => user_avatar(user, AVATAR_PIXELS),
@@ -156,14 +169,23 @@ impl ProfileData {
 			.unwrap_or_default();
 		Some(Self {
 			id: user_id,
-			name: state.display_name(guild, user_id).into(),
+			name: over
+				.as_ref()
+				.and_then(|over| over.name.clone())
+				.unwrap_or_else(|| state.display_name(guild, user_id))
+				.into(),
 			username: user.username.clone(),
 			handle: handle.into(),
 			avatar,
-			banner_url: banner_hash.map(|hash| media::cdn::banner_url(user_id.get(), &hash, 600)),
+			banner_url: over
+				.as_ref()
+				.and_then(|over| over.banner.clone())
+				.or_else(|| banner_hash.map(|hash| media::cdn::banner_url(user_id.get(), &hash, 600))),
 			accent,
-			pronouns: profile
-				.and_then(|profile| profile.pronouns.clone())
+			pronouns: over
+				.as_ref()
+				.and_then(|over| over.pronouns.clone())
+				.or_else(|| profile.and_then(|profile| profile.pronouns.clone()))
 				.map(Into::into),
 			bio: profile.and_then(|profile| profile.bio.clone()),
 			badges: profile
@@ -197,6 +219,7 @@ impl ProfileData {
 			relation: relation(state, user_id),
 			mine: state.current_user_id() == Some(user_id),
 			bot: user.bot == Some(true),
+			over,
 		})
 	}
 }

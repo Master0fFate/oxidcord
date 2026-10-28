@@ -463,6 +463,10 @@ perm-notifications-filter = Silence, change or hide notifications before they ar
 perm-plugins-list = See which plugins are installed.
 perm-high = Vysoké riziko
 perm-image-hosts = Hostitelé obrázků
+perm-hooks = Háky: { $list }
+perm-url-schemes = Schémata URL
+perm-url-schemes-line = Schémata URL: { $list }
+attachment-hover-reveal = Najetím odkryjete
 perm-low-summary = { $count ->
     [one] 1 oprávnění s nízkým rizikem
     [few] { $count } oprávnění s nízkým rizikem

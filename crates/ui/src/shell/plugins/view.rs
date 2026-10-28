@@ -24,7 +24,7 @@ use plugin_host::api::model::{
 use protocol::Snowflake;
 use session::Command;
 
-use super::bridge::{PluginBridge, act, flush_inputs, forget_input, note_input, remember_anchor};
+use super::bridge::{PluginBridge, act, detail_of, flush_inputs, forget_input, note_input, remember_anchor};
 use super::icon::{self, PluginIcon};
 use crate::components::{Avatar, Divider, SectionHeader, tooltip};
 use crate::format;
@@ -75,6 +75,16 @@ pub const STATUS: Compact = Compact {
 	icon: 14.,
 	hit: 22.,
 	label: true,
+};
+pub const PANEL: Compact = Compact {
+	icon: 16.,
+	hit: 28.,
+	label: false,
+};
+pub const INLINE: Compact = Compact {
+	icon: 14.,
+	hit: 20.,
+	label: false,
 };
 
 #[derive(Clone)]
@@ -148,11 +158,12 @@ impl Scope {
 				mount,
 				context,
 			} => format!(
-				"{point}:{mount}:{}:{}:{}:{}",
+				"{point}:{mount}:{}:{}:{}:{}:{}",
 				context.guild_id.unwrap_or(0),
 				context.channel_id.unwrap_or(0),
 				context.message_id.unwrap_or(0),
-				context.user_id.unwrap_or(0)
+				context.user_id.unwrap_or(0),
+				context.attachment_id.unwrap_or(0)
 			),
 		}
 	}
@@ -228,7 +239,7 @@ pub fn fire(scope: &Scope, key: &str, event: Fire, cx: &mut App) {
 						kind,
 						context: context_of(*context),
 					},
-					detail: None,
+					detail: detail_of(*context),
 				},
 				cx,
 			);
@@ -441,12 +452,17 @@ impl Ctx {
 	}
 
 	pub fn row(&self, theme: &Theme) -> AnyElement {
+		self.row_of(usize::MAX, theme)
+	}
+
+	pub fn row_of(&self, limit: usize, theme: &Theme) -> AnyElement {
+		let roots = self.tree.roots.iter().take(limit);
 		div()
 			.flex()
 			.flex_none()
 			.items_center()
 			.gap(theme.space_4)
-			.children(self.roots(true, theme))
+			.children(roots.map(|root| self.node(*root as usize, true, theme)))
 			.into_any_element()
 	}
 

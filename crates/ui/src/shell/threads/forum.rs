@@ -126,8 +126,17 @@ impl ForumView {
 					},
 				)
 			};
-			self.gallery = gallery;
-			self.sort = sort;
+			let options = crate::shell::client_options(cx);
+			self.gallery = match options.forum_layout {
+				Some(2) => true,
+				Some(1) => false,
+				_ => gallery,
+			};
+			self.sort = match options.forum_sort {
+				Some(1) => Sort::Creation,
+				Some(0) => Sort::Activity,
+				_ => sort,
+			};
 			let data = self.data.read(cx);
 			data.send(Command::LoadActiveThreads { guild_id: guild });
 			data.send(Command::LoadArchivedThreads { channel_id: channel });

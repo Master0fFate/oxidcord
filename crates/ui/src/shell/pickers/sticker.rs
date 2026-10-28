@@ -11,6 +11,7 @@ use crate::components::{Avatar, tooltip};
 use crate::i18n::Translate as _;
 use crate::icons::{Icon, IconKind};
 use crate::shell::community::art::{cover, sticker_url};
+use crate::shell::plugins::{MenuTarget, plugin_menu};
 use crate::theme::{Theme, rem};
 
 const OTHER_GUILD_LOADS: usize = 5;
@@ -140,7 +141,7 @@ impl Picker {
 				cx.notify();
 			}))
 			.on_click(cx.listener(move |this, _, _, cx| this.pick_sticker(&picked, cx)));
-		match url {
+		let element = match url {
 			Some(url) => cell
 				.child(div().size(theme.picker_sticker - theme.space_8).child(cover(
 					&url,
@@ -158,7 +159,14 @@ impl Picker {
 						.color(theme.interactive_muted),
 				)
 				.into_any_element(),
-		}
+		};
+		plugin_menu(
+			("sticker-menu", id.get()),
+			element,
+			"sticker-context-menu",
+			MenuTarget::sticker(self.guild, Some(self.channel), id),
+			cx,
+		)
 	}
 
 	fn rail_button(

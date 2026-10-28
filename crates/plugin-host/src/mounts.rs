@@ -7,7 +7,7 @@ use parking_lot::RwLock;
 
 use crate::api::model::{MenuItem, MenuWhenExt, MountOptions, UiContext, ViewTree};
 
-pub const STATIC_POINTS: [&str; 9] = [
+pub const STATIC_POINTS: [&str; 14] = [
 	"title-bar",
 	"status-bar",
 	"composer-toolbar",
@@ -17,13 +17,22 @@ pub const STATIC_POINTS: [&str; 9] = [
 	"app-nav",
 	"main-view",
 	"settings-page",
+	"account-panel",
+	"server-rail-top",
+	"voice-panel",
+	"friends-section",
+	"channel-list-top",
 ];
 
-pub const CONTEXT_POINTS: [&str; 4] = [
+pub const CONTEXT_POINTS: [&str; 8] = [
 	"channel-header",
 	"composer-above",
 	"user-popout-section",
 	"member-list-section",
+	"attachment-action",
+	"reply-preview",
+	"guild-tooltip",
+	"member-list-header",
 ];
 
 pub const MENUS: [&str; 14] = [
@@ -65,6 +74,7 @@ pub struct ViewContext {
 	pub channel_id: Option<u64>,
 	pub message_id: Option<u64>,
 	pub user_id: Option<u64>,
+	pub attachment_id: Option<u64>,
 }
 
 impl ViewContext {

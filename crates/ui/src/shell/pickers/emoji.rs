@@ -16,6 +16,7 @@ use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
 use crate::shell::community::art::cover;
 use crate::shell::emoji_picker::EmojiChoice;
+use crate::shell::plugins::{MenuTarget, plugin_menu};
 use crate::theme::{Theme, rem};
 
 const SEARCH_LIMIT: usize = 160;
@@ -95,6 +96,11 @@ impl Picker {
 			animated: emoji.animated,
 		};
 		let usable = emoji.usable;
+		let target = plugin_host::api::model::EmojiRef {
+			id: Some(emoji.id.get()),
+			name: emoji.name.clone(),
+			animated: emoji.animated,
+		};
 		let hover = Hover {
 			label: format!(":{}:", emoji.name).into(),
 			detail: Some(guild_name.clone()),
@@ -129,7 +135,7 @@ impl Picker {
 						cx,
 					)),
 			);
-		if usable {
+		let element = if usable {
 			cell.cursor_pointer()
 				.hover(|style| style.bg(theme.modifier_selected))
 				.on_click(cx.listener(move |_, _, _, cx| cx.emit(PickerEvent::Emoji(choice.clone()))))
@@ -162,7 +168,14 @@ impl Picker {
 					),
 				)
 				.into_any_element()
-		}
+		};
+		plugin_menu(
+			("emoji-menu", key as u64),
+			element,
+			"emoji-context-menu",
+			MenuTarget::emoji(self.guild, Some(self.channel), target),
+			cx,
+		)
 	}
 
 	fn unicode_cell(
@@ -187,7 +200,7 @@ impl Picker {
 			custom: None,
 			locked: false,
 		};
-		div()
+		let cell = div()
 			.id(("emoji-unicode", key))
 			.flex()
 			.flex_none()
@@ -205,7 +218,22 @@ impl Picker {
 			}))
 			.on_click(cx.listener(move |_, _, _, cx| cx.emit(PickerEvent::Emoji(choice.clone()))))
 			.child(unicode_emoji(&shown, rem(32.), cx))
-			.into_any_element()
+			.into_any_element();
+		plugin_menu(
+			("emoji-menu", key as u64),
+			cell,
+			"emoji-context-menu",
+			MenuTarget::emoji(
+				self.guild,
+				Some(self.channel),
+				plugin_host::api::model::EmojiRef {
+					id: None,
+					name: shown,
+					animated: false,
+				},
+			),
+			cx,
+		)
 	}
 
 	fn recent_cells(&self, catalog: &EmojiCatalog, theme: &Theme, cx: &mut Context<Self>) -> Vec<AnyElement> {

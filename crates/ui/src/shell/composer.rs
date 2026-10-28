@@ -3,14 +3,17 @@ use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use gpui::{
-	AnyElement, AppContext as _, ClickEvent, ClipboardItem, Context, Div, Entity, EventEmitter,
-	ExternalPaths, Focusable as _, FontWeight, InteractiveElement as _, IntoElement, ObjectFit,
-	ParentElement as _, Pixels, Point, Render, SharedString, StatefulInteractiveElement as _, Styled as _,
-	StyledImage as _, Subscription, Task, Window, div, img, prelude::FluentBuilder as _, px,
+	Animation, AnimationExt as _, AnyElement, AppContext as _, ClickEvent, ClipboardItem, Context, Div,
+	Entity, EventEmitter, ExternalPaths, Focusable as _, FontWeight, InteractiveElement as _, IntoElement,
+	ObjectFit, ParentElement as _, Pixels, Point, Render, SharedString, StatefulInteractiveElement as _,
+	Styled as _, StyledImage as _, Subscription, Task, Window, div, img, prelude::FluentBuilder as _,
+	pulsating_between, px,
 };
 use gpui_component::input::{Escape, InputEvent, Textarea, TextareaState};
+use gpui_component::menu::ContextMenuExt as _;
 use media::SizeHint;
 use plugin_host::ViewContext;
+use plugin_host::api::model::{EmojiInfo, EmojiRef};
 use protocol::expressions::unicode::search_unicode;
 use protocol::{ChannelType, Snowflake};
 use rest::UploadFile;
@@ -20,8 +23,10 @@ use super::attachments::{self, CardAction, Edit, Pending};
 use super::incoming::{self, Incoming};
 use super::inline_emoji::{self, EmojiTokens};
 use super::pickers::{PickerTab, SkinTone, toned};
-use super::plugins::{self, command_list, composer_toolbar, parse_command};
-use crate::components::{Avatar, Divider, IconButton, unicode_emoji};
+use super::plugins::{
+	self, MenuTarget, PluginMenu as _, command_list, composer_toolbar, has_plugin_items, parse_command,
+};
+use crate::components::{Avatar, ContextMenuBuilder, Divider, IconButton, unicode_emoji};
 use crate::data::{Data, DataEvent};
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
@@ -32,6 +37,8 @@ use crate::theme::{Theme, rem, with_alpha};
 const DRAFT_DELAY: Duration = Duration::from_millis(500);
 const TYPING_INTERVAL: Duration = Duration::from_secs(5);
 const MAX_SUGGESTIONS: usize = 8;
+const MAX_CANDIDATES: usize = 200;
+const TYPING_PULSE: Duration = Duration::from_millis(1200);
 const MIN_EMOJI_QUERY: usize = 2;
 const MAX_FILES: usize = 10;
 const MAX_STICKERS: usize = 3;
@@ -63,6 +70,7 @@ enum Trigger {
 	Command,
 }
 
+#[derive(Clone)]
 enum Visual {
 	Avatar(String),
 	Glyph(String),
@@ -70,11 +78,13 @@ enum Visual {
 	Channel(IconKind),
 }
 
+#[derive(Clone)]
 struct Suggestion {
 	label: String,
 	detail: Option<String>,
 	insert: String,
 	visual: Visual,
+	emoji: Option<EmojiInfo>,
 }
 
 struct Autocomplete {
@@ -98,6 +108,8 @@ pub struct Composer {
 	next_file: u64,
 	typing: Vec<SharedString>,
 	autocomplete: Option<Autocomplete>,
+	emoji_candidates: Vec<Suggestion>,
+	emoji_query: String,
 	emoji_tokens: EmojiTokens,
 	draft_task: Option<Task<()>>,
 	last_typing: Option<Instant>,
@@ -181,6 +193,8 @@ impl Composer {
 			next_file: 0,
 			typing: Vec::new(),
 			autocomplete: None,
+			emoji_candidates: Vec::new(),
+			emoji_query: String::new(),
 			emoji_tokens: EmojiTokens::default(),
 			draft_task: None,
 			last_typing: None,
@@ -381,6 +395,7 @@ impl Composer {
 	}
 
 	fn update_autocomplete(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
+		self.emoji_candidates.clear();
 		let mut cursor = self.input.read(cx).cursor().min(text.len());
 		while !text.is_char_boundary(cursor) {
 			cursor -= 1;
@@ -411,7 +426,10 @@ impl Composer {
 			return;
 		}
 		let items = match trigger {
-			Some(trigger) if usable => self.suggestions(trigger, &query.to_lowercase(), cx),
+			Some(Trigger::Emoji) if usable && plugins::autocomplete_declared(cx) => {
+				self.plugin_emoji(&query.to_lowercase(), cx)
+			}
+			Some(trigger) if usable => self.suggestions(trigger, &query.to_lowercase(), MAX_SUGGESTIONS, cx),
 			_ => Vec::new(),
 		};
 		self.autocomplete = (!items.is_empty()).then_some(Autocomplete {
@@ -423,6 +441,56 @@ impl Composer {
 		cx.notify();
 	}
 
+	fn plugin_emoji(&mut self, query: &str, cx: &mut Context<Self>) -> Vec<Suggestion> {
+		let all = self.suggestions(Trigger::Emoji, query, MAX_CANDIDATES, cx);
+		let candidates: Vec<EmojiInfo> = all.iter().filter_map(|item| item.emoji.clone()).collect();
+		self.emoji_query = query.to_owned();
+		self.data.read(cx).send(Command::PluginAutocompleteEmoji {
+			query: query.to_owned(),
+			candidates,
+		});
+		let shown = all.iter().take(MAX_SUGGESTIONS).cloned().collect();
+		self.emoji_candidates = all;
+		shown
+	}
+
+	pub fn on_autocomplete(&mut self, _: &mut Window, cx: &mut Context<Self>) {
+		if self.emoji_candidates.is_empty() || self.autocomplete.is_none() {
+			return;
+		}
+		let order = self
+			.data
+			.read(cx)
+			.state()
+			.autocomplete_order(&self.emoji_query)
+			.map(<[u32]>::to_vec);
+		let Some(order) = order else {
+			return;
+		};
+		let mut taken = vec![false; self.emoji_candidates.len()];
+		let mut sorted: Vec<Suggestion> = Vec::with_capacity(MAX_SUGGESTIONS);
+		for index in order.into_iter().map(|index| index as usize) {
+			if let Some(item) = self.emoji_candidates.get(index)
+				&& !std::mem::replace(&mut taken[index], true)
+			{
+				sorted.push(item.clone());
+			}
+		}
+		for (item, taken) in self.emoji_candidates.iter().zip(taken) {
+			if !taken {
+				sorted.push(item.clone());
+			}
+		}
+		sorted.truncate(MAX_SUGGESTIONS);
+		if let Some(popup) = &mut self.autocomplete
+			&& !sorted.is_empty()
+		{
+			popup.items = sorted;
+			popup.selected = 0;
+			cx.notify();
+		}
+	}
+
 	fn shortcode(&self, query: &str, cx: &Context<Self>) -> Option<Suggestion> {
 		let name = query
 			.strip_suffix(':')
@@ -430,14 +498,20 @@ impl Composer {
 			.to_lowercase();
 		let label = format!(":{name}:");
 		let mut item = self
-			.suggestions(Trigger::Emoji, &name, cx)
+			.suggestions(Trigger::Emoji, &name, MAX_SUGGESTIONS, cx)
 			.into_iter()
 			.find(|item| item.label.eq_ignore_ascii_case(&label))?;
 		item.insert.truncate(item.insert.trim_end().len());
 		Some(item)
 	}
 
-	fn suggestions(&self, trigger: Trigger, query: &str, cx: &Context<Self>) -> Vec<Suggestion> {
+	fn suggestions(
+		&self,
+		trigger: Trigger,
+		query: &str,
+		limit: usize,
+		cx: &Context<Self>,
+	) -> Vec<Suggestion> {
 		let data = self.data.read(cx);
 		let state = data.state();
 		let rank = |name: &str| -> Option<u8> {
@@ -491,6 +565,7 @@ impl Composer {
 								detail: username,
 								insert: format!("<@{id}> "),
 								visual: Visual::Avatar(avatar_for(&state, id, AVATAR_PIXELS)),
+								emoji: None,
 							},
 						));
 					}
@@ -512,6 +587,7 @@ impl Composer {
 										detail: category.clone(),
 										insert: format!("<#{}> ", channel.id),
 										visual: Visual::Channel(crate::icons::channel_icon(channel.kind)),
+										emoji: None,
 									},
 								));
 							}
@@ -529,6 +605,7 @@ impl Composer {
 								detail: Some(entry.description.clone()),
 								insert: format!("/{name} "),
 								visual: Visual::Channel(IconKind::Plugins),
+								emoji: None,
 							},
 						));
 					}
@@ -554,12 +631,22 @@ impl Composer {
 									custom.animated,
 									EMOJI_PIXELS,
 								)),
+								emoji: Some(EmojiInfo {
+									emoji: EmojiRef {
+										id: Some(custom.id.get()),
+										name: custom.name.clone(),
+										animated: custom.animated,
+									},
+									guild_id: Some(section.guild_id.get()),
+									usable: custom.usable,
+									available: true,
+								}),
 							},
 						));
 					}
 				}
 				let tone = cx.try_global::<SkinTone>().map_or(0, |tone| tone.0.get());
-				for entry in search_unicode(query).into_iter().take(MAX_SUGGESTIONS) {
+				for entry in search_unicode(query).into_iter().take(limit) {
 					let glyph = if entry.skin_tone_capable {
 						toned(entry.emoji, tone)
 					} else {
@@ -571,6 +658,16 @@ impl Composer {
 							label: format!(":{}:", entry.shortcode),
 							detail: None,
 							insert: format!("{glyph} "),
+							emoji: Some(EmojiInfo {
+								emoji: EmojiRef {
+									id: None,
+									name: glyph.clone(),
+									animated: false,
+								},
+								guild_id: None,
+								usable: true,
+								available: true,
+							}),
 							visual: Visual::Glyph(glyph),
 						},
 					));
@@ -580,7 +677,7 @@ impl Composer {
 		found.sort_by_key(|(hit, _)| *hit);
 		found
 			.into_iter()
-			.take(MAX_SUGGESTIONS)
+			.take(limit)
 			.map(|(_, suggestion)| suggestion)
 			.collect()
 	}
@@ -1051,6 +1148,22 @@ impl Composer {
 	}
 }
 
+fn typing_dots(theme: &Theme) -> impl IntoElement {
+	div()
+		.flex()
+		.flex_none()
+		.items_center()
+		.gap(rem(2.))
+		.children((0..3).map(|_| div().size(rem(4.)).rounded_full().bg(theme.text_normal)))
+		.with_animation(
+			"composer-typing-dots",
+			Animation::new(TYPING_PULSE)
+				.repeat()
+				.with_easing(pulsating_between(0.3, 1.)),
+			|dots, delta| dots.opacity(delta),
+		)
+}
+
 impl Render for Composer {
 	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
@@ -1067,6 +1180,40 @@ impl Render for Composer {
 		};
 		let above = plugins::contextual("composer-above", plugin_context, cx);
 		let access = self.access;
+		let animated = plugins::client_options(cx).typing_animation.unwrap_or(true);
+		let selection = self.input.read(cx).selected_value().to_string();
+		let menu_target = MenuTarget::composer(self.guild, self.channel, selection);
+		let input_area = div()
+			.id("composer-input")
+			.flex()
+			.items_center()
+			.flex_1()
+			.min_w_0()
+			.min_h(rem(52.))
+			.py(rem(2.))
+			.child(
+				Textarea::new(&self.input)
+					.token(inline_emoji::render)
+					.appearance(false)
+					.bordered(false)
+					.disabled(!access.send)
+					.p_0()
+					.w_full()
+					.on_paste(move |item, _, cx| {
+						weak.update(cx, |this, cx| this.paste(item, cx)).unwrap_or(false)
+					}),
+			);
+		let input_area = if has_plugin_items("composer-context-menu", &menu_target, cx) {
+			input_area
+				.context_menu(
+					ContextMenuBuilder::new()
+						.plugin_items("composer-context-menu", menu_target, cx)
+						.build(),
+				)
+				.into_any_element()
+		} else {
+			input_area.into_any_element()
+		};
 		div()
 			.relative()
 			.flex()
@@ -1128,28 +1275,7 @@ impl Render for Composer {
 											)
 										}),
 								)
-								.child(
-									div()
-										.flex()
-										.items_center()
-										.flex_1()
-										.min_w_0()
-										.min_h(rem(52.))
-										.py(rem(2.))
-										.child(
-											Textarea::new(&self.input)
-												.token(inline_emoji::render)
-												.appearance(false)
-												.bordered(false)
-												.disabled(!access.send)
-												.p_0()
-												.w_full()
-												.on_paste(move |item, _, cx| {
-													weak.update(cx, |this, cx| this.paste(item, cx))
-														.unwrap_or(false)
-												}),
-										),
-								)
+								.child(input_area)
 								.when(access.send, |row| {
 									row.child(
 										div()
@@ -1220,7 +1346,11 @@ impl Render for Composer {
 					.text_size(theme.font_tiny)
 					.font_weight(FontWeight::SEMIBOLD)
 					.text_color(theme.text_normal)
-					.children(typing),
+					.when_some(typing, |row, line| {
+						row.gap(theme.space_8)
+							.when(animated, |row| row.child(typing_dots(&theme)))
+							.child(line)
+					}),
 			)
 	}
 }

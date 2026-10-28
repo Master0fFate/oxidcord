@@ -910,6 +910,7 @@ impl PluginManager {
 			channel_id: event.context.channel_id,
 			message_id: event.context.message_id,
 			user_id: event.context.user_id,
+			attachment_id: detail.as_ref().and_then(|detail| detail.attachment_id),
 		};
 		let reply = instance
 			.view_event(event, detail.map(sanitize_detail))
@@ -1105,6 +1106,23 @@ impl PluginManager {
 		{
 			entry.instance.post_channel_click(*click);
 		}
+	}
+
+	pub fn declares(&self, hook: Hook) -> bool {
+		let sets = self.hooks();
+		!match hook {
+			Hook::DraftChange => &sets.draft,
+			Hook::AutocompleteEmoji => &sets.autocomplete,
+			Hook::DecorateChannel => &sets.decorate,
+			Hook::Notification => &sets.notification,
+			Hook::MessageClick => &sets.message_click,
+			Hook::ChannelClick => &sets.channel_click,
+			Hook::LinkClick => &sets.link_click,
+			Hook::DisplayUser => &sets.display,
+			Hook::BeforeSend => &sets.send,
+			Hook::Intercept => &sets.intercept,
+		}
+		.is_empty()
 	}
 
 	pub fn link_click(&self, url: &str, context: &UiContext) -> LinkVerdict {

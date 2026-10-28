@@ -91,6 +91,11 @@ mount::unmount(mount::STATUS_BAR, "clock")?;
 | `app-nav` | Server rail | An icon from `options.icon` with `options.title` as tooltip. Clicking it opens the `main-view` mount of the same plugin with the same key |
 | `main-view` | Timeline area | A full page, shown while its `app-nav` icon is selected |
 | `settings-page` | Under the plugin's settings form | |
+| `account-panel` | Row above the account panel | Compact, icon buttons |
+| `server-rail-top` | Server rail, above the guild list | Trees are laid out as a column in the rail width |
+| `voice-panel` | Inside the voice connection panel | Only while connected to a voice channel |
+| `friends-section` | Friends page | One tab per mount, labelled with `options.title` |
+| `channel-list-top` | Above the channel list or the DM list | |
 
 `options.order` sorts mounts of one point, lower first.
 
@@ -102,6 +107,12 @@ Contextual points depend on what the user is looking at. A plugin declares that 
 | `composer-above` | `guild-id`, `channel-id` |
 | `user-popout-section` | `guild-id`, `user-id` |
 | `member-list-section` | `guild-id` |
+| `member-list-header` | `guild-id`, shown above the member search box |
+| `guild-tooltip` | `guild-id`, extra content under the name in the server icon tooltip |
+| `reply-preview` | `guild-id`, `channel-id`, `message-id` and `user-id` of the quoted message, shown inline after the quote |
+| `attachment-action` | `guild-id`, `channel-id`, `message-id`, and the attachment id in `context-detail` |
+
+`attachment-action` renders once per attachment as a row of compact icon buttons and keeps only the first 4 root nodes. Inside `render-view` and `on-view-event`, `ui::context-detail()` returns the attachment id. `reply-preview` is clipped to 4 root nodes the same way.
 
 ```rust
 impl PluginExt for Topic {
@@ -143,7 +154,26 @@ View events, menu items and commands count as user actions (see `overview.md`). 
 
 ## Context menus
 
-`menu::set(menu, items)` replaces the plugin's items in one menu. Menus: `message-context-menu`, `user-context-menu`, `channel-context-menu`, `server-context-menu`, `link-context-menu`. The desktop client does not have a link context menu yet, so items registered there are accepted but not shown.
+`menu::set(menu, items)` replaces the plugin's items in one menu. Menus and where they open:
+
+| Menu | Opens on |
+| --- | --- |
+| `message-context-menu` | A message |
+| `user-context-menu` | A member row |
+| `channel-context-menu` | A channel row |
+| `server-context-menu` | A server icon or header |
+| `link-context-menu` | A link in a message (embeds, videos, files) |
+| `emoji-context-menu` | An emoji in the picker or in message text |
+| `sticker-context-menu` | A sticker in the picker or under a message |
+| `image-context-menu` | An image in a message, added to the message menu |
+| `role-context-menu` | A role chip in the profile popout |
+| `selection-context-menu` | Selected text, added to the message menu |
+| `composer-context-menu` | The message input |
+| `account-panel-menu` | The account area at the bottom of the channel list |
+| `attachment-context-menu` | An attachment, added to the message menu |
+| `reaction-context-menu` | A reaction on a message |
+
+A menu without plugin items does not open at all on the surfaces that had no menu before. The context menus that carry a detail fill `ui::context-detail()` and pass it to `on-menu-item`: `emoji`, `sticker-id`, `role-id`, `attachment-id`, `selection`, `image-url` and `reaction`. `menu::set_ext` adds the flags `has-selection`, `is-image`, `own-role` and `in-voice` to an item next to the `when` flags.
 
 ```rust
 use oxidcord_plugin_sdk::menu;
@@ -161,6 +191,27 @@ menu::set(
 An item is shown only when every flag in `when` holds: `in-guild`, `in-dm`, `own-message`, `others-message`, `has-content`, `has-attachments`, `self-user`, `other-user`. An item with a `parent` becomes an entry of that item's submenu, one level deep. Picking an item calls `on-menu-item(menu, key, context)` with the ids of the message, user, channel or server the menu was opened on.
 
 1.0 plugins that put `button` nodes into a slot named like a menu keep working, their buttons are appended to the menu.
+
+## Message patches
+
+`PatchExt` extras are drawn by the message list:
+
+| Extra | Result |
+| --- | --- |
+| `attachment` overrides | `blur` covers the attachment with a tiny upscaled copy and the label "Hover to reveal" until the pointer is over it, `alt` shows a caption, `tooltip` shows a hover hint, `url` swaps the file (same host only), `hidden` removes it |
+| `layout` | `stacked` scales images and videos to the column width, `inline-video` plays video attachments inline even when inline media is off, default keeps the usual layout |
+| `reply_annotation` | Muted italic text at the end of the reply quote |
+| `reveal_spoilers` | Spoiler text and spoiler attachments of the message show uncovered |
+| `tooltip` | Hover hint on the whole message row |
+| `code_block(index, node)` | Replaces the plain code block with the same ordinal by colored `code-span` lines (`text`, `color`, `bold`, `italic`) |
+
+## User display
+
+`display-user-full` overrides draw in messages, the member list, DM rows, reply previews, the typing line and the profile popout: `name`, a muted `suffix` and `pronouns` after the name, `badges` as small icons, images or labels with tooltips, `avatar`, `banner` (popout) and `decoration` as a ring over the avatar. A badge with a `key` is clickable and calls `on-badge-click`.
+
+## Client options
+
+`set-client-option` values are applied by the client while the plugin is enabled: message toolbar always shown, plain folder icons, folder sidebar (open folders list their servers in a second column beside the rail), forum layout (1 list, 2 gallery) and sort (0 latest activity, 1 creation date), notification volume (0 to 100), streamer mode, typing animation, burst reactions by default and reply ping default. `set-dm-sections` shows the given sections above the other DMs with collapsible headers.
 
 ## Toasts and modals
 

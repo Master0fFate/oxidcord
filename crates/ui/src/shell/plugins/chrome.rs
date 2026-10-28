@@ -2,9 +2,11 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui::{
-	AnyElement, App, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _, RenderOnce,
-	SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, prelude::FluentBuilder as _,
+	AnyElement, AnyView, App, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _,
+	RenderOnce, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div,
+	prelude::FluentBuilder as _,
 };
+use gpui_component::tooltip::Tooltip;
 use plugin_host::ViewContext;
 
 use super::bridge::{PluginBridge, Surface};
@@ -88,6 +90,106 @@ pub fn contextual(point: &'static str, context: ViewContext, cx: &App) -> Vec<An
 			.column(theme)
 		})
 		.collect()
+}
+
+pub fn contextual_inline(
+	point: &'static str,
+	context: ViewContext,
+	compact: Compact,
+	limit: usize,
+	cx: &App,
+) -> Vec<AnyElement> {
+	if !cx.has_global::<PluginBridge>() {
+		return Vec::new();
+	}
+	let theme = cx.global::<Theme>();
+	cx.global::<PluginBridge>()
+		.contextual(point, context, cx)
+		.iter()
+		.map(|surface| {
+			let scope = scope_of(surface, point, SharedString::default(), context).compact(Some(compact));
+			Ctx::new(&surface.tree, scope).row_of(limit, theme)
+		})
+		.collect()
+}
+
+pub fn mount_row(point: &'static str, compact: Compact, cx: &App) -> Vec<AnyElement> {
+	if !cx.has_global::<PluginBridge>() {
+		return Vec::new();
+	}
+	compact_row(
+		point,
+		compact,
+		SharedString::default(),
+		ViewContext::default(),
+		cx,
+	)
+}
+
+pub fn mount_column(point: &'static str, cx: &App) -> Vec<AnyElement> {
+	if !cx.has_global::<PluginBridge>() {
+		return Vec::new();
+	}
+	let theme = cx.global::<Theme>();
+	cx.global::<PluginBridge>()
+		.mounts(point, cx)
+		.iter()
+		.filter(|surface| !surface.tree.roots.is_empty())
+		.map(|surface| panel_body(surface, point, theme))
+		.collect()
+}
+
+pub fn mount_titles(point: &'static str, cx: &App) -> Vec<SharedString> {
+	if !cx.has_global::<PluginBridge>() {
+		return Vec::new();
+	}
+	cx.global::<PluginBridge>()
+		.mounts(point, cx)
+		.iter()
+		.map(|surface| surface_name(surface, cx))
+		.collect()
+}
+
+pub fn mount_body(point: &'static str, index: usize, cx: &App) -> Option<AnyElement> {
+	let theme = cx.global::<Theme>();
+	let surfaces = cx.global::<PluginBridge>().mounts(point, cx);
+	Some(panel_body(surfaces.get(index)?, point, theme))
+}
+
+pub fn guild_tooltip(
+	name: SharedString,
+	context: ViewContext,
+	cx: &App,
+) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
+	let extras: Vec<Surface> = if cx.has_global::<PluginBridge>() {
+		cx.global::<PluginBridge>()
+			.contextual("guild-tooltip", context, cx)
+			.iter()
+			.cloned()
+			.collect()
+	} else {
+		Vec::new()
+	};
+	move |window, cx| {
+		if extras.is_empty() {
+			return Tooltip::new(name.clone()).build(window, cx);
+		}
+		let name = name.clone();
+		let extras = extras.clone();
+		Tooltip::element(move |_, cx| {
+			let theme = cx.global::<Theme>();
+			div()
+				.flex()
+				.flex_col()
+				.gap(theme.space_4)
+				.child(name.clone())
+				.children(extras.iter().map(|surface| {
+					let scope = scope_of(surface, "guild-tooltip", SharedString::default(), context);
+					Ctx::new(&surface.tree, scope).column(theme)
+				}))
+		})
+		.build(window, cx)
+	}
 }
 
 pub fn status_bar(cx: &App) -> Option<AnyElement> {

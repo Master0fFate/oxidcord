@@ -9,7 +9,7 @@ use gpui::{
 use gpui_component::WindowExt as _;
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::checkbox::Checkbox;
-use plugin_host::{Permission, PermissionRequest, Tier, Trust};
+use plugin_host::{Hook, Permission, PermissionRequest, Tier, Trust};
 
 use super::widgets::{chip, note, section_label};
 use crate::i18n::{ArgValue, Translate as _};
@@ -25,7 +25,19 @@ pub struct PromptSpec {
 	pub permissions: Vec<PermissionRequest>,
 	pub hosts: Vec<String>,
 	pub image_hosts: Vec<String>,
+	pub hooks: Vec<Hook>,
+	pub url_schemes: Vec<String>,
 	pub trust: Option<Trust>,
+}
+
+pub fn hooks_line(hooks: &[Hook], cx: &App) -> String {
+	let list = hooks
+		.iter()
+		.map(|hook| hook.as_str())
+		.collect::<Vec<_>>()
+		.join(", ");
+	cx.t_args("perm-hooks", &[("list", ArgValue::from(list))])
+		.to_string()
 }
 
 pub struct Decision {
@@ -331,6 +343,20 @@ impl Render for PermissionPrompt {
 			.map(|host| self.host_row(host, &theme, cx))
 			.collect();
 		let footer = self.footer(&theme, cx);
+		let hooks = (!self.spec.hooks.is_empty()).then(|| note(hooks_line(&self.spec.hooks, cx), &theme));
+		let schemes: Vec<AnyElement> = self
+			.spec
+			.url_schemes
+			.iter()
+			.map(|scheme| {
+				div()
+					.font_family(theme.code_font.clone())
+					.text_size(theme.font_sm)
+					.text_color(theme.text_normal)
+					.child(format!("{scheme}://"))
+					.into_any_element()
+			})
+			.collect();
 		div()
 			.flex()
 			.flex_col()
@@ -374,6 +400,17 @@ impl Render for PermissionPrompt {
 						.children(hosts),
 				)
 			})
+			.when(!schemes.is_empty(), |body| {
+				body.child(
+					div()
+						.flex()
+						.flex_col()
+						.gap(theme.space_8)
+						.child(section_label("perm-url-schemes", &theme, cx))
+						.children(schemes),
+				)
+			})
+			.children(hooks)
 			.when(!image_hosts.is_empty(), |body| {
 				body.child(
 					div()

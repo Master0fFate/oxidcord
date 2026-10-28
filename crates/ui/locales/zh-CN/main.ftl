@@ -431,6 +431,10 @@ perm-notifications-filter = Silence, change or hide notifications before they ar
 perm-plugins-list = See which plugins are installed.
 perm-high = 高风险
 perm-image-hosts = 图片主机
+perm-hooks = 钩子: { $list }
+perm-url-schemes = URL 方案
+perm-url-schemes-line = URL 方案: { $list }
+attachment-hover-reveal = 悬停查看
 perm-low-summary = { $count } 项低风险权限
 
 themes-builtin = 内置

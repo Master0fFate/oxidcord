@@ -154,6 +154,8 @@ impl PluginsPage {
 						permissions: package.manifest.permissions.clone(),
 						hosts: package.manifest.network_hosts.clone(),
 						image_hosts: package.manifest.image_hosts.clone(),
+						hooks: package.manifest.hooks.clone(),
+						url_schemes: package.manifest.url_schemes.clone(),
 						trust: Some(trust),
 					};
 					this.review_install(path, package.manifest.id.clone(), spec, window, cx);
@@ -197,6 +199,8 @@ impl PluginsPage {
 			permissions: info.permissions.clone(),
 			hosts: info.network_hosts.clone(),
 			image_hosts: info.image_hosts.clone(),
+			hooks: info.hooks.clone(),
+			url_schemes: info.url_schemes.clone(),
 			trust: Some(info.trust),
 		};
 		let id = info.id.clone();
@@ -294,6 +298,8 @@ impl PluginsPage {
 				.collect(),
 			hosts: Vec::new(),
 			image_hosts: Vec::new(),
+			hooks: Vec::new(),
+			url_schemes: Vec::new(),
 			trust: Some(Trust::Catalog),
 		};
 		let (id, version) = (entry.id.clone(), entry.version.to_string());
@@ -404,6 +410,18 @@ impl PluginsPage {
 								.text_color(theme.text_normal)
 								.child(info.description.clone()),
 						)
+					})
+					.when(!info.hooks.is_empty(), |card| {
+						card.child(note(permission::hooks_line(&info.hooks, cx), theme))
+					})
+					.when(!info.url_schemes.is_empty(), |card| {
+						card.child(note(
+							cx.t_args(
+								"perm-url-schemes-line",
+								&[("list", ArgValue::from(info.url_schemes.join(", ")))],
+							),
+							theme,
+						))
 					})
 					.children(info.error.clone().map(|error| {
 						div()

@@ -15,6 +15,7 @@ use gpui_component::WindowExt as _;
 use gpui_component::button::{Button, ButtonVariant, ButtonVariants as _};
 use gpui_component::input::{Escape, InputEvent, TextareaState};
 use lru::LruCache;
+use plugin_host::api::model::ClickTarget;
 use protocol::{ChannelType, Snowflake};
 use session::{Command, ReplyTarget};
 use state::{Changes, MessageRow};
@@ -26,7 +27,7 @@ use super::message::{
 	render_row,
 };
 use super::moderation;
-use super::plugins::PluginBridge;
+use super::plugins::{self, PluginBridge};
 use crate::components::{ChatList, ChatListState};
 use crate::data::Data;
 use crate::i18n::Translate as _;
@@ -150,6 +151,10 @@ impl Timeline {
 
 	pub fn scroll_to_end(&mut self, cx: &mut Context<Self>) {
 		self.drive(cx, |scroll, cx| scroll.scroll_to_end(cx));
+	}
+
+	pub fn on_options(&mut self, cx: &mut Context<Self>) {
+		cx.notify();
 	}
 
 	pub fn on_plugin_slots(&mut self, cx: &mut Context<Self>) {
@@ -401,6 +406,15 @@ impl Timeline {
 		match action {
 			RowAction::OpenLink(url) | RowAction::Download(url) => cx.emit(TimelineEvent::OpenLink(url)),
 			RowAction::ToggleSpoiler(message, index) => {
+				if let (Some(channel), Ok(ordinal)) = (self.channel, u32::try_from(index))
+					&& plugins::message_click_here(
+						(self.guild, channel, Snowflake(message)),
+						ClickTarget::Spoiler(ordinal),
+						window,
+						cx,
+					) {
+					return;
+				}
 				self.revealed.borrow_mut().insert((message, index));
 				cx.notify();
 			}
@@ -416,7 +430,7 @@ impl Timeline {
 						channel_id,
 						message_id,
 						emoji,
-						burst: false,
+						burst: plugins::client_options(cx).super_react_default.unwrap_or(false),
 					}
 				} else {
 					Command::RemoveReaction {
@@ -865,6 +879,7 @@ impl Render for Timeline {
 						welcome: &welcome,
 						access,
 						selection: &selection,
+						options: *state.client_options(),
 					};
 					render_row(row, &env, cx)
 				},

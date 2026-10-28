@@ -20,7 +20,7 @@ use crate::components::{IconButton, tooltip};
 use crate::data::{Data, DataEvent};
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
-use crate::shell::SettingsBackend;
+use crate::shell::{SettingsBackend, plugins};
 use crate::theme::Theme;
 
 pub struct VoicePanel {
@@ -365,6 +365,7 @@ impl Render for VoicePanel {
 				.tooltip(cx.t("voice-retry"))
 				.on_click(move |_, _, cx| actions::join(&data, guild, channel, cx))
 		});
+		let mounted = plugins::mount_column("voice-panel", cx);
 		div()
 			.flex()
 			.flex_col()
@@ -449,6 +450,7 @@ impl Render for VoicePanel {
 						.child(screen_button),
 				)
 			})
+			.children(mounted)
 			.into_any_element()
 	}
 }

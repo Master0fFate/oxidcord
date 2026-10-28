@@ -455,6 +455,10 @@ perm-notifications-filter = Silence, change or hide notifications before they ar
 perm-plugins-list = See which plugins are installed.
 perm-high = High risk
 perm-image-hosts = Image hosts
+perm-hooks = Hooks: { $list }
+perm-url-schemes = URL schemes
+perm-url-schemes-line = URL schemes: { $list }
+attachment-hover-reveal = Hover to reveal
 perm-low-summary = { $count ->
     [one] 1 low risk permission
    *[other] { $count } low risk permissions

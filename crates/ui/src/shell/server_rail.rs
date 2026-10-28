@@ -9,6 +9,7 @@ use gpui::{
 };
 use gpui_component::menu::ContextMenuExt as _;
 use media::SizeHint;
+use plugin_host::ViewContext;
 use protocol::Snowflake;
 use session::Command;
 use state::State;
@@ -153,6 +154,10 @@ impl ServerRail {
 		};
 		rail.refresh(cx);
 		rail
+	}
+
+	pub fn refresh_options(&mut self, cx: &mut Context<Self>) {
+		cx.notify();
 	}
 
 	pub fn select(&mut self, guild: Option<Snowflake>, cx: &mut Context<Self>) {
@@ -432,7 +437,14 @@ impl ServerRail {
 				cx,
 			)
 			.on_click(cx.listener(move |_, _, _, cx| cx.emit(RailEvent::SelectGuild(id))))
-			.tooltip(tooltip(name))
+			.tooltip(plugins::guild_tooltip(
+				name,
+				ViewContext {
+					guild_id: Some(id.get()),
+					..ViewContext::default()
+				},
+				cx,
+			))
 			.on_drag(dragged, |dragged, _, _, cx| cx.new(|_| DragPreview::new(dragged)))
 			.context_menu(menu);
 		let inset = if nested {
@@ -509,36 +521,53 @@ impl ServerRail {
 			)
 	}
 
-	fn folder(&mut self, folder: &FolderItem, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+	fn folder(
+		&mut self,
+		folder: &FolderItem,
+		options: FolderOptions,
+		theme: &Theme,
+		cx: &mut Context<Self>,
+	) -> AnyElement {
 		let id = folder.id;
 		let open = self.open_folders.contains(&id);
 		let tint = with_alpha(folder.color, 0.4);
-		if !open {
-			let letters = folder
-				.guilds
-				.iter()
-				.take(4)
-				.map(|guild| MiniGuild {
-					icon: guild.icon.clone(),
-					letter: acronym(&guild.name).chars().take(1).collect::<String>().into(),
-				})
-				.collect();
+		if !open || options.sidebar {
+			let face = if options.plain_icons {
+				Face::Icon(IconKind::Folder)
+			} else {
+				Face::Folder(
+					folder
+						.guilds
+						.iter()
+						.take(4)
+						.map(|guild| MiniGuild {
+							icon: guild.icon.clone(),
+							letter: acronym(&guild.name).chars().take(1).collect::<String>().into(),
+						})
+						.collect(),
+				)
+			};
 			let unread = folder.guilds.iter().any(|guild| guild.unread);
 			let mentions = folder.guilds.iter().map(|guild| guild.mentions).sum();
+			let foreground = if options.plain_icons {
+				folder.color
+			} else {
+				theme.text_normal
+			};
 			let style = TileStyle {
 				rest_background: tint,
-				rest_foreground: theme.text_normal,
+				rest_foreground: foreground,
 				active_background: tint,
-				active_foreground: theme.text_normal,
+				active_foreground: foreground,
 			};
 			let tile = self
 				.tile(
 					TileSpec {
 						target: Target::Folder(id),
-						face: Face::Folder(letters),
+						face,
 						style,
 						unread,
-						selected: false,
+						selected: open && options.sidebar,
 						mentions,
 						pill_inset: rem(0.),
 					},
@@ -612,6 +641,55 @@ impl ServerRail {
 	}
 }
 
+#[derive(Clone, Copy)]
+struct FolderOptions {
+	sidebar: bool,
+	plain_icons: bool,
+}
+
+impl ServerRail {
+	fn folder_column(
+		&mut self,
+		entries: &[RailEntry],
+		theme: &Theme,
+		cx: &mut Context<Self>,
+	) -> Option<AnyElement> {
+		let opened: Vec<&FolderItem> = entries
+			.iter()
+			.filter_map(|entry| match entry {
+				RailEntry::Folder(folder) if self.open_folders.contains(&folder.id) => Some(folder),
+				_ => None,
+			})
+			.collect();
+		if opened.is_empty() {
+			return None;
+		}
+		let tiles: Vec<AnyElement> = opened
+			.into_iter()
+			.flat_map(|folder| folder.guilds.iter())
+			.map(|guild| self.guild_tile(guild, false, theme, cx))
+			.collect();
+		Some(
+			div()
+				.id("folder-column")
+				.flex()
+				.flex_col()
+				.flex_none()
+				.items_center()
+				.gap(theme.space_8)
+				.w(theme.server_rail_width)
+				.h_full()
+				.py(theme.space_12)
+				.border_l_1()
+				.border_color(theme.divider)
+				.bg(theme.background_secondary)
+				.overflow_y_scroll()
+				.children(tiles)
+				.into_any_element(),
+		)
+	}
+}
+
 impl Render for ServerRail {
 	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
@@ -643,15 +721,25 @@ impl Render for ServerRail {
 			)
 			.on_click(cx.listener(|_, _, _, cx| cx.emit(RailEvent::SelectHome)))
 			.tooltip(tooltip(cx.t("rail-home")));
+		let options = plugins::client_options(cx);
+		let folders = FolderOptions {
+			sidebar: options.folder_sidebar.unwrap_or(false),
+			plain_icons: options.plain_folder_icons.unwrap_or(false),
+		};
 		let entries = std::mem::take(&mut self.entries);
 		let rows: Vec<AnyElement> = entries
 			.iter()
 			.map(|entry| match entry {
 				RailEntry::Guild(guild) => self.guild_tile(guild, false, &theme, cx),
-				RailEntry::Folder(folder) => self.folder(folder, &theme, cx),
+				RailEntry::Folder(folder) => self.folder(folder, folders, &theme, cx),
 			})
 			.collect();
+		let column = folders
+			.sidebar
+			.then(|| self.folder_column(&entries, &theme, cx))
+			.flatten();
 		self.entries = entries;
+		let top = plugins::mount_column("server-rail-top", cx);
 		let add = self
 			.tile(
 				TileSpec {
@@ -697,7 +785,7 @@ impl Render for ServerRail {
 			.tooltip(tooltip(cx.t("rail-explore")));
 		let page = plugins::open_page(cx);
 		let apps = plugins::app_nav(page.as_ref(), cx);
-		div()
+		let rail = div()
 			.id("server-rail")
 			.flex()
 			.flex_col()
@@ -716,6 +804,14 @@ impl Render for ServerRail {
 					.length(theme.space_32)
 					.color(theme.divider),
 			)
+			.when(!top.is_empty(), |rail| {
+				rail.children(top).child(
+					Divider::horizontal()
+						.thickness(px(1.))
+						.length(theme.space_32)
+						.color(theme.divider),
+				)
+			})
 			.children(rows)
 			.child(add)
 			.child(explore)
@@ -727,7 +823,8 @@ impl Render for ServerRail {
 						.color(theme.divider),
 				)
 				.children(apps)
-			})
+			});
+		div().flex().flex_none().h_full().child(rail).children(column)
 	}
 }
 

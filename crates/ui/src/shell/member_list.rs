@@ -12,16 +12,15 @@ use gpui_component::scroll::ScrollableElement as _;
 use plugin_host::ViewContext;
 use protocol::Snowflake;
 use session::Command;
-use state::{MemberListRow, State};
+use state::{MemberListRow, State, UserOverride};
 
 use super::community::developer_mode;
 use super::moderation;
-use super::plugins::{MenuTarget, PluginMenu as _};
+use super::plugins::{self, MenuTarget, PluginMenu as _};
 use crate::components::{Avatar, ContextMenuBuilder, IconButton};
 use crate::data::Data;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
-use crate::lookup::avatar_for;
 use crate::model::{Status, role_color, status_of};
 use crate::theme::{Theme, rem};
 
@@ -45,12 +44,13 @@ struct MemberItem {
 	avatar: String,
 	bot: bool,
 	badge: Option<SharedString>,
+	over: Option<UserOverride>,
 }
 
 #[derive(PartialEq)]
 enum Row {
 	Group { id: String, name: String, count: u32 },
-	Member(MemberItem),
+	Member(Box<MemberItem>),
 }
 
 pub struct MemberList {
@@ -102,15 +102,15 @@ impl MemberList {
 				.into_iter()
 				.map(|row| match row {
 					MemberListRow::Group { id, name, count } => Row::Group { id, name, count },
-					MemberListRow::Member(member) => Row::Member(member_item(
+					MemberListRow::Member(member) => Row::Member(Box::new(member_item(
 						&state,
-						member.user_id,
+						(guild, member.user_id),
 						member.display,
 						member.color,
 						member.badge,
 						Status::from(&member.status),
 						member.activity,
-					)),
+					))),
 				})
 				.collect()
 		} else {
@@ -306,6 +306,7 @@ impl MemberList {
 					.size(rem(32.))
 					.url(member.avatar.clone())
 					.status(member.status)
+					.decoration(plugins::decoration_of(member.over.as_ref()))
 					.cutout(theme.background_primary),
 			)
 			.child(
@@ -342,6 +343,12 @@ impl MemberList {
 										.child(bot_label.clone()),
 								)
 							})
+							.children(
+								member
+									.over
+									.as_ref()
+									.map_or_else(Vec::new, |over| plugins::tags(over, id, theme, cx)),
+							)
 							.when_some(member.badge.clone(), |name, badge| {
 								name.child(
 									div()
@@ -372,7 +379,7 @@ impl MemberList {
 
 fn member_item(
 	state: &State,
-	id: Snowflake,
+	(guild, id): (Snowflake, Snowflake),
 	display: String,
 	color: Option<u32>,
 	badge: Option<String>,
@@ -385,9 +392,10 @@ fn member_item(
 		color: color.map(role_color),
 		status,
 		activity: activity.map(Into::into),
-		avatar: avatar_for(state, id, AVATAR_PIXELS),
+		avatar: plugins::avatar_url(state, Some(guild), id, AVATAR_PIXELS),
 		badge: badge.map(Into::into),
 		bot: state.user(id).is_some_and(|user| user.bot == Some(true)),
+		over: state.user_override(Some(guild), id).cloned(),
 	}
 }
 
@@ -399,7 +407,7 @@ fn search_rows(state: &State, guild: Snowflake, query: &str) -> Vec<Row> {
 		.members
 		.keys()
 		.filter_map(|id| {
-			let name = state.display_name(Some(guild), *id);
+			let name = plugins::display_name(state, Some(guild), *id);
 			let hit = name.to_lowercase().contains(query)
 				|| state
 					.user(*id)
@@ -415,9 +423,9 @@ fn search_rows(state: &State, guild: Snowflake, query: &str) -> Vec<Row> {
 		count: matches.len() as u32,
 	}];
 	rows.extend(matches.into_iter().map(|(name, id)| {
-		Row::Member(member_item(
+		Row::Member(Box::new(member_item(
 			state,
-			id,
+			(guild, id),
 			name,
 			state.role_color(guild, id),
 			state
@@ -425,7 +433,7 @@ fn search_rows(state: &State, guild: Snowflake, query: &str) -> Vec<Row> {
 				.and_then(|over| over.badge.clone()),
 			status_of(state, id),
 			None,
-		))
+		)))
 	}));
 	rows
 }
@@ -465,6 +473,14 @@ impl Render for MemberList {
 				Row::Member(member) => sections.push(self.row(member, &bot_label, developer, &theme, cx)),
 			}
 		}
+		let header = plugins::contextual(
+			"member-list-header",
+			ViewContext {
+				guild_id: self.guild.map(Snowflake::get),
+				..ViewContext::default()
+			},
+			cx,
+		);
 		let plugin_sections = super::plugins::contextual(
 			"member-list-section",
 			ViewContext {
@@ -482,6 +498,18 @@ impl Render for MemberList {
 			.bg(theme.background_primary)
 			.border_l_1()
 			.border_color(theme.divider)
+			.when(!header.is_empty(), |list| {
+				list.child(
+					div()
+						.flex()
+						.flex_col()
+						.flex_none()
+						.gap(theme.space_4)
+						.px(theme.space_8)
+						.pt(theme.space_8)
+						.children(header),
+				)
+			})
 			.child(self.search_box(&search, &theme, cx))
 			.when(!plugin_sections.is_empty(), |list| {
 				list.child(

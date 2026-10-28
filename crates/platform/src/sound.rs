@@ -61,7 +61,7 @@ impl Note {
 	}
 }
 
-fn render_chime(rate: u32) -> Vec<f32> {
+fn render_chime(rate: u32, volume: f32) -> Vec<f32> {
 	let rate = rate as f32;
 	let frames = (CHIME_SECONDS * rate) as usize;
 	let fade_frames = FADE_SECONDS * rate;
@@ -77,20 +77,25 @@ fn render_chime(rate: u32) -> Vec<f32> {
 		.collect();
 	let peak = samples.iter().fold(0f32, |peak, sample| peak.max(sample.abs()));
 	if peak > 0. {
-		let scale = PEAK_LEVEL / peak;
+		let scale = PEAK_LEVEL * volume / peak;
 		samples.iter_mut().for_each(|sample| *sample *= scale);
 	}
 	samples
 }
 
 pub fn play_chime() {
-	if PLAYING.swap(true, Ordering::AcqRel) {
+	play_chime_at(1.);
+}
+
+pub fn play_chime_at(volume: f32) {
+	let volume = volume.clamp(0., 1.);
+	if volume == 0. || PLAYING.swap(true, Ordering::AcqRel) {
 		return;
 	}
 	let spawned = thread::Builder::new()
 		.name("oxidcord-chime".to_owned())
-		.spawn(|| {
-			match open_stream() {
+		.spawn(move || {
+			match open_stream(volume) {
 				Ok(_stream) => thread::sleep(Duration::from_secs_f32(CHIME_SECONDS) + PLAYBACK_SLACK),
 				Err(error) => tracing::warn!(%error, "could not play the notification sound"),
 			}
@@ -102,17 +107,17 @@ pub fn play_chime() {
 	}
 }
 
-fn open_stream() -> Result<Stream, Error> {
+fn open_stream(volume: f32) -> Result<Stream, Error> {
 	let device = cpal::default_host()
 		.default_output_device()
 		.ok_or_else(|| Error::with_message(ErrorKind::DeviceNotAvailable, "no output device"))?;
 	let supported = device.default_output_config()?;
 	let config = supported.config();
 	let stream = match supported.sample_format() {
-		SampleFormat::F32 => chime_stream::<f32>(&device, config),
-		SampleFormat::I16 => chime_stream::<i16>(&device, config),
-		SampleFormat::U16 => chime_stream::<u16>(&device, config),
-		SampleFormat::I32 => chime_stream::<i32>(&device, config),
+		SampleFormat::F32 => chime_stream::<f32>(&device, config, volume),
+		SampleFormat::I16 => chime_stream::<i16>(&device, config, volume),
+		SampleFormat::U16 => chime_stream::<u16>(&device, config, volume),
+		SampleFormat::I32 => chime_stream::<i32>(&device, config, volume),
 		format => Err(Error::with_message(
 			ErrorKind::UnsupportedConfig,
 			format!("sample format {format}"),
@@ -122,12 +127,12 @@ fn open_stream() -> Result<Stream, Error> {
 	Ok(stream)
 }
 
-fn chime_stream<T>(device: &Device, config: StreamConfig) -> Result<Stream, Error>
+fn chime_stream<T>(device: &Device, config: StreamConfig, volume: f32) -> Result<Stream, Error>
 where
 	T: SizedSample + FromSample<f32>,
 {
 	let channels = usize::from(config.channels);
-	let mut samples = render_chime(config.sample_rate).into_iter();
+	let mut samples = render_chime(config.sample_rate, volume).into_iter();
 	device.build_output_stream(
 		config,
 		move |data: &mut [T], _| {

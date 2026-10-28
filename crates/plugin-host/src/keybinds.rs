@@ -96,6 +96,10 @@ impl Keybinds {
 		self.revision.load(Ordering::Acquire)
 	}
 
+	pub fn is_empty(&self) -> bool {
+		self.inner.read().by_chord.is_empty()
+	}
+
 	pub fn lookup(&self, chord: &str) -> Option<(Arc<str>, String)> {
 		let inner = self.inner.read();
 		if inner.by_chord.is_empty() {

@@ -1,5 +1,5 @@
 use gpui::{
-	AnyElement, Context, Entity, EventEmitter, FontWeight, InteractiveElement as _, IntoElement,
+	AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, InteractiveElement as _, IntoElement,
 	MouseDownEvent, ParentElement as _, Pixels, Point, Render, SharedString, StatefulInteractiveElement as _,
 	Styled as _, Window, div, prelude::FluentBuilder as _,
 };
@@ -8,7 +8,7 @@ use gpui_component::menu::{ContextMenuExt as _, DropdownMenu as _};
 use gpui_component::scroll::ScrollableElement as _;
 use protocol::{ChannelType, Snowflake};
 use session::Command;
-use state::{ChannelRow, ChannelTreeNode};
+use state::{ChannelRow, ChannelTreeNode, PluginBadge};
 
 use crate::components::{IconButton, MentionBadge, SectionHeader};
 use crate::data::Data;
@@ -19,7 +19,7 @@ use crate::theme::{Theme, rem};
 use super::community::access::GuildAccess;
 use super::community::act;
 use super::community::menus::{ChannelFacts, channel_menu, guild_menu};
-use super::plugins::{MenuTarget, PluginMenu as _};
+use super::plugins::{self, MenuTarget, PluginMenu as _};
 use super::server_settings::channel as channel_modals;
 use super::voice::{Participant, participant_row, participants};
 
@@ -46,6 +46,7 @@ struct ChannelItem {
 	muted: bool,
 	mentions: u32,
 	voice: Vec<Participant>,
+	badges: Vec<PluginBadge>,
 }
 
 #[derive(PartialEq)]
@@ -358,8 +359,16 @@ impl ChannelSidebar {
 			.when(!selected, |row| {
 				row.hover(move |style| style.bg(hover_background))
 			})
+			.on_aux_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
+				if event.is_middle_click() {
+					plugins::channel_click(this.guild, id, event, cx);
+				}
+			}))
 			.when(can_select, |row| {
-				row.on_click(cx.listener(move |this, _, window, cx| {
+				row.on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
+					if plugins::channel_click(this.guild, id, event, cx) {
+						return;
+					}
 					if thread {
 						act(window, cx, move |community, _, cx| community.open_thread(id, cx));
 						return;
@@ -398,6 +407,7 @@ impl ChannelSidebar {
 					})
 					.child(channel.name.clone()),
 			)
+			.children(plugins::channel_badges(id, &channel.badges, theme, cx))
 			.when(channel.mentions > 0, |row| {
 				row.child(MentionBadge::new(channel.mentions))
 			})
@@ -471,6 +481,11 @@ fn channel_item(row: &ChannelRow, guild: Snowflake, state: &state::State) -> Cha
 		} else {
 			Vec::new()
 		},
+		badges: state
+			.channel_decorations(row.id)
+			.iter()
+			.flat_map(|decoration| decoration.badges.iter().cloned())
+			.collect(),
 	}
 }
 
@@ -521,6 +536,7 @@ impl Render for ChannelSidebar {
 			.iter()
 			.map(|category| self.category(category, &theme, cx))
 			.collect();
+		let top = plugins::mount_column("channel-list-top", cx);
 		div()
 			.flex()
 			.flex_col()
@@ -528,6 +544,18 @@ impl Render for ChannelSidebar {
 			.min_h_0()
 			.bg(theme.background_tertiary)
 			.child(self.header(&theme, cx))
+			.when(!top.is_empty(), |sidebar| {
+				sidebar.child(
+					div()
+						.flex()
+						.flex_col()
+						.flex_none()
+						.gap(theme.space_4)
+						.px(theme.space_8)
+						.pt(theme.space_8)
+						.children(top),
+				)
+			})
 			.child(
 				div()
 					.flex()
