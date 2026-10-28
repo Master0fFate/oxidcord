@@ -1,0 +1,33 @@
+id = "dev.oxidcord.relationship-notifier"
+name = "Relationship Notifier"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Notifies you when a friend, group chat, or server removes you."
+entry = "relationship_notifier.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "context-relationships"
+reason = "Sees when a friend or a friend request is removed."
+
+[[permissions]]
+permission = "context-directory"
+reason = "Sees when you leave a server and lists your servers and group chats."
+
+[[permissions]]
+permission = "context-private"
+reason = "Sees when a group chat closes and reads the names of your group chats."
+
+[[permissions]]
+permission = "actions-notify"
+reason = "Sends the notification."
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Shows the optional notice on screen."
+
+[[permissions]]
+permission = "storage"
+reason = "Remembers names of friends, servers and group chats, and reads the plugin settings."

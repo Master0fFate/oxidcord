@@ -1,0 +1,29 @@
+id = "dev.oxidcord.server-list-indicators"
+name = "Server List Indicators"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Adds the online friend count or the server count to the server list."
+entry = "server_list_indicators.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Draws the counts above the server list."
+
+[[permissions]]
+permission = "context-relationships"
+reason = "Reads your friends to count the ones that are online."
+
+[[permissions]]
+permission = "context-presence"
+reason = "Reads the status of your friends."
+
+[[permissions]]
+permission = "context-directory"
+reason = "Reads the list of your servers to count them."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

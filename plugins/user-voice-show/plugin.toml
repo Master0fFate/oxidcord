@@ -1,0 +1,22 @@
+id = "dev.oxidcord.user-voice-show"
+name = "User Voice Show"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Shows an indicator when a user is in a Voice Channel."
+entry = "user_voice_show.wasm"
+min_host = "0.4.3"
+hooks = ["display-user"]
+
+[[permissions]]
+permission = "user-display"
+reason = "Adds the voice badge next to user names."
+
+[[permissions]]
+permission = "context-voice"
+reason = "Reads who is in the voice call you are in."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

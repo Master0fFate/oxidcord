@@ -1,0 +1,22 @@
+id = "dev.oxidcord.platform-indicators"
+name = "Platform Indicators"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Adds platform indicators (Desktop, Mobile, Web...) to users."
+entry = "platform_indicators.wasm"
+min_host = "0.4.3"
+hooks = ["display-user"]
+
+[[permissions]]
+permission = "user-display"
+reason = "Adds the platform badges next to user names."
+
+[[permissions]]
+permission = "context-presence"
+reason = "Reads which platforms a user is online on."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

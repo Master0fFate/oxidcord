@@ -1,0 +1,42 @@
+id = "dev.oxidcord.typing-indicator"
+name = "Typing Indicator"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Adds an indicator if someone is typing on a channel."
+entry = "typing_indicator.wasm"
+min_host = "0.4.3"
+hooks = ["decorate-channel"]
+
+[[permissions]]
+permission = "ui-input"
+reason = "Adds the typing badge to channels in the channel list."
+
+[[permissions]]
+permission = "context-timeline"
+reason = "Sees who is typing and when they send their message."
+
+[[permissions]]
+permission = "context-private"
+reason = "Shows the badge for people typing in direct messages and group chats too."
+
+[[permissions]]
+permission = "context-read-state"
+reason = "Finds out whether a channel is muted."
+
+[[permissions]]
+permission = "context-relationships"
+reason = "Finds out which users you blocked."
+
+[[permissions]]
+permission = "context-basic"
+reason = "Knows your own user and the channel you are looking at."
+
+[[permissions]]
+permission = "context-members"
+reason = "Reads the names shown in the badge tooltip."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

@@ -1,0 +1,25 @@
+id = "dev.oxidcord.no-blocked-messages"
+name = "No Blocked Messages"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Hides all blocked and ignored messages from chat completely."
+entry = "no_blocked_messages.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "message-filter"
+reason = "Hides messages written by blocked users."
+
+[[permissions]]
+permission = "context-relationships"
+reason = "Reads which users you blocked."
+
+[[permissions]]
+permission = "context-private"
+reason = "Lets the filter see messages in group chats too."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

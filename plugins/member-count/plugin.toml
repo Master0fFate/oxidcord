@@ -1,0 +1,25 @@
+id = "dev.oxidcord.member-count"
+name = "Member Count"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Shows the number of online members, total members, and users in voice channels on the server, in the member list and tooltip."
+entry = "member_count.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the counts above the member list and to the server tooltip."
+
+[[permissions]]
+permission = "context-directory"
+reason = "Reads the member count of the server and the members of its member list."
+
+[[permissions]]
+permission = "context-voice"
+reason = "Reads the voice call you are in to count the people in it."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

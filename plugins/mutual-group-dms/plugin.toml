@@ -1,0 +1,25 @@
+id = "dev.oxidcord.mutual-group-dms"
+name = "Mutual Group DMs"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Shows mutual group dms in profiles."
+entry = "mutual_group_dms.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the list of shared group chats to the profile popout."
+
+[[permissions]]
+permission = "context-directory"
+reason = "Lists your group chats and who is in them."
+
+[[permissions]]
+permission = "context-private"
+reason = "Group chats are direct message channels."
+
+[[permissions]]
+permission = "actions-navigate"
+reason = "Opens a group chat when you click it."

@@ -1,0 +1,26 @@
+id = "dev.oxidcord.one-ping-per-dm"
+name = "One Ping Per DM"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Only one audio ping per DM until read."
+entry = "one_ping_per_dm.wasm"
+min_host = "0.4.3"
+hooks = ["notification"]
+
+[[permissions]]
+permission = "notifications-filter"
+reason = "Silences repeated notifications from the same direct message."
+
+[[permissions]]
+permission = "context-read-state"
+reason = "Finds out when you read a direct message so the next one can ping again."
+
+[[permissions]]
+permission = "context-private"
+reason = "Direct messages and group chats are private channels."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

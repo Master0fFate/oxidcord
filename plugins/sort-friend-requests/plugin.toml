@@ -1,0 +1,21 @@
+id = "dev.oxidcord.sort-friend-requests"
+name = "Sort Friend Requests"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Sorts friend requests by date of receipt."
+entry = "sort_friend_requests.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the Requests by date tab to the Friends page."
+
+[[permissions]]
+permission = "context-relationships"
+reason = "Reads your pending friend requests and when they arrived."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

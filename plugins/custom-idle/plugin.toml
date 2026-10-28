@@ -1,0 +1,29 @@
+id = "dev.oxidcord.custom-idle"
+name = "Custom Idle"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Allows you to set the time before your status goes idle, or disable auto-idle."
+entry = "custom_idle.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "context-presence"
+reason = "Reads how long you were away from the keyboard and your current status."
+
+[[permissions]]
+permission = "actions-presence"
+reason = "Sets your status to idle and back."
+
+[[permissions]]
+permission = "context-basic"
+reason = "Knows which user is you to read your own status."
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Shows the welcome back message with the button that ends idle."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

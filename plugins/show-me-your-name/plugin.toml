@@ -1,0 +1,26 @@
+id = "dev.oxidcord.show-me-your-name"
+name = "Show Me Your Name"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Display usernames next to nicks, or no nicks at all."
+entry = "show_me_your_name.wasm"
+min_host = "0.4.3"
+hooks = ["display-user"]
+
+[[permissions]]
+permission = "user-display"
+reason = "Changes how user names are written."
+
+[[permissions]]
+permission = "context-roles"
+reason = "Reads the server nickname of a member."
+
+[[permissions]]
+permission = "context-relationships"
+reason = "Reads the nicknames you gave to friends."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

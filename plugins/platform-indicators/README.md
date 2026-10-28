@@ -1,0 +1,15 @@
+# Platform Indicators
+
+Adds a small icon for every platform a user is online on, next to their name: a monitor for desktop, a phone for mobile, a globe for web and a gamepad for console or game clients. The icon is colored by the user's status (green online, yellow idle, red do not disturb, grey otherwise) and the tooltip names the platform. Bots get no icon.
+
+The badge is refreshed when the user's status or platforms change.
+
+Settings:
+- `list`, `badges`, `messages`: Vencord shows the icons in three places. Oxidcord draws the badges of a plugin in all the places it supports at once, so these three only decide together whether any badge is emitted: all three off turns it off.
+- `colorMobileIndicator`: color the mobile icon by status like the others. When off the mobile icon keeps the default color. Default on.
+
+Limits: the client only reports desktop, mobile and web per user, the embedded and VR platforms of Vencord appear only when the client reports them. Only one display plugin can decorate a user, if another enabled plugin returns an override for the same user first, this one is skipped for that user.
+
+Permissions: `user-display`, `context-presence`, `storage`.
+
+Port of the Vencord plugin platformIndicators.

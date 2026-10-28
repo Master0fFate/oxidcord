@@ -1,0 +1,25 @@
+id = "dev.oxidcord.read-all-notifications"
+name = "Read All Notifications"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Read all server notifications with a single button click."
+entry = "read_all_notifications.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the button above the server list."
+
+[[permissions]]
+permission = "context-directory"
+reason = "Lists your servers."
+
+[[permissions]]
+permission = "context-read-state"
+reason = "Finds the servers that have unread channels."
+
+[[permissions]]
+permission = "actions-ack"
+reason = "Marks those servers as read when you click the button."
