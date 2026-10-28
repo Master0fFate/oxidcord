@@ -10,7 +10,7 @@ use url::{Host, Url};
 use crate::api::{FetchRequest, FetchResponse, HostError};
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
-const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 const MAX_REDIRECTS: usize = 5;
 const MAX_HEADERS: usize = 32;

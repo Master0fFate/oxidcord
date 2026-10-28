@@ -1,0 +1,25 @@
+id = "dev.oxidcord.show-connections"
+name = "Show Connections"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Show connected accounts in user popouts"
+entry = "show_connections.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the Connections section to the profile popout."
+
+[[permissions]]
+permission = "context-profiles"
+reason = "Reads the connected accounts of the person whose popout you open."
+
+[[permissions]]
+permission = "actions-clipboard"
+reason = "Copies the name of an account that has no link."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

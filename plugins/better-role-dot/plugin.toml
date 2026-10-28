@@ -1,0 +1,30 @@
+id = "dev.oxidcord.better-role-dot"
+name = "Better Role Dot"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Adds a role color dot next to names that copies the color when clicked."
+entry = "better_role_dot.wasm"
+min_host = "0.4.3"
+hooks = ["display-user"]
+
+[[permissions]]
+permission = "user-display"
+reason = "Adds the colored role dot next to the user name."
+
+[[permissions]]
+permission = "context-roles"
+reason = "Reads the roles of the member to find the role that gives the color."
+
+[[permissions]]
+permission = "actions-clipboard"
+reason = "Copies the role color when you click the dot."
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Shows a short Copied note after the click."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

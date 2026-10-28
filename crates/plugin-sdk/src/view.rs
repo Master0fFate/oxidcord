@@ -291,6 +291,13 @@ impl Node {
 		}
 		self
 	}
+
+	pub fn icon_size(mut self, size: u32) -> Self {
+		if let Kind::Leaf(NodeKind::Icon(icon)) = &mut self.kind {
+			icon.size = size;
+		}
+		self
+	}
 }
 
 pub fn column() -> Node {

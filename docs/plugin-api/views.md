@@ -29,7 +29,7 @@ Only nodes with a `key` produce events. The key is echoed back as `view-event.no
 | `text` | `view::text(value)`, `view::heading(value)` | `size`, `weight`, `tone`, `color`, `mono`, `italic` |
 | `markdown` | `view::markdown(source)` | Parsed by the host markdown parser, up to 8000 bytes |
 | `image` | `view::image(url)` | `url`, `emoji` or `avatar` source, up to 512 px. See image rules in `overview.md` |
-| `icon` | `view::icon(name)` | A Lucide icon name such as `notebook`, `trash`, `plus` |
+| `icon` | `view::icon(name)` | A Lucide icon name such as `notebook`, `trash`, `plus`. `.icon_size(px)` sets the size, default 20, at most 64 |
 | `avatar` | `view::avatar(user_id, size)` | Avatar of a user the client knows |
 | `emoji` | `view::emoji(emoji_ref, size)` | Custom emoji by id or a unicode emoji by name |
 | `button` | `view::button(key, label)` | `.icon()`, `.tone()`, `.variant()`, `.submit()` |

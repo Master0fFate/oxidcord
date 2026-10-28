@@ -1,0 +1,25 @@
+id = "dev.oxidcord.super-reaction-tweaks"
+name = "Super Reaction Tweaks"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Super react from the reaction menu and make the reaction picker use super reactions by default."
+entry = "super_reaction_tweaks.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds Super react to the reaction menu and shows a note when it fails."
+
+[[permissions]]
+permission = "actions-react"
+reason = "Sends the super reaction when you pick the menu entry."
+
+[[permissions]]
+permission = "actions-settings"
+reason = "Turns on super reactions by default in the reaction picker."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

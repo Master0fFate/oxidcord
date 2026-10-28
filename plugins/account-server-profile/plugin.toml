@@ -1,0 +1,25 @@
+id = "dev.oxidcord.account-server-profile"
+name = "Account Server Profile"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Right click your account panel in the bottom left to view your profile in the current server"
+entry = "account_server_profile.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the server profile button above your account panel, its menu entry and the profile window."
+
+[[permissions]]
+permission = "context-basic"
+reason = "Reads who you are and which server is open."
+
+[[permissions]]
+permission = "context-roles"
+reason = "Reads your nickname, roles and join date in the open server."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

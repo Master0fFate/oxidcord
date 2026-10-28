@@ -1,0 +1,24 @@
+id = "dev.oxidcord.decor"
+name = "Decor"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Shows the custom avatar decorations people picked in Decor."
+entry = "decor.wasm"
+min_host = "0.4.3"
+network_hosts = ["decor.fieryflames.dev"]
+image_hosts = ["ugc.decor.fieryflames.dev"]
+hooks = ["display-user"]
+
+[[permissions]]
+permission = "user-display"
+reason = "Draws the Decor avatar decoration around the avatar."
+
+[[permissions]]
+permission = "net-fetch"
+reason = "Asks decor.fieryflames.dev which people on screen have a decoration."
+
+[[permissions]]
+permission = "storage"
+reason = "Keeps the decorations found for the last four hours."

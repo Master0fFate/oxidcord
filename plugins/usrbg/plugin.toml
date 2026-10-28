@@ -1,0 +1,28 @@
+id = "dev.oxidcord.usrbg"
+name = "USRBG"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Displays user banners from USRBG, allowing anyone to get a banner without Nitro"
+entry = "usrbg.wasm"
+min_host = "0.4.3"
+network_hosts = ["usrbg.is-hardly.online"]
+image_hosts = ["usrbg.is-hardly.online"]
+hooks = ["display-user"]
+
+[[permissions]]
+permission = "user-display"
+reason = "Shows the USRBG banner in the profile of users who have one."
+
+[[permissions]]
+permission = "net-fetch"
+reason = "Downloads the list of USRBG banners from usrbg.is-hardly.online once a day."
+
+[[permissions]]
+permission = "context-profiles"
+reason = "Checks whether a user already has a Nitro banner when Nitro banners come first."
+
+[[permissions]]
+permission = "storage"
+reason = "Keeps the downloaded banner list and reads the plugin settings."

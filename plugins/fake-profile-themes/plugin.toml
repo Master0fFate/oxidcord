@@ -1,0 +1,21 @@
+id = "dev.oxidcord.fake-profile-themes"
+name = "Fake Profile Themes"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Shows the profile colors people hide in their bio with invisible 3y3 encoding."
+entry = "fake_profile_themes.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the colors section to the profile popout."
+
+[[permissions]]
+permission = "context-profiles"
+reason = "Reads the bio of the person whose popout you open."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

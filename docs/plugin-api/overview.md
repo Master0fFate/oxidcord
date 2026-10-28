@@ -83,7 +83,7 @@ Events: `message-created`, `message-updated`, `message-deleted`, `reaction-added
 | `log` | none | 2 KB per line, 100 lines per second after a burst of 200 |
 | `now-ms` | none | |
 | `storage-get`, `storage-set`, `storage-delete`, `storage-list` | `storage` | 5 MB per plugin, 1024 keys, keys up to 256 bytes |
-| `fetch` | `net-fetch` | https and port 443 only, hosts must be in `network_hosts` and approved, 10 requests per minute with a burst of 20, 4 MB response, 10 s |
+| `fetch` | `net-fetch` | https and port 443 only, hosts must be in `network_hosts` and approved, 10 requests per minute with a burst of 20, 8 MB response, 10 s |
 | `send-message` | `actions-send` | needs a user action, 3 sends per action, 1 per 2 s with a burst of 3, 4000 bytes |
 | `add-reaction` | `actions-react` | 1 per second, burst 5 |
 | `open-channel` | `actions-navigate` | |

@@ -1,0 +1,25 @@
+id = "dev.oxidcord.view-icons"
+name = "View Icons"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Adds View avatar, banner and icon entries to the member and server context menus."
+entry = "view_icons.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the View entries to the user and server menus and opens the image window."
+
+[[permissions]]
+permission = "context-profiles"
+reason = "Reads the avatar and banner of the person you ask for, loading the profile when needed."
+
+[[permissions]]
+permission = "context-directory"
+reason = "Reads the icon and banner of the server you ask for."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

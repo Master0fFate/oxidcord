@@ -51,6 +51,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "account-server-profile"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
 name = "addr2line"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -837,6 +844,13 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
 name = "better-gif-alt-text"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
+name = "better-role-dot"
 version = "0.4.3"
 dependencies = [
  "oxidcord-plugin-sdk",
@@ -2245,6 +2259,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "decor"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+ "serde_json",
+]
+
+[[package]]
 name = "der"
 version = "0.7.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2822,6 +2844,13 @@ checksum = "af9673d8203fcb076b19dfd17e38b3d4ae9f44959416ea532ce72415a6020365"
 
 [[package]]
 name = "fake-nitro"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
+name = "fake-profile-themes"
 version = "0.4.3"
 dependencies = [
  "oxidcord-plugin-sdk",
@@ -9858,6 +9887,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
+name = "show-connections"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
 name = "show-me-your-name"
 version = "0.4.3"
 dependencies = [
@@ -10285,6 +10321,13 @@ dependencies = [
  "rayon",
  "tracing",
  "ztracing",
+]
+
+[[package]]
+name = "super-reaction-tweaks"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
 ]
 
 [[package]]
@@ -11568,10 +11611,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "user-pronouns"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
 name = "user-voice-show"
 version = "0.4.3"
 dependencies = [
  "oxidcord-plugin-sdk",
+]
+
+[[package]]
+name = "usrbg"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -11707,6 +11766,20 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+
+[[package]]
+name = "view-icons"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
+name = "view-raw"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
 
 [[package]]
 name = "visibility"

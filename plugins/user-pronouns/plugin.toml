@@ -1,0 +1,26 @@
+id = "dev.oxidcord.user-pronouns"
+name = "User Pronouns"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Adds pronouns to chat user messages"
+entry = "user_pronouns.wasm"
+min_host = "0.4.3"
+hooks = ["display-user"]
+
+[[permissions]]
+permission = "user-display"
+reason = "Shows the pronouns next to the user name."
+
+[[permissions]]
+permission = "context-profiles"
+reason = "Reads the pronouns from the profiles of the people who wrote recent messages."
+
+[[permissions]]
+permission = "context-basic"
+reason = "Finds out which user is you for the show yourself setting."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."
