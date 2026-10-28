@@ -17,10 +17,29 @@ pub fn open_url(raw: &str) -> Result<()> {
 
 #[cfg(windows)]
 fn launch(target: &str) -> Result<()> {
+	let target = target.to_owned();
+	std::thread::Builder::new()
+		.name("open-url".into())
+		.spawn(move || {
+			if let Err(error) = shell_execute(&target) {
+				tracing::warn!(%error, "could not open the link");
+			}
+		})?;
+	Ok(())
+}
+
+#[cfg(windows)]
+fn shell_execute(target: &str) -> Result<()> {
+	use windows::Win32::System::Com::{
+		COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoInitializeEx, CoUninitialize,
+	};
 	use windows::Win32::UI::Shell::ShellExecuteW;
 	use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 	use windows::core::{HSTRING, w};
 
+	unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE) }
+		.ok()
+		.map_err(|error| PlatformError::Os(error.to_string()))?;
 	let result = unsafe {
 		ShellExecuteW(
 			None,
@@ -31,6 +50,7 @@ fn launch(target: &str) -> Result<()> {
 			SW_SHOWNORMAL,
 		)
 	};
+	unsafe { CoUninitialize() };
 	if result.0 as isize > 32 {
 		Ok(())
 	} else {
