@@ -22,6 +22,8 @@ pub enum Error {
 	UnknownPlugin(String),
 	#[error("plugin {0} is not running")]
 	NotRunning(String),
+	#[error("incompatible plugin: {0}")]
+	Incompatible(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

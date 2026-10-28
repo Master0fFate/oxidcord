@@ -32,6 +32,29 @@ pub enum Permission {
 	ActionsSendUser,
 	ChannelsHidden,
 	TypingHidden,
+	ContextRelationships,
+	ContextPresence,
+	ContextProfiles,
+	ContextRoles,
+	ContextReadState,
+	ContextAttachments,
+	ContextSessions,
+	ComposerWatch,
+	ActionsPresence,
+	ActionsAck,
+	ActionsCompose,
+	ActionsEdit,
+	ActionsDelete,
+	ActionsUpload,
+	ActionsSave,
+	ActionsVoice,
+	ActionsSettings,
+	ActionsGuild,
+	ActionsSpeak,
+	UiKeybinds,
+	UiInput,
+	NotificationsFilter,
+	PluginsList,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -43,7 +66,7 @@ pub enum Tier {
 }
 
 impl Permission {
-	pub const ALL: [Permission; 27] = [
+	pub const ALL: [Permission; 50] = [
 		Self::ContextBasic,
 		Self::ContextTimeline,
 		Self::ContextDirectory,
@@ -71,6 +94,29 @@ impl Permission {
 		Self::ActionsSendUser,
 		Self::ChannelsHidden,
 		Self::TypingHidden,
+		Self::ContextRelationships,
+		Self::ContextPresence,
+		Self::ContextProfiles,
+		Self::ContextRoles,
+		Self::ContextReadState,
+		Self::ContextAttachments,
+		Self::ContextSessions,
+		Self::ComposerWatch,
+		Self::ActionsPresence,
+		Self::ActionsAck,
+		Self::ActionsCompose,
+		Self::ActionsEdit,
+		Self::ActionsDelete,
+		Self::ActionsUpload,
+		Self::ActionsSave,
+		Self::ActionsVoice,
+		Self::ActionsSettings,
+		Self::ActionsGuild,
+		Self::ActionsSpeak,
+		Self::UiKeybinds,
+		Self::UiInput,
+		Self::NotificationsFilter,
+		Self::PluginsList,
 	];
 
 	pub fn as_str(self) -> &'static str {
@@ -102,6 +148,29 @@ impl Permission {
 			Self::ActionsSendUser => "actions-send-user",
 			Self::ChannelsHidden => "channels-hidden",
 			Self::TypingHidden => "typing-hidden",
+			Self::ContextRelationships => "context-relationships",
+			Self::ContextPresence => "context-presence",
+			Self::ContextProfiles => "context-profiles",
+			Self::ContextRoles => "context-roles",
+			Self::ContextReadState => "context-read-state",
+			Self::ContextAttachments => "context-attachments",
+			Self::ContextSessions => "context-sessions",
+			Self::ComposerWatch => "composer-watch",
+			Self::ActionsPresence => "actions-presence",
+			Self::ActionsAck => "actions-ack",
+			Self::ActionsCompose => "actions-compose",
+			Self::ActionsEdit => "actions-edit",
+			Self::ActionsDelete => "actions-delete",
+			Self::ActionsUpload => "actions-upload",
+			Self::ActionsSave => "actions-save",
+			Self::ActionsVoice => "actions-voice",
+			Self::ActionsSettings => "actions-settings",
+			Self::ActionsGuild => "actions-guild",
+			Self::ActionsSpeak => "actions-speak",
+			Self::UiKeybinds => "ui-keybinds",
+			Self::UiInput => "ui-input",
+			Self::NotificationsFilter => "notifications-filter",
+			Self::PluginsList => "plugins-list",
 		}
 	}
 
@@ -115,7 +184,11 @@ impl Permission {
 			| Self::ActionsNavigate
 			| Self::ActionsNotify
 			| Self::ChannelsHidden
-			| Self::TypingHidden => Tier::Low,
+			| Self::TypingHidden
+			| Self::ActionsCompose
+			| Self::ActionsSpeak
+			| Self::UiKeybinds
+			| Self::UiInput => Tier::Low,
 			Self::ContextTimeline
 			| Self::ContextDirectory
 			| Self::ContextMembers
@@ -126,13 +199,31 @@ impl Permission {
 			| Self::ActionsClipboard
 			| Self::ActionsOpenUrl
 			| Self::MessageIntercept
-			| Self::Composer => Tier::Medium,
+			| Self::Composer
+			| Self::ContextRelationships
+			| Self::ContextPresence
+			| Self::ContextProfiles
+			| Self::ContextRoles
+			| Self::ContextReadState
+			| Self::ComposerWatch
+			| Self::ActionsPresence
+			| Self::ActionsAck
+			| Self::ActionsSave
+			| Self::ActionsSettings
+			| Self::NotificationsFilter
+			| Self::PluginsList => Tier::Medium,
 			Self::MessageSend
 			| Self::MessageFilter
 			| Self::ActionsSend
 			| Self::ActionsSendUser
-			| Self::NetFetch => Tier::High,
-			Self::ContextPrivate | Self::MessageRetain => Tier::Sensitive,
+			| Self::NetFetch
+			| Self::ContextAttachments
+			| Self::ActionsEdit
+			| Self::ActionsDelete
+			| Self::ActionsUpload
+			| Self::ActionsVoice
+			| Self::ActionsGuild => Tier::High,
+			Self::ContextPrivate | Self::MessageRetain | Self::ContextSessions => Tier::Sensitive,
 		}
 	}
 
@@ -171,7 +262,30 @@ impl Permission {
 			| Self::ContextExpressions
 			| Self::ActionsSendUser
 			| Self::ChannelsHidden
-			| Self::TypingHidden => return None,
+			| Self::TypingHidden
+			| Self::ContextRelationships
+			| Self::ContextPresence
+			| Self::ContextProfiles
+			| Self::ContextRoles
+			| Self::ContextReadState
+			| Self::ContextAttachments
+			| Self::ContextSessions
+			| Self::ComposerWatch
+			| Self::ActionsPresence
+			| Self::ActionsAck
+			| Self::ActionsCompose
+			| Self::ActionsEdit
+			| Self::ActionsDelete
+			| Self::ActionsUpload
+			| Self::ActionsSave
+			| Self::ActionsVoice
+			| Self::ActionsSettings
+			| Self::ActionsGuild
+			| Self::ActionsSpeak
+			| Self::UiKeybinds
+			| Self::UiInput
+			| Self::NotificationsFilter
+			| Self::PluginsList => return None,
 		})
 	}
 }

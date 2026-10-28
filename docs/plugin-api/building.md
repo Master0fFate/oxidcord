@@ -25,9 +25,11 @@ priority = 0
 | `id` | Reverse DNS name, 3 to 128 characters of `[a-z0-9.-]`. Also the install directory name |
 | `name`, `description`, `authors`, `license` | Shown in the plugin manager |
 | `version` | Semver |
-| `api` | Semver requirement on the plugin API. The host implements 1.1.0, so `^1.0` and `^1.1` both load. Use `^1.1` when the plugin uses the `ui`, `client` or `hooks` interfaces |
+| `api` | Semver requirement on the plugin API. The host implements 1.2.0, so `^1.0`, `^1.1` and `^1.2` all load. Use `^1.1` when the plugin uses the `ui`, `client` or `hooks` interfaces and `^1.2` for `hooks2` |
 | `permissions` | Either bare names or tables with a reason: `[[permissions]]` with `permission = "storage"` and `reason = "..."`. The consent dialog shows the reason |
 | `network_hosts` | Lowercase hostnames `fetch` may reach. Needs the `net-fetch` permission, and the user must approve each host. Discord hosts (`discord.com`, `discordapp.com`, `discord.gg`, `discord.media`, `discordapp.net` and their subdomains) are rejected |
+| `hooks` | Names of the `hooks2` hooks the plugin implements: `draft-change`, `autocomplete-emoji`, `decorate-channel`, `notification`, `message-click`, `channel-click`, `link-click`, `display-user`, `before-send`, `intercept`. The host never calls an undeclared hook. Optional |
+| `url_schemes` | App URI schemes `open-url` may use, picked from `spotify`, `steam`, `tidal`, `itms-apps` and `music`. Needs the `actions-open-url` permission, and the user must approve each one. Any other scheme is rejected when the manifest loads. Optional |
 | `image_hosts` | Lowercase hostnames 1.1 views and patches may load images from, besides the Discord CDN. The user must approve each host |
 | `entry` | Relative path to the component inside the package, ending in `.wasm`, no `..`. Optional: a plugin without one ships only a `theme.json`. First party themes do not use this, they ship through the themes catalog (`docs/themes.md`) |
 | `min_host` | Oldest host version the plugin runs on. Optional |

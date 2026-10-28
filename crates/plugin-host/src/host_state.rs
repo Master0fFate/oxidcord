@@ -8,7 +8,12 @@ use wasmtime::ResourceLimiter;
 use wasmtime::component::ResourceTable;
 use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 
-use crate::api::model::{EmojiInfo, EmojiRef, MenuItem, MessageFull, MountOptions, StickerInfo, ViewTree};
+use crate::api::model::{
+	AuthSession, ChannelDetail, ClickWatch, ClientInfo, ClientOption, ContextDetail, DmSection, EmojiInfo,
+	EmojiRef, FileBlob, Folder, GuildDetail, Keybind, MemberInfo, MenuItem, MenuItemExt, MessageFull,
+	MessageMeta, MountOptions, NotificationSettings, PickedFile, PluginSummary, Presence, ReadState,
+	Relationship, RoleInfo, StickerInfo, UserProfile, ViewTree, VoiceDetail,
+};
 use crate::api::{
 	ChannelSummary, FetchRequest, FetchResponse, GuildSummary, HostError, MemberSummary, MessageRef,
 	MessageView, OutgoingMessage, UiTree, User, VoiceInfo,
@@ -54,6 +59,20 @@ const TOAST_TTL_MIN: Duration = Duration::from_millis(1_500);
 const TOAST_TTL_MAX: Duration = Duration::from_secs(15);
 const CDN: &str = "https://cdn.discordapp.com";
 const MEDIA_PROXY: &str = "https://media.discordapp.net";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CallContext {
+	Init,
+	Event,
+	Timer,
+	Render,
+	Intercept,
+	Display,
+	Decorate,
+	Autocomplete,
+	Notification,
+	UserAction,
+}
 
 pub struct Services {
 	pub store: Arc<Store>,
@@ -106,6 +125,7 @@ pub struct HostState {
 	rate: RateLimits,
 	storage: PluginStorage,
 	gesture_sends: Option<u8>,
+	context: CallContext,
 	wasi: WasiCtx,
 	table: ResourceTable,
 }
@@ -125,6 +145,7 @@ impl HostState {
 			rate: RateLimits::new(),
 			storage,
 			gesture_sends: None,
+			context: CallContext::Init,
 			wasi: WasiCtxBuilder::new()
 				.allow_tcp(false)
 				.allow_udp(false)
@@ -158,6 +179,17 @@ impl HostState {
 		self.services.grants.has(&self.plugin, Permission::ContextPrivate)
 	}
 
+	pub(crate) fn set_context(&mut self, context: CallContext) {
+		self.context = context;
+	}
+
+	fn loads(&self) -> Result<(), HostError> {
+		match self.context {
+			CallContext::Event | CallContext::Timer | CallContext::UserAction => Ok(()),
+			_ => Err(HostError::Unavailable),
+		}
+	}
+
 	pub(crate) fn begin_gesture(&mut self) {
 		self.gesture_sends = Some(MAX_SENDS_PER_GESTURE);
 	}
@@ -168,6 +200,14 @@ impl HostState {
 
 	fn in_gesture(&self) -> bool {
 		self.gesture_sends.is_some()
+	}
+
+	fn require_gesture(&self) -> Result<(), HostError> {
+		if self.in_gesture() {
+			Ok(())
+		} else {
+			Err(invalid("requires a user action"))
+		}
 	}
 
 	fn take_gesture_send(&mut self) -> Result<(), HostError> {
@@ -211,6 +251,10 @@ impl WasiView for HostState {
 
 fn invalid(reason: &str) -> HostError {
 	HostError::Invalid(reason.to_owned())
+}
+
+fn unavailable<T>() -> Result<T, HostError> {
+	Err(HostError::Unavailable)
 }
 
 fn within_rate(allowed: bool) -> Result<(), HostError> {
@@ -560,9 +604,7 @@ impl ui::Host for HostState {
 
 	fn open_modal(&mut self, title: String, tree: ViewTree) -> Result<(), HostError> {
 		self.require(Permission::UiMount)?;
-		if !self.in_gesture() {
-			return Err(invalid("requires a user action"));
-		}
+		self.require_gesture()?;
 		let tree = self.view(&tree);
 		self.services.mounts.push_overlay(Overlay::Modal {
 			plugin_id: Arc::clone(&self.plugin),
@@ -571,6 +613,25 @@ impl ui::Host for HostState {
 		});
 		self.changed();
 		Ok(())
+	}
+
+	fn set_menu_items_ext(&mut self, _menu: String, _items: Vec<MenuItemExt>) -> Result<(), HostError> {
+		self.require(Permission::UiMount)?;
+		unavailable()
+	}
+
+	fn context_detail(&mut self) -> Option<ContextDetail> {
+		None
+	}
+
+	fn watch_clicks(&mut self, _watch: ClickWatch) -> Result<(), HostError> {
+		self.require(Permission::UiInput)?;
+		unavailable()
+	}
+
+	fn watch_channel_clicks(&mut self, _watch: ClickWatch) -> Result<(), HostError> {
+		self.require(Permission::UiInput)?;
+		unavailable()
 	}
 }
 
@@ -663,6 +724,359 @@ impl client::Host for HostState {
 		self.take_gesture_send()?;
 		within_rate(self.rate.send_message.take())?;
 		self.services.broker.send_as_user(&self.plugin, msg)
+	}
+
+	fn list_relationships(&mut self) -> Result<Vec<Relationship>, HostError> {
+		self.require(Permission::ContextRelationships)?;
+		unavailable()
+	}
+
+	fn user_presence(&mut self, _user_id: u64) -> Result<Option<Presence>, HostError> {
+		self.require(Permission::ContextPresence)?;
+		unavailable()
+	}
+
+	fn idle_seconds(&mut self) -> Result<u32, HostError> {
+		self.require(Permission::ContextPresence)?;
+		unavailable()
+	}
+
+	fn read_state(&mut self, _channel_id: u64) -> Result<Option<ReadState>, HostError> {
+		self.require(Permission::ContextReadState)?;
+		unavailable()
+	}
+
+	fn unread_channels(&mut self, _guild_id: Option<u64>) -> Result<Vec<ReadState>, HostError> {
+		self.require(Permission::ContextReadState)?;
+		unavailable()
+	}
+
+	fn channel_muted(&mut self, _channel_id: u64) -> Result<bool, HostError> {
+		self.require(Permission::ContextReadState)?;
+		unavailable()
+	}
+
+	fn list_roles(&mut self, _guild_id: u64) -> Result<Vec<RoleInfo>, HostError> {
+		self.require(Permission::ContextRoles)?;
+		unavailable()
+	}
+
+	fn member_info(&mut self, _guild_id: u64, _user_id: u64) -> Result<Option<MemberInfo>, HostError> {
+		self.require(Permission::ContextRoles)?;
+		unavailable()
+	}
+
+	fn channel_permissions(&mut self, _channel_id: u64, _user_id: Option<u64>) -> Result<u64, HostError> {
+		self.require(Permission::ContextRoles)?;
+		unavailable()
+	}
+
+	fn guild_detail(&mut self, _guild_id: u64) -> Result<Option<GuildDetail>, HostError> {
+		self.require(Permission::ContextDirectory)?;
+		unavailable()
+	}
+
+	fn channel_detail(&mut self, _channel_id: u64) -> Result<Option<ChannelDetail>, HostError> {
+		self.require(Permission::ContextDirectory)?;
+		unavailable()
+	}
+
+	fn list_folders(&mut self) -> Result<Vec<Folder>, HostError> {
+		self.require(Permission::ContextDirectory)?;
+		unavailable()
+	}
+
+	fn user_profile(&mut self, _user_id: u64) -> Result<Option<UserProfile>, HostError> {
+		self.require(Permission::ContextProfiles)?;
+		self.loads()?;
+		unavailable()
+	}
+
+	fn list_sessions(&mut self) -> Result<Vec<AuthSession>, HostError> {
+		self.require(Permission::ContextSessions)?;
+		unavailable()
+	}
+
+	fn client_info(&mut self) -> Result<ClientInfo, HostError> {
+		self.require(Permission::ContextBasic)?;
+		unavailable()
+	}
+
+	fn voice_detail(&mut self) -> Result<Option<VoiceDetail>, HostError> {
+		self.require(Permission::ContextVoice)?;
+		unavailable()
+	}
+
+	fn fetch_message(
+		&mut self,
+		_channel_id: u64,
+		_message_id: u64,
+	) -> Result<Option<MessageFull>, HostError> {
+		self.require(Permission::ContextTimeline)?;
+		self.loads()?;
+		unavailable()
+	}
+
+	fn message_meta(&mut self, _m: MessageRef) -> Result<Option<MessageMeta>, HostError> {
+		self.require(Permission::ContextTimeline)?;
+		unavailable()
+	}
+
+	fn reaction_users(
+		&mut self,
+		_m: MessageRef,
+		_emoji: EmojiRef,
+		_limit: u32,
+	) -> Result<Vec<User>, HostError> {
+		self.require(Permission::ContextTimeline)?;
+		self.loads()?;
+		unavailable()
+	}
+
+	fn fetch_user(&mut self, _user_id: u64) -> Result<Option<User>, HostError> {
+		self.require(Permission::ContextMembers)?;
+		self.loads()?;
+		unavailable()
+	}
+
+	fn attachment_bytes(&mut self, _m: MessageRef, _attachment_id: u64) -> Result<Vec<u8>, HostError> {
+		self.require(Permission::ContextAttachments)?;
+		self.loads()?;
+		unavailable()
+	}
+
+	fn avatar_bytes(&mut self, _user_id: u64, _size: u32) -> Result<Vec<u8>, HostError> {
+		self.require(Permission::ContextAttachments)?;
+		self.loads()?;
+		unavailable()
+	}
+
+	fn list_favorite_emojis(&mut self) -> Result<Vec<EmojiRef>, HostError> {
+		self.require(Permission::ContextExpressions)?;
+		unavailable()
+	}
+
+	fn list_plugins(&mut self) -> Result<Vec<PluginSummary>, HostError> {
+		self.require(Permission::PluginsList)?;
+		unavailable()
+	}
+
+	fn composer_get_draft(&mut self) -> Result<String, HostError> {
+		self.require(Permission::Composer)?;
+		unavailable()
+	}
+
+	fn set_status(&mut self, _status: String) -> Result<(), HostError> {
+		self.require(Permission::ActionsPresence)?;
+		unavailable()
+	}
+
+	fn set_custom_status(
+		&mut self,
+		_text: String,
+		_emoji: Option<EmojiRef>,
+		_expires_ms: Option<i64>,
+	) -> Result<(), HostError> {
+		self.require(Permission::ActionsPresence)?;
+		unavailable()
+	}
+
+	fn mark_read(&mut self, _channel_id: u64) -> Result<(), HostError> {
+		self.require(Permission::ActionsAck)?;
+		unavailable()
+	}
+
+	fn mark_unread(&mut self, _m: MessageRef) -> Result<(), HostError> {
+		self.require(Permission::ActionsAck)?;
+		unavailable()
+	}
+
+	fn mark_guild_read(&mut self, _guild_id: u64) -> Result<(), HostError> {
+		self.require(Permission::ActionsAck)?;
+		self.require_gesture()?;
+		unavailable()
+	}
+
+	fn start_reply(&mut self, _m: MessageRef, _mention: bool) -> Result<(), HostError> {
+		self.require(Permission::ActionsCompose)?;
+		self.require_gesture()?;
+		unavailable()
+	}
+
+	fn start_edit(&mut self, _m: MessageRef) -> Result<(), HostError> {
+		self.require(Permission::ActionsCompose)?;
+		self.require_gesture()?;
+		unavailable()
+	}
+
+	fn jump_to_message(&mut self, _m: MessageRef) -> Result<(), HostError> {
+		self.require(Permission::ActionsCompose)?;
+		self.require_gesture()?;
+		unavailable()
+	}
+
+	fn jump_to_top(&mut self, _channel_id: u64) -> Result<(), HostError> {
+		self.require(Permission::ActionsCompose)?;
+		self.require_gesture()?;
+		unavailable()
+	}
+
+	fn edit_message(&mut self, _m: MessageRef, _content: String) -> Result<(), HostError> {
+		self.require(Permission::ActionsEdit)?;
+		self.require_gesture()?;
+		unavailable()
+	}
+
+	fn delete_message(&mut self, _m: MessageRef) -> Result<(), HostError> {
+		self.require(Permission::ActionsDelete)?;
+		self.require_gesture()?;
+		unavailable()
+	}
+
+	fn react(&mut self, _m: MessageRef, _emoji: EmojiRef, burst: bool) -> Result<(), HostError> {
+		self.require(Permission::ActionsReact)?;
+		if burst {
+			self.require_gesture()?;
+		}
+		unavailable()
+	}
+
+	fn remove_reaction(&mut self, _m: MessageRef, _emoji: EmojiRef) -> Result<(), HostError> {
+		self.require(Permission::ActionsReact)?;
+		unavailable()
+	}
+
+	fn pick_files(&mut self, _multiple: bool) -> Result<Vec<PickedFile>, HostError> {
+		self.require(Permission::ActionsUpload)?;
+		self.require_gesture()?;
+		unavailable()
+	}
+
+	fn composer_attach_files(&mut self, _handles: Vec<u64>) -> Result<(), HostError> {
+		self.require(Permission::ActionsUpload)?;
+		self.require_gesture()?;
+		unavailable()
+	}
+
+	fn send_message_files(&mut self, _msg: OutgoingMessage, _files: Vec<FileBlob>) -> Result<(), HostError> {
+		self.require(Permission::ActionsUpload)?;
+		self.require_gesture()?;
+		unavailable()
+	}
+
+	fn composer_set_draft(&mut self, _text: String) -> Result<(), HostError> {
+		self.require(Permission::Composer)?;
+		self.require_gesture()?;
+		unavailable()
+	}
+
+	fn composer_attach_sticker(&mut self, _sticker_id: u64) -> Result<(), HostError> {
+		self.require(Permission::Composer)?;
+		self.require_gesture()?;
+		unavailable()
+	}
+
+	fn save_attachment(&mut self, _m: MessageRef, _attachment_id: u64) -> Result<(), HostError> {
+		self.require(Permission::ActionsSave)?;
+		self.require_gesture()?;
+		unavailable()
+	}
+
+	fn join_voice(&mut self, _guild_id: Option<u64>, _channel_id: u64) -> Result<(), HostError> {
+		self.require(Permission::ActionsVoice)?;
+		self.require_gesture()?;
+		unavailable()
+	}
+
+	fn leave_voice(&mut self) -> Result<(), HostError> {
+		self.require(Permission::ActionsVoice)?;
+		self.require_gesture()?;
+		unavailable()
+	}
+
+	fn set_guild_notifications(
+		&mut self,
+		_guild_id: u64,
+		_settings: NotificationSettings,
+	) -> Result<(), HostError> {
+		self.require(Permission::ActionsSettings)?;
+		unavailable()
+	}
+
+	fn set_channel_notifications(
+		&mut self,
+		_channel_id: u64,
+		_settings: NotificationSettings,
+	) -> Result<(), HostError> {
+		self.require(Permission::ActionsSettings)?;
+		unavailable()
+	}
+
+	fn set_client_option(&mut self, _value: ClientOption) -> Result<(), HostError> {
+		self.require(Permission::ActionsSettings)?;
+		unavailable()
+	}
+
+	fn set_dm_sections(&mut self, _sections: Vec<DmSection>) -> Result<(), HostError> {
+		self.require(Permission::ActionsSettings)?;
+		unavailable()
+	}
+
+	fn clone_emoji(&mut self, _guild_id: u64, _emoji: EmojiRef, _name: String) -> Result<(), HostError> {
+		self.require(Permission::ActionsGuild)?;
+		self.require_gesture()?;
+		unavailable()
+	}
+
+	fn clone_sticker(&mut self, _guild_id: u64, _sticker_id: u64) -> Result<(), HostError> {
+		self.require(Permission::ActionsGuild)?;
+		self.require_gesture()?;
+		unavailable()
+	}
+
+	fn register_keybind(&mut self, _bind: Keybind) -> Result<(), HostError> {
+		self.require(Permission::UiKeybinds)?;
+		unavailable()
+	}
+
+	fn unregister_keybind(&mut self, _id: String) -> Result<(), HostError> {
+		self.require(Permission::UiKeybinds)?;
+		unavailable()
+	}
+
+	fn speak(&mut self, _text: String, _rate: f32, _volume: f32) -> Result<(), HostError> {
+		self.require(Permission::ActionsSpeak)?;
+		unavailable()
+	}
+
+	fn invalidate_message(&mut self, _m: MessageRef) -> Result<(), HostError> {
+		unavailable()
+	}
+
+	fn invalidate_user(&mut self, _user_id: u64) -> Result<(), HostError> {
+		unavailable()
+	}
+
+	fn invalidate_channel(&mut self, _channel_id: u64) -> Result<(), HostError> {
+		unavailable()
+	}
+
+	fn open_settings(&mut self, _page: String) -> Result<(), HostError> {
+		self.require(Permission::ActionsNavigate)?;
+		self.require_gesture()?;
+		unavailable()
+	}
+
+	fn navigate_back(&mut self) -> Result<(), HostError> {
+		self.require(Permission::ActionsNavigate)?;
+		self.require_gesture()?;
+		unavailable()
+	}
+
+	fn navigate_forward(&mut self) -> Result<(), HostError> {
+		self.require(Permission::ActionsNavigate)?;
+		self.require_gesture()?;
+		unavailable()
 	}
 }
 

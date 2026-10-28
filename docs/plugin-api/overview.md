@@ -1,6 +1,6 @@
 # Plugin API overview
 
-Plugins are WebAssembly components that implement the `oxidcord:plugin@1.1.0` WIT package (`crates/plugin-host/wit/oxidcord.wit`). The host runs each plugin on its own worker thread inside wasmtime. A plugin reaches the outside world only through host interfaces, and every function there is gated by a permission the user granted.
+Plugins are WebAssembly components that implement the `oxidcord:plugin@1.2.0` WIT package (`crates/plugin-host/wit/oxidcord.wit`). The host runs each plugin on its own worker thread inside wasmtime. A plugin reaches the outside world only through host interfaces, and every function there is gated by a permission the user granted.
 
 Related pages:
 
@@ -16,11 +16,11 @@ The package defines two worlds.
 | World | Imports | Exports | Built with |
 | --- | --- | --- | --- |
 | `plugin` | `host` | `guest` | `export_plugin!(T)` |
-| `plugin-ext` | `host`, `ui`, `client` | `guest`, `hooks` | `export_plugin!(T, ext)` with the SDK feature `ext` |
+| `plugin-ext` | `host`, `ui`, `client` | `guest`, `hooks`, `hooks2` | `export_plugin!(T, ext)` with the SDK feature `ext` |
 
-The `types`, `host` and `guest` interfaces are unchanged from 1.0.0. The host loads every plugin with one linker. It looks up the `oxidcord:plugin/hooks` export at load time: a component that exports it runs as an extended plugin, any other component runs as a 1.0 plugin and the 1.1 hooks are never called for it. Components built against `oxidcord:plugin@1.0.0` load unchanged, because import and export lookups match any 1.x version.
+The `types`, `host`, `guest` and `hooks` interfaces are unchanged from 1.0.0 and 1.1.0. The host loads every plugin with one linker. It looks up the `oxidcord:plugin/hooks` export at load time: a component that exports it runs as an extended plugin, any other component runs as a 1.0 plugin and the 1.1 hooks are never called for it. The 1.2 hooks live in a separate `hooks2` export, looked up on its own, so a 1.1 build keeps working. A component whose `hooks` or `hooks2` export is present but does not match the API is listed as incompatible and never runs as a downgraded plugin. Components built against `oxidcord:plugin@1.0.0` load unchanged, because import and export lookups match any 1.x version.
 
-The host implements API 1.1.0. Manifests with `api = "^1.0"` keep loading. A plugin that uses the 1.1 interfaces should declare `api = "^1.1"` so that 1.0 hosts list it as incompatible instead of failing to instantiate it.
+The host implements API 1.2.0. Manifests with `api = "^1.0"` and `api = "^1.1"` keep loading. A plugin that uses the 1.1 interfaces should declare `api = "^1.1"`, and one that uses 1.2 features `api = "^1.2"`, so that older hosts list it as incompatible instead of failing to instantiate it.
 
 ## Guest hooks
 
@@ -48,6 +48,29 @@ The host implements API 1.1.0. Manifests with `api = "^1.0"` keep loading. A plu
 | `intercept-message` | A message is rendered, needs `message-intercept` | 50 ms | `message-patch` |
 | `on-timer` | A timer set with `client.set-timer` fires | 200 ms | nothing |
 | `on-emoji-pick` | The user picks an emoji the account cannot use, needs `composer` | 200 ms | `pick-verdict` |
+
+### `hooks2` (extended plugins, API 1.2)
+
+The host calls a `hooks2` hook only for plugins that export `hooks2` and list the matching name in the manifest `hooks` array. Hooks without a manifest name are gated by their permission alone. Every hook answers with its no-op value when the plugin does not export `hooks2`.
+
+| Hook | Manifest name | Permission | Default deadline |
+| --- | --- | --- | --- |
+| `before-send-full` | `before-send` | `message-send` | 500 ms |
+| `display-user-full` | `display-user` | `user-display` | 50 ms plus 5 ms per user, batches of 50 |
+| `intercept-message-ext` | `intercept` | `message-intercept` | 50 ms |
+| `intercept-messages-ext` | `intercept` | `message-intercept` | 50 ms per message, at most 500 ms |
+| `on-client-event` | none | per event | 200 ms |
+| `on-message-click` | `message-click` | `ui-input` | 300 ms |
+| `on-channel-click` | `channel-click` | `ui-input` | 300 ms |
+| `on-link-click` | `link-click` | `actions-open-url` | 300 ms |
+| `on-draft-change` | `draft-change` | `composer-watch` | 100 ms |
+| `autocomplete-emoji` | `autocomplete-emoji` | `ui-input` | 30 ms |
+| `decorate-channel` | `decorate-channel` | `ui-input` | 50 ms plus 5 ms per channel |
+| `on-keybind` | none | `ui-keybinds` | 2 s |
+| `on-notification` | `notification` | `notifications-filter` | 250 ms |
+| `on-badge-click` | none | `user-display` | 2 s |
+
+The 1.2 `client` and `ui` functions are declared and permission checked, and the host answers `host-error::unavailable` until the features that back them ship.
 
 Events: `message-created`, `message-updated`, `message-deleted`, `reaction-added`, `typing`, `channel-switched`, `setting-changed`, `connection`, `voice-changed`. Message, reaction and typing events need `context-timeline`, and events from direct messages also need `context-private`. `channel-switched` needs `context-basic`. `voice-changed` needs `context-voice`, and calls in direct messages also need `context-private`. `setting-changed` and `connection` are always delivered.
 
@@ -136,6 +159,8 @@ The consent dialog groups permissions by tier. Low tier permissions are collapse
 | `context-private` | sensitive | Direct message data in every context feature and in the render, filter and intercept hooks |
 | `message-retain` | sensitive | Keeping deleted messages visible through `message-patch.retain` |
 
+API 1.2 adds the permissions `context-relationships`, `context-presence`, `context-profiles`, `context-roles`, `context-read-state`, `context-attachments`, `context-sessions`, `composer-watch`, `actions-presence`, `actions-ack`, `actions-compose`, `actions-edit`, `actions-delete`, `actions-upload`, `actions-save`, `actions-voice`, `actions-settings`, `actions-guild`, `actions-speak`, `ui-keybinds`, `ui-input`, `notifications-filter` and `plugins-list`. Like the 1.1 ones they deny with `host-error::invalid("permission <name> is not granted")`. Their per-function reference ships with the 1.2 docs.
+
 `network_hosts` may not name `discord.com`, `discordapp.com`, `discord.gg`, `discord.media`, `discordapp.net` or any of their subdomains.
 
 ## Images
@@ -161,7 +186,7 @@ A 1.0 style plugin implements `Plugin` and calls `export_plugin!(T)`. An extende
 
 ```toml
 [dependencies]
-oxidcord-plugin-sdk = { version = "0.3", features = ["ext"] }
+oxidcord-plugin-sdk = { version = "0.5", features = ["ext"] }
 ```
 
 ```rust

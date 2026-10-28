@@ -7332,7 +7332,7 @@ dependencies = [
 
 [[package]]
 name = "oxidcord-plugin-sdk"
-version = "0.4.3"
+version = "0.5.0"
 dependencies = [
  "wit-bindgen 0.63.0",
 ]

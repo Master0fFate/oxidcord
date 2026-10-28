@@ -11,6 +11,7 @@ use wasmtime::{Config, Engine, OptLevel};
 use crate::bindings::PluginIndices;
 use crate::bindings::ext::PluginExt;
 use crate::bindings::ext::exports::oxidcord::plugin::hooks::GuestIndices as HookIndices;
+use crate::bindings::ext::exports::oxidcord::plugin::hooks2::GuestIndices as Hooks2Indices;
 use crate::broker::HostBroker;
 use crate::config::RuntimeConfig;
 use crate::error::{Error, Result};
@@ -23,11 +24,14 @@ use crate::patches::Patches;
 use crate::slots::{Commands, Slots};
 use crate::timers::Timers;
 
+const PACKAGE: &str = "oxidcord:plugin";
+
 #[derive(Clone)]
 pub(crate) struct Prepared {
 	pub(crate) instance: InstancePre<HostState>,
 	pub(crate) guest: PluginIndices,
 	pub(crate) hooks: Option<HookIndices>,
+	pub(crate) hooks2: Option<Hooks2Indices>,
 }
 
 #[derive(Default)]
@@ -76,12 +80,38 @@ impl RuntimeShared {
 	pub(crate) fn prepare(&self, component: &Component) -> Result<Prepared> {
 		let instance = self.linker.instantiate_pre(component).map_err(Error::wasm)?;
 		let guest = PluginIndices::new(&instance).map_err(Error::wasm)?;
-		let hooks = HookIndices::new(&instance).ok();
+		let hooks = self.optional(component, "hooks", HookIndices::new(&instance))?;
+		let hooks2 = self.optional(component, "hooks2", Hooks2Indices::new(&instance))?;
 		Ok(Prepared {
 			instance,
 			guest,
 			hooks,
+			hooks2,
 		})
+	}
+
+	fn optional<T>(
+		&self,
+		component: &Component,
+		interface: &str,
+		indices: wasmtime::Result<T>,
+	) -> Result<Option<T>> {
+		match indices {
+			Ok(indices) => Ok(Some(indices)),
+			Err(error) if self.exports_interface(component, interface) => Err(Error::Incompatible(format!(
+				"exported interface {interface} does not match api {}: {error:#}",
+				crate::manifest::API_VERSION
+			))),
+			Err(_) => Ok(None),
+		}
+	}
+
+	fn exports_interface(&self, component: &Component, interface: &str) -> bool {
+		let prefix = format!("{PACKAGE}/{interface}@");
+		component
+			.component_type()
+			.exports(&self.engine)
+			.any(|(name, _)| name.starts_with(&prefix))
 	}
 }
 

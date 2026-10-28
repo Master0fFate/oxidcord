@@ -1,4 +1,4 @@
-package oxidcord:plugin@1.1.0;
+package oxidcord:plugin@1.2.0;
 
 interface types {
 	type snowflake = u64;
@@ -345,7 +345,7 @@ interface guest {
 }
 
 interface model {
-	use types.{snowflake, message-view, md-node};
+	use types.{snowflake, user, message-ref, message-view, md-node, reaction-event, voice-info};
 
 	enum tone {
 		normal,
@@ -793,11 +793,415 @@ interface model {
 		insert(string),
 		block(string),
 	}
+
+	record relationship {
+		user: user,
+		kind: relationship-kind,
+		since-ms: option<s64>,
+		nickname: option<string>,
+	}
+
+	enum relationship-kind {
+		friend,
+		blocked,
+		pending-incoming,
+		pending-outgoing,
+		implicit,
+	}
+
+	record activity-view {
+		kind: u8,
+		name: string,
+		details: option<string>,
+		state: option<string>,
+		emoji: option<emoji-ref>,
+		start-ms: option<s64>,
+		end-ms: option<s64>,
+	}
+
+	record presence {
+		user-id: snowflake,
+		status: string,
+		platforms: list<string>,
+		activities: list<activity-view>,
+	}
+
+	record read-state {
+		channel-id: snowflake,
+		last-message-id: option<snowflake>,
+		last-read-id: option<snowflake>,
+		mention-count: u32,
+		unread: bool,
+		muted: bool,
+	}
+
+	record role-info {
+		id: snowflake,
+		name: string,
+		color: u32,
+		position: s32,
+		hoist: bool,
+		icon: option<string>,
+		permissions: u64,
+		mentionable: bool,
+	}
+
+	record member-info {
+		user: user,
+		nick: option<string>,
+		roles: list<snowflake>,
+		top-role: option<snowflake>,
+		color: option<u32>,
+		joined-ms: option<s64>,
+		timeout-until-ms: option<s64>,
+		premium-since-ms: option<s64>,
+		pending: bool,
+	}
+
+	record guild-detail {
+		id: snowflake,
+		name: string,
+		icon: option<string>,
+		banner: option<string>,
+		description: option<string>,
+		owner-id: snowflake,
+		member-count: option<u32>,
+		presence-count: option<u32>,
+		boost-tier: u8,
+		boost-count: u32,
+		created-ms: s64,
+		features: list<string>,
+		vanity: option<string>,
+	}
+
+	record channel-detail {
+		id: snowflake,
+		guild-id: option<snowflake>,
+		name: string,
+		kind: u32,
+		topic: option<string>,
+		nsfw: bool,
+		parent-id: option<snowflake>,
+		position: u32,
+		recipients: list<snowflake>,
+		owner-id: option<snowflake>,
+		last-message-id: option<snowflake>,
+		rate-limit: u32,
+		created-ms: s64,
+	}
+
+	record connection {
+		kind: string,
+		name: string,
+		id: string,
+		verified: bool,
+		url: option<string>,
+	}
+
+	record user-profile {
+		user: user,
+		bio: option<string>,
+		pronouns: option<string>,
+		banner: option<string>,
+		accent-color: option<u32>,
+		connections: list<connection>,
+		premium-since-ms: option<s64>,
+		guild-nick: option<string>,
+		mutual-guilds: list<snowflake>,
+	}
+
+	record auth-session {
+		id: string,
+		client-os: string,
+		client-platform: string,
+		location: string,
+		approx-last-used-ms: s64,
+		current: bool,
+	}
+
+	record folder {
+		id: option<snowflake>,
+		name: option<string>,
+		color: option<u32>,
+		guilds: list<snowflake>,
+	}
+
+	record client-info {
+		version: string,
+		platform: string,
+		uptime-ms: s64,
+		startup: list<tuple<string, s64>>,
+		locale: string,
+	}
+
+	record plugin-summary {
+		id: string,
+		name: string,
+		version: string,
+		enabled: bool,
+		ext: bool,
+	}
+
+	record keybind {
+		id: string,
+		chord: string,
+	}
+
+	record picked-file {
+		handle: u64,
+		name: string,
+		size: u64,
+		content-type: option<string>,
+	}
+
+	record file-blob {
+		name: string,
+		content-type: option<string>,
+		bytes: list<u8>,
+	}
+
+	record outgoing-attachment {
+		handle: u64,
+		name: string,
+		size: u64,
+		content-type: option<string>,
+		spoiler: bool,
+	}
+
+	record outgoing-full {
+		channel-id: snowflake,
+		content: string,
+		reply-to: option<snowflake>,
+		mention-reply: bool,
+		silent: bool,
+		attachments: list<outgoing-attachment>,
+		stickers: list<snowflake>,
+	}
+
+	variant send-decision-full {
+		pass,
+		replace(outgoing-full),
+		cancel(string),
+	}
+
+	record badge {
+		icon: option<string>,
+		image: option<string>,
+		label: option<string>,
+		tooltip: string,
+		color: option<color>,
+		key: option<string>,
+	}
+
+	record display-override-full {
+		name: option<string>,
+		suffix: option<string>,
+		color: option<color>,
+		badges: list<badge>,
+		avatar: option<string>,
+		banner: option<string>,
+		decoration: option<string>,
+		pronouns: option<string>,
+	}
+
+	enum click-kind {
+		single,
+		double,
+		middle,
+	}
+
+	flags modifiers {
+		ctrl,
+		shift,
+		alt,
+		meta,
+	}
+
+	variant click-target {
+		body,
+		spoiler(u32),
+		attachment(snowflake),
+		embed(u32),
+		author,
+		reply-preview,
+	}
+
+	record message-click {
+		message: message-ref,
+		kind: click-kind,
+		modifiers: modifiers,
+		target: click-target,
+	}
+
+	record click-watch {
+		kinds: list<click-kind>,
+		modifiers: modifiers,
+		targets: list<click-target>,
+	}
+
+	record channel-click {
+		guild-id: option<snowflake>,
+		channel-id: snowflake,
+		kind: click-kind,
+		modifiers: modifiers,
+	}
+
+	variant link-verdict {
+		pass,
+		open(string),
+		consume,
+	}
+
+	enum notification-kind {
+		message,
+		dm,
+		group-dm,
+	}
+
+	record notification-info {
+		id: u64,
+		channel-id: snowflake,
+		guild-id: option<snowflake>,
+		message: option<message-ref>,
+		author: option<snowflake>,
+		kind: notification-kind,
+		mentions-me: bool,
+		mentions-everyone: bool,
+	}
+
+	record notification-override {
+		title: string,
+		body: string,
+		sound: bool,
+	}
+
+	variant notification-verdict {
+		allow,
+		silent,
+		suppress,
+		replace(notification-override),
+	}
+
+	record message-meta {
+		guild-id: option<snowflake>,
+		reply-to: option<message-ref>,
+		%flags: u64,
+		latency-ms: option<u32>,
+		author-color: option<u32>,
+		pinned: bool,
+		edited-ms: option<s64>,
+		nsfw-channel: bool,
+	}
+
+	record attachment-override {
+		id: snowflake,
+		blur: bool,
+		alt: option<string>,
+		tooltip: option<string>,
+		url: option<string>,
+		hidden: bool,
+	}
+
+	enum attachment-layout {
+		default,
+		stacked,
+		inline-video,
+	}
+
+	record code-block-node {
+		language: option<string>,
+		lines: list<list<styled-span>>,
+	}
+
+	record message-patch-ext {
+		base: message-patch,
+		attachments: list<attachment-override>,
+		layout: option<attachment-layout>,
+		reply-annotation: option<string>,
+		reveal-spoilers: bool,
+		tooltip: option<string>,
+		code-blocks: list<tuple<u32, code-block-node>>,
+	}
+
+	record context-detail {
+		emoji: option<emoji-ref>,
+		sticker-id: option<snowflake>,
+		role-id: option<snowflake>,
+		attachment-id: option<snowflake>,
+		selection: option<string>,
+		image-url: option<string>,
+		reaction: option<emoji-ref>,
+	}
+
+	flags menu-when-ext {
+		has-selection,
+		is-image,
+		own-role,
+		in-voice,
+	}
+
+	record menu-item-ext {
+		base: menu-item,
+		extra: menu-when-ext,
+	}
+
+	record dm-section {
+		title: string,
+		channels: list<snowflake>,
+		collapsed: bool,
+	}
+
+	variant client-option {
+		message-toolbar-expanded(bool),
+		plain-folder-icons(bool),
+		folder-sidebar(bool),
+		forum-layout(u8),
+		forum-sort(u8),
+		notification-volume(u8),
+		streamer-mode(bool),
+		typing-animation(bool),
+		super-react-default(bool),
+		reply-ping-default(bool),
+	}
+
+	record notification-settings {
+		muted: option<bool>,
+		level: option<u8>,
+		suppress-everyone: option<bool>,
+		suppress-roles: option<bool>,
+		mobile-push: option<bool>,
+		hide-muted: option<bool>,
+		mute-until-ms: option<s64>,
+	}
+
+	record voice-detail {
+		base: voice-info,
+		started-ms: s64,
+		channel-name: string,
+		guild-name: option<string>,
+		self-video: bool,
+	}
+
+	variant client-event {
+		relationship-changed(relationship),
+		relationship-removed(snowflake),
+		guild-joined(snowflake),
+		guild-left(snowflake),
+		guild-removed(snowflake),
+		dm-closed(snowflake),
+		presence-changed(presence),
+		idle-changed(bool),
+		reaction-removed(reaction-event),
+		message-acked(tuple<message-ref, u32>),
+		unread-changed(read-state),
+		channel-list-changed,
+		ready,
+	}
 }
 
 interface ui {
 	use types.{host-error};
-	use model.{view-tree, mount-options, menu-item};
+	use model.{view-tree, mount-options, menu-item, menu-item-ext, context-detail as context-detail-record, click-watch};
 
 	mount: func(point: string, key: string, tree: view-tree, options: mount-options) -> result<_, host-error>;
 	update: func(point: string, key: string, tree: view-tree) -> result<_, host-error>;
@@ -807,11 +1211,15 @@ interface ui {
 	set-menu-items: func(menu: string, items: list<menu-item>) -> result<_, host-error>;
 	toast: func(tree: view-tree, ttl-ms: u32) -> result<_, host-error>;
 	open-modal: func(title: string, tree: view-tree) -> result<_, host-error>;
+	set-menu-items-ext: func(menu: string, items: list<menu-item-ext>) -> result<_, host-error>;
+	context-detail: func() -> option<context-detail-record>;
+	watch-clicks: func(watch: click-watch) -> result<_, host-error>;
+	watch-channel-clicks: func(watch: click-watch) -> result<_, host-error>;
 }
 
 interface client {
-	use types.{snowflake, host-error, outgoing-message};
-	use model.{emoji-ref, emoji-info, sticker-info, message-full};
+	use types.{snowflake, user, message-ref, host-error, outgoing-message};
+	use model.{emoji-ref, emoji-info, sticker-info, message-full, relationship, presence, read-state as read-state-record, role-info, member-info as member-info-record, guild-detail as guild-detail-record, channel-detail as channel-detail-record, folder, user-profile as user-profile-record, auth-session, client-info as client-info-record, voice-detail as voice-detail-record, message-meta as message-meta-record, plugin-summary, keybind, picked-file, file-blob, notification-settings, client-option, dm-section};
 
 	set-timer: func(delay-ms: u32, repeat-ms: u32, tag: string) -> result<u64, host-error>;
 	clear-timer: func(id: u64);
@@ -823,6 +1231,67 @@ interface client {
 	get-message: func(channel-id: snowflake, message-id: snowflake) -> result<option<message-full>, host-error>;
 	channel-messages-full: func(channel-id: snowflake, limit: u32) -> result<list<message-full>, host-error>;
 	send-as-user: func(msg: outgoing-message) -> result<_, host-error>;
+	list-relationships: func() -> result<list<relationship>, host-error>;
+	user-presence: func(user-id: snowflake) -> result<option<presence>, host-error>;
+	idle-seconds: func() -> result<u32, host-error>;
+	read-state: func(channel-id: snowflake) -> result<option<read-state-record>, host-error>;
+	unread-channels: func(guild-id: option<snowflake>) -> result<list<read-state-record>, host-error>;
+	channel-muted: func(channel-id: snowflake) -> result<bool, host-error>;
+	list-roles: func(guild-id: snowflake) -> result<list<role-info>, host-error>;
+	member-info: func(guild-id: snowflake, user-id: snowflake) -> result<option<member-info-record>, host-error>;
+	channel-permissions: func(channel-id: snowflake, user-id: option<snowflake>) -> result<u64, host-error>;
+	guild-detail: func(guild-id: snowflake) -> result<option<guild-detail-record>, host-error>;
+	channel-detail: func(channel-id: snowflake) -> result<option<channel-detail-record>, host-error>;
+	list-folders: func() -> result<list<folder>, host-error>;
+	user-profile: func(user-id: snowflake) -> result<option<user-profile-record>, host-error>;
+	list-sessions: func() -> result<list<auth-session>, host-error>;
+	client-info: func() -> result<client-info-record, host-error>;
+	voice-detail: func() -> result<option<voice-detail-record>, host-error>;
+	fetch-message: func(channel-id: snowflake, message-id: snowflake) -> result<option<message-full>, host-error>;
+	message-meta: func(m: message-ref) -> result<option<message-meta-record>, host-error>;
+	reaction-users: func(m: message-ref, emoji: emoji-ref, limit: u32) -> result<list<user>, host-error>;
+	fetch-user: func(user-id: snowflake) -> result<option<user>, host-error>;
+	attachment-bytes: func(m: message-ref, attachment-id: snowflake) -> result<list<u8>, host-error>;
+	avatar-bytes: func(user-id: snowflake, size: u32) -> result<list<u8>, host-error>;
+	list-favorite-emojis: func() -> result<list<emoji-ref>, host-error>;
+	list-plugins: func() -> result<list<plugin-summary>, host-error>;
+	composer-get-draft: func() -> result<string, host-error>;
+	set-status: func(status: string) -> result<_, host-error>;
+	set-custom-status: func(text: string, emoji: option<emoji-ref>, expires-ms: option<s64>) -> result<_, host-error>;
+	mark-read: func(channel-id: snowflake) -> result<_, host-error>;
+	mark-unread: func(m: message-ref) -> result<_, host-error>;
+	mark-guild-read: func(guild-id: snowflake) -> result<_, host-error>;
+	start-reply: func(m: message-ref, mention: bool) -> result<_, host-error>;
+	start-edit: func(m: message-ref) -> result<_, host-error>;
+	jump-to-message: func(m: message-ref) -> result<_, host-error>;
+	jump-to-top: func(channel-id: snowflake) -> result<_, host-error>;
+	edit-message: func(m: message-ref, content: string) -> result<_, host-error>;
+	delete-message: func(m: message-ref) -> result<_, host-error>;
+	react: func(m: message-ref, emoji: emoji-ref, burst: bool) -> result<_, host-error>;
+	remove-reaction: func(m: message-ref, emoji: emoji-ref) -> result<_, host-error>;
+	pick-files: func(multiple: bool) -> result<list<picked-file>, host-error>;
+	composer-attach-files: func(handles: list<u64>) -> result<_, host-error>;
+	send-message-files: func(msg: outgoing-message, files: list<file-blob>) -> result<_, host-error>;
+	composer-set-draft: func(text: string) -> result<_, host-error>;
+	composer-attach-sticker: func(sticker-id: snowflake) -> result<_, host-error>;
+	save-attachment: func(m: message-ref, attachment-id: snowflake) -> result<_, host-error>;
+	join-voice: func(guild-id: option<snowflake>, channel-id: snowflake) -> result<_, host-error>;
+	leave-voice: func() -> result<_, host-error>;
+	set-guild-notifications: func(guild-id: snowflake, settings: notification-settings) -> result<_, host-error>;
+	set-channel-notifications: func(channel-id: snowflake, settings: notification-settings) -> result<_, host-error>;
+	set-client-option: func(value: client-option) -> result<_, host-error>;
+	set-dm-sections: func(sections: list<dm-section>) -> result<_, host-error>;
+	clone-emoji: func(guild-id: snowflake, emoji: emoji-ref, name: string) -> result<_, host-error>;
+	clone-sticker: func(guild-id: snowflake, sticker-id: snowflake) -> result<_, host-error>;
+	register-keybind: func(bind: keybind) -> result<_, host-error>;
+	unregister-keybind: func(id: string) -> result<_, host-error>;
+	speak: func(text: string, rate: f32, volume: f32) -> result<_, host-error>;
+	invalidate-message: func(m: message-ref) -> result<_, host-error>;
+	invalidate-user: func(user-id: snowflake) -> result<_, host-error>;
+	invalidate-channel: func(channel-id: snowflake) -> result<_, host-error>;
+	open-settings: func(page: string) -> result<_, host-error>;
+	navigate-back: func() -> result<_, host-error>;
+	navigate-forward: func() -> result<_, host-error>;
 }
 
 interface hooks {
@@ -837,6 +1306,26 @@ interface hooks {
 	on-emoji-pick: func(emoji: emoji-ref, channel-id: snowflake) -> pick-verdict;
 }
 
+interface hooks2 {
+	use types.{snowflake, user};
+	use model.{ui-context, message-full, rich-tree, emoji-info, presence, message-meta, message-patch-ext, outgoing-full, send-decision-full, display-override-full, client-event, message-click, channel-click, link-verdict, channel-detail, badge, notification-info, notification-verdict};
+
+	before-send-full: func(msg: outgoing-full) -> send-decision-full;
+	display-user-full: func(guild-id: option<snowflake>, user: user, presence: option<presence>) -> option<display-override-full>;
+	intercept-message-ext: func(msg: message-full, meta: message-meta, content: rich-tree) -> message-patch-ext;
+	intercept-messages-ext: func(items: list<tuple<message-full, message-meta, rich-tree>>) -> list<message-patch-ext>;
+	on-client-event: func(event: client-event);
+	on-message-click: func(click: message-click);
+	on-channel-click: func(click: channel-click);
+	on-link-click: func(url: string, context: ui-context) -> link-verdict;
+	on-draft-change: func(channel-id: snowflake, text: string);
+	autocomplete-emoji: func(query: string, candidates: list<emoji-info>) -> list<u32>;
+	decorate-channel: func(channel: channel-detail) -> list<badge>;
+	on-keybind: func(id: string);
+	on-notification: func(info: notification-info) -> notification-verdict;
+	on-badge-click: func(user-id: snowflake, key: string);
+}
+
 world plugin {
 	import host;
 	export guest;
@@ -848,4 +1337,5 @@ world plugin-ext {
 	import client;
 	export guest;
 	export hooks;
+	export hooks2;
 }

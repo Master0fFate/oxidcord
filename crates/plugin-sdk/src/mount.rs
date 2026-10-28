@@ -16,6 +16,15 @@ pub const CHANNEL_HEADER: &str = "channel-header";
 pub const COMPOSER_ABOVE: &str = "composer-above";
 pub const USER_POPOUT_SECTION: &str = "user-popout-section";
 pub const MEMBER_LIST_SECTION: &str = "member-list-section";
+pub const ACCOUNT_PANEL: &str = "account-panel";
+pub const SERVER_RAIL_TOP: &str = "server-rail-top";
+pub const VOICE_PANEL: &str = "voice-panel";
+pub const FRIENDS_SECTION: &str = "friends-section";
+pub const CHANNEL_LIST_TOP: &str = "channel-list-top";
+pub const ATTACHMENT_ACTION: &str = "attachment-action";
+pub const REPLY_PREVIEW: &str = "reply-preview";
+pub const GUILD_TOOLTIP: &str = "guild-tooltip";
+pub const MEMBER_LIST_HEADER: &str = "member-list-header";
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Options {

@@ -10,19 +10,26 @@ use wasmtime::component::Component;
 use wasmtime::{Store, Trap};
 
 use crate::api::model::{
-	EmojiRef, MessageFull, MessagePatch, PickVerdict, RichTree, UiContext, ViewEvent, ViewReply, ViewTree,
+	Badge, ChannelClick, ChannelDetail, ClientEvent, DisplayOverrideFull, EmojiInfo, EmojiRef, LinkVerdict,
+	MessageClick, MessageFull, MessageMeta, MessagePatch, MessagePatchExt, NotificationInfo,
+	NotificationVerdict, OutgoingFull, PickVerdict, Presence, RichTree, SendDecisionFull, UiContext,
+	ViewEvent, ViewReply, ViewTree,
 };
 use crate::api::{
 	DisplayOverride, Event, MdTree, MessageView, OutgoingMessage, SendDecision, SettingChange, UiTree, User,
 };
 use crate::bindings::Plugin;
-use crate::bindings::ext::exports::oxidcord::plugin::hooks;
+use crate::bindings::ext::exports::oxidcord::plugin::{hooks, hooks2};
 use crate::config::{HookTimeouts, RuntimeConfig};
-use crate::convert::empty_patch;
-use crate::host_state::HostState;
+use crate::convert::{empty_patch, empty_patch_ext};
+use crate::host_state::{CallContext, HostState};
 use crate::runtime::{Prepared, RuntimeShared};
 
 const WORKER_STACK_BYTES: usize = 4 * 1024 * 1024;
+
+pub type DisplayRequest = (Option<u64>, User, Option<Presence>);
+pub type InterceptItem = (MessageFull, MessageMeta, RichTree);
+pub type InterceptAnswer = (Arc<str>, Vec<(usize, MessagePatchExt)>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PluginState {
@@ -74,6 +81,8 @@ pub enum CallError {
 	Busy,
 	#[error("plugin stopped")]
 	Stopped,
+	#[error("plugin is incompatible: {0}")]
+	Incompatible(String),
 }
 
 pub struct Health {
@@ -132,6 +141,11 @@ impl Health {
 		self.calls.fetch_add(1, Ordering::Relaxed);
 		let micros = u64::try_from(elapsed.as_micros()).unwrap_or(u64::MAX);
 		self.last_micros.store(micros, Ordering::Relaxed);
+	}
+
+	pub fn mark_incompatible(&self, detail: &str) {
+		*self.last_error.lock() = Some(detail.to_owned());
+		self.set_state(PluginState::Incompatible);
 	}
 
 	pub fn record_denied(&self) {
@@ -225,6 +239,36 @@ pub enum CallKind {
 		emoji: EmojiRef,
 		channel_id: u64,
 	},
+	BeforeSendFull(Arc<OutgoingFull>),
+	DisplayUsersFull(Arc<[DisplayRequest]>),
+	InterceptExt {
+		msg: Arc<MessageFull>,
+		meta: Arc<MessageMeta>,
+		content: Arc<RichTree>,
+	},
+	InterceptBatchExt(Arc<[InterceptItem]>),
+	ClientEvent(Arc<ClientEvent>),
+	MessageClick(MessageClick),
+	ChannelClick(ChannelClick),
+	LinkClick {
+		url: String,
+		context: UiContext,
+	},
+	DraftChange {
+		channel_id: u64,
+		text: String,
+	},
+	AutocompleteEmoji {
+		query: String,
+		candidates: Arc<[EmojiInfo]>,
+	},
+	DecorateChannels(Arc<[ChannelDetail]>),
+	Keybind(String),
+	Notification(NotificationInfo),
+	BadgeClick {
+		user_id: u64,
+		key: String,
+	},
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -236,7 +280,9 @@ enum Priority {
 impl CallKind {
 	fn priority(&self) -> Priority {
 		match self {
-			Self::DisplayUsers(_) => Priority::Background,
+			Self::DisplayUsers(_) | Self::DisplayUsersFull(_) | Self::DecorateChannels(_) => {
+				Priority::Background
+			}
 			_ => Priority::Interactive,
 		}
 	}
@@ -248,11 +294,58 @@ impl CallKind {
 	fn is_gesture(&self) -> bool {
 		matches!(
 			self,
-			Self::UiAction { .. } | Self::Command { .. } | Self::ViewEvent(_) | Self::MenuItem { .. }
+			Self::UiAction { .. }
+				| Self::Command { .. }
+				| Self::ViewEvent(_)
+				| Self::MenuItem { .. }
+				| Self::Keybind(_)
+				| Self::BadgeClick { .. }
+				| Self::MessageClick(_)
+				| Self::ChannelClick(_)
+				| Self::LinkClick { .. }
 		)
 	}
 
-	fn timeout(&self, timeouts: &HookTimeouts) -> Duration {
+	fn is_hooks2(&self) -> bool {
+		matches!(
+			self,
+			Self::BeforeSendFull(_)
+				| Self::DisplayUsersFull(_)
+				| Self::InterceptExt { .. }
+				| Self::InterceptBatchExt(_)
+				| Self::ClientEvent(_)
+				| Self::MessageClick(_)
+				| Self::ChannelClick(_)
+				| Self::LinkClick { .. }
+				| Self::DraftChange { .. }
+				| Self::AutocompleteEmoji { .. }
+				| Self::DecorateChannels(_)
+				| Self::Keybind(_)
+				| Self::Notification(_)
+				| Self::BadgeClick { .. }
+		)
+	}
+
+	fn context(&self) -> CallContext {
+		match self {
+			Self::Init => CallContext::Init,
+			Self::Timer { .. } => CallContext::Timer,
+			Self::RenderMessage { .. } | Self::FilterMessage(_) | Self::RenderView { .. } => {
+				CallContext::Render
+			}
+			Self::Intercept { .. } | Self::InterceptExt { .. } | Self::InterceptBatchExt(_) => {
+				CallContext::Intercept
+			}
+			Self::DisplayUsers(_) | Self::DisplayUsersFull(_) => CallContext::Display,
+			Self::DecorateChannels(_) => CallContext::Decorate,
+			Self::AutocompleteEmoji { .. } => CallContext::Autocomplete,
+			Self::Notification(_) => CallContext::Notification,
+			_ if self.is_gesture() => CallContext::UserAction,
+			_ => CallContext::Event,
+		}
+	}
+
+	pub(crate) fn timeout(&self, timeouts: &HookTimeouts) -> Duration {
 		match self {
 			Self::Init => timeouts.init,
 			Self::Event(_) => timeouts.on_event,
@@ -271,6 +364,28 @@ impl CallKind {
 			Self::Intercept { .. } => timeouts.intercept_message,
 			Self::Timer { .. } => timeouts.timer,
 			Self::EmojiPick { .. } => timeouts.emoji_pick,
+			Self::BeforeSendFull(_) => timeouts.before_send_full,
+			Self::DisplayUsersFull(batch) => {
+				timeouts.display_user_full
+					+ timeouts.display_item * u32::try_from(batch.len()).unwrap_or(u32::MAX)
+			}
+			Self::InterceptExt { .. } => timeouts.intercept_message_ext,
+			Self::InterceptBatchExt(items) => (timeouts.intercept_batch_item
+				* u32::try_from(items.len()).unwrap_or(u32::MAX))
+			.min(timeouts.intercept_batch_cap),
+			Self::ClientEvent(_) => timeouts.client_event,
+			Self::MessageClick(_) => timeouts.message_click,
+			Self::ChannelClick(_) => timeouts.channel_click,
+			Self::LinkClick { .. } => timeouts.link_click,
+			Self::DraftChange { .. } => timeouts.draft_change,
+			Self::AutocompleteEmoji { .. } => timeouts.autocomplete_emoji,
+			Self::DecorateChannels(channels) => {
+				timeouts.decorate_channel
+					+ timeouts.decorate_item * u32::try_from(channels.len()).unwrap_or(u32::MAX)
+			}
+			Self::Keybind(_) => timeouts.keybind,
+			Self::Notification(_) => timeouts.notification,
+			Self::BadgeClick { .. } => timeouts.badge_click,
 		}
 	}
 }
@@ -288,6 +403,14 @@ pub enum Output {
 	View(Option<ViewTree>),
 	Patch(Box<MessagePatch>),
 	Pick(PickVerdict),
+	SendFull(SendDecisionFull),
+	DisplaysFull(Vec<Option<DisplayOverrideFull>>),
+	PatchExt(Box<MessagePatchExt>),
+	PatchesExt(Vec<MessagePatchExt>),
+	Link(LinkVerdict),
+	Emojis(Vec<u32>),
+	Badges(Vec<Vec<Badge>>),
+	Notification(NotificationVerdict),
 }
 
 struct Reply {
@@ -427,6 +550,7 @@ struct Running {
 	store: Store<HostState>,
 	plugin: Plugin,
 	hooks: Option<hooks::Guest>,
+	hooks2: Option<hooks2::Guest>,
 }
 
 struct WorkerContext {
@@ -471,28 +595,51 @@ impl WorkerContext {
 		store.set_epoch_deadline(self.epoch_ticks(config.timeouts.init));
 		let loaded = self.pre.instance.instantiate(&mut store).and_then(|instance| {
 			let plugin = self.pre.guest.load(&mut store, &instance)?;
-			let hooks = match &self.pre.hooks {
-				Some(indices) => Some(indices.load(&mut store, &instance)?),
-				None => None,
-			};
-			Ok((plugin, hooks))
+			Ok((plugin, instance))
 		});
-		let (plugin, hooks) = match loaded {
+		let (plugin, instance) = match loaded {
 			Ok(loaded) => loaded,
 			Err(error) => return Err(self.classify(&error, store.data().limits.memory_exceeded)),
 		};
+		let hooks = match &self.pre.hooks {
+			Some(indices) => Some(
+				indices
+					.load(&mut store, &instance)
+					.map_err(|error| CallError::Incompatible(format!("hooks: {error:#}")))?,
+			),
+			None => None,
+		};
+		let hooks2 = match &self.pre.hooks2 {
+			Some(indices) => Some(
+				indices
+					.load(&mut store, &instance)
+					.map_err(|error| CallError::Incompatible(format!("hooks2: {error:#}")))?,
+			),
+			None => None,
+		};
 		match plugin.oxidcord_plugin_guest().call_init(&mut store) {
-			Ok(Ok(())) => Ok(Running { store, plugin, hooks }),
+			Ok(Ok(())) => Ok(Running {
+				store,
+				plugin,
+				hooks,
+				hooks2,
+			}),
 			Ok(Err(message)) => Err(CallError::InitFailed(message)),
 			Err(error) => Err(self.classify(&error, store.data().limits.memory_exceeded)),
 		}
 	}
 
 	fn execute(&self, running: &mut Running, kind: CallKind, timeout: Duration) -> Result<Output, CallError> {
-		let Running { store, plugin, hooks } = running;
+		let Running {
+			store,
+			plugin,
+			hooks,
+			hooks2,
+		} = running;
 		store.set_epoch_deadline(self.epoch_ticks(timeout));
 		let guest = plugin.oxidcord_plugin_guest();
 		let gesture = kind.is_gesture();
+		store.data_mut().set_context(kind.context());
 		if gesture {
 			store.data_mut().begin_gesture();
 		}
@@ -533,12 +680,95 @@ impl WorkerContext {
 				let event = Event::SettingChanged(SettingChange { key, value });
 				guest.call_on_event(&mut *store, &event).map(|()| Output::Done)
 			}
+			kind if kind.is_hooks2() => self.execute_hook2(store, hooks2.as_ref(), kind),
 			kind => execute_hook(store, hooks.as_ref(), kind),
 		};
 		if gesture {
 			store.data_mut().end_gesture();
 		}
 		result.map_err(|error| self.classify(&error, store.data().limits.memory_exceeded))
+	}
+
+	fn execute_hook2(
+		&self,
+		store: &mut Store<HostState>,
+		hooks2: Option<&hooks2::Guest>,
+		kind: CallKind,
+	) -> wasmtime::Result<Output> {
+		let timeouts = &self.runtime.config.timeouts;
+		match (hooks2, kind) {
+			(Some(hooks), CallKind::BeforeSendFull(msg)) => hooks
+				.call_before_send_full(&mut *store, &msg)
+				.map(Output::SendFull),
+			(None, CallKind::BeforeSendFull(_)) => Ok(Output::SendFull(SendDecisionFull::Pass)),
+			(Some(hooks), CallKind::DisplayUsersFull(batch)) => {
+				let ticks = self.epoch_ticks(timeouts.display_item);
+				batch
+					.iter()
+					.map(|(guild_id, user, presence)| {
+						store.set_epoch_deadline(ticks);
+						hooks.call_display_user_full(&mut *store, *guild_id, user, presence.as_ref())
+					})
+					.collect::<wasmtime::Result<Vec<_>>>()
+					.map(Output::DisplaysFull)
+			}
+			(None, CallKind::DisplayUsersFull(batch)) => Ok(Output::DisplaysFull(vec![None; batch.len()])),
+			(Some(hooks), CallKind::InterceptExt { msg, meta, content }) => hooks
+				.call_intercept_message_ext(&mut *store, &msg, *meta, &content)
+				.map(|patch| Output::PatchExt(Box::new(patch))),
+			(None, CallKind::InterceptExt { .. }) => Ok(Output::PatchExt(Box::new(empty_patch_ext()))),
+			(Some(hooks), CallKind::InterceptBatchExt(items)) => hooks
+				.call_intercept_messages_ext(&mut *store, &items)
+				.map(Output::PatchesExt),
+			(None, CallKind::InterceptBatchExt(items)) => {
+				Ok(Output::PatchesExt(vec![empty_patch_ext(); items.len()]))
+			}
+			(Some(hooks), CallKind::ClientEvent(event)) => hooks
+				.call_on_client_event(&mut *store, &event)
+				.map(|()| Output::Done),
+			(Some(hooks), CallKind::MessageClick(click)) => hooks
+				.call_on_message_click(&mut *store, click)
+				.map(|()| Output::Done),
+			(Some(hooks), CallKind::ChannelClick(click)) => hooks
+				.call_on_channel_click(&mut *store, click)
+				.map(|()| Output::Done),
+			(Some(hooks), CallKind::LinkClick { url, context }) => hooks
+				.call_on_link_click(&mut *store, &url, &context)
+				.map(Output::Link),
+			(None, CallKind::LinkClick { .. }) => Ok(Output::Link(LinkVerdict::Pass)),
+			(Some(hooks), CallKind::DraftChange { channel_id, text }) => hooks
+				.call_on_draft_change(&mut *store, channel_id, &text)
+				.map(|()| Output::Done),
+			(Some(hooks), CallKind::AutocompleteEmoji { query, candidates }) => hooks
+				.call_autocomplete_emoji(&mut *store, &query, &candidates)
+				.map(Output::Emojis),
+			(None, CallKind::AutocompleteEmoji { .. }) => Ok(Output::Emojis(Vec::new())),
+			(Some(hooks), CallKind::DecorateChannels(channels)) => {
+				let ticks = self.epoch_ticks(timeouts.decorate_item);
+				channels
+					.iter()
+					.map(|channel| {
+						store.set_epoch_deadline(ticks);
+						hooks.call_decorate_channel(&mut *store, channel)
+					})
+					.collect::<wasmtime::Result<Vec<_>>>()
+					.map(Output::Badges)
+			}
+			(None, CallKind::DecorateChannels(channels)) => {
+				Ok(Output::Badges(vec![Vec::new(); channels.len()]))
+			}
+			(Some(hooks), CallKind::Keybind(id)) => {
+				hooks.call_on_keybind(&mut *store, &id).map(|()| Output::Done)
+			}
+			(Some(hooks), CallKind::Notification(info)) => hooks
+				.call_on_notification(&mut *store, info)
+				.map(Output::Notification),
+			(None, CallKind::Notification(_)) => Ok(Output::Notification(NotificationVerdict::Allow)),
+			(Some(hooks), CallKind::BadgeClick { user_id, key }) => hooks
+				.call_on_badge_click(&mut *store, user_id, &key)
+				.map(|()| Output::Done),
+			_ => Ok(Output::Done),
+		}
 	}
 
 	fn run(
@@ -554,6 +784,10 @@ impl WorkerContext {
 			}
 			match self.start() {
 				Ok(started) => *running = Some(started),
+				Err(CallError::Incompatible(detail)) => {
+					self.health.mark_incompatible(&detail);
+					return Err(CallError::Incompatible(detail));
+				}
 				Err(error) => {
 					self.record_failure(restart_at, &error);
 					return Err(error);
@@ -700,6 +934,10 @@ impl PluginInstance {
 		self.pre.hooks.is_some()
 	}
 
+	pub fn has_hooks2(&self) -> bool {
+		self.pre.hooks2.is_some()
+	}
+
 	pub fn start(&self) -> Result<(), CallError> {
 		self.health.reset();
 		self.health.set_state(PluginState::Loaded);
@@ -771,6 +1009,57 @@ impl PluginInstance {
 			timeout,
 			reply: None,
 		});
+	}
+
+	fn post_interactive(&self, kind: CallKind) {
+		if self.pre.hooks2.is_none() {
+			return;
+		}
+		let Ok(queue) = self.queue() else {
+			return;
+		};
+		let timeout = kind.timeout(&self.runtime.config.timeouts);
+		queue.push_call(Call {
+			kind,
+			timeout,
+			reply: None,
+		});
+	}
+
+	pub fn post_client_event(&self, event: Arc<ClientEvent>) {
+		if self.pre.hooks2.is_none() {
+			return;
+		}
+		let Ok(queue) = self.queue() else {
+			return;
+		};
+		let kind = CallKind::ClientEvent(event);
+		let timeout = kind.timeout(&self.runtime.config.timeouts);
+		queue.push_event(Call {
+			kind,
+			timeout,
+			reply: None,
+		});
+	}
+
+	pub fn post_draft_change(&self, channel_id: u64, text: String) {
+		self.post_interactive(CallKind::DraftChange { channel_id, text });
+	}
+
+	pub fn post_message_click(&self, click: MessageClick) {
+		self.post_interactive(CallKind::MessageClick(click));
+	}
+
+	pub fn post_channel_click(&self, click: ChannelClick) {
+		self.post_interactive(CallKind::ChannelClick(click));
+	}
+
+	pub fn post_keybind(&self, id: String) {
+		self.post_interactive(CallKind::Keybind(id));
+	}
+
+	pub fn post_badge_click(&self, user_id: u64, key: String) {
+		self.post_interactive(CallKind::BadgeClick { user_id, key });
 	}
 
 	pub fn call(&self, kind: CallKind) -> Result<Output, CallError> {
@@ -949,6 +1238,79 @@ impl PluginInstance {
 	pub fn emoji_pick(&self, emoji: EmojiRef, channel_id: u64) -> Result<PickVerdict, CallError> {
 		match self.call(CallKind::EmojiPick { emoji, channel_id })? {
 			Output::Pick(verdict) => Ok(verdict),
+			_ => Err(mismatch()),
+		}
+	}
+}
+
+impl PluginInstance {
+	pub fn before_send_full(&self, msg: Arc<OutgoingFull>) -> Result<SendDecisionFull, CallError> {
+		match self.call(CallKind::BeforeSendFull(msg))? {
+			Output::SendFull(decision) => Ok(decision),
+			_ => Err(mismatch()),
+		}
+	}
+
+	pub fn display_users_full(
+		&self,
+		batch: Arc<[DisplayRequest]>,
+	) -> Result<Vec<Option<DisplayOverrideFull>>, CallError> {
+		match self.call(CallKind::DisplayUsersFull(batch))? {
+			Output::DisplaysFull(overrides) => Ok(overrides),
+			_ => Err(mismatch()),
+		}
+	}
+
+	pub fn intercept_ext(
+		&self,
+		msg: Arc<MessageFull>,
+		meta: Arc<MessageMeta>,
+		content: Arc<RichTree>,
+	) -> Result<MessagePatchExt, CallError> {
+		match self.call(CallKind::InterceptExt { msg, meta, content })? {
+			Output::PatchExt(patch) => Ok(*patch),
+			_ => Err(mismatch()),
+		}
+	}
+
+	pub fn intercept_batch_ext(
+		&self,
+		items: Arc<[InterceptItem]>,
+	) -> Result<Vec<MessagePatchExt>, CallError> {
+		match self.call(CallKind::InterceptBatchExt(items))? {
+			Output::PatchesExt(patches) => Ok(patches),
+			_ => Err(mismatch()),
+		}
+	}
+
+	pub fn link_click(&self, url: String, context: UiContext) -> Result<LinkVerdict, CallError> {
+		match self.call(CallKind::LinkClick { url, context })? {
+			Output::Link(verdict) => Ok(verdict),
+			_ => Err(mismatch()),
+		}
+	}
+
+	pub fn autocomplete_emoji(
+		&self,
+		query: String,
+		candidates: Arc<[EmojiInfo]>,
+	) -> Result<Vec<u32>, CallError> {
+		match self.call(CallKind::AutocompleteEmoji { query, candidates })? {
+			Output::Emojis(order) => Ok(order),
+			_ => Err(mismatch()),
+		}
+	}
+
+	pub fn decorate_channels(&self, channels: Arc<[ChannelDetail]>) -> Result<Vec<Vec<Badge>>, CallError> {
+		match self.call(CallKind::DecorateChannels(channels))? {
+			Output::Badges(badges) => Ok(badges),
+			_ => Err(mismatch()),
+		}
+	}
+
+	pub fn notification(&self, info: NotificationInfo) -> Result<NotificationVerdict, CallError> {
+		match self.call(CallKind::Notification(info))? {
+			Output::Notification(verdict) => Ok(verdict),
 			_ => Err(mismatch()),
 		}
 	}

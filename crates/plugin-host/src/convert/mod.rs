@@ -3,7 +3,7 @@ mod message;
 mod view;
 
 pub use md::{md_to_rich, md_to_tree, rich_to_md, tree_to_md};
-pub use message::{SanitizedPatch, emoji_ref, empty_patch, message_full, sanitize_patch};
+pub use message::{SanitizedPatch, emoji_ref, empty_patch, empty_patch_ext, message_full, sanitize_patch};
 pub use view::{
 	COLOR_TOKENS, ImagePolicy, clip, clip_line, default_style, has_key, sanitize_card, sanitize_color,
 	sanitize_view, upgrade_ui_tree, valid_icon, valid_key, web_url,

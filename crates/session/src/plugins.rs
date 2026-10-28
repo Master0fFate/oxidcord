@@ -192,10 +192,12 @@ impl PluginHub {
 		};
 		let network_hosts = approve(&manifest.network_hosts);
 		let image_hosts = approve(&manifest.image_hosts);
+		let url_schemes = approve(&manifest.url_schemes);
 		self.grants.update(id, |grant| {
 			grant.permissions = granted;
 			grant.network_hosts = network_hosts;
 			grant.image_hosts = image_hosts;
+			grant.url_schemes = url_schemes;
 		})?;
 		self.manager.reload(id)?;
 		self.sync_themes();

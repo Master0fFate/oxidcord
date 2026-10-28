@@ -8,9 +8,12 @@ use markdown::Node;
 use parking_lot::{Mutex, RwLock};
 use semver::Version;
 
+use crate::api::model::SendDecisionFull;
 use crate::api::model::{
-	EmojiRef, Lifecycle, MessageFull, NodeKind, PickVerdict, TextNode, TextSize, Tone, UiContext, ViewEvent,
-	ViewNode, ViewReply, ViewTree, Weight,
+	Badge, ChannelClick, ChannelDetail, ClientEvent, DisplayOverrideFull, EmojiInfo, EmojiRef, Lifecycle,
+	LinkVerdict, MessageClick, MessageFull, MessageMeta, MessagePatchExt, NodeKind, NotificationInfo,
+	NotificationVerdict, OutgoingFull, PickVerdict, Presence, RichTree, TextNode, TextSize, Tone, UiContext,
+	ViewEvent, ViewNode, ViewReply, ViewTree, Weight,
 };
 use crate::api::{
 	DisplayOverride, Event, MessageView, OutgoingMessage, SendDecision as GuestDecision, User, VoiceInfo,
@@ -20,7 +23,11 @@ use crate::convert::{
 	upgrade_ui_tree, validate_ui_tree,
 };
 use crate::error::{Error, Result};
-use crate::instance::{CallError, CallKind, Health, Output, PluginInstance, PluginState};
+use crate::hook::Hook;
+use crate::instance::{
+	CallError, CallKind, DisplayRequest, Health, InterceptAnswer, InterceptItem, Output, PluginInstance,
+	PluginState,
+};
 use crate::manifest::{Manifest, PermissionRequest};
 use crate::mounts::{self, Overlay, ViewContext};
 use crate::package::{Package, Trust, discover};
@@ -37,6 +44,7 @@ const INTERCEPT_BREAKER: u32 = 3;
 const MAX_INSERT_BYTES: usize = 2_000;
 const MAX_TOAST_TEXT: usize = 200;
 const DISPLAY_CHUNK: usize = 50;
+const MAX_AUTOCOMPLETE_CANDIDATES: usize = 200;
 
 pub struct Intercepted {
 	pub ast: Vec<Node>,
@@ -49,6 +57,13 @@ pub enum EmojiPick {
 	Default,
 	Insert { by: String, text: String },
 	Blocked { by: String, reason: String },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum FullSendDecision {
+	Pass,
+	Replaced { by: String, msg: OutgoingFull },
+	Cancelled { by: String, reason: String },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -72,6 +87,8 @@ pub struct PluginInfo {
 	pub network_hosts: Vec<String>,
 	pub image_hosts: Vec<String>,
 	pub granted_hosts: Vec<String>,
+	pub hooks: Vec<Hook>,
+	pub url_schemes: Vec<String>,
 	pub needs_prompt: bool,
 	pub error: Option<String>,
 	pub crashes: u64,
@@ -134,6 +151,10 @@ struct HookEntry {
 	retain: bool,
 	basic: bool,
 	voice: bool,
+	relationships: bool,
+	presence: bool,
+	directory: bool,
+	read_state: bool,
 }
 
 impl HookEntry {
@@ -153,6 +174,22 @@ impl HookEntry {
 			Event::SettingChanged(_) | Event::Connection(_) => true,
 		}
 	}
+
+	fn sees_client_event(&self, event: &ClientEvent) -> bool {
+		match event {
+			ClientEvent::RelationshipChanged(_) | ClientEvent::RelationshipRemoved(_) => self.relationships,
+			ClientEvent::GuildJoined(_)
+			| ClientEvent::GuildLeft(_)
+			| ClientEvent::GuildRemoved(_)
+			| ClientEvent::ChannelListChanged => self.directory,
+			ClientEvent::DmClosed(_) => self.directory && self.private,
+			ClientEvent::PresenceChanged(_) | ClientEvent::IdleChanged(_) => self.presence,
+			ClientEvent::ReactionRemoved(reaction) => self.timeline && self.sees(reaction.message.guild_id),
+			ClientEvent::MessageAcked((message, _)) => self.timeline && self.sees(message.guild_id),
+			ClientEvent::UnreadChanged(_) => self.read_state,
+			ClientEvent::Ready => true,
+		}
+	}
 }
 
 #[derive(Default)]
@@ -165,6 +202,17 @@ struct HookSets {
 	send: Vec<HookEntry>,
 	display: Vec<HookEntry>,
 	emoji: Vec<HookEntry>,
+	events2: Vec<HookEntry>,
+	draft: Vec<HookEntry>,
+	autocomplete: Vec<HookEntry>,
+	decorate: Vec<HookEntry>,
+	notification: Vec<HookEntry>,
+	message_click: Vec<HookEntry>,
+	channel_click: Vec<HookEntry>,
+	link_click: Vec<HookEntry>,
+	display_full: Vec<HookEntry>,
+	send_full: Vec<HookEntry>,
+	intercept_ext: Vec<HookEntry>,
 	hidden_channels: bool,
 	hidden_typing: bool,
 }
@@ -242,6 +290,7 @@ impl PluginManager {
 			let name = plugin.manifest.id.as_str();
 			let has = |permission| grants.has(name, permission);
 			let ext = instance.is_ext();
+			let hooks2 = instance.has_hooks2();
 			let entry = HookEntry {
 				id: Arc::from(name),
 				plugin: Arc::clone(plugin),
@@ -252,6 +301,10 @@ impl PluginManager {
 				retain: has(Permission::MessageRetain),
 				basic: has(Permission::ContextBasic),
 				voice: has(Permission::ContextVoice),
+				relationships: has(Permission::ContextRelationships),
+				presence: has(Permission::ContextPresence),
+				directory: has(Permission::ContextDirectory),
+				read_state: has(Permission::ContextReadState),
 			};
 			sets.hidden_channels |= has(Permission::ChannelsHidden);
 			sets.hidden_typing |= has(Permission::TypingHidden);
@@ -267,6 +320,27 @@ impl PluginManager {
 				if capable && has(permission) {
 					set.push(entry.clone());
 				}
+			}
+			if hooks2 {
+				let declared = &plugin.manifest.hooks;
+				let targets = [
+					(Hook::DraftChange, &mut sets.draft),
+					(Hook::AutocompleteEmoji, &mut sets.autocomplete),
+					(Hook::DecorateChannel, &mut sets.decorate),
+					(Hook::Notification, &mut sets.notification),
+					(Hook::MessageClick, &mut sets.message_click),
+					(Hook::ChannelClick, &mut sets.channel_click),
+					(Hook::LinkClick, &mut sets.link_click),
+					(Hook::DisplayUser, &mut sets.display_full),
+					(Hook::BeforeSend, &mut sets.send_full),
+					(Hook::Intercept, &mut sets.intercept_ext),
+				];
+				for (hook, set) in targets {
+					if declared.contains(&hook) && has(hook.permission()) {
+						set.push(entry.clone());
+					}
+				}
+				sets.events2.push(entry.clone());
 			}
 			sets.events.push(entry);
 		}
@@ -443,14 +517,20 @@ impl PluginManager {
 			Arc::clone(self.runtime.shared()),
 			component,
 			Arc::clone(&plugin.health),
-		)?;
+		)
+		.inspect_err(|error| {
+			if let Error::Incompatible(detail) = error {
+				plugin.health.mark_incompatible(detail);
+			}
+		})?;
 		self.runtime.timers().attach(&id, Arc::downgrade(&instance));
 		*plugin.instance.lock() = Some(Arc::clone(&instance));
 		plugin.health.set_state(PluginState::Loaded);
 		self.rehook();
-		instance
-			.start()
-			.map_err(|error| Error::wasm(format!("{}: {error}", plugin.manifest.id)))
+		instance.start().map_err(|error| match error {
+			CallError::Incompatible(detail) => Error::Incompatible(detail),
+			other => Error::wasm(format!("{}: {other}", plugin.manifest.id)),
+		})
 	}
 
 	fn retire(&self, plugin: &Arc<LoadedPlugin>) {
@@ -542,6 +622,8 @@ impl PluginManager {
 						.chain(&grant.image_hosts)
 						.cloned()
 						.collect(),
+					hooks: plugin.manifest.hooks.clone(),
+					url_schemes: plugin.manifest.url_schemes.clone(),
 					error: plugin.load_error.clone().or_else(|| plugin.health.last_error()),
 					crashes: plugin.health.total_crashes(),
 				}
@@ -661,7 +743,7 @@ impl PluginManager {
 				tracing::debug!(target: "plugin", "intercept budget spent, remaining plugins skipped");
 				break;
 			}
-			if entry.plugin.intercept_timeouts.load(Ordering::Relaxed) >= INTERCEPT_BREAKER {
+			if intercept_tripped(entry) {
 				continue;
 			}
 			let patch = match entry
@@ -673,13 +755,7 @@ impl PluginManager {
 					patch
 				}
 				Err(error) => {
-					if matches!(error, CallError::Timeout)
-						&& entry.plugin.intercept_timeouts.fetch_add(1, Ordering::Relaxed) + 1
-							== INTERCEPT_BREAKER
-					{
-						tracing::warn!(target: "plugin", plugin = %entry.id, "intercept-message disabled after repeated timeouts");
-					}
-					tracing::debug!(target: "plugin", plugin = %entry.id, "intercept skipped: {error}");
+					note_intercept_failure(entry, &error);
 					continue;
 				}
 			};
@@ -875,6 +951,315 @@ impl PluginManager {
 		}
 	}
 
+	pub fn before_send_full(&self, outgoing: OutgoingFull, skip: Option<&str>) -> FullSendDecision {
+		let sets = self.hooks();
+		let mut current = Arc::new(outgoing);
+		let mut replaced_by: Option<String> = None;
+		for entry in sets.send_full.iter().filter(|entry| Some(&*entry.id) != skip) {
+			let decision = match entry.instance.before_send_full(Arc::clone(&current)) {
+				Ok(decision) => decision,
+				Err(error) => {
+					tracing::debug!(target: "plugin", plugin = %entry.id, "before-send-full skipped: {error}");
+					continue;
+				}
+			};
+			match decision {
+				SendDecisionFull::Pass => {}
+				SendDecisionFull::Cancel(reason) => {
+					return FullSendDecision::Cancelled {
+						by: entry.plugin.manifest.id.clone(),
+						reason: clip(&reason, MAX_TOAST_TEXT),
+					};
+				}
+				SendDecisionFull::Replace(mut message) => {
+					message.content = clip(&message.content, MAX_OUTGOING_BYTES);
+					let keeps_target = message.channel_id == current.channel_id
+						&& message.reply_to == current.reply_to
+						&& keeps_attachments(&current, &message);
+					let has_body = !message.content.is_empty()
+						|| !message.attachments.is_empty()
+						|| !message.stickers.is_empty();
+					if keeps_target && has_body {
+						current = Arc::new(message);
+						replaced_by = Some(entry.plugin.manifest.id.clone());
+					} else {
+						tracing::warn!(target: "plugin", plugin = %entry.id, "rejected rewritten message");
+					}
+				}
+			}
+		}
+		match replaced_by {
+			Some(by) => FullSendDecision::Replaced {
+				by,
+				msg: Arc::try_unwrap(current).unwrap_or_else(|shared| (*shared).clone()),
+			},
+			None => FullSendDecision::Pass,
+		}
+	}
+
+	pub fn display_users_full(
+		&self,
+		users: &[(Option<u64>, User, Option<Presence>)],
+	) -> Vec<Option<DisplayOverrideFull>> {
+		let sets = self.hooks();
+		let mut resolved: Vec<Option<DisplayOverrideFull>> = vec![None; users.len()];
+		for entry in &sets.display_full {
+			let pending: Vec<usize> = (0..users.len())
+				.filter(|&index| resolved[index].is_none())
+				.collect();
+			for chunk in pending.chunks(DISPLAY_CHUNK) {
+				let batch: Arc<[DisplayRequest]> = chunk
+					.iter()
+					.map(|&index| {
+						let (guild_id, user, presence) = &users[index];
+						(
+							*guild_id,
+							user.clone(),
+							presence.clone().filter(|_| entry.presence),
+						)
+					})
+					.collect();
+				match entry.instance.display_users_full(batch) {
+					Ok(overrides) => {
+						for (&index, over) in chunk.iter().zip(overrides) {
+							resolved[index] = over;
+						}
+					}
+					Err(error) => {
+						tracing::debug!(target: "plugin", plugin = %entry.id, "display-user-full skipped: {error}");
+					}
+				}
+			}
+			if resolved.iter().all(Option::is_some) {
+				break;
+			}
+		}
+		resolved
+	}
+
+	pub fn intercept_ext(
+		&self,
+		full: &Arc<MessageFull>,
+		meta: &Arc<MessageMeta>,
+		content: &Arc<RichTree>,
+	) -> Vec<(Arc<str>, MessagePatchExt)> {
+		let sets = self.hooks();
+		let started = Instant::now();
+		let mut patches = Vec::new();
+		for entry in sets
+			.intercept_ext
+			.iter()
+			.filter(|entry| entry.sees(full.view.guild_id))
+		{
+			if started.elapsed() >= INTERCEPT_BUDGET {
+				break;
+			}
+			if intercept_tripped(entry) {
+				continue;
+			}
+			match entry
+				.instance
+				.intercept_ext(Arc::clone(full), Arc::clone(meta), Arc::clone(content))
+			{
+				Ok(patch) => {
+					entry.plugin.intercept_timeouts.store(0, Ordering::Relaxed);
+					patches.push((Arc::clone(&entry.id), patch));
+				}
+				Err(error) => note_intercept_failure(entry, &error),
+			}
+		}
+		patches
+	}
+
+	pub fn intercept_batch_ext(&self, items: &Arc<[InterceptItem]>) -> Vec<InterceptAnswer> {
+		let sets = self.hooks();
+		let mut answers = Vec::new();
+		for entry in &sets.intercept_ext {
+			if intercept_tripped(entry) {
+				continue;
+			}
+			let visible: Vec<usize> = (0..items.len())
+				.filter(|&index| entry.sees(items[index].0.view.guild_id))
+				.collect();
+			if visible.is_empty() {
+				continue;
+			}
+			let batch: Arc<[InterceptItem]> = if visible.len() == items.len() {
+				Arc::clone(items)
+			} else {
+				visible.iter().map(|&index| items[index].clone()).collect()
+			};
+			match entry.instance.intercept_batch_ext(batch) {
+				Ok(patches) if patches.len() == visible.len() => {
+					entry.plugin.intercept_timeouts.store(0, Ordering::Relaxed);
+					answers.push((Arc::clone(&entry.id), visible.into_iter().zip(patches).collect()));
+				}
+				Ok(_) => {
+					tracing::warn!(target: "plugin", plugin = %entry.id, "intercept-messages-ext answered the wrong number of patches");
+				}
+				Err(error) => note_intercept_failure(entry, &error),
+			}
+		}
+		answers
+	}
+
+	pub fn dispatch_client_event(&self, event: ClientEvent) {
+		let sets = self.hooks();
+		let event = Arc::new(event);
+		for entry in sets
+			.events2
+			.iter()
+			.filter(|entry| entry.sees_client_event(&event))
+		{
+			entry.instance.post_client_event(Arc::clone(&event));
+		}
+	}
+
+	pub fn message_click(&self, click: MessageClick) {
+		for entry in self
+			.hooks()
+			.message_click
+			.iter()
+			.filter(|entry| entry.sees(click.message.guild_id))
+		{
+			entry.instance.post_message_click(click);
+		}
+	}
+
+	pub fn channel_click(&self, click: ChannelClick) {
+		for entry in self
+			.hooks()
+			.channel_click
+			.iter()
+			.filter(|entry| entry.sees(click.guild_id))
+		{
+			entry.instance.post_channel_click(click);
+		}
+	}
+
+	pub fn link_click(&self, url: &str, context: &UiContext) -> LinkVerdict {
+		let sets = self.hooks();
+		let started = Instant::now();
+		let budget = self.runtime.config().timeouts.link_click;
+		for entry in sets
+			.link_click
+			.iter()
+			.filter(|entry| entry.sees(context.guild_id))
+		{
+			if started.elapsed() >= budget {
+				break;
+			}
+			match entry.instance.link_click(url.to_owned(), context.clone()) {
+				Ok(LinkVerdict::Pass) => {}
+				Ok(verdict) => return verdict,
+				Err(error) => {
+					tracing::debug!(target: "plugin", plugin = %entry.id, "link click skipped: {error}");
+				}
+			}
+		}
+		LinkVerdict::Pass
+	}
+
+	pub fn draft_change(&self, channel_id: u64, guild_id: Option<u64>, text: &str) {
+		for entry in self.hooks().draft.iter().filter(|entry| entry.sees(guild_id)) {
+			entry.instance.post_draft_change(channel_id, text.to_owned());
+		}
+	}
+
+	pub fn autocomplete_emoji(&self, query: &str, candidates: &[EmojiInfo]) -> Vec<u32> {
+		let sets = self.hooks();
+		if sets.autocomplete.is_empty() {
+			return Vec::new();
+		}
+		let shared: Arc<[EmojiInfo]> = candidates
+			.iter()
+			.take(MAX_AUTOCOMPLETE_CANDIDATES)
+			.cloned()
+			.collect();
+		let started = Instant::now();
+		let budget = self.runtime.config().timeouts.autocomplete_emoji;
+		for entry in &sets.autocomplete {
+			if started.elapsed() >= budget {
+				break;
+			}
+			match entry
+				.instance
+				.autocomplete_emoji(query.to_owned(), Arc::clone(&shared))
+			{
+				Ok(order) => {
+					let mut seen = BTreeSet::new();
+					let order: Vec<u32> = order
+						.into_iter()
+						.filter(|&index| (index as usize) < shared.len() && seen.insert(index))
+						.collect();
+					if !order.is_empty() {
+						return order;
+					}
+				}
+				Err(error) => {
+					tracing::debug!(target: "plugin", plugin = %entry.id, "autocomplete skipped: {error}");
+				}
+			}
+		}
+		Vec::new()
+	}
+
+	pub fn decorate_channels(&self, channels: &Arc<[ChannelDetail]>) -> Vec<Vec<Badge>> {
+		let sets = self.hooks();
+		let mut decorated: Vec<Vec<Badge>> = vec![Vec::new(); channels.len()];
+		for entry in &sets.decorate {
+			match entry.instance.decorate_channels(Arc::clone(channels)) {
+				Ok(badges) if badges.len() == channels.len() => {
+					for (target, mut extra) in decorated.iter_mut().zip(badges) {
+						target.append(&mut extra);
+					}
+				}
+				Ok(_) => {
+					tracing::warn!(target: "plugin", plugin = %entry.id, "decorate-channel answered the wrong number of channels");
+				}
+				Err(error) => {
+					tracing::debug!(target: "plugin", plugin = %entry.id, "decorate skipped: {error}");
+				}
+			}
+		}
+		decorated
+	}
+
+	pub fn notification(&self, info: &NotificationInfo) -> NotificationVerdict {
+		let sets = self.hooks();
+		let started = Instant::now();
+		let budget = self.runtime.config().timeouts.notification;
+		for entry in sets.notification.iter().filter(|entry| entry.sees(info.guild_id)) {
+			if started.elapsed() >= budget {
+				break;
+			}
+			match entry.instance.notification(*info) {
+				Ok(NotificationVerdict::Allow) => {}
+				Ok(verdict) => return verdict,
+				Err(error) => {
+					tracing::debug!(target: "plugin", plugin = %entry.id, "notification skipped: {error}");
+				}
+			}
+		}
+		NotificationVerdict::Allow
+	}
+
+	pub fn keybind(&self, plugin_id: &str, id: &str) {
+		if self.runtime.grants().has(plugin_id, Permission::UiKeybinds)
+			&& let Ok(instance) = self.instance(plugin_id)
+		{
+			instance.post_keybind(id.to_owned());
+		}
+	}
+
+	pub fn badge_click(&self, plugin_id: &str, user_id: u64, key: &str) {
+		if self.runtime.grants().has(plugin_id, Permission::UserDisplay)
+			&& let Ok(instance) = self.instance(plugin_id)
+		{
+			instance.post_badge_click(user_id, key.to_owned());
+		}
+	}
+
 	pub fn filter_message(&self, view: &Arc<MessageView>) -> bool {
 		self.hooks()
 			.filter
@@ -946,6 +1331,32 @@ impl PluginManager {
 			Err(error) => Err(Error::wasm(format!("{plugin_id}: {error}"))),
 		}
 	}
+}
+
+fn intercept_tripped(entry: &HookEntry) -> bool {
+	entry.plugin.intercept_timeouts.load(Ordering::Relaxed) >= INTERCEPT_BREAKER
+}
+
+fn note_intercept_failure(entry: &HookEntry, error: &CallError) {
+	if matches!(error, CallError::Timeout)
+		&& entry.plugin.intercept_timeouts.fetch_add(1, Ordering::Relaxed) + 1 == INTERCEPT_BREAKER
+	{
+		tracing::warn!(target: "plugin", plugin = %entry.id, "intercept-message disabled after repeated timeouts");
+	}
+	tracing::debug!(target: "plugin", plugin = %entry.id, "intercept skipped: {error}");
+}
+
+fn keeps_attachments(before: &OutgoingFull, after: &OutgoingFull) -> bool {
+	let handles = |message: &OutgoingFull| {
+		let mut handles: Vec<u64> = message
+			.attachments
+			.iter()
+			.map(|attachment| attachment.handle)
+			.collect();
+		handles.sort_unstable();
+		handles
+	};
+	handles(before) == handles(after)
 }
 
 fn render_chain<'a>(

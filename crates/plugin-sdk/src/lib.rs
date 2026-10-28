@@ -41,7 +41,11 @@ pub mod host {
 }
 
 #[cfg(feature = "ext")]
+pub mod actions;
+#[cfg(feature = "ext")]
 pub mod client;
+#[cfg(feature = "ext")]
+pub mod data;
 #[cfg(feature = "ext")]
 mod ext;
 pub mod log;

@@ -5,17 +5,24 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use store::{Paths, Store};
 
-use crate::api::model::{Lifecycle, MessageFull};
+use crate::api::model::{
+	ChannelClick, ChannelDetail, ClickKind, ClickTarget, ClickWatch, ClientOption, DmSection, EmojiInfo,
+	EmojiRef, Keybind, Lifecycle, MessageClick, MessageFull, MessageMeta, Modifiers, NotificationInfo,
+	NotificationKind, NotificationSettings, OutgoingFull, UiContext,
+};
 use crate::api::{
 	Event, FetchRequest, HostError, MessageRef, MessageView, OutgoingMessage, SettingChange, UiTree, User,
 };
+use crate::bindings::ext::oxidcord::plugin::client::Host as ClientHost;
+use crate::bindings::ext::oxidcord::plugin::ui::Host as UiHost;
 use crate::bindings::oxidcord::plugin::host::Host;
 use crate::broker::NoopBroker;
 use crate::config::RuntimeConfig;
 use crate::convert::{md_to_rich, md_to_tree};
 use crate::grants::{Grants, PluginGrant};
+use crate::hook::Hook;
 use crate::host_state::HostState;
-use crate::instance::{CallError, PluginInstance};
+use crate::instance::{CallError, CallKind, Output, PluginInstance};
 use crate::manager::PluginManager;
 use crate::manifest::Manifest;
 use crate::package::{Package, discover};
@@ -204,7 +211,7 @@ pub fn run(plugins_dir: &Path) -> Report {
 }
 
 fn denied_matches(result: Result<(), HostError>, expected: Permission) -> bool {
-	matches!(result, Err(HostError::Denied(permission)) if Permission::from(permission) == expected)
+	matches!(result, Err(error) if error == expected.denied())
 }
 
 fn check_host_gating(runtime: &Runtime) -> Vec<Check> {
@@ -220,6 +227,10 @@ fn check_host_gating(runtime: &Runtime) -> Vec<Check> {
 		channel_id: 2,
 		guild_id: None,
 	};
+	let keybind = Keybind {
+		id: "probe".to_owned(),
+		chord: "ctrl+k".to_owned(),
+	};
 	let outgoing = OutgoingMessage {
 		channel_id: 2,
 		content: "probe".to_owned(),
@@ -234,6 +245,25 @@ fn check_host_gating(runtime: &Runtime) -> Vec<Check> {
 	let empty_tree = UiTree {
 		nodes: Vec::new(),
 		roots: Vec::new(),
+	};
+	let emoji = EmojiRef {
+		id: Some(5),
+		name: "probe".to_owned(),
+		animated: false,
+	};
+	let settings = NotificationSettings {
+		muted: None,
+		level: None,
+		suppress_everyone: None,
+		suppress_roles: None,
+		mobile_push: None,
+		hide_muted: None,
+		mute_until_ms: None,
+	};
+	let watch = ClickWatch {
+		kinds: Vec::new(),
+		modifiers: Modifiers::empty(),
+		targets: Vec::new(),
 	};
 	let results: Vec<(&str, Permission, Result<(), HostError>)> = vec![
 		(
@@ -337,6 +367,295 @@ fn check_host_gating(runtime: &Runtime) -> Vec<Check> {
 			Permission::UiSlots,
 			state.register_command("probe".to_owned(), String::new()),
 		),
+		(
+			"list-relationships",
+			Permission::ContextRelationships,
+			state.list_relationships().map(drop),
+		),
+		(
+			"user-presence",
+			Permission::ContextPresence,
+			state.user_presence(4).map(drop),
+		),
+		(
+			"idle-seconds",
+			Permission::ContextPresence,
+			state.idle_seconds().map(drop),
+		),
+		(
+			"read-state",
+			Permission::ContextReadState,
+			state.read_state(2).map(drop),
+		),
+		(
+			"unread-channels",
+			Permission::ContextReadState,
+			state.unread_channels(None).map(drop),
+		),
+		(
+			"channel-muted",
+			Permission::ContextReadState,
+			state.channel_muted(2).map(drop),
+		),
+		(
+			"list-roles",
+			Permission::ContextRoles,
+			state.list_roles(3).map(drop),
+		),
+		(
+			"member-info",
+			Permission::ContextRoles,
+			state.member_info(3, 4).map(drop),
+		),
+		(
+			"channel-permissions",
+			Permission::ContextRoles,
+			state.channel_permissions(2, None).map(drop),
+		),
+		(
+			"guild-detail",
+			Permission::ContextDirectory,
+			state.guild_detail(3).map(drop),
+		),
+		(
+			"channel-detail",
+			Permission::ContextDirectory,
+			state.channel_detail(2).map(drop),
+		),
+		(
+			"list-folders",
+			Permission::ContextDirectory,
+			state.list_folders().map(drop),
+		),
+		(
+			"user-profile",
+			Permission::ContextProfiles,
+			state.user_profile(4).map(drop),
+		),
+		(
+			"list-sessions",
+			Permission::ContextSessions,
+			state.list_sessions().map(drop),
+		),
+		(
+			"client-info",
+			Permission::ContextBasic,
+			state.client_info().map(drop),
+		),
+		(
+			"voice-detail",
+			Permission::ContextVoice,
+			state.voice_detail().map(drop),
+		),
+		(
+			"fetch-message",
+			Permission::ContextTimeline,
+			state.fetch_message(2, 1).map(drop),
+		),
+		(
+			"message-meta",
+			Permission::ContextTimeline,
+			state.message_meta(message_ref).map(drop),
+		),
+		(
+			"reaction-users",
+			Permission::ContextTimeline,
+			state.reaction_users(message_ref, emoji.clone(), 10).map(drop),
+		),
+		(
+			"fetch-user",
+			Permission::ContextMembers,
+			state.fetch_user(4).map(drop),
+		),
+		(
+			"attachment-bytes",
+			Permission::ContextAttachments,
+			state.attachment_bytes(message_ref, 6).map(drop),
+		),
+		(
+			"avatar-bytes",
+			Permission::ContextAttachments,
+			state.avatar_bytes(4, 64).map(drop),
+		),
+		(
+			"list-favorite-emojis",
+			Permission::ContextExpressions,
+			state.list_favorite_emojis().map(drop),
+		),
+		(
+			"list-plugins",
+			Permission::PluginsList,
+			state.list_plugins().map(drop),
+		),
+		(
+			"composer-get-draft",
+			Permission::Composer,
+			state.composer_get_draft().map(drop),
+		),
+		(
+			"set-status",
+			Permission::ActionsPresence,
+			state.set_status("online".to_owned()),
+		),
+		(
+			"set-custom-status",
+			Permission::ActionsPresence,
+			state.set_custom_status("probe".to_owned(), None, None),
+		),
+		("mark-read", Permission::ActionsAck, state.mark_read(2)),
+		(
+			"mark-unread",
+			Permission::ActionsAck,
+			state.mark_unread(message_ref),
+		),
+		(
+			"mark-guild-read",
+			Permission::ActionsAck,
+			state.mark_guild_read(3),
+		),
+		(
+			"start-reply",
+			Permission::ActionsCompose,
+			state.start_reply(message_ref, false),
+		),
+		(
+			"start-edit",
+			Permission::ActionsCompose,
+			state.start_edit(message_ref),
+		),
+		(
+			"jump-to-message",
+			Permission::ActionsCompose,
+			state.jump_to_message(message_ref),
+		),
+		("jump-to-top", Permission::ActionsCompose, state.jump_to_top(2)),
+		(
+			"edit-message",
+			Permission::ActionsEdit,
+			state.edit_message(message_ref, "probe".to_owned()),
+		),
+		(
+			"delete-message",
+			Permission::ActionsDelete,
+			state.delete_message(message_ref),
+		),
+		(
+			"react",
+			Permission::ActionsReact,
+			state.react(message_ref, emoji.clone(), false),
+		),
+		(
+			"remove-reaction",
+			Permission::ActionsReact,
+			state.remove_reaction(message_ref, emoji.clone()),
+		),
+		(
+			"pick-files",
+			Permission::ActionsUpload,
+			state.pick_files(false).map(drop),
+		),
+		(
+			"composer-attach-files",
+			Permission::ActionsUpload,
+			state.composer_attach_files(Vec::new()),
+		),
+		(
+			"send-message-files",
+			Permission::ActionsUpload,
+			state.send_message_files(outgoing.clone(), Vec::new()),
+		),
+		(
+			"composer-set-draft",
+			Permission::Composer,
+			state.composer_set_draft("probe".to_owned()),
+		),
+		(
+			"composer-attach-sticker",
+			Permission::Composer,
+			state.composer_attach_sticker(7),
+		),
+		(
+			"save-attachment",
+			Permission::ActionsSave,
+			state.save_attachment(message_ref, 6),
+		),
+		("join-voice", Permission::ActionsVoice, state.join_voice(None, 2)),
+		("leave-voice", Permission::ActionsVoice, state.leave_voice()),
+		(
+			"set-guild-notifications",
+			Permission::ActionsSettings,
+			state.set_guild_notifications(3, settings),
+		),
+		(
+			"set-channel-notifications",
+			Permission::ActionsSettings,
+			state.set_channel_notifications(2, settings),
+		),
+		(
+			"set-client-option",
+			Permission::ActionsSettings,
+			state.set_client_option(ClientOption::StreamerMode(false)),
+		),
+		(
+			"set-dm-sections",
+			Permission::ActionsSettings,
+			state.set_dm_sections(Vec::<DmSection>::new()),
+		),
+		(
+			"clone-emoji",
+			Permission::ActionsGuild,
+			state.clone_emoji(3, emoji.clone(), "probe".to_owned()),
+		),
+		(
+			"clone-sticker",
+			Permission::ActionsGuild,
+			state.clone_sticker(3, 7),
+		),
+		(
+			"register-keybind",
+			Permission::UiKeybinds,
+			state.register_keybind(keybind),
+		),
+		(
+			"unregister-keybind",
+			Permission::UiKeybinds,
+			state.unregister_keybind("probe".to_owned()),
+		),
+		(
+			"speak",
+			Permission::ActionsSpeak,
+			state.speak("probe".to_owned(), 1.0, 1.0),
+		),
+		(
+			"open-settings",
+			Permission::ActionsNavigate,
+			state.open_settings("account".to_owned()),
+		),
+		(
+			"navigate-back",
+			Permission::ActionsNavigate,
+			state.navigate_back(),
+		),
+		(
+			"navigate-forward",
+			Permission::ActionsNavigate,
+			state.navigate_forward(),
+		),
+		(
+			"set-menu-items-ext",
+			Permission::UiMount,
+			state.set_menu_items_ext("probe".to_owned(), Vec::new()),
+		),
+		(
+			"watch-clicks",
+			Permission::UiInput,
+			state.watch_clicks(watch.clone()),
+		),
+		(
+			"watch-channel-clicks",
+			Permission::UiInput,
+			state.watch_channel_clicks(watch),
+		),
 	];
 	let total = results.len();
 	let wrong: Vec<&str> = results
@@ -417,6 +736,187 @@ fn sample_message() -> MessageView {
 	}
 }
 
+fn sample_full(view: &MessageView) -> MessageFull {
+	MessageFull {
+		view: view.clone(),
+		attachments: Vec::new(),
+		embeds: Vec::new(),
+		stickers: Vec::new(),
+		reactions: Vec::new(),
+		mentions: Vec::new(),
+		mine: false,
+		lifecycle: Lifecycle::Live,
+	}
+}
+
+fn sample_meta() -> MessageMeta {
+	MessageMeta {
+		guild_id: Some(3),
+		reply_to: None,
+		flags: 0,
+		latency_ms: None,
+		author_color: None,
+		pinned: false,
+		edited_ms: None,
+		nsfw_channel: false,
+	}
+}
+
+fn sample_context() -> UiContext {
+	UiContext {
+		guild_id: Some(3),
+		channel_id: Some(2),
+		message_id: Some(1),
+		user_id: Some(4),
+		url: Some("https://example.com/".to_owned()),
+	}
+}
+
+fn sample_channel() -> ChannelDetail {
+	ChannelDetail {
+		id: 2,
+		guild_id: Some(3),
+		name: "general".to_owned(),
+		kind: 0,
+		topic: None,
+		nsfw: false,
+		parent_id: None,
+		position: 0,
+		recipients: Vec::new(),
+		owner_id: None,
+		last_message_id: None,
+		rate_limit: 0,
+		created_ms: 0,
+	}
+}
+
+fn hook2_probes(hook: Hook) -> Vec<(&'static str, CallKind)> {
+	let message = sample_message();
+	let content = md_to_rich(&[markdown::Node::Text("hello".to_owned())]);
+	match hook {
+		Hook::BeforeSend => vec![(
+			"before-send-full",
+			CallKind::BeforeSendFull(Arc::new(OutgoingFull {
+				channel_id: 2,
+				content: "hello".to_owned(),
+				reply_to: None,
+				mention_reply: false,
+				silent: false,
+				attachments: Vec::new(),
+				stickers: Vec::new(),
+			})),
+		)],
+		Hook::DisplayUser => vec![(
+			"display-user-full",
+			CallKind::DisplayUsersFull(Arc::from([(Some(3), message.author.clone(), None)])),
+		)],
+		Hook::Intercept => vec![
+			(
+				"intercept-message-ext",
+				CallKind::InterceptExt {
+					msg: Arc::new(sample_full(&message)),
+					meta: Arc::new(sample_meta()),
+					content: Arc::new(content.clone()),
+				},
+			),
+			(
+				"intercept-messages-ext",
+				CallKind::InterceptBatchExt(Arc::from([(sample_full(&message), sample_meta(), content)])),
+			),
+		],
+		Hook::DraftChange => vec![(
+			"on-draft-change",
+			CallKind::DraftChange {
+				channel_id: 2,
+				text: "hello".to_owned(),
+			},
+		)],
+		Hook::AutocompleteEmoji => vec![(
+			"autocomplete-emoji",
+			CallKind::AutocompleteEmoji {
+				query: "pr".to_owned(),
+				candidates: Arc::from([EmojiInfo {
+					emoji: EmojiRef {
+						id: Some(5),
+						name: "probe".to_owned(),
+						animated: false,
+					},
+					guild_id: Some(3),
+					usable: true,
+					available: true,
+				}]),
+			},
+		)],
+		Hook::DecorateChannel => vec![(
+			"decorate-channel",
+			CallKind::DecorateChannels(Arc::from([sample_channel()])),
+		)],
+		Hook::Notification => vec![(
+			"on-notification",
+			CallKind::Notification(NotificationInfo {
+				id: 1,
+				channel_id: 2,
+				guild_id: Some(3),
+				message: None,
+				author: Some(4),
+				kind: NotificationKind::Message,
+				mentions_me: false,
+				mentions_everyone: false,
+			}),
+		)],
+		Hook::MessageClick => vec![(
+			"on-message-click",
+			CallKind::MessageClick(MessageClick {
+				message: MessageRef {
+					id: 1,
+					channel_id: 2,
+					guild_id: Some(3),
+				},
+				kind: ClickKind::Single,
+				modifiers: Modifiers::empty(),
+				target: ClickTarget::Body,
+			}),
+		)],
+		Hook::ChannelClick => vec![(
+			"on-channel-click",
+			CallKind::ChannelClick(ChannelClick {
+				guild_id: Some(3),
+				channel_id: 2,
+				kind: ClickKind::Single,
+				modifiers: Modifiers::empty(),
+			}),
+		)],
+		Hook::LinkClick => vec![(
+			"on-link-click",
+			CallKind::LinkClick {
+				url: "https://example.com/".to_owned(),
+				context: sample_context(),
+			},
+		)],
+	}
+}
+
+fn check_hooks2(
+	manifest: &Manifest,
+	instance: &PluginInstance,
+	config: &RuntimeConfig,
+	recorder: &mut Recorder,
+) {
+	for hook in Hook::ALL.into_iter().filter(|hook| manifest.hooks.contains(hook)) {
+		for (name, kind) in hook2_probes(hook) {
+			let deadline = kind.timeout(&config.timeouts);
+			let started = Instant::now();
+			let outcome = instance.call(kind).map(|_: Output| ());
+			let elapsed = started.elapsed();
+			match outcome {
+				Ok(()) if within(elapsed, deadline, config) => recorder.pass(name, elapsed, "ok"),
+				Ok(()) => recorder.fail(name, elapsed, "over deadline"),
+				Err(error) => recorder.fail(name, elapsed, error.to_string()),
+			}
+		}
+	}
+}
+
 fn check_plugin(runtime: &Runtime, dir: &Path) -> PluginReport {
 	let mut recorder = Recorder::new();
 	let manifest = match Package::from_dir(dir) {
@@ -462,6 +962,7 @@ fn check_plugin(runtime: &Runtime, dir: &Path) -> PluginReport {
 		};
 	};
 	check_hooks(&manifest, &instance, runtime.config(), &mut recorder);
+	check_hooks2(&manifest, &instance, runtime.config(), &mut recorder);
 	check_guest_denial(&manifest, &instance, &mut recorder);
 	check_guest_context_denial(&manifest, &instance, &mut recorder);
 	check_interruption(&instance, runtime.config(), &mut recorder);
@@ -523,18 +1024,8 @@ fn check_hooks(
 	}
 	if manifest.requests(Permission::MessageIntercept) {
 		let started = Instant::now();
-		let full = MessageFull {
-			view: message.clone(),
-			attachments: Vec::new(),
-			embeds: Vec::new(),
-			stickers: Vec::new(),
-			reactions: Vec::new(),
-			mentions: Vec::new(),
-			mine: false,
-			lifecycle: Lifecycle::Live,
-		};
 		let outcome = instance.intercept(
-			Arc::new(full),
+			Arc::new(sample_full(&message)),
 			Arc::new(md_to_rich(&[markdown::Node::Text("hello".to_owned())])),
 		);
 		record_simple(

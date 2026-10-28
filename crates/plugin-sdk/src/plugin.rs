@@ -126,6 +126,186 @@ macro_rules! __export_state {
 	};
 }
 
+#[cfg(feature = "ext")]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __export_hooks2_noop {
+	() => {
+		impl $crate::bindings::exports::oxidcord::plugin::hooks2::Guest for OxidcordExport {
+			fn before_send_full(_msg: $crate::model::OutgoingFull) -> $crate::model::SendDecisionFull {
+				$crate::model::SendDecisionFull::Pass
+			}
+
+			fn display_user_full(
+				_guild_id: ::core::option::Option<u64>,
+				_user: $crate::types::User,
+				_presence: ::core::option::Option<$crate::model::Presence>,
+			) -> ::core::option::Option<$crate::model::DisplayOverrideFull> {
+				::core::option::Option::None
+			}
+
+			fn intercept_message_ext(
+				_msg: $crate::model::MessageFull,
+				_meta: $crate::model::MessageMeta,
+				_content: $crate::model::RichTree,
+			) -> $crate::model::MessagePatchExt {
+				$crate::__private_ext::keep_ext()
+			}
+
+			fn intercept_messages_ext(
+				items: ::std::vec::Vec<(
+					$crate::model::MessageFull,
+					$crate::model::MessageMeta,
+					$crate::model::RichTree,
+				)>,
+			) -> ::std::vec::Vec<$crate::model::MessagePatchExt> {
+				items
+					.iter()
+					.map(|_| $crate::__private_ext::keep_ext())
+					.collect()
+			}
+
+			fn on_client_event(_event: $crate::model::ClientEvent) {}
+
+			fn on_message_click(_click: $crate::model::MessageClick) {}
+
+			fn on_channel_click(_click: $crate::model::ChannelClick) {}
+
+			fn on_link_click(
+				_url: ::std::string::String,
+				_context: $crate::model::UiContext,
+			) -> $crate::model::LinkVerdict {
+				$crate::model::LinkVerdict::Pass
+			}
+
+			fn on_draft_change(_channel_id: u64, _text: ::std::string::String) {}
+
+			fn autocomplete_emoji(
+				_query: ::std::string::String,
+				_candidates: ::std::vec::Vec<$crate::model::EmojiInfo>,
+			) -> ::std::vec::Vec<u32> {
+				::std::vec::Vec::new()
+			}
+
+			fn decorate_channel(
+				_channel: $crate::model::ChannelDetail,
+			) -> ::std::vec::Vec<$crate::model::Badge> {
+				::std::vec::Vec::new()
+			}
+
+			fn on_keybind(_id: ::std::string::String) {}
+
+			fn on_notification(_info: $crate::model::NotificationInfo) -> $crate::model::NotificationVerdict {
+				$crate::model::NotificationVerdict::Allow
+			}
+
+			fn on_badge_click(_user_id: u64, _key: ::std::string::String) {}
+		}
+	};
+}
+
+#[cfg(feature = "ext")]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __export_hooks2 {
+	() => {
+		impl $crate::bindings::exports::oxidcord::plugin::hooks2::Guest for OxidcordExport {
+			fn before_send_full(msg: $crate::model::OutgoingFull) -> $crate::model::SendDecisionFull {
+				STATE.with(|state| $crate::PluginExt::before_send_full(&mut *state.borrow_mut(), msg))
+			}
+
+			fn display_user_full(
+				guild_id: ::core::option::Option<u64>,
+				user: $crate::types::User,
+				presence: ::core::option::Option<$crate::model::Presence>,
+			) -> ::core::option::Option<$crate::model::DisplayOverrideFull> {
+				STATE.with(|state| {
+					$crate::PluginExt::display_user_full(
+						&mut *state.borrow_mut(),
+						guild_id,
+						&user,
+						presence.as_ref(),
+					)
+				})
+			}
+
+			fn intercept_message_ext(
+				msg: $crate::model::MessageFull,
+				meta: $crate::model::MessageMeta,
+				content: $crate::model::RichTree,
+			) -> $crate::model::MessagePatchExt {
+				STATE.with(|state| {
+					$crate::__private_ext::intercept_message_ext(&mut *state.borrow_mut(), msg, meta, content)
+				})
+			}
+
+			fn intercept_messages_ext(
+				items: ::std::vec::Vec<(
+					$crate::model::MessageFull,
+					$crate::model::MessageMeta,
+					$crate::model::RichTree,
+				)>,
+			) -> ::std::vec::Vec<$crate::model::MessagePatchExt> {
+				STATE.with(|state| {
+					$crate::__private_ext::intercept_messages_ext(&mut *state.borrow_mut(), items)
+				})
+			}
+
+			fn on_client_event(event: $crate::model::ClientEvent) {
+				STATE.with(|state| $crate::PluginExt::on_client_event(&mut *state.borrow_mut(), event))
+			}
+
+			fn on_message_click(click: $crate::model::MessageClick) {
+				STATE.with(|state| $crate::PluginExt::on_message_click(&mut *state.borrow_mut(), click))
+			}
+
+			fn on_channel_click(click: $crate::model::ChannelClick) {
+				STATE.with(|state| $crate::PluginExt::on_channel_click(&mut *state.borrow_mut(), click))
+			}
+
+			fn on_link_click(
+				url: ::std::string::String,
+				context: $crate::model::UiContext,
+			) -> $crate::model::LinkVerdict {
+				STATE.with(|state| $crate::PluginExt::on_link_click(&mut *state.borrow_mut(), &url, &context))
+			}
+
+			fn on_draft_change(channel_id: u64, text: ::std::string::String) {
+				STATE.with(|state| {
+					$crate::PluginExt::on_draft_change(&mut *state.borrow_mut(), channel_id, &text)
+				})
+			}
+
+			fn autocomplete_emoji(
+				query: ::std::string::String,
+				candidates: ::std::vec::Vec<$crate::model::EmojiInfo>,
+			) -> ::std::vec::Vec<u32> {
+				STATE.with(|state| {
+					$crate::PluginExt::autocomplete_emoji(&mut *state.borrow_mut(), &query, &candidates)
+				})
+			}
+
+			fn decorate_channel(
+				channel: $crate::model::ChannelDetail,
+			) -> ::std::vec::Vec<$crate::model::Badge> {
+				STATE.with(|state| $crate::PluginExt::decorate_channel(&mut *state.borrow_mut(), &channel))
+			}
+
+			fn on_keybind(id: ::std::string::String) {
+				STATE.with(|state| $crate::PluginExt::on_keybind(&mut *state.borrow_mut(), &id))
+			}
+
+			fn on_notification(info: $crate::model::NotificationInfo) -> $crate::model::NotificationVerdict {
+				STATE.with(|state| $crate::PluginExt::on_notification(&mut *state.borrow_mut(), &info))
+			}
+
+			fn on_badge_click(user_id: u64, key: ::std::string::String) {
+				STATE.with(|state| $crate::PluginExt::on_badge_click(&mut *state.borrow_mut(), user_id, &key))
+			}
+		}
+	};
+}
+
 #[cfg(not(feature = "ext"))]
 #[macro_export]
 macro_rules! export_plugin {
@@ -185,6 +365,8 @@ macro_rules! export_plugin {
 				}
 			}
 
+			$crate::__export_hooks2_noop!();
+
 	$crate::bindings::export_guest!(OxidcordExport with_types_in $crate::bindings);
 		};
 	};
@@ -239,6 +421,8 @@ macro_rules! export_plugin {
 					})
 				}
 			}
+
+			$crate::__export_hooks2!();
 
 	$crate::bindings::export_guest!(OxidcordExport with_types_in $crate::bindings);
 		};

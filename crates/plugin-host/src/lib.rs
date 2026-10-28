@@ -7,6 +7,7 @@ pub mod convert;
 mod error;
 mod fetch;
 mod grants;
+mod hook;
 mod host_state;
 mod instance;
 mod latency;
@@ -35,13 +36,14 @@ pub use config::{HookTimeouts, RuntimeConfig};
 pub use error::{Error, Result};
 pub use fetch::{Fetcher, is_public};
 pub use grants::{Grants, PluginGrant};
+pub use hook::Hook;
 pub use instance::{CallError, PluginInstance, PluginState};
 pub use latency::LatencyStats;
 pub use manager::{
-	CommandError, EmojiPick, Intercepted, LoadIssue, PluginDebug, PluginInfo, PluginManager, RenderHooks,
-	SendDecision,
+	CommandError, EmojiPick, FullSendDecision, Intercepted, LoadIssue, PluginDebug, PluginInfo,
+	PluginManager, RenderHooks, SendDecision,
 };
-pub use manifest::{API_VERSION, MANIFEST_FILE, Manifest, PermissionRequest};
+pub use manifest::{API_VERSION, MANIFEST_FILE, Manifest, PermissionRequest, URL_SCHEMES};
 pub use mounts::{Mount, Mounts, ViewContext};
 pub use package::{
 	InstalledPlugin, MAX_PACKAGE_BYTES, PACKAGE_EXTENSION, Package, PackageFile, THEME_FILE, Trust,

@@ -346,3 +346,18 @@ pub fn register_slot(slot: &str, roots: &[Ui]) -> Result<(), HostError> {
 pub fn register_command(name: &str, description: &str) -> Result<(), HostError> {
 	host::register_command(name, description)
 }
+
+#[cfg(feature = "ext")]
+pub fn context_detail() -> Option<crate::model::ContextDetail> {
+	crate::bindings::oxidcord::plugin::ui::context_detail()
+}
+
+#[cfg(feature = "ext")]
+pub fn watch_clicks(watch: &crate::model::ClickWatch) -> Result<(), HostError> {
+	crate::bindings::oxidcord::plugin::ui::watch_clicks(watch)
+}
+
+#[cfg(feature = "ext")]
+pub fn watch_channel_clicks(watch: &crate::model::ClickWatch) -> Result<(), HostError> {
+	crate::bindings::oxidcord::plugin::ui::watch_channel_clicks(watch)
+}

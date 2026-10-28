@@ -1,5 +1,8 @@
 use crate::md::{self, Color, Md, api_color};
-use crate::model::{Annotation, Decoration, EmbedAction, EmbedCard, MessagePatch, Tone, Visibility};
+use crate::model::{
+	Annotation, AttachmentLayout, AttachmentOverride, CodeBlockNode, Decoration, EmbedAction, EmbedCard,
+	MessagePatch, MessagePatchExt, Tone, Visibility,
+};
 use crate::view::{self, Node};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -136,6 +139,84 @@ impl Patch {
 			hidden_attachments: self.hidden_attachments,
 			accessory: self.accessory.map(view::tree),
 			retain: self.retain,
+		}
+	}
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PatchExt {
+	base: Patch,
+	attachments: Vec<AttachmentOverride>,
+	layout: Option<AttachmentLayout>,
+	reply_annotation: Option<String>,
+	reveal_spoilers: bool,
+	tooltip: Option<String>,
+	code_blocks: Vec<(u32, CodeBlockNode)>,
+}
+
+impl PatchExt {
+	pub fn keep() -> Self {
+		Patch::keep().into()
+	}
+
+	pub fn base(mut self, base: Patch) -> Self {
+		self.base = base;
+		self
+	}
+
+	pub fn attachment(mut self, attachment: AttachmentOverride) -> Self {
+		self.attachments.push(attachment);
+		self
+	}
+
+	pub fn layout(mut self, layout: AttachmentLayout) -> Self {
+		self.layout = Some(layout);
+		self
+	}
+
+	pub fn reply_annotation(mut self, text: impl Into<String>) -> Self {
+		self.reply_annotation = Some(text.into());
+		self
+	}
+
+	pub fn reveal_spoilers(mut self) -> Self {
+		self.reveal_spoilers = true;
+		self
+	}
+
+	pub fn tooltip(mut self, text: impl Into<String>) -> Self {
+		self.tooltip = Some(text.into());
+		self
+	}
+
+	pub fn code_block(mut self, index: u32, block: CodeBlockNode) -> Self {
+		self.code_blocks.push((index, block));
+		self
+	}
+
+	pub(crate) fn into_api(self) -> MessagePatchExt {
+		MessagePatchExt {
+			base: self.base.into_api(),
+			attachments: self.attachments,
+			layout: self.layout,
+			reply_annotation: self.reply_annotation,
+			reveal_spoilers: self.reveal_spoilers,
+			tooltip: self.tooltip,
+			code_blocks: self.code_blocks,
+		}
+	}
+}
+
+impl From<Patch> for PatchExt {
+	fn from(base: Patch) -> Self {
+		Self {
+			base,
+			attachments: Vec::new(),
+			layout: None,
+			reply_annotation: None,
+			reveal_spoilers: false,
+			tooltip: None,
+			code_blocks: Vec::new(),
 		}
 	}
 }

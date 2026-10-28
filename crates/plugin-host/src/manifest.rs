@@ -4,9 +4,10 @@ use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
+use crate::hook::Hook;
 use crate::permission::Permission;
 
-pub const API_VERSION: Version = Version::new(1, 1, 0);
+pub const API_VERSION: Version = Version::new(1, 2, 0);
 
 const DISCORD_DOMAINS: [&str; 5] = [
 	"discord.com",
@@ -15,6 +16,8 @@ const DISCORD_DOMAINS: [&str; 5] = [
 	"discord.media",
 	"discordapp.net",
 ];
+
+pub const URL_SCHEMES: [&str; 5] = ["spotify", "steam", "tidal", "itms-apps", "music"];
 
 pub const MANIFEST_FILE: &str = "plugin.toml";
 
@@ -67,6 +70,10 @@ pub struct Manifest {
 	#[serde(default)]
 	pub image_hosts: Vec<String>,
 	#[serde(default)]
+	pub url_schemes: Vec<String>,
+	#[serde(default)]
+	pub hooks: Vec<Hook>,
+	#[serde(default)]
 	pub entry: Option<String>,
 	#[serde(default)]
 	pub min_host: Option<Version>,
@@ -102,6 +109,21 @@ impl Manifest {
 		if !self.network_hosts.is_empty() && !self.requests(Permission::NetFetch) {
 			return Err(Error::Manifest(
 				"network_hosts requires the net-fetch permission".to_owned(),
+			));
+		}
+		if let Some(scheme) = self
+			.url_schemes
+			.iter()
+			.find(|scheme| !URL_SCHEMES.contains(&scheme.as_str()))
+		{
+			return Err(Error::Manifest(format!(
+				"url scheme `{scheme}` is not one of {}",
+				URL_SCHEMES.join(", ")
+			)));
+		}
+		if !self.url_schemes.is_empty() && !self.requests(Permission::ActionsOpenUrl) {
+			return Err(Error::Manifest(
+				"url_schemes requires the actions-open-url permission".to_owned(),
 			));
 		}
 		Ok(())

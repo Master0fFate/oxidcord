@@ -18,7 +18,7 @@ state = { path = "crates/state", package = "oxidcord-state" }
 store = { path = "crates/store", package = "oxidcord-store" }
 markdown = { path = "crates/markdown", package = "oxidcord-markdown" }
 plugin-host = { path = "crates/plugin-host", package = "oxidcord-plugin-host" }
-plugin-sdk = { path = "crates/plugin-sdk", package = "oxidcord-plugin-sdk" }
+plugin-sdk = { path = "crates/plugin-sdk", package = "oxidcord-plugin-sdk", version = "0.5.0" }
 ui = { path = "crates/ui", package = "oxidcord-ui" }
 platform = { path = "crates/platform", package = "oxidcord-platform" }
 media = { path = "crates/media", package = "oxidcord-media" }

@@ -8,7 +8,7 @@ use super::view::{ImagePolicy, clip, sanitize_card, sanitize_color, sanitize_vie
 use crate::api::MessageView;
 use crate::api::model::{
 	Annotation, AttachmentInfo, Decoration, EmbedAction, EmbedInfo, EmojiRef, Lifecycle, MessageFull,
-	MessagePatch, ReactionInfo, StickerInfo, Visibility,
+	MessagePatch, MessagePatchExt, ReactionInfo, StickerInfo, Visibility,
 };
 use crate::patches::PluginPatch;
 
@@ -168,6 +168,18 @@ pub fn sanitize_patch(
 		content,
 		retain: patch.retain,
 		patch: (!plugin_patch.is_empty()).then_some(plugin_patch),
+	}
+}
+
+pub fn empty_patch_ext() -> MessagePatchExt {
+	MessagePatchExt {
+		base: empty_patch(),
+		attachments: Vec::new(),
+		layout: None,
+		reply_annotation: None,
+		reveal_spoilers: false,
+		tooltip: None,
+		code_blocks: Vec::new(),
 	}
 }
 
