@@ -1,0 +1,21 @@
+id = "dev.oxidcord.keep-current-channel"
+name = "Keep Current Channel"
+version = "0.1.0"
+api = "^1.0"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Navigate to the channel you were in before restart."
+entry = "keep_current_channel.wasm"
+min_host = "0.1.0"
+
+[[permissions]]
+permission = "context-basic"
+reason = "Notices which channel you open."
+
+[[permissions]]
+permission = "storage"
+reason = "Remembers the last channel across restarts."
+
+[[permissions]]
+permission = "actions-navigate"
+reason = "Opens the remembered channel after the app starts."

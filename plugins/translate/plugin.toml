@@ -1,0 +1,34 @@
+id = "dev.oxidcord.translate"
+name = "Translate"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Translate messages with Google Translate or DeepL."
+entry = "translate.wasm"
+min_host = "0.4.3"
+network_hosts = ["translate.googleapis.com", "api-free.deepl.com"]
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the Translate button, menu item and composer button."
+
+[[permissions]]
+permission = "net-fetch"
+reason = "Sends the text you translate to Google Translate or DeepL."
+
+[[permissions]]
+permission = "message-intercept"
+reason = "Shows the translation under the message."
+
+[[permissions]]
+permission = "context-timeline"
+reason = "Reads the text of the message you translate."
+
+[[permissions]]
+permission = "composer"
+reason = "Reads your draft and replaces it with the translation."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

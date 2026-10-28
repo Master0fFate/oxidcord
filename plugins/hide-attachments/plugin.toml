@@ -1,0 +1,21 @@
+id = "dev.oxidcord.hide-attachments"
+name = "Hide Attachments"
+version = "0.1.0"
+api = "^1.1"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Hide attachments and embeds for individual messages via hover button."
+entry = "hide_attachments.wasm"
+min_host = "0.3.1-beta.1"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the toggle button to the message hover bar."
+
+[[permissions]]
+permission = "message-intercept"
+reason = "Hides the attachments and embeds of the messages you toggled."
+
+[[permissions]]
+permission = "storage"
+reason = "Remembers which messages have their media hidden."

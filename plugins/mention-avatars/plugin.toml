@@ -1,0 +1,21 @@
+id = "dev.oxidcord.mention-avatars"
+name = "Mention Avatars"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Shows user avatars inside mentions."
+entry = "mention_avatars.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "message-intercept"
+reason = "Puts the avatar in front of user mentions in messages."
+
+[[permissions]]
+permission = "context-members"
+reason = "Looks up the name and avatar of a mentioned user the client already knows."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the show @ symbol setting."

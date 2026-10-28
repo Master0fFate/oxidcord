@@ -1,0 +1,21 @@
+id = "dev.oxidcord.text-replace"
+name = "Text Replace"
+version = "0.1.0"
+api = "^1.1"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Replace text in your messages with string and regex rules."
+entry = "text_replace.wasm"
+min_host = "0.3.1-beta.1"
+
+[[permissions]]
+permission = "message-send"
+reason = "Applies your replacement rules to a message you are about to send."
+
+[[permissions]]
+permission = "storage"
+reason = "Keeps your rules."
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the rules editor to the plugin settings."

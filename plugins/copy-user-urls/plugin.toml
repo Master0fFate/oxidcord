@@ -1,0 +1,17 @@
+id = "dev.oxidcord.copy-user-urls"
+name = "Copy User URLs"
+version = "0.1.0"
+api = "^1.1"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Adds a 'Copy User URL' option to the user context menu."
+entry = "copy_user_urls.wasm"
+min_host = "0.3.1-beta.1"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the Copy user URL item to the user menu."
+
+[[permissions]]
+permission = "actions-clipboard"
+reason = "Puts the profile link of the user you picked on the clipboard."

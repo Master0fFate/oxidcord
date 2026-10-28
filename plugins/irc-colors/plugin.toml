@@ -1,0 +1,21 @@
+id = "dev.oxidcord.irc-colors"
+name = "IRC Colors"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Makes username colors in chat unique, like in IRC clients."
+entry = "irc_colors.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "user-display"
+reason = "Gives every user a name color derived from their id."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."
+
+[[permissions]]
+permission = "context-roles"
+reason = "Finds out whether a member already has a role color, for the only users without a color setting."

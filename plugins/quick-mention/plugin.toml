@@ -1,0 +1,17 @@
+id = "dev.oxidcord.quick-mention"
+name = "Quick Mention"
+version = "0.1.0"
+api = "^1.1"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Adds a quick mention button to the message actions bar."
+entry = "quick_mention.wasm"
+min_host = "0.3.1-beta.1"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the mention button to the message hover bar."
+
+[[permissions]]
+permission = "composer"
+reason = "Puts the mention of the message author into the composer."

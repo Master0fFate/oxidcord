@@ -1,0 +1,22 @@
+id = "dev.oxidcord.review-db"
+name = "Review DB"
+version = "0.1.0"
+api = "^1.1"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Shows the reviews other people wrote about a user on their profile popout."
+entry = "review_db.wasm"
+min_host = "0.3.1-beta.1"
+network_hosts = ["manti.vendicated.dev"]
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the Reviews section to the user popout."
+
+[[permissions]]
+permission = "net-fetch"
+reason = "Loads the reviews of the person whose popout you open from the public ReviewDB service."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

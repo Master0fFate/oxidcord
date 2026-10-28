@@ -1,0 +1,22 @@
+id = "dev.oxidcord.clear-urls"
+name = "Clear URLs"
+version = "0.1.0"
+api = "^1.1"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Automatically removes tracking elements from URLs you send."
+entry = "clear_urls.wasm"
+min_host = "0.3.1-beta.1"
+network_hosts = ["raw.githubusercontent.com"]
+
+[[permissions]]
+permission = "message-send"
+reason = "Cleans the links in a message you are about to send."
+
+[[permissions]]
+permission = "net-fetch"
+reason = "Downloads the ClearURLs rule set from GitHub once a day."
+
+[[permissions]]
+permission = "storage"
+reason = "Keeps the downloaded rules and the time they were fetched."

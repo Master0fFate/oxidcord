@@ -1,0 +1,25 @@
+id = "dev.oxidcord.send-timestamps"
+name = "Send Timestamps"
+version = "0.1.0"
+api = "^1.1"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Send timestamps easily via chat box button and text shortcuts."
+entry = "send_timestamps.wasm"
+min_host = "0.3.1-beta.1"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the timestamp button to the composer and its picker dialog."
+
+[[permissions]]
+permission = "composer"
+reason = "Puts the timestamp you picked into the composer."
+
+[[permissions]]
+permission = "message-send"
+reason = "Turns times in backticks into timestamps before the message is sent."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

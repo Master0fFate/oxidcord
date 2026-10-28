@@ -1,0 +1,29 @@
+id = "dev.oxidcord.more-quick-reactions"
+name = "More Quick Reactions"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Increases the number of reactions available in the Quick React hover menu."
+entry = "more_quick_reactions.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the row of quick reaction buttons to the message hover bar."
+
+[[permissions]]
+permission = "actions-react"
+reason = "Adds the reaction you click."
+
+[[permissions]]
+permission = "storage"
+reason = "Keeps the setting and how often you use each emoji."
+
+[[permissions]]
+permission = "context-timeline"
+reason = "Sees the reactions you add yourself so the most used emoji come first."
+
+[[permissions]]
+permission = "context-basic"
+reason = "Tells your own reactions apart from other people's."

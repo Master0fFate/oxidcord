@@ -1,0 +1,25 @@
+id = "dev.oxidcord.custom-commands"
+name = "Custom Commands"
+version = "0.1.0"
+api = "^1.1"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Create custom slash commands / tags."
+entry = "custom_commands.wasm"
+min_host = "0.3.1-beta.1"
+
+[[permissions]]
+permission = "ui-slots"
+reason = "Adds the /tags command and one slash command for each tag you create."
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Shows the tag list dialog and confirmation toasts."
+
+[[permissions]]
+permission = "storage"
+reason = "Keeps your tags."
+
+[[permissions]]
+permission = "actions-send"
+reason = "Sends the text of the tag you run."

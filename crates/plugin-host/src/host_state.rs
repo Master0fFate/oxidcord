@@ -398,9 +398,8 @@ impl host::Host for HostState {
 		within_rate(self.rate.fetch.take())?;
 		let grants = &self.services.grants;
 		let plugin = &self.plugin;
-		self.services
-			.fetcher
-			.fetch(req, |host| grants.allows_host(plugin, host))
+		let fetcher = &self.services.fetcher;
+		self.blocking(|_| fetcher.fetch(req, |host| grants.allows_host(plugin, host)))
 	}
 
 	fn send_message(&mut self, msg: OutgoingMessage) -> Result<u64, HostError> {
