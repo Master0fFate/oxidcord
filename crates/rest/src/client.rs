@@ -27,6 +27,7 @@ const MAX_RETRIES: u32 = 3;
 const MAX_AUTO_WAIT: Duration = Duration::from_secs(60);
 const RETRY_JITTER: Duration = Duration::from_millis(50);
 const FALLBACK_RETRY_AFTER: Duration = Duration::from_secs(1);
+const UPLOAD_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 const WEB_ORIGIN: &str = "https://discord.com";
 const WEB_REFERER: &str = "https://discord.com/channels/@me";
 
@@ -246,10 +247,12 @@ impl RestClient {
 			Body::Json(bytes) => builder
 				.header(CONTENT_TYPE, "application/json")
 				.body(bytes.clone()),
-			Body::Multipart { payload_json, files } => {
-				builder.multipart(multipart_form(payload_json, files)?)
-			}
-			Body::Form { fields, files } => builder.multipart(fields_form(fields, files)?),
+			Body::Multipart { payload_json, files } => builder
+				.timeout(UPLOAD_TIMEOUT)
+				.multipart(multipart_form(payload_json, files)?),
+			Body::Form { fields, files } => builder
+				.timeout(UPLOAD_TIMEOUT)
+				.multipart(fields_form(fields, files)?),
 			Body::Invalid => return Err(RestError::InvalidRequest),
 		};
 		builder.send().await.map_err(network_error)

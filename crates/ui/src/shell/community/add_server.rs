@@ -11,7 +11,7 @@ use gpui_component::button::Button;
 use gpui_component::input::{Input, InputEvent, InputState};
 use session::Command;
 
-use super::files::{Picked, pick_image};
+use super::files::{Fit, IMAGE_TYPES, Picked, pick_image};
 use super::invites::stat;
 use super::modal::{self, Close};
 use crate::components::{Avatar, PickHandler, dialog_footer, field, hint, segmented};
@@ -287,10 +287,15 @@ impl AddServer {
 								.icon(gpui_component::Icon::default().path(IconKind::Upload.path()))
 								.label(cx.t("server-overview-upload-icon"))
 								.on_click(cx.listener(|_, _, _, cx| {
-									pick_image(cx, Some(ICON_SIDE), |this: &mut Self, picked, cx| {
-										this.icon = Some(picked);
-										cx.notify();
-									})
+									pick_image(
+										cx,
+										Fit::Square(ICON_SIDE),
+										IMAGE_TYPES,
+										|this: &mut Self, picked, cx| {
+											this.icon = Some(picked);
+											cx.notify();
+										},
+									)
 								})),
 						)
 						.child(hint(cx.t("server-overview-icon-hint"), theme)),

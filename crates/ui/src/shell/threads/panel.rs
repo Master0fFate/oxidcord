@@ -14,7 +14,7 @@ use crate::components::IconButton;
 use crate::data::Data;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
-use crate::shell::composer::Composer;
+use crate::shell::composer::{Composer, accept_files};
 use crate::shell::timeline::Timeline;
 use crate::theme::{Theme, rem, rem_to_pixels};
 
@@ -351,6 +351,8 @@ impl Render for ThreadPanel {
 			.children(top)
 			.child(self.timeline.clone())
 			.children(notice)
-			.when(!archived, |panel| panel.child(self.composer.clone()))
+			.when(!archived, |panel| {
+				accept_files(panel, self.composer.clone()).child(self.composer.clone())
+			})
 	}
 }

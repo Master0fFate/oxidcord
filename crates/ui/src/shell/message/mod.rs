@@ -35,6 +35,7 @@ use self::menu::{MenuSource, capabilities, capture_pointer};
 pub(in crate::shell) use self::menu::{point_link, point_media, with_link_menu};
 pub use self::reaction_tip::ReactionRequests;
 use super::community;
+use super::incoming;
 use super::inline_emoji::{self, EmojiTokens};
 use super::plugins::{PatchEffects, author_badge, message_actions, message_extras, patch_effects};
 use crate::components::{Avatar, IconButton, tooltip};
@@ -1128,7 +1129,8 @@ fn editor(editing: &Editing, env: &RowEnv, cx: &App) -> AnyElement {
 						.token(inline_emoji::render)
 						.appearance(false)
 						.bordered(false)
-						.p_0(),
+						.p_0()
+						.on_paste(|item, _, _| incoming::paths_only(item)),
 				),
 		)
 		.child(

@@ -1,10 +1,11 @@
 use std::collections::HashSet;
+use std::path::PathBuf;
 
 use bytes::Bytes;
 use gpui::{
-	App, AppContext as _, Context, Entity, EventEmitter, Focusable as _, InteractiveElement as _,
-	IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _,
-	Window, div, prelude::FluentBuilder as _,
+	App, AppContext as _, ClipboardItem, Context, Entity, EventEmitter, ExternalPaths, Focusable as _,
+	InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
+	StatefulInteractiveElement as _, Styled as _, Window, div, prelude::FluentBuilder as _,
 };
 use gpui_component::Sizable as _;
 use gpui_component::button::Button;
@@ -20,6 +21,7 @@ use crate::i18n::Translate as _;
 use crate::icons::{Icon, IconKind};
 use crate::shell::community::modal::{self, Close};
 use crate::shell::composer::content_type;
+use crate::shell::incoming::{self, Incoming};
 use crate::theme::{Theme, rem, with_alpha};
 
 const TITLE_LIMIT: usize = 100;
@@ -103,6 +105,10 @@ impl NewPost {
 			.collect()
 	}
 
+	fn can_attach(&self, cx: &App) -> bool {
+		self.data.read(cx).state().can_attach(self.channel)
+	}
+
 	fn can_post(&self, cx: &App) -> bool {
 		!self.title_text(cx).is_empty() && (!self.require_tag || !self.chosen.is_empty())
 	}
@@ -112,26 +118,55 @@ impl NewPost {
 			let Some(handles) = rfd::AsyncFileDialog::new().pick_files().await else {
 				return;
 			};
-			for handle in handles {
-				let name = handle.file_name();
-				let bytes = handle.read().await;
-				if this
-					.update(cx, |this, cx| {
-						if this.files.len() < MAX_FILES {
-							this.files.push(Attached {
-								name,
-								bytes: Bytes::from(bytes),
-							});
-							cx.notify();
-						}
-					})
-					.is_err()
-				{
-					return;
-				}
-			}
+			let paths = handles.iter().map(|handle| handle.path().to_path_buf()).collect();
+			this.update(cx, |this, cx| this.add_paths(paths, cx)).ok();
 		})
 		.detach();
+	}
+
+	fn add_paths(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+		self.attach_loaded(move |limit| incoming::read_paths(paths, limit), cx);
+	}
+
+	fn attach_loaded(
+		&mut self,
+		load: impl FnOnce(usize) -> Vec<Incoming> + Send + 'static,
+		cx: &mut Context<Self>,
+	) {
+		let free = MAX_FILES.saturating_sub(self.files.len());
+		if !self.can_attach(cx) || free == 0 {
+			return;
+		}
+		cx.spawn(async move |this, cx| {
+			let loaded = cx.background_executor().spawn(async move { load(free) }).await;
+			this.update(cx, |this, cx| {
+				let free = MAX_FILES.saturating_sub(this.files.len());
+				this.files
+					.extend(loaded.into_iter().take(free).map(|file| Attached {
+						name: file.name,
+						bytes: Bytes::from(file.bytes),
+					}));
+				cx.notify();
+			})
+			.ok();
+		})
+		.detach();
+	}
+
+	fn paste(&mut self, item: &ClipboardItem, cx: &mut Context<Self>) -> bool {
+		let paths = incoming::clipboard_paths(item);
+		if !paths.is_empty() {
+			self.add_paths(paths, cx);
+			return true;
+		}
+		if !self.can_attach(cx) {
+			return false;
+		}
+		let Some(image) = incoming::clipboard_image(item) else {
+			return false;
+		};
+		self.attach_loaded(move |_| image.into_incoming().into_iter().collect(), cx);
+		true
 	}
 
 	fn submit(&mut self, cx: &mut Context<Self>) {
@@ -257,12 +292,20 @@ impl Render for NewPost {
 			})
 			.collect();
 		let enabled = self.can_post(cx);
+		let can_attach = self.can_attach(cx);
 		let weak_cancel = cx.weak_entity();
 		let weak_submit = cx.weak_entity();
+		let weak_paste = cx.weak_entity();
 		div()
 			.flex()
 			.flex_col()
 			.gap(theme.space_16)
+			.on_drop(cx.listener(|this, paths: &ExternalPaths, _, cx| {
+				this.add_paths(paths.paths().to_vec(), cx);
+			}))
+			.drag_over::<ExternalPaths>(|style, _, _, cx| {
+				style.bg(with_alpha(cx.global::<Theme>().brand, 0.12))
+			})
 			.pt(theme.space_8)
 			.child(field(cx.t("forum-post-name"), &theme, Input::new(&self.title)))
 			.child(field(
@@ -273,7 +316,17 @@ impl Render for NewPost {
 					.bg(theme.input_background)
 					.px(theme.space_12)
 					.py(theme.space_8)
-					.child(Textarea::new(&self.body).appearance(false).bordered(false).p_0()),
+					.child(
+						Textarea::new(&self.body)
+							.appearance(false)
+							.bordered(false)
+							.p_0()
+							.on_paste(move |item, _, cx| {
+								weak_paste
+									.update(cx, |this, cx| this.paste(item, cx))
+									.unwrap_or(false)
+							}),
+					),
 			))
 			.child(field(
 				cx.t("forum-post-files"),
@@ -284,14 +337,16 @@ impl Render for NewPost {
 					.items_center()
 					.gap(theme.space_8)
 					.children(chips)
-					.child(
-						Button::new("post-attach")
-							.small()
-							.outline()
-							.icon(gpui_component::Icon::default().path(IconKind::Attach.path()))
-							.label(cx.t("composer-attach"))
-							.on_click(cx.listener(|this, _, _, cx| this.pick_files(cx))),
-					),
+					.when(can_attach, |row| {
+						row.child(
+							Button::new("post-attach")
+								.small()
+								.outline()
+								.icon(gpui_component::Icon::default().path(IconKind::Attach.path()))
+								.label(cx.t("composer-attach"))
+								.on_click(cx.listener(|this, _, _, cx| this.pick_files(cx))),
+						)
+					}),
 			))
 			.when(!tag_chips.is_empty(), |form| {
 				form.child(field(

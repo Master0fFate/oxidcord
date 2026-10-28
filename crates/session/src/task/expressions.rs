@@ -5,13 +5,13 @@ use rest::UploadFile;
 use serde::Serialize;
 use state::{EmojiRef, Loaded, RECENT_CAP};
 
+use super::commands::image_mime;
 use super::{Command, Core};
 use crate::persist::{self, Job};
 
 const GIF_MEDIA_FORMAT: &str = "gif";
 const GIF_PAGE: u16 = 50;
 const GIF_SUGGESTIONS: u8 = 10;
-const STICKER_CONTENT_TYPE: &str = "image/png";
 const RECENT_LOAD_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn promote<T>(list: &mut Vec<T>, item: T, is_same: impl Fn(&T, &T) -> bool) {
@@ -155,7 +155,7 @@ impl Core {
 				name,
 				description,
 				tags,
-				file_png_or_apng,
+				file,
 				filename,
 			} => {
 				if self.guild_allows(
@@ -165,8 +165,8 @@ impl Core {
 				) {
 					let file = UploadFile {
 						name: filename,
-						bytes: file_png_or_apng.into(),
-						content_type: STICKER_CONTENT_TYPE.to_owned(),
+						content_type: image_mime(&file).to_owned(),
+						bytes: file.into(),
 						description: None,
 					};
 					self.spawn_action("create sticker", move |rest| async move {

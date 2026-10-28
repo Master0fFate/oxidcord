@@ -517,7 +517,7 @@ impl Harness {
 			name: STICKER_NAME.to_owned(),
 			description: String::new(),
 			tags: STICKER_NAME.to_owned(),
-			file_png_or_apng: STICKER_PNG.to_vec(),
+			file: STICKER_PNG.to_vec(),
 			filename: STICKER_FILE.to_owned(),
 		});
 		self.until("the new sticker to appear", |state| {

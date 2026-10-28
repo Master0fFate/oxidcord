@@ -12,7 +12,7 @@ use super::kit;
 use crate::components::{Avatar, field, hint};
 use crate::data::Data;
 use crate::i18n::Translate as _;
-use crate::shell::community::files::{Picked, pick_image};
+use crate::shell::community::files::{Fit, IMAGE_TYPES, Picked, pick_image};
 use crate::theme::Theme;
 
 const ICON_SIDE: u32 = 512;
@@ -187,10 +187,15 @@ impl Render for OverviewPage {
 										.primary()
 										.label(cx.t("server-overview-upload-icon"))
 										.on_click(cx.listener(|_, _, _, cx| {
-											pick_image(cx, Some(ICON_SIDE), |this: &mut Self, picked, cx| {
-												this.icon = Some(picked);
-												cx.notify();
-											})
+											pick_image(
+												cx,
+												Fit::Square(ICON_SIDE),
+												IMAGE_TYPES,
+												|this: &mut Self, picked, cx| {
+													this.icon = Some(picked);
+													cx.notify();
+												},
+											)
 										})),
 								)
 								.child(hint(cx.t("server-overview-icon-hint"), &theme)),

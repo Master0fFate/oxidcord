@@ -16,7 +16,7 @@ use crate::data::Data;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::IconKind;
 use crate::shell::community::art::{cover, sticker_url};
-use crate::shell::community::files::{Picked, pick_image};
+use crate::shell::community::files::{Fit, Picked, STICKER_TYPES, pick_image};
 use crate::theme::Theme;
 
 const SLOTS: usize = 5;
@@ -89,7 +89,7 @@ impl StickersPage {
 			name,
 			description: self.description.read(cx).value().trim().to_owned(),
 			tags: self.tags.read(cx).value().trim().to_owned(),
-			file_png_or_apng: picked.bytes,
+			file: picked.bytes,
 			filename: picked.name,
 		});
 		for input in [&self.name, &self.description, &self.tags] {
@@ -296,7 +296,7 @@ impl Render for StickersPage {
 							.icon(gpui_component::Icon::default().path(IconKind::Upload.path()))
 							.label(cx.t("stickers-upload"))
 							.on_click(cx.listener(|_, _, _, cx| {
-								pick_image(cx, None, |this: &mut Self, picked, cx| {
+								pick_image(cx, Fit::Original, STICKER_TYPES, |this: &mut Self, picked, cx| {
 									this.pending_name = Some(stem(&picked.name));
 									this.upload = Some(picked);
 									cx.notify();

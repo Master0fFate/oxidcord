@@ -18,7 +18,7 @@ use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::IconKind;
 use crate::images::{Images, frame_id};
 use crate::lookup::avatar_for;
-use crate::shell::community::files::{Picked, pick_image};
+use crate::shell::community::files::{Fit, IMAGE_TYPES, Picked, pick_image};
 use crate::theme::Theme;
 
 const EMOJI_SIDE: u32 = 128;
@@ -158,7 +158,7 @@ impl EmojiPage {
 		self.data.read(cx).send(Command::CreateEmoji {
 			guild_id: self.guild,
 			name,
-			image_png: picked.bytes,
+			image: picked.bytes,
 		});
 		self.upload_name
 			.update(cx, |state, cx| state.set_value("", window, cx));
@@ -362,11 +362,16 @@ impl Render for EmojiPage {
 							.icon(gpui_component::Icon::default().path(IconKind::Upload.path()))
 							.label(cx.t("emoji-upload"))
 							.on_click(cx.listener(|_, _, _, cx| {
-								pick_image(cx, Some(EMOJI_SIDE), |this: &mut Self, picked, cx| {
-									this.pending_name = Some(stem(&picked.name));
-									this.upload = Some(picked);
-									cx.notify();
-								})
+								pick_image(
+									cx,
+									Fit::SquareUnlessAnimated(EMOJI_SIDE),
+									IMAGE_TYPES,
+									|this: &mut Self, picked, cx| {
+										this.pending_name = Some(stem(&picked.name));
+										this.upload = Some(picked);
+										cx.notify();
+									},
+								)
 							})),
 					),
 			)

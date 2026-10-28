@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::path::PathBuf;
 
 use arboard::{Clipboard, ImageData};
 
@@ -17,6 +18,10 @@ pub fn read_text() -> Result<Option<String>> {
 
 pub fn write_text(text: &str) -> Result<()> {
 	Ok(Clipboard::new()?.set_text(text)?)
+}
+
+pub fn read_files() -> Result<Vec<PathBuf>> {
+	Ok(missing_as_none(Clipboard::new()?.get().file_list())?.unwrap_or_default())
 }
 
 pub fn read_image() -> Result<Option<RgbaImage>> {

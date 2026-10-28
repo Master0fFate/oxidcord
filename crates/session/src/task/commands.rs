@@ -16,6 +16,7 @@ const COMPONENT_INTERACTION: u8 = 3;
 const APPLICATION_COMMAND_INTERACTION: u8 = 2;
 
 const PNG: &str = "image/png";
+const GIF: &str = "image/gif";
 const DEFAULT_ARCHIVE_MINUTES: u32 = 1440;
 const REACTION_PAGE: u8 = 100;
 const BULK_DELETE_LIMIT: usize = 100;
@@ -28,6 +29,10 @@ fn sessions_or_empty(result: rest::Result<Value>) -> Value {
 		tracing::warn!(%error, "device sessions were not loaded");
 		Value::Null
 	})
+}
+
+pub(super) fn image_mime(bytes: &[u8]) -> &'static str {
+	if bytes.starts_with(b"GIF8") { GIF } else { PNG }
 }
 
 fn png(bytes: &[u8]) -> Value {
@@ -905,14 +910,14 @@ impl Core {
 			Command::CreateEmoji {
 				guild_id,
 				name,
-				image_png,
+				image,
 			} => {
 				if self.guild_allows(
 					guild_id,
 					Permissions::CREATE_GUILD_EXPRESSIONS,
 					"Create Expressions",
 				) {
-					let image = image_data_uri(PNG, &image_png);
+					let image = image_data_uri(image_mime(&image), &image);
 					self.spawn_action("create emoji", move |rest| async move {
 						rest.create_emoji(guild_id, &name, &image).await.map(drop)
 					});

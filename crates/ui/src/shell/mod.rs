@@ -7,6 +7,7 @@ mod dm_sidebar;
 mod emoji_picker;
 mod friends;
 mod history;
+mod incoming;
 mod inline_emoji;
 mod lightbox;
 mod links;
@@ -439,7 +440,7 @@ impl Shell {
 				data.clone(),
 				backend.clone(),
 				timeline.clone().into(),
-				composer.clone().into(),
+				composer.clone(),
 				window,
 				cx,
 			)
@@ -1598,10 +1599,12 @@ impl Render for Shell {
 														column.child(page).children(status_bar)
 													}
 													(None, Some(forum)) => column.child(forum),
-													(None, None) => column
-														.child(self.timeline.clone())
-														.child(self.composer.clone())
-														.children(status_bar),
+													(None, None) => {
+														composer::accept_files(column, self.composer.clone())
+															.child(self.timeline.clone())
+															.child(self.composer.clone())
+															.children(status_bar)
+													}
 												}),
 										)
 									})

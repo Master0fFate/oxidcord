@@ -26,6 +26,7 @@ use crate::data::{Data, DataEvent};
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
 use crate::shell::SettingsBackend;
+use crate::shell::composer::{Composer, accept_files};
 use crate::theme::{Theme, rem};
 
 const TILE_ASPECT: f32 = 9. / 16.;
@@ -43,7 +44,7 @@ pub struct VoiceRoom {
 	data: Entity<Data>,
 	backend: Rc<SettingsBackend>,
 	timeline: AnyView,
-	composer: AnyView,
+	composer: Entity<Composer>,
 	chat_open: bool,
 	focused: Option<Snowflake>,
 	camera_pending: bool,
@@ -136,7 +137,7 @@ impl VoiceRoom {
 		data: Entity<Data>,
 		backend: Rc<SettingsBackend>,
 		timeline: AnyView,
-		composer: AnyView,
+		composer: Entity<Composer>,
 		window: &mut Window,
 		cx: &mut Context<Self>,
 	) -> Self {
@@ -752,7 +753,7 @@ impl VoiceRoom {
 	}
 
 	fn chat_panel(&self, theme: &Theme) -> impl IntoElement {
-		div()
+		accept_files(div(), self.composer.clone())
 			.flex()
 			.flex_col()
 			.flex_none()

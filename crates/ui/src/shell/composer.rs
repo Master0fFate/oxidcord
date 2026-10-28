@@ -1,13 +1,12 @@
-use std::io::Cursor;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use gpui::{
-	AnyElement, AppContext as _, ClickEvent, Context, Entity, EventEmitter, ExternalPaths, Focusable as _,
-	FontWeight, InteractiveElement as _, IntoElement, ObjectFit, ParentElement as _, Pixels, Point, Render,
-	SharedString, StatefulInteractiveElement as _, Styled as _, StyledImage as _, Subscription, Task, Window,
-	div, img, prelude::FluentBuilder as _, px,
+	AnyElement, AppContext as _, ClickEvent, ClipboardItem, Context, Div, Entity, EventEmitter,
+	ExternalPaths, Focusable as _, FontWeight, InteractiveElement as _, IntoElement, ObjectFit,
+	ParentElement as _, Pixels, Point, Render, SharedString, StatefulInteractiveElement as _, Styled as _,
+	StyledImage as _, Subscription, Task, Window, div, img, prelude::FluentBuilder as _, px,
 };
 use gpui_component::input::{Escape, InputEvent, Textarea, TextareaState};
 use media::SizeHint;
@@ -18,6 +17,7 @@ use rest::UploadFile;
 use session::{Command, ReplyTarget};
 
 use super::attachments::{self, CardAction, Edit, Pending};
+use super::incoming::{self, Incoming};
 use super::inline_emoji::{self, EmojiTokens};
 use super::pickers::{PickerTab, SkinTone, toned};
 use super::plugins::{self, command_list, composer_toolbar, parse_command};
@@ -106,23 +106,44 @@ pub struct Composer {
 impl EventEmitter<ComposerEvent> for Composer {}
 
 pub(in crate::shell) fn content_type(name: &str) -> &'static str {
-	let extension = name.rsplit('.').next().unwrap_or_default().to_ascii_lowercase();
+	let extension = name
+		.rsplit_once('.')
+		.map(|(_, extension)| extension.to_ascii_lowercase())
+		.unwrap_or_default();
 	match extension.as_str() {
-		"png" => "image/png",
-		"jpg" | "jpeg" => "image/jpeg",
+		"png" | "apng" => "image/png",
+		"jpg" | "jpeg" | "jfif" => "image/jpeg",
 		"gif" => "image/gif",
 		"webp" => "image/webp",
-		"mp4" => "video/mp4",
+		"bmp" => "image/bmp",
+		"avif" => "image/avif",
+		"heic" => "image/heic",
+		"svg" => "image/svg+xml",
+		"mp4" | "m4v" => "video/mp4",
 		"webm" => "video/webm",
+		"mov" => "video/quicktime",
+		"mkv" => "video/x-matroska",
+		"avi" => "video/x-msvideo",
 		"mp3" => "audio/mpeg",
-		"ogg" => "audio/ogg",
+		"ogg" | "opus" => "audio/ogg",
 		"wav" => "audio/wav",
+		"m4a" => "audio/mp4",
+		"aac" => "audio/aac",
+		"flac" => "audio/flac",
 		"txt" | "log" | "md" => "text/plain",
 		"json" => "application/json",
 		"pdf" => "application/pdf",
 		"zip" => "application/zip",
 		_ => "application/octet-stream",
 	}
+}
+
+pub(in crate::shell) fn accept_files(element: Div, composer: Entity<Composer>) -> Div {
+	element
+		.on_drop(move |paths: &ExternalPaths, _, cx| {
+			composer.update(cx, |composer, cx| composer.add_paths(paths.paths().to_vec(), cx));
+		})
+		.drag_over::<ExternalPaths>(|style, _, _, cx| style.bg(with_alpha(cx.global::<Theme>().brand, 0.12)))
 }
 
 fn trigger_of(character: char) -> Option<Trigger> {
@@ -699,72 +720,53 @@ impl Composer {
 			let Some(handles) = rfd::AsyncFileDialog::new().pick_files().await else {
 				return;
 			};
-			for handle in handles {
-				let name = handle.file_name();
-				let bytes = handle.read().await;
-				if this
-					.update(cx, |this, cx| this.add_file(name, bytes, cx))
-					.is_err()
-				{
-					return;
-				}
-			}
+			let paths = handles.iter().map(|handle| handle.path().to_path_buf()).collect();
+			this.update(cx, |this, cx| this.add_paths(paths, cx)).ok();
 		})
 		.detach();
 	}
 
-	fn add_paths(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+	pub(in crate::shell) fn add_paths(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+		self.attach_loaded(move |limit| incoming::read_paths(paths, limit), cx);
+	}
+
+	fn attach_loaded(
+		&mut self,
+		load: impl FnOnce(usize) -> Vec<Incoming> + Send + 'static,
+		cx: &mut Context<Self>,
+	) {
+		let free = MAX_FILES.saturating_sub(self.files.len());
+		if !self.access.attach || free == 0 {
+			return;
+		}
+		let channel = self.channel;
 		cx.spawn(async move |this, cx| {
-			for path in paths {
-				let name = path
-					.file_name()
-					.map(|name| name.to_string_lossy().into_owned())
-					.unwrap_or_default();
-				let read = cx
-					.background_executor()
-					.spawn(async move { std::fs::read(path) })
-					.await;
-				match read {
-					Ok(bytes) => {
-						if this
-							.update(cx, |this, cx| this.add_file(name, bytes, cx))
-							.is_err()
-						{
-							return;
-						}
+			let loaded = cx.background_executor().spawn(async move { load(free) }).await;
+			this.update(cx, |this, cx| {
+				if this.channel == channel {
+					for file in loaded {
+						this.add_file(file.name, file.bytes, cx);
 					}
-					Err(error) => tracing::warn!(%error, "could not read the dropped file"),
 				}
-			}
+			})
+			.ok();
 		})
 		.detach();
 	}
 
-	fn paste_image(&mut self, cx: &mut Context<Self>) -> bool {
+	fn paste(&mut self, item: &ClipboardItem, cx: &mut Context<Self>) -> bool {
+		let paths = incoming::clipboard_paths(item);
+		if !paths.is_empty() {
+			self.add_paths(paths, cx);
+			return true;
+		}
 		if !self.access.attach {
 			return false;
 		}
-		let image = match platform::clipboard::read_image() {
-			Ok(Some(image)) => image,
-			Ok(None) => return false,
-			Err(error) => {
-				tracing::warn!(%error, "could not read the clipboard image");
-				return false;
-			}
-		};
-		let (Ok(width), Ok(height)) = (u32::try_from(image.width), u32::try_from(image.height)) else {
+		let Some(image) = incoming::clipboard_image(item) else {
 			return false;
 		};
-		let Some(buffer) = image::RgbaImage::from_raw(width, height, image.bytes) else {
-			return false;
-		};
-		let mut encoded = Cursor::new(Vec::new());
-		if let Err(error) = buffer.write_to(&mut encoded, image::ImageFormat::Png) {
-			tracing::warn!(%error, "could not encode the pasted image");
-			return false;
-		}
-		let name = format!("pasted-{}.png", chrono::Utc::now().timestamp());
-		self.add_file(name, encoded.into_inner(), cx);
+		self.attach_loaded(move |_| image.into_incoming().into_iter().collect(), cx);
 		true
 	}
 
@@ -1089,12 +1091,6 @@ impl Render for Composer {
 					cx.propagate();
 				}
 			}))
-			.on_drop(cx.listener(|this, paths: &ExternalPaths, _, cx| {
-				this.add_paths(paths.paths().to_vec(), cx);
-			}))
-			.drag_over::<ExternalPaths>(|style, _, _, cx| {
-				style.bg(with_alpha(cx.global::<Theme>().brand, 0.12))
-			})
 			.children(popup)
 			.when(!above.is_empty(), |composer| {
 				composer.child(
@@ -1158,8 +1154,8 @@ impl Render for Composer {
 												.disabled(!access.send)
 												.p_0()
 												.w_full()
-												.on_paste(move |_, _, cx| {
-													weak.update(cx, |this, cx| this.paste_image(cx))
+												.on_paste(move |item, _, cx| {
+													weak.update(cx, |this, cx| this.paste(item, cx))
 														.unwrap_or(false)
 												}),
 										),

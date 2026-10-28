@@ -201,10 +201,15 @@ impl ProfilesPage {
 			else {
 				return;
 			};
-			let bytes = handle.read().await;
+			let path = handle.path().to_path_buf();
 			let prepared = cx
 				.background_executor()
-				.spawn(async move { prepare(&bytes, slot) })
+				.spawn(async move {
+					let bytes = std::fs::read(path)
+						.inspect_err(|error| tracing::warn!(%error, "could not read the picked image"))
+						.ok()?;
+					prepare(&bytes, slot)
+				})
 				.await;
 			let Some((png, rgba)) = prepared else {
 				return;
