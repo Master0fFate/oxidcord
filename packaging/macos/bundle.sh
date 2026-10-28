@@ -42,7 +42,8 @@ ln -s /Applications "$stage/Applications"
 
 dmg="$out_dir/oxidcord-$version-$target-dmg.dmg"
 rm -f "$dmg"
-hdiutil create -volname "Oxidcord" -srcfolder "$stage" -ov -format UDZO "$dmg"
+stage_mb="$(du -sm "$stage" | cut -f1)"
+hdiutil create -volname "Oxidcord" -srcfolder "$stage" -fs HFS+ -size "$((stage_mb * 5 / 4 + 32))m" -ov -format UDZO "$dmg"
 
 if [ -n "${MACOS_SIGN_IDENTITY:-}" ]; then
 	codesign --force --timestamp --sign "$MACOS_SIGN_IDENTITY" "$dmg"
