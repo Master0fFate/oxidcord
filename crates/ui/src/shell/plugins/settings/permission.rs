@@ -91,7 +91,13 @@ impl PermissionPrompt {
 			.iter()
 			.map(|request| request.permission)
 			.collect();
-		let allowed_hosts = spec.hosts.iter().chain(&spec.image_hosts).cloned().collect();
+		let allowed_hosts = spec
+			.hosts
+			.iter()
+			.chain(&spec.image_hosts)
+			.chain(&spec.url_schemes)
+			.cloned()
+			.collect();
 		Self {
 			spec,
 			choosing: false,
@@ -115,6 +121,7 @@ impl PermissionPrompt {
 			.hosts
 			.iter()
 			.chain(&self.spec.image_hosts)
+			.chain(&self.spec.url_schemes)
 			.filter(|host| everything || self.allowed_hosts.contains(*host))
 			.cloned()
 			.collect();
@@ -348,14 +355,7 @@ impl Render for PermissionPrompt {
 			.spec
 			.url_schemes
 			.iter()
-			.map(|scheme| {
-				div()
-					.font_family(theme.code_font.clone())
-					.text_size(theme.font_sm)
-					.text_color(theme.text_normal)
-					.child(format!("{scheme}://"))
-					.into_any_element()
-			})
+			.map(|scheme| self.host_row(scheme, &theme, cx))
 			.collect();
 		div()
 			.flex()

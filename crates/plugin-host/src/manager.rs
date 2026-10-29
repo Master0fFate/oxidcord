@@ -1168,15 +1168,27 @@ impl PluginManager {
 		let sets = self.hooks();
 		let started = Instant::now();
 		let budget = self.runtime.config().timeouts.link_click;
+		let stripped = UiContext {
+			guild_id: None,
+			channel_id: None,
+			message_id: None,
+			user_id: None,
+			url: context.url.clone(),
+		};
 		for entry in sets
 			.link_click
 			.iter()
-			.filter(|entry| entry.sees(context.guild_id) && !entry.plugin.tripped(Breaker::LinkClick))
+			.filter(|entry| !entry.plugin.tripped(Breaker::LinkClick))
 		{
 			if started.elapsed() >= budget {
 				break;
 			}
-			match entry.instance.link_click(url.to_owned(), context.clone()) {
+			let visible = if entry.sees(context.guild_id) {
+				context
+			} else {
+				&stripped
+			};
+			match entry.instance.link_click(url.to_owned(), visible.clone()) {
 				Ok(LinkVerdict::Pass) => entry.plugin.succeeded(Breaker::LinkClick),
 				Ok(LinkVerdict::Consume) => return LinkVerdict::Consume,
 				Ok(LinkVerdict::Open(target)) => {

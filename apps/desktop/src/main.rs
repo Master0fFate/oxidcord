@@ -334,6 +334,18 @@ fn unix_now() -> i64 {
 fn init_tracing(filter: &str) {
 	let filter = EnvFilter::try_new(filter).unwrap_or_else(|_| EnvFilter::new("info"));
 	tracing_subscriber::fmt().with_env_filter(filter).init();
+	let default_hook = std::panic::take_hook();
+	std::panic::set_hook(Box::new(move |info| {
+		let message = info
+			.payload()
+			.downcast_ref::<&str>()
+			.map(|text| (*text).to_owned())
+			.or_else(|| info.payload().downcast_ref::<String>().cloned())
+			.unwrap_or_default();
+		let location = info.location().map(|at| format!("{}:{}", at.file(), at.line()));
+		tracing::error!(message, location, "panic");
+		default_hook(info);
+	}));
 }
 
 fn run_login_helper() -> Option<i32> {

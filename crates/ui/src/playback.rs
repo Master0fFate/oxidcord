@@ -51,7 +51,7 @@ struct Slot {
 
 struct FrameSlot {
 	id: u64,
-	view: EntityId,
+	view: Option<EntityId>,
 	epoch: u64,
 	placed: Option<(Rect, Rect)>,
 }
@@ -166,7 +166,7 @@ impl Playback {
 		let painted = self.epoch(view);
 		let host = self.host.borrow();
 		self.frames.borrow_mut().retain(|_, slot| {
-			let keep = slot.view != view || slot.epoch == painted;
+			let keep = slot.view != Some(view) || slot.epoch == painted;
 			if !keep && let Some(host) = host.as_ref() {
 				host.close(slot.id);
 			}
@@ -227,13 +227,12 @@ impl Playback {
 		let id = self.next_frame.get() + 1;
 		self.next_frame.set(id);
 		host.open(id, document);
-		let view = window.current_view();
 		self.frames.borrow_mut().insert(
 			key,
 			FrameSlot {
 				id,
-				view,
-				epoch: self.epoch(view),
+				view: None,
+				epoch: 0,
 				placed: None,
 			},
 		);
@@ -257,7 +256,7 @@ impl Playback {
 		let Some(slot) = frames.get_mut(&key) else {
 			return;
 		};
-		slot.view = view;
+		slot.view = Some(view);
 		slot.epoch = epoch;
 		if slot.placed == Some((rect, clip)) {
 			return;
