@@ -3,10 +3,10 @@ use std::time::Duration;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use gpui::{
-	AnyElement, App, Bounds, ClickEvent, ElementId, FontWeight, Hsla, InteractiveElement as _, IntoElement,
-	MouseButton, MouseDownEvent, MouseMoveEvent, ObjectFit, ParentElement as _, Pixels, SharedString,
-	StatefulInteractiveElement as _, Styled as _, Window, canvas, div, hsla, prelude::FluentBuilder as _,
-	relative,
+	AnyElement, App, Bounds, ClickEvent, DispatchPhase, ElementId, FontWeight, Hsla, InteractiveElement as _,
+	IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ObjectFit, ParentElement as _,
+	Pixels, SharedString, StatefulInteractiveElement as _, Styled as _, Window, canvas, div, hsla,
+	prelude::FluentBuilder as _, relative,
 };
 use player::{State, Status};
 
@@ -201,21 +201,6 @@ fn seek_bar(
 			cx.global::<Playback>().scrub_at(key, event.position.x);
 			window.refresh();
 		})
-		.on_mouse_move(move |event: &MouseMoveEvent, window, cx| {
-			let playback = cx.global::<Playback>();
-			if event.dragging() && playback.scrub(key).is_some() {
-				playback.scrub_at(key, event.position.x);
-				window.refresh();
-			}
-		})
-		.on_mouse_up(MouseButton::Left, move |_, window, cx| {
-			cx.global::<Playback>().release(key);
-			window.refresh();
-		})
-		.on_mouse_up_out(MouseButton::Left, move |_, window, cx| {
-			cx.global::<Playback>().release(key);
-			window.refresh();
-		})
 		.child(
 			div()
 				.relative()
@@ -233,16 +218,38 @@ fn seek_bar(
 						.rounded_full()
 						.bg(fill),
 				)
-				.child(
-					canvas(
-						move |bounds: Bounds<Pixels>, _, cx| cx.global::<Playback>().set_bar(key, bounds),
-						|_, (), _, _| {},
-					)
-					.absolute()
-					.size_full(),
-				),
+				.child(scrub_surface(key)),
 		)
 		.into_any_element()
+}
+
+fn scrub_surface(key: MediaKey) -> impl IntoElement {
+	canvas(
+		move |bounds: Bounds<Pixels>, _, cx| {
+			let playback = cx.global::<Playback>();
+			playback.set_bar(key, bounds);
+			playback.scrub(key).is_some()
+		},
+		move |_, scrubbing: bool, window, _| {
+			if !scrubbing {
+				return;
+			}
+			window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
+				if phase == DispatchPhase::Bubble && event.dragging() {
+					cx.global::<Playback>().scrub_at(key, event.position.x);
+					window.refresh();
+				}
+			});
+			window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
+				if phase == DispatchPhase::Bubble && event.button == MouseButton::Left {
+					cx.global::<Playback>().release(key);
+					window.refresh();
+				}
+			});
+		},
+	)
+	.absolute()
+	.size_full()
 }
 
 fn volume_control(key: MediaKey, color: Hsla, track: Hsla, theme: &Theme, cx: &App) -> AnyElement {
@@ -390,7 +397,7 @@ pub fn video(source: VideoSource, env: &BodyEnv, cx: &App) -> AnyElement {
 	let max_size = hint_size(source.width, source.height);
 	let radius = theme.pixels(theme.radius_md);
 	let group = group_name("media-video", key);
-	let controls_pinned = matches!(state, Some(State::Paused | State::Ended));
+	let controls_pinned = matches!(state, Some(State::Paused | State::Ended)) || scrub.is_some();
 	let center = match state {
 		None | Some(State::Ended) => Some(play_icon(status)),
 		_ => None,
@@ -787,10 +794,6 @@ pub fn voice_message(source: VoiceSource, env: &BodyEnv, cx: &App) -> AnyElement
 					}
 					window.refresh();
 				})
-				.on_mouse_up(MouseButton::Left, move |_, window, cx| {
-					cx.global::<Playback>().release(key);
-					window.refresh();
-				})
 				.children(levels.into_iter().enumerate().map(|(index, level)| {
 					let lit = (index as f32 + 0.5) / count <= played && status.is_some();
 					div()
@@ -804,14 +807,7 @@ pub fn voice_message(source: VoiceSource, env: &BodyEnv, cx: &App) -> AnyElement
 							theme.interactive_muted
 						})
 				}))
-				.child(
-					canvas(
-						move |bounds: Bounds<Pixels>, _, cx| cx.global::<Playback>().set_bar(key, bounds),
-						|_, (), _, _| {},
-					)
-					.absolute()
-					.size_full(),
-				),
+				.child(scrub_surface(key)),
 		)
 		.child(
 			div()

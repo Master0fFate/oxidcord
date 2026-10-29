@@ -848,6 +848,7 @@ fn toolbar(view: &MessageView, group: SharedString, env: &RowEnv, cx: &App) -> A
 		.border_1()
 		.border_color(theme.divider)
 		.bg(theme.background_primary)
+		.occlude()
 		.when(can.react, |bar| {
 			bar.child(
 				IconButton::new(("message-react", key), IconKind::Emoji)
