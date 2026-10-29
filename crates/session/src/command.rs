@@ -151,6 +151,7 @@ pub enum Command {
 		custom_status: Option<String>,
 	},
 	SetAfk(bool),
+	ActivitySettingsChanged,
 	SubscribeGuild {
 		guild_id: Snowflake,
 	},

@@ -1,11 +1,35 @@
-use protocol::{Guild, LenientVec, Message, Relationship, Snowflake, User};
+use protocol::{Connection, Guild, LenientVec, Message, Relationship, Snowflake, User};
 use serde_json::{Value, json};
 
 use crate::client::RestClient;
 use crate::error::Result;
-use crate::request::Request;
+use crate::request::{Request, encode_component};
 
 impl RestClient {
+	pub async fn connections(&self) -> Result<LenientVec<Connection>> {
+		self.send(Request::get("/users/@me/connections")).await
+	}
+
+	pub async fn connection_access_token(&self, kind: &str, id: &str) -> Result<Value> {
+		let path = format!(
+			"/users/@me/connections/{}/{}/access-token",
+			encode_component(kind),
+			encode_component(id)
+		);
+		self.send(Request::get(path)).await
+	}
+
+	pub async fn application_assets(&self, id: Snowflake) -> Result<Value> {
+		self.send(Request::get(format!("/oauth2/applications/{id}/assets")))
+			.await
+	}
+
+	pub async fn external_assets(&self, id: Snowflake, urls: &[String]) -> Result<Value> {
+		let request =
+			Request::post(format!("/applications/{id}/external-assets")).json(&json!({ "urls": urls }));
+		self.send(request).await
+	}
+
 	pub async fn current_user(&self) -> Result<User> {
 		self.send(Request::get("/users/@me")).await
 	}

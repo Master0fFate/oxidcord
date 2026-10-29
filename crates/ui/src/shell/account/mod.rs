@@ -19,7 +19,9 @@ use session::Command;
 pub use self::activity::{activities, activity_card};
 use self::full_profile::{FullProfile, FullTab};
 pub use self::groups::{GroupEvent, Groups};
-pub use self::pages::{AccountPages, DataDir, Note, PageEvent, Target, chat_page, note_page, streamer_page};
+pub use self::pages::{
+	AccountPages, DataDir, Note, PageEvent, Target, activity_page, chat_page, note_page, streamer_page,
+};
 pub use self::parts::{
 	CloseFn, action_row, avatar_ring, badges_row, banner, role_chip, section_label, stat_line,
 };

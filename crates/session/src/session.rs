@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
+use activity::{ActivityHandle, Engine, EngineConfig, RpcEndpoints};
 use gateway::{Gateway, GatewayConfig, GatewayHandle};
 use media::MediaFetcher;
 use plugin_host::catalog::{Catalog, ThemeCatalog};
@@ -26,7 +27,7 @@ use crate::marks::ClientMarks;
 use crate::notifier::Notifier;
 use crate::plugins::PluginHub;
 use crate::search::SearchResults;
-use crate::task::{Core, CoreParts, SharedSearch, SharedVideo, SharedVoice, Stats};
+use crate::task::{Core, CoreParts, Internal, SharedSearch, SharedVideo, SharedVoice, Stats};
 
 const COMMAND_CAPACITY: usize = 256;
 const RUNTIME_WORKERS: usize = 4;
@@ -45,6 +46,7 @@ pub struct Session {
 	video: SharedVideo,
 	stats: Arc<Stats>,
 	hub: Arc<PluginHub>,
+	activity: ActivityHandle,
 	finished: std::sync::mpsc::Receiver<()>,
 	runtime: Option<Runtime>,
 }
@@ -69,6 +71,32 @@ fn media_fetcher(identify: &IdentifyProperties, rest_base: &Url, max_bytes: usiz
 			None
 		}
 	}
+}
+
+fn spawn_activity(
+	rest: &RestClient,
+	rest_base: Url,
+	user_agent: String,
+	store: &store::Store,
+	handle: &Handle,
+	internal: mpsc::UnboundedSender<Internal>,
+) -> ActivityHandle {
+	let (output, mut activities) = mpsc::unbounded_channel();
+	handle.spawn(async move {
+		while let Some(list) = activities.recv().await {
+			if internal.send(Internal::Activities(list)).is_err() {
+				break;
+			}
+		}
+	});
+	Engine::spawn(EngineConfig {
+		rest: rest.clone(),
+		rest_base,
+		user_agent,
+		cache_dir: store.paths.cache_dir().to_path_buf(),
+		runtime: handle.clone(),
+		output,
+	})
 }
 
 fn runtime_for(requested: Option<Handle>) -> (Option<Runtime>, Handle) {
@@ -104,6 +132,8 @@ impl Session {
 		let loads = Arc::new(PluginLoads::default());
 		let media = media_fetcher(&config.identify, &config.rest_base, PLUGIN_MEDIA_MAX_BYTES);
 		let save_media = media_fetcher(&config.identify, &config.rest_base, SAVE_MEDIA_MAX_BYTES);
+		let rest_base = config.rest_base.clone();
+		let user_agent = config.identify.user_agent().to_owned();
 		let rest = RestClient::new(
 			RestConfig {
 				base_url: config.rest_base,
@@ -124,6 +154,14 @@ impl Session {
 		let stats = Arc::new(Stats::default());
 		let (commands, command_receiver) = mpsc::channel(COMMAND_CAPACITY);
 		let (internal, internal_receiver) = mpsc::unbounded_channel();
+		let activity = spawn_activity(
+			&rest,
+			rest_base,
+			user_agent,
+			&config.store,
+			&handle,
+			internal.clone(),
+		);
 		let voice_cache = Arc::new(VoiceCache::default());
 		let broker = Arc::new(SessionBroker {
 			state: state.clone(),
@@ -175,6 +213,7 @@ impl Session {
 			media,
 			save_media,
 			sink: plugins.sink,
+			activity: activity.clone(),
 		});
 		let (done, finished) = std::sync::mpsc::channel();
 		handle.spawn(async move {
@@ -191,9 +230,14 @@ impl Session {
 			video,
 			stats,
 			hub,
+			activity,
 			finished,
 			runtime,
 		}
+	}
+
+	pub fn rpc_endpoints(&self) -> RpcEndpoints {
+		self.activity.endpoints()
 	}
 
 	pub fn state(&self) -> &SharedState {

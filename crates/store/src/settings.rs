@@ -31,6 +31,25 @@ pub struct Settings {
 	pub accessibility: AccessibilitySettings,
 	pub chat: ChatSettings,
 	pub client: ClientSettings,
+	pub activity: ActivitySettings,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ActivitySettings {
+	pub rpc_server: bool,
+	pub detect_games: bool,
+	pub spotify: bool,
+}
+
+impl Default for ActivitySettings {
+	fn default() -> Self {
+		Self {
+			rpc_server: true,
+			detect_games: true,
+			spotify: true,
+		}
+	}
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -188,6 +207,7 @@ impl Default for Settings {
 			accessibility: AccessibilitySettings::default(),
 			chat: ChatSettings::default(),
 			client: ClientSettings::default(),
+			activity: ActivitySettings::default(),
 		}
 	}
 }

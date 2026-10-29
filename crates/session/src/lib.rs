@@ -14,6 +14,7 @@ mod session;
 mod task;
 mod views;
 
+pub use activity::{RpcEndpoints, ipc_socket_name};
 pub use broker::{BrokerSink, NoopSink};
 pub use command::{Command, ComponentUse, LoadResult, PluginLoad, Reply, ReplyTarget};
 pub use config::{NotifyFn, PluginOptions, SessionConfig, VoiceIo};

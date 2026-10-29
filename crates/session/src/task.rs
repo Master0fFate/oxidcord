@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant as StdInstant};
 
+use activity::ActivityHandle;
 use chrono::Utc;
 use gateway::{GatewayEvent, GatewayHandle};
 use parking_lot::Mutex;
@@ -192,6 +193,7 @@ pub(crate) enum Internal {
 	},
 	Command(Box<Command>),
 	Intent(UiIntent),
+	Activities(Vec<Value>),
 }
 
 pub(crate) struct CoreParts {
@@ -217,6 +219,7 @@ pub(crate) struct CoreParts {
 	pub(crate) media: Option<media::MediaFetcher>,
 	pub(crate) save_media: Option<media::MediaFetcher>,
 	pub(crate) sink: Arc<dyn BrokerSink>,
+	pub(crate) activity: ActivityHandle,
 }
 
 pub(crate) struct Core {
@@ -265,6 +268,8 @@ pub(crate) struct Core {
 	plugin_dm_sections: BTreeMap<String, Vec<DmSection>>,
 	invalidated_users: HashSet<Snowflake>,
 	hooks: plugin_hooks::HookState,
+	activity: ActivityHandle,
+	activities: Vec<Value>,
 }
 
 fn page_query(
@@ -346,6 +351,8 @@ impl Core {
 			plugin_dm_sections: BTreeMap::new(),
 			invalidated_users: HashSet::new(),
 			hooks: plugin_hooks::HookState::default(),
+			activity: parts.activity,
+			activities: Vec::new(),
 		}
 	}
 
@@ -418,6 +425,7 @@ impl Core {
 		ready.session_id.clear();
 		ready.resume_gateway_url = None;
 		self.apply(Event::Ready(&ready));
+		self.activity.set_user(Some(ready.user.clone()));
 		for read_state in read_states {
 			let Some(message_id) = read_state.last_message_id else {
 				continue;
@@ -525,6 +533,9 @@ impl Core {
 			GatewayEvent::Ready(ready) => {
 				self.marks.record("ready");
 				self.apply(Event::Ready(&ready));
+				self.activity.set_user(Some(ready.user.clone()));
+				self.activity.refresh_connections();
+				self.push_activity_rules();
 				self.note_ready();
 				let stale = {
 					let state = self.state.read();
@@ -614,6 +625,9 @@ impl Core {
 			DispatchEvent::StreamDelete(delete) => self.stream_deleted(&delete),
 			DispatchEvent::ChannelPinsUpdate(update) => self.reload_pins(update.channel_id),
 			DispatchEvent::GuildCreate(guild) => self.select_new_guild(guild.id),
+			DispatchEvent::UserUpdate(user) => self.activity.set_user(Some(*user)),
+			DispatchEvent::UserSettingsUpdate(_) => self.push_activity_rules(),
+			DispatchEvent::UserConnectionsUpdate(_) => self.activity.refresh_connections(),
 			_ => {}
 		}
 	}
@@ -672,6 +686,10 @@ impl Core {
 			}
 			Internal::ThreadOpened(thread) => self.on_thread_opened(thread),
 			Internal::Loaded(loaded) => self.on_loaded(loaded),
+			Internal::Activities(activities) => {
+				self.activities = activities;
+				self.publish_presence();
+			}
 			Internal::PluginApplied { loaded, answer } => self.on_plugin_applied(loaded, answer),
 			Internal::Rejected(reason) => self.reject(reason),
 			Internal::CameraStarted { generation, result } => self.on_camera_started(generation, result),
@@ -869,6 +887,7 @@ impl Core {
 				custom_status,
 			} => self.set_presence_command(status, custom_status),
 			Command::SetAfk(afk) => self.apply_local(LocalEvent::AfkChanged(afk)),
+			Command::ActivitySettingsChanged => self.push_activity_rules(),
 			Command::SubscribeGuild { guild_id } => {
 				let channel_id = self.subscription_channel(guild_id);
 				self.subscribe(guild_id, channel_id);

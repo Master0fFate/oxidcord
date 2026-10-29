@@ -10,7 +10,7 @@ use crate::json::parse_id;
 use crate::ops::Draft;
 use crate::state::Shared;
 
-const NOTES_APP_ID: u64 = 990_000_000_000_000_001;
+pub(super) const NOTES_APP_ID: u64 = 990_000_000_000_000_001;
 const APPLICATION_COMMAND: u64 = 2;
 const MESSAGE_COMMAND: u64 = 3;
 

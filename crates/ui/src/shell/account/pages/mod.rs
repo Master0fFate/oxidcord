@@ -1,4 +1,5 @@
 mod accessibility;
+mod activity;
 mod advanced;
 mod chat;
 mod devices;
@@ -16,6 +17,7 @@ use std::rc::Rc;
 use gpui::{AnyElement, App, Context, Entity, Global, Window};
 
 pub use self::accessibility::AccessibilityPage;
+pub use self::activity::activity_page;
 pub use self::advanced::AdvancedPage;
 pub use self::chat::chat_page;
 pub use self::devices::DevicesPage;

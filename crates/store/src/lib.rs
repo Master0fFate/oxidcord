@@ -18,9 +18,9 @@ pub use database::{Database, MediaEntry, ReadState, Table};
 pub use error::{Result, StoreError};
 pub use paths::Paths;
 pub use settings::{
-	AccessibilitySettings, AppearanceSettings, ChatSettings, ClientSettings, DeveloperSettings,
-	KeybindSettings, NotificationSettings, PluginSettings, Settings, StartupSettings, StorageSettings,
-	StreamerModeSettings, VoiceSettings, WindowSettings,
+	AccessibilitySettings, ActivitySettings, AppearanceSettings, ChatSettings, ClientSettings,
+	DeveloperSettings, KeybindSettings, NotificationSettings, PluginSettings, Settings, StartupSettings,
+	StorageSettings, StreamerModeSettings, VoiceSettings, WindowSettings,
 };
 pub use token::{TokenBackend, TokenStore};
 

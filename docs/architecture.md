@@ -13,6 +13,7 @@ crates/store        sqlite cache and settings, token in the OS keyring
 crates/markdown     Discord markdown parser to AST to layout model
 crates/media        image, animation and Lottie sticker decoding, texture cache, ranged fetch, embed provider allowlist, bundled Twemoji pack
 crates/player       audio and video playback for chat media: symphonia demux, FFmpeg codec pack, platform decoders
+crates/activity     local Rich Presence server (discord-ipc pipes and ws://127.0.0.1:6463-6472), game detection, Spotify listening status
 crates/ui           native views and components, theme tokens
 crates/platform     tray, notifications, keyring, single instance, hotkeys, idle time, speech, file dialogs, notification sounds
 crates/plugin-host  WebAssembly component runtime: manifests, permission grants, hook dispatch, mount, menu and patch stores
@@ -50,6 +51,14 @@ Every enum that Discord may extend has an `Unknown(i64)` or `Unknown(String)` va
 - `idle::seconds_since_input` reads the time since the last keyboard or mouse input on Windows and macOS and returns `None` elsewhere. It backs the plugin functions `idle-seconds` and the `idle-changed` event.
 - `speech::speak_with` reads text aloud through SAPI on Windows and returns `false` elsewhere; `speech::available` tells which. It backs the plugin function `speak`.
 - `dialog` shows the native open and save dialogs used by the plugin file functions, and `sound` plays the notification chime at a given volume.
+
+## Activity
+
+`crates/activity` runs the same local RPC server the Discord desktop client exposes, so apps that integrate with Discord find Oxidcord instead. The IPC transport binds the first free `discord-ipc-{0..9}` pipe (`\\.\pipe\` on Windows, `$XDG_RUNTIME_DIR`, `$TMPDIR`, `$TMP`, `$TEMP` or `/tmp` elsewhere); the WebSocket transport binds the first free port in 6463-6472 on 127.0.0.1 and enforces the application's `rpc_origins` when a browser sends an `Origin`. A handshake is validated against `GET /applications/{id}/rpc`, answered with the `READY` dispatch (`cdn_host`, `api_endpoint`, `environment`, the current user), and `SET_ACTIVITY` is validated with Discord's field limits before asset keys are resolved (`/oauth2/applications/{id}/assets` names to ids, `http(s)` URLs through `/applications/{id}/external-assets` to `mp:` paths). Each connection owns its activity; it disappears when the pipe closes.
+
+Game detection fetches `/applications/detectable` into `cache/detectable.json` once a day, keeps only the executables for the running OS and matches process paths every five seconds. Spotify follows the web client: the connection's `access_token` opens `wss://dealer.spotify.com`, the `Spotify-Connection-Id` is registered with `PUT api.spotify.com/v1/me/notifications/player`, and `PLAYER_STATE_CHANGED` events become the `Listening` activity (`sync_id`, `party.id = spotify:<user id>`, `flags = 48`, `assets.large_image = spotify:<hash>`). Expired tokens are refreshed through `/users/@me/connections/spotify/{id}/access-token`.
+
+The engine composes one activity list: Spotify is gated only by the connection's `show_activity`; RPC and detected games are gated by the account's `show_current_game` user setting and the local `settings.activity` toggles. The session appends the list to every presence update it sends.
 
 ## Chat media
 

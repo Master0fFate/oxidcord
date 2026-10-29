@@ -21,6 +21,7 @@ store.workspace = true
 voice.workspace = true
 markdown.workspace = true
 plugin-host.workspace = true
+activity.workspace = true
 tokio.workspace = true
 parking_lot.workspace = true
 serde.workspace = true

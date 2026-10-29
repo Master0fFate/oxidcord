@@ -27,6 +27,7 @@ voice = { path = "crates/voice", package = "oxidcord-voice" }
 login = { path = "crates/login", package = "oxidcord-login" }
 updater = { path = "crates/updater", package = "oxidcord-updater" }
 player = { path = "crates/player", package = "oxidcord-player" }
+activity = { path = "crates/activity", package = "oxidcord-activity" }
 mockcord = { path = "tools/mockcord" }
 
 tokio = { version = "1.54", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "fs", "signal"] }

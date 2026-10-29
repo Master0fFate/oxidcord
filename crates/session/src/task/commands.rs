@@ -1,3 +1,4 @@
+use activity::ActivityRules;
 use protocol::rest::{ComponentInteraction, ComponentInteractionData};
 use protocol::{
 	ApplicationCommand, CreateMessage, DispatchEvent, MessageAck, MessageReference, MessageReferenceKind,
@@ -1136,6 +1137,7 @@ impl Core {
 				}
 				activity
 			})
+			.chain(self.activities.iter().cloned())
 			.collect();
 		let (status, afk) = {
 			let state = self.state.read();
@@ -1144,6 +1146,23 @@ impl Core {
 		if let Err(error) = self.gateway.send_presence(status.as_str(), activities, afk) {
 			tracing::warn!(%error, "presence was not sent");
 		}
+	}
+
+	pub(super) fn push_activity_rules(&self) {
+		let show_current_game = self
+			.state
+			.read()
+			.user_settings()
+			.get("show_current_game")
+			.and_then(Value::as_bool)
+			.unwrap_or(true);
+		let local = self.store.settings.read().activity;
+		self.activity.set_rules(ActivityRules {
+			show_current_game,
+			rpc_server: local.rpc_server,
+			detect_games: local.detect_games,
+			spotify: local.spotify,
+		});
 	}
 
 	pub(super) fn set_presence_command(&mut self, status: StatusKind, custom_status: Option<String>) {

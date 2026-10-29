@@ -3,7 +3,10 @@ mod apps;
 mod channels;
 mod expressions;
 mod guilds;
+mod rpc;
 mod users;
+
+pub use rpc::{RPC_APP_ID, RPC_APP_NAME, RPC_ASSET_ID, RPC_ASSET_NAME};
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -164,6 +167,11 @@ pub fn router(shared: Arc<Shared>) -> Router {
 			get(apps::channel_index),
 		)
 		.route("/users/@me/application-command-index", get(apps::user_index))
+		.route("/users/@me/connections", get(rpc::connections))
+		.route("/applications/detectable", get(rpc::detectable))
+		.route("/applications/{id}/rpc", get(rpc::rpc_application))
+		.route("/applications/{id}/external-assets", post(rpc::external_assets))
+		.route("/oauth2/applications/{id}/assets", get(rpc::application_assets))
 		.route("/channels/{id}/call/stop-ringing", post(channels::call_signal))
 		.route("/channels/{id}/threads", post(channels::create_thread))
 		.route(
@@ -236,11 +244,12 @@ async fn guard(State(shared): State<Arc<Shared>>, request: Request, next: Next) 
 		.map(|path| path.as_str().to_owned())
 		.unwrap_or_default();
 	let key = format!("{} {route}", request.method());
-	let authorized = request
-		.headers()
-		.get(AUTHORIZATION)
-		.and_then(|value| value.to_str().ok())
-		.is_some_and(|value| value == shared.config.token);
+	let authorized = route == "/api/v10/applications/detectable"
+		|| request
+			.headers()
+			.get(AUTHORIZATION)
+			.and_then(|value| value.to_str().ok())
+			.is_some_and(|value| value == shared.config.token);
 	let snapshot = shared.touch_bucket(&key);
 	let limited = authorized && shared.config.chaos && chaos_rate_limited();
 	let mut response = if !authorized {

@@ -20,4 +20,5 @@ mod voice;
 
 pub use config::MockConfig;
 pub use fixtures::{FixtureSummary, Fixtures};
+pub use rest::{RPC_APP_ID, RPC_APP_NAME, RPC_ASSET_ID, RPC_ASSET_NAME};
 pub use server::Server;

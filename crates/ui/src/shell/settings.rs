@@ -14,7 +14,9 @@ use gpui_component::slider::{Slider, SliderEvent, SliderState};
 use gpui_component::switch::Switch;
 use store::Settings;
 
-use super::account::{AccountPages, Note, PageEvent, Target, chat_page, note_page, streamer_page};
+use super::account::{
+	AccountPages, Note, PageEvent, Target, activity_page, chat_page, note_page, streamer_page,
+};
 use super::plugins::{PluginPages, ThemeApplied};
 use super::updates::UpdatesPage;
 use super::voice::{KeybindsPage, VoiceVideoPage};
@@ -60,6 +62,7 @@ enum Page {
 	Keybinds,
 	Language,
 	StreamerMode,
+	Activity,
 	Advanced,
 	Plugins,
 	Themes,
@@ -86,6 +89,7 @@ impl Page {
 			Self::Keybinds => "settings-keybinds",
 			Self::Language => "settings-language",
 			Self::StreamerMode => "settings-streamer-mode",
+			Self::Activity => "settings-activity",
 			Self::Advanced => "settings-advanced",
 			Self::Plugins => "settings-plugins",
 			Self::Themes => "settings-themes",
@@ -112,6 +116,7 @@ impl Page {
 			Self::Keybinds => IconKind::Keybinds,
 			Self::Language => IconKind::Language,
 			Self::StreamerMode => IconKind::Streamer,
+			Self::Activity => IconKind::Gamepad,
 			Self::Advanced => IconKind::Advanced,
 			Self::Plugins => IconKind::Plugins,
 			Self::Themes => IconKind::Themes,
@@ -146,6 +151,7 @@ const SECTIONS: [(Option<&str>, &[Page]); 3] = [
 			Page::Keybinds,
 			Page::Language,
 			Page::StreamerMode,
+			Page::Activity,
 			Page::Advanced,
 		],
 	),
@@ -573,6 +579,7 @@ impl SettingsWindow {
 			Page::Language => self.account_pages.language.clone().into_any_element(),
 			Page::Notifications => self.account_pages.notifications.clone().into_any_element(),
 			Page::StreamerMode => streamer_page(&self.backend, cx),
+			Page::Activity => activity_page(&self.backend, &self.data, cx),
 			Page::Chat => chat_page(&self.backend, cx),
 			Page::Accessibility => self.account_pages.accessibility.clone().into_any_element(),
 			Page::FriendRequests => self.account_pages.friend_requests.clone().into_any_element(),

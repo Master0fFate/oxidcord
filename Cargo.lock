@@ -7576,6 +7576,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "oxidcord-activity"
+version = "0.5.2"
+dependencies = [
+ "chrono",
+ "futures-util",
+ "interprocess",
+ "oxidcord-protocol",
+ "oxidcord-rest",
+ "parking_lot",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-tungstenite 0.30.0",
+ "tracing",
+ "url",
+ "windows 0.62.2",
+]
+
+[[package]]
 name = "oxidcord-gateway"
 version = "0.5.2"
 dependencies = [
@@ -7763,6 +7783,7 @@ dependencies = [
  "chrono",
  "ed25519-dalek 3.0.0",
  "hex",
+ "oxidcord-activity",
  "oxidcord-gateway",
  "oxidcord-markdown",
  "oxidcord-media",
@@ -14058,7 +14079,9 @@ dependencies = [
  "clap",
  "ed25519-dalek 3.0.0",
  "flate2",
+ "futures-util",
  "hex",
+ "interprocess",
  "lzma-rs",
  "mockcord",
  "oxidcord-gateway",
@@ -14078,6 +14101,7 @@ dependencies = [
  "sha2 0.10.9",
  "tar",
  "tokio",
+ "tokio-tungstenite 0.30.0",
  "toml 1.1.8+spec-1.1.0",
  "tracing",
  "tracing-subscriber",
