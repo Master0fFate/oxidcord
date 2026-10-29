@@ -7,18 +7,19 @@ apps/desktop        binary: wiring, window, lifecycle, CLI flags (--mock, --safe
 crates/protocol     typed Discord REST and gateway models, lenient serde decoding
 crates/gateway      websocket session: identify, heartbeat, resume, zlib-stream, backoff
 crates/rest         HTTP client: rate-limit buckets, 429 retry, Authorization redaction
+crates/session      session task: gateway and REST clients, command handling, plugin manager and broker
 crates/state        normalized store, permission math, read state, message cache
 crates/store        sqlite cache and settings, token in the OS keyring
 crates/markdown     Discord markdown parser to AST to layout model
 crates/media        image and animation decoding, texture cache, ranged fetch, embed provider allowlist, bundled Twemoji pack
 crates/player       audio and video playback for chat media: symphonia demux, FFmpeg codec pack, platform decoders
 crates/ui           native views and components, theme tokens
-crates/platform     tray, notifications, keyring, single instance, hotkeys
-crates/plugin-host  WebAssembly component runtime, capability broker, UI slot renderer
-crates/plugin-sdk   guest-side SDK for plugin authors
+crates/platform     tray, notifications, keyring, single instance, hotkeys, idle time, speech, file dialogs, notification sounds
+crates/plugin-host  WebAssembly component runtime: manifests, permission grants, hook dispatch, mount, menu and patch stores
+crates/plugin-sdk   guest-side SDK for plugin authors (API 1.2, feature `ext` for views and hooks2)
 tools/mockcord      mock Discord REST and gateway server driven by fixtures
 tools/xtask         headless-run, package, plugin pack, conformance runner, twemoji pack
-plugins/            first-party example plugins
+plugins/            first-party plugins, including the ports of Vencord plugins
 ```
 
 ## Threads
@@ -46,6 +47,9 @@ Every enum that Discord may extend has an `Unknown(i64)` or `Unknown(String)` va
 - `Tray` and `Hotkeys` install process-global event handlers, so each can be created once per process.
 - `single_instance::acquire` returns `AlreadyRunning` when another instance holds the lock. The second launch should call `notify_existing` with its CLI args (deep link) and exit.
 - On Windows, toasts need an AppUserModelID: call `notifications::set_app_user_model_id` at startup and pass the same id as `Notification::app_id`.
+- `idle::seconds_since_input` reads the time since the last keyboard or mouse input on Windows and macOS and returns `None` elsewhere. It backs the plugin functions `idle-seconds` and the `idle-changed` event.
+- `speech::speak_with` reads text aloud through SAPI on Windows and returns `false` elsewhere; `speech::available` tells which. It backs the plugin function `speak`.
+- `dialog` shows the native open and save dialogs used by the plugin file functions, and `sound` plays the notification chime at a given volume.
 
 ## Chat media
 

@@ -8,13 +8,15 @@ Every plugin has a `plugin.toml` next to its wasm file.
 id = "dev.example.my-plugin"
 name = "My Plugin"
 version = "0.1.0"
-api = "^1.1"
+api = "^1.2"
 authors = ["Example"]
 license = "MIT"
 description = "What it does."
 permissions = ["message-render", "storage"]
 network_hosts = []
 image_hosts = []
+url_schemes = []
+hooks = []
 entry = "my_plugin.wasm"
 min_host = "0.1.0"
 priority = 0
@@ -25,10 +27,10 @@ priority = 0
 | `id` | Reverse DNS name, 3 to 128 characters of `[a-z0-9.-]`. Also the install directory name |
 | `name`, `description`, `authors`, `license` | Shown in the plugin manager |
 | `version` | Semver |
-| `api` | Semver requirement on the plugin API. The host implements 1.2.0, so `^1.0`, `^1.1` and `^1.2` all load. Use `^1.1` when the plugin uses the `ui`, `client` or `hooks` interfaces and `^1.2` for `hooks2` |
-| `permissions` | Either bare names or tables with a reason: `[[permissions]]` with `permission = "storage"` and `reason = "..."`. The consent dialog shows the reason |
+| `api` | Semver requirement on the plugin API. The host implements 1.2.0, so `^1.0`, `^1.1` and `^1.2` all load. Use `^1.1` when the plugin uses the `ui`, `client` or `hooks` interfaces and `^1.2` for `hooks2` and the functions added in 1.2 |
+| `permissions` | Either bare names or tables with a reason: `[[permissions]]` with `permission = "storage"` and `reason = "..."`. The consent dialog shows the reason. Give a reason for every medium tier permission and above |
 | `network_hosts` | Lowercase hostnames `fetch` may reach. Needs the `net-fetch` permission, and the user must approve each host. Discord hosts (`discord.com`, `discordapp.com`, `discord.gg`, `discord.media`, `discordapp.net` and their subdomains) are rejected |
-| `hooks` | Names of the `hooks2` hooks the plugin implements: `draft-change`, `autocomplete-emoji`, `decorate-channel`, `notification`, `message-click`, `channel-click`, `link-click`, `display-user`, `before-send`, `intercept`. The host never calls an undeclared hook. Optional |
+| `hooks` | Names of the `hooks2` hooks the plugin implements, see the table below. The host never calls an undeclared hook, and ignores a declared hook when the plugin does not hold the permission. The consent dialog lists them. Optional |
 | `url_schemes` | App URI schemes `open-url` may use, picked from `spotify`, `steam`, `tidal`, `itms-apps` and `music`. Needs the `actions-open-url` permission, and the user must approve each one. Any other scheme is rejected when the manifest loads. Optional |
 | `image_hosts` | Lowercase hostnames 1.1 views and patches may load images from, besides the Discord CDN. The user must approve each host |
 | `entry` | Relative path to the component inside the package, ending in `.wasm`, no `..`. Optional: a plugin without one ships only a `theme.json`. First party themes do not use this, they ship through the themes catalog (`docs/themes.md`) |
@@ -37,6 +39,23 @@ priority = 0
 | `settings_schema` | A JSON schema as a TOML table. Optional |
 
 A plugin whose `api` requirement does not match, or whose `min_host` is newer than the host, is listed as incompatible and never runs.
+
+### `hooks` names
+
+| Name | Hook it enables | Permission it needs |
+| --- | --- | --- |
+| `draft-change` | `on-draft-change` | `composer-watch` |
+| `autocomplete-emoji` | `autocomplete-emoji` | `ui-input` |
+| `decorate-channel` | `decorate-channel` | `ui-input` |
+| `notification` | `on-notification` | `notifications-filter` |
+| `message-click` | `on-message-click` | `ui-input` |
+| `channel-click` | `on-channel-click` | `ui-input` |
+| `link-click` | `on-link-click` | `actions-open-url` |
+| `display-user` | `display-user-full` instead of `display-user` | `user-display` |
+| `before-send` | `before-send-full` instead of `before-send` | `message-send` |
+| `intercept` | `intercept-message-ext` and `intercept-messages-ext` instead of `intercept-message` | `message-intercept` |
+
+`on-client-event`, `on-keybind` and `on-badge-click` have no name: they are called for any plugin that exports `hooks2` and holds `context-*` event permissions, `ui-keybinds` or `user-display`. A name the host does not know makes the manifest invalid.
 
 ## Build
 
@@ -50,7 +69,20 @@ The output is `target/wasm32-wasip2/release/<crate_name>.wasm`. Copy it next to 
 
 Inside this workspace the SDK is a workspace dependency named `plugin-sdk`, so first-party plugins write `use plugin_sdk::...`. Outside it, depend on the `oxidcord-plugin-sdk` package and write `use oxidcord_plugin_sdk::...`.
 
-The SDK has one feature, `ext`. Without it the bindings cover the 1.0 `plugin` world and `export_plugin!(T)` produces a component that also loads on 1.0 hosts. With it the bindings cover the `plugin-ext` world: the `view`, `mount`, `menu`, `patch`, `timer` and `client` modules and the `PluginExt` trait become available and `export_plugin!(T, ext)` exports the 1.1 hooks. A plugin built with the feature but exported with plain `export_plugin!(T)` exports no-op hooks.
+The SDK (`oxidcord-plugin-sdk` 0.5) has one feature, `ext`. Without it the bindings cover the 1.0 `plugin` world and `export_plugin!(T)` produces a component that also loads on 1.0 hosts. With it the bindings cover the `plugin-ext` world and these modules become available:
+
+| Module | Contents |
+| --- | --- |
+| `view`, `mount`, `menu` | View tree builders, mount points and context menus, see `views.md` |
+| `patch` | `Patch` and `PatchExt` for `intercept-message` and `intercept-message-ext`, see `interception.md` |
+| `data` | The 1.2 `client` reads, see `data.md` |
+| `actions` | The 1.2 `client` writes, see `actions.md` |
+| `client` | The 1.1 `client` functions: emojis, stickers, messages, `composer_insert`, `send_as_user` |
+| `timer` | `set_timer` and `clear_timer` |
+| `ui` (always available) | `register_slot`, `register_command`, and with `ext` also `context_detail`, `watch_clicks` and `watch_channel_clicks` |
+| `model` | The records and variants of the `model` interface |
+
+The `PluginExt` trait carries a defaulted method for every `hooks` and `hooks2` hook, and `export_plugin!(T, ext)` exports both interfaces. A plugin built with the feature but exported with plain `export_plugin!(T)` exports no-op hooks. The SDK version lives in the workspace `Cargo.toml` as the `plugin-sdk` dependency.
 
 ```toml
 [dependencies]
@@ -84,9 +116,9 @@ The user's decision is stored per plugin id under `plugins.grants.<id>` in the s
 
 ## Hook timeouts
 
-Each hook runs against an epoch deadline. The engine increments its epoch every 10 ms, and a call is given `ceil(timeout / 10 ms) + 1` ticks, so a hook is killed between its timeout and roughly one tick after it. The defaults are `init` 5 s, `on-event` 200 ms, `render-message` 50 ms, `before-send` 500 ms, `filter-message` 50 ms, `display-user` 50 ms, `on-ui-action` 2 s, `on-command` 2 s, `settings-schema` 500 ms, `render-view` 200 ms, `on-view-event` and `on-menu-item` 2 s, `intercept-message` 50 ms, `on-timer` 200 ms and `on-emoji-pick` 200 ms. They are fields of `HookTimeouts` in `RuntimeConfig`.
+Each hook runs against an epoch deadline. The engine increments its epoch every 10 ms, and a call is given `ceil(timeout / 10 ms) + 1` ticks, so a hook is killed between its timeout and roughly one tick after it. The defaults are `init` 5 s, `on-event` 200 ms, `render-message` 50 ms, `before-send` 500 ms, `filter-message` 50 ms, `display-user` 50 ms, `on-ui-action` 2 s, `on-command` 2 s, `settings-schema` 500 ms, `render-view` 200 ms, `on-view-event` and `on-menu-item` 2 s, `intercept-message` 50 ms, `on-timer` 200 ms and `on-emoji-pick` 200 ms. The `hooks2` hooks have `before-send-full` 500 ms, `display-user-full` 50 ms plus 5 ms per user, `intercept-message-ext` 50 ms, `intercept-messages-ext` 50 ms per message up to 500 ms, `on-client-event` 200 ms, `on-message-click`, `on-channel-click` and `on-link-click` 300 ms, `on-draft-change` 100 ms, `autocomplete-emoji` 30 ms, `decorate-channel` 50 ms plus 5 ms per channel, `on-keybind` and `on-badge-click` 2 s, and `on-notification` 250 ms. They are fields of `HookTimeouts` in `RuntimeConfig`.
 
-The epoch only interrupts guest code. Time the guest spends inside a blocking host call (`fetch`, which can take up to 10 s, the loading reads of `client` and native file dialogs) is added to the deadline. `fetch` is only available in `init`, `on-event`, `on-timer` and `on-ui-action`; every other hook gets `host-error::unavailable`, so a pipeline hook can never be stalled by the network. Apart from that the caller of a hook waits at most `timeout + 100 ms`; past that it gives up, skips the plugin, and if the plugin had already started the call the instance is abandoned, counted as a crash and replaced after the backoff.
+The epoch only interrupts guest code. Time the guest spends inside a blocking host call (`fetch`, which can take up to 10 s, the loading reads of `client` and native file dialogs) is added to the deadline. `fetch` is only available in the Init, Event, Timer and user action contexts (`init`, `on-event`, `on-client-event`, `on-draft-change`, `on-timer`, `on-ui-action`, `on-command`, `on-view-event`, `on-menu-item` and the click and keybind hooks); every other hook gets `host-error::unavailable`, so a pipeline hook (render, intercept, send, display, decorate, autocomplete, notification) can never be stalled by the network. The loading reads of `client` follow the same split: they return cached data in the pipeline hooks and load in the other contexts, see "Call contexts" in `overview.md`. A plugin that needs network data for a pipeline hook fetches it from a timer or event, keeps it in memory or storage, and calls `invalidate-message`, `invalidate-user` or `invalidate-channel` when it arrives. Apart from that the caller of a hook waits at most `timeout + 100 ms`; past that it gives up, skips the plugin, and if the plugin had already started the call the instance is abandoned, counted as a crash and replaced after the backoff.
 
 A pipeline hook that times out or traps is skipped and the chain continues with the previous output. Callers of `render_message`, `before_send`, `filter_message` and `display_user` block for up to the sum of the deadlines of the plugins involved, so call them from a worker thread, never from the UI thread.
 
@@ -106,18 +138,21 @@ It creates a temporary store, grants each plugin its manifest permissions, and p
 
 ## Catalog
 
-A catalog is a JSON file `{ "version": 1, "generated_at": ..., "plugins": [...] }`, where each entry has `id`, `name`, `version`, `description`, `permissions`, `url`, `sha256` and `length` of the archive, and `reviewed`. `plugin_host::catalog::verify_catalog(bytes, signature, &key)` checks the catalog bytes against the contents of the `.sig` file next to it (a base64 ed25519 signature over the exact file bytes) and returns the parsed catalog. Entries that fail to decode are dropped, an unsupported `version` is an error.
+A catalog is a JSON file `{ "version": 1, "generated_at": ..., "plugins": [...] }`, where each entry has `id`, `name`, `version`, `description`, `permissions`, `url`, `sha256` and `length` of the archive, and `reviewed`. `plugin_host::catalog::verify_catalog(bytes, signature, &key)` checks the catalog bytes against the contents of the `.sig` file next to it (a base64 ed25519 signature over the exact file bytes) and returns the parsed catalog. Entries that fail to decode are dropped, an unsupported `version` is an error. The workflow to build, sign and update the official catalog is in `publishing.md`.
 
-The client checks catalogs against `CATALOG_PUBLIC_KEY` in `crates/session/src/catalog.rs`. The committed value is an all-zero placeholder that never verifies, so `CatalogRefresh` fails until the release key from `cargo xtask plugin keygen` is pasted there. `CatalogRefresh { url }` downloads `url` and `url.sig` over HTTPS with a credential-free client, `CatalogInstall { id }` downloads the entry's archive, checks its length and sha256 against the signed entry and then installs it like a local file. The UI asks for consent before sending either command.
+The client checks catalogs against `CATALOG_PUBLIC_KEY` in `crates/session/src/catalog.rs`, which holds the public half of the official catalog key. A fork that runs its own catalog makes a key with `cargo xtask plugin keygen` and puts the printed public key there. `CatalogRefresh { url }` downloads `url` and `url.sig` over HTTPS with a credential-free client, `CatalogInstall { id }` downloads the entry's archive, checks its length and sha256 against the signed entry and then installs it like a local file. The UI asks for consent before sending either command.
 
 ## Running inside the session
 
-The session owns the `PluginManager`. It loads `store.paths.plugins_dir()` on a blocking task right after start, honours safe mode, and forwards message, reaction, typing, channel switch and connection events. Hooks never run on the session task:
+The session owns the `PluginManager`. It loads `store.paths.plugins_dir()` on a blocking task right after start, honours safe mode, and forwards message, reaction, typing, channel switch, voice and connection events and the 1.2 client events (see `events.md`). Hooks never run on the session task. Plugin jobs run on three serial lanes: interactive (notifications, links, autocomplete), gesture (user actions, which may wait for a native dialog) and background (display batches, channel decorations). Lifecycle jobs (install, enable, disable, grant, reload) wait for all lanes.
 
-- `before-send` runs on a blocking task before the REST call. A cancel marks the pending message as failed with the plugin's reason, a rewrite sends the new content and marks the message as altered by that plugin. Messages sent by a plugin through `send-message` skip `before-send`.
+- `before-send` and `before-send-full` run on a blocking task before the REST call. A cancel marks the pending message as failed with the plugin's reason, a rewrite sends the new content and marks the message as altered by that plugin. Messages sent by a plugin through `send-message` skip `before-send`; `send-as-user` skips only the sending plugin's own hook.
 - Every message that enters the cache is parsed immediately and stored as a `RenderedMessage`. When a plugin holds `message-render` or `message-filter`, a single `plugin-render` thread then runs the render and filter hooks, the selected channel first and the newest message first, and publishes finished batches about every 30 ms. Until a result arrives the parsed message is shown, or hidden when a filter plugin is active. A message a filter hook rejected is left out of the chat.
-- When a plugin holds `message-intercept`, the same thread runs `intercept-message` after the render and filter hooks and stores the patches in the plugin host's `Patches` store, which the message rows read. See `interception.md`.
-- View events, menu items, contextual `render-view` calls and emoji picks run on the plugin job queue, never on the session task or the UI thread. View events and menu items bump the render epoch like `on-ui-action` does.
-- `display-user` overrides are computed in the background for the authors of the visible channel and the member list, with a 2 s debounce after changes, and read by the message and member rows.
+- When a plugin holds `message-intercept`, the same thread runs `intercept-message`, `intercept-message-ext` or the batch form after the render and filter hooks and stores the patches in the plugin host's `Patches` store, which the message rows read. See `interception.md`.
+- View events, menu items, contextual `render-view` calls and emoji picks run on the plugin job queue, never on the session task or the UI thread. They update surfaces at once and render the open channel again only when patches, accessories or filter results changed.
+- `display-user` and `display-user-full` overrides are computed in the background, in batches of 50, for the authors of the visible channel and the member list, with a 2 s debounce after changes, and read by the message, member, DM and profile rows. `invalidate-user` and presence changes schedule a new computation.
+- Channel decorations (`decorate-channel`) run in the background for the visible channels and are cached until invalidated.
+- Pending notifications are resolved on the interactive lane within 500 ms, see `events.md`.
 - Enabling, disabling, reloading, installing, uninstalling or granting a plugin bumps a render epoch. Cached messages with an older epoch are rendered again, the visible channel at once and other channels when they are opened.
+- Keybinds, click watches, client options and DM sections are removed when the plugin is disabled or uninstalled.
 - A plugin package with a `theme.json` is copied to `<themes_dir>/<id>.json` while the plugin is enabled.

@@ -19,7 +19,7 @@ Settings, Plugins has a catalog section with a Catalog URL field and a Refresh b
 ## Host a catalog
 
 ```bash
-cargo xtask plugin catalog --dir plugins --packed packs --base-url https://example.com/packs
+cargo xtask plugin catalog --dir plugins --out plugins/catalog.json --packed packs --base-url https://example.com/packs
 cargo xtask plugin sign-catalog plugins/catalog.json <catalog key file>
 ```
 
@@ -29,10 +29,15 @@ Clients only accept catalogs signed by the key built into them. A custom catalog
 
 ## For maintainers: update the official catalog
 
+The catalog lists every first-party plugin except `conformance-probe`. Each entry points at an archive in `packs/` on the `main` branch.
+
 1. Bump `version` in the plugin's `plugin.toml` for every change. Clients compare versions and reinstall only newer ones.
-2. Rebuild everything and regenerate: `cargo xtask plugin catalog --dir plugins --packed packs --base-url https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs`.
-3. Review the diff of `plugins/catalog.json`: only the plugins that changed should have a new `sha256`. Set `reviewed` to `true` for the ones whose source you read.
-4. Sign: `cargo xtask plugin sign-catalog plugins/catalog.json <catalog key file>`.
-5. Commit `catalog.json`, `catalog.json.sig` and `packs`, and push to `main`. The catalog section picks it up on the next refresh.
+2. Rebuild everything and regenerate: `cargo xtask plugin catalog --dir plugins --out plugins/catalog.json --packed packs --base-url https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs`. The command builds each plugin in release mode, writes `packs/<id>-<version>.oxidcord-plugin`, and takes a few minutes for the whole set.
+3. The command writes `reviewed: false` for every entry. Set it back to `true` for the entries whose source you read for that version (keep the flag of plugins that did not change), and leave the rest `false`.
+4. Review the diff of `plugins/catalog.json`: only the plugins that changed should have a new `version` or `sha256`.
+5. Delete the files in `packs/` whose id and version no longer match a catalog entry. Keep the rest.
+6. Sign: `cargo xtask plugin sign-catalog plugins/catalog.json <catalog key file>`. The signature covers the exact bytes of the file, so run it after the last edit of `catalog.json`.
+7. Check the result: the signature must verify against `CATALOG_PUBLIC_KEY` in `crates/session/src/catalog.rs` (the client does this with `plugin_host::catalog::verify_catalog`), and the sha256 and length of every entry must match its archive in `packs/`.
+8. Commit `catalog.json`, `catalog.json.sig` and `packs`, and push to `main`. The catalog section picks it up on the next refresh.
 
 The catalog private key never goes into the repository. Losing it means shipping a new client with a new key, leaking it means anybody can push plugins to every user, so treat it like a release signing key.

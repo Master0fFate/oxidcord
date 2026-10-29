@@ -1,26 +1,187 @@
 # First-party plugins
 
-Every plugin here is a workspace member, builds with `cargo build -p <name> --target wasm32-wasip2 --release` and passes the conformance suite. The API is described in `docs/plugin-api/`. `fake-nitro` and `notes-panel` use API 1.1 and enable the SDK feature `ext`, the others are 1.0 plugins.
+Every plugin here is a workspace member, builds with `cargo build -p <name> --target wasm32-wasip2 --release` and passes the conformance suite. The API is described in `docs/plugin-api/`. Each manifest declares the lowest API version the plugin needs (`^1.0`, `^1.1` or `^1.2`). Plugins that use views, menus, patches or the 1.2 hooks enable the SDK feature `ext`.
 
-Since API 1.1, `send-message` only works while the plugin handles a user action (a button, input, menu item or slash command) and at most three times per action. `quick-replies` sends from a click or `/snip` and is not affected.
+110 plugins are listed, including the test fixture `conformance-probe`. 95 of them were written as ports of Vencord plugins against the Oxidcord API, and `fake-nitro`, `message-logger`, `see-hidden-channels` and `silent-type` are equivalents of four more. The limitations of the ports are listed in `docs/plugin-api/porting-vencord.md`, and each plugin folder has its own README with the settings and limits.
+
+Since API 1.1, `send-message` only works while the plugin handles a user action (a button, input, menu item, slash command or keybind) and at most three times per action. `quick-replies` sends from a click or `/snip` and is not affected.
+
+## Plugins
+
+### Messages
+
+How received messages look and what you can do with them.
 
 | Plugin | What it does | Permissions |
 | --- | --- | --- |
-| `hello-timestamps` | Relative send time under each message, Copy ID button | `message-render`, `ui-slots`, `actions-clipboard` |
-| `link-cleaner` | Strips tracking parameters from links before sending | `message-send` |
-| `spoiler-all` | Wraps every message in a spoiler, toggled from the composer toolbar | `message-render`, `ui-slots`, `storage` |
-| `keyword-highlighter` | Bolds keywords, adds a keyword line, notifies on a match | `message-render`, `storage`, `context-basic`, `actions-notify` |
-| `quick-replies` | Snippet popover in the composer and `/snip <name>` | `ui-slots`, `storage`, `actions-send`, `context-basic` |
-| `text-shortcuts` | Expands `:shrug:` style emoticons and your own `;shortcuts` before sending | `message-send`, `storage`, `ui-slots` |
-| `message-logger` | Keeps deleted messages visible in red and the earlier versions of edited messages behind a history button | `context-timeline`, `message-render`, `storage`, `ui-slots` |
-| `fake-nitro` | Sends emoji you cannot use as image links and shows received emoji links inline (API 1.1) | `composer`, `context-expressions`, `message-send`, `message-intercept` |
-| `notes-panel` | Notes page in the server rail with tabs and a form, Save to notes message menu item, status bar counter (API 1.1) | `ui-mount`, `storage`, `context-timeline` |
-| `user-notes` | Private notes on users, shown as a badge | `ui-slots`, `storage`, `user-display` |
-| `local-status-badge` | Status bar item with the channel id and a color cycling badge | `context-basic`, `ui-slots` |
-| `see-hidden-channels` | Shows channels you cannot open in the channel list, dimmed with a lock | `channels-hidden` |
-| `silent-type` | Stops other people from seeing that you are typing | `typing-hidden` |
-| `word-mute` | Hides messages containing words or phrases you muted | `message-filter`, `storage`, `ui-slots`, `context-basic` |
-| `conformance-probe` | Test fixture the conformance runner pushes to its limits, not for users | none |
+| `hello-timestamps` | Relative send time under each message and a Copy ID button. | `message-render`, `ui-slots`, `actions-clipboard` |
+| `spoiler-all` | Hides every message behind a spoiler, switched from the composer toolbar. | `message-render`, `ui-slots`, `storage` |
+| `keyword-highlighter` | Bolds your keywords in messages, adds a keyword badge and notifies on a match. | `message-render`, `storage`, `context-basic`, `actions-notify` |
+| `message-logger` | Keeps deleted messages visible and the earlier versions of edited ones one click away. | `context-timeline`, `message-render`, `storage`, `ui-slots` |
+| `word-mute` | Hides messages that contain words or phrases you muted. | `message-filter`, `storage`, `ui-slots`, `context-basic` |
+| `no-blocked-messages` | Hides messages from blocked users completely, and from a list of user ids you keep. | `message-filter`, `context-relationships`, `context-private`, `storage` |
+| `image-link` | Keeps the link visible next to the image when a message is only an image link. | `message-intercept` |
+| `mention-avatars` | Shows user avatars inside mentions. | `message-intercept`, `context-members`, `storage` |
+| `message-latency` | Shows how long your own messages took to send when it was slow. | `message-intercept`, `storage` |
+| `message-link-embeds` | Previews a message that a message links to as a card with a Jump button. | `message-intercept`, `context-timeline`, `context-directory`, `actions-navigate`, `actions-compose`, `storage` |
+| `message-click-actions` | Double click to edit or reply, Ctrl+Alt click to delete your own message. | `ui-input`, `context-timeline`, `actions-compose`, `actions-delete`, `storage` |
+| `dearrow` | Replaces sensationalist YouTube embed titles and thumbnails with the DeArrow ones. | `message-intercept`, `net-fetch`, `storage` |
+| `valid-reply` | Loads replied messages the client could not show. | `message-intercept`, `context-timeline`, `actions-compose` |
+| `valid-user` | Loads the names of mentioned users the client does not know. | `message-intercept`, `context-members` |
+| `who-reacted` | Shows who reacted with each emoji. | `ui-mount`, `context-timeline`, `message-intercept`, `storage` |
+| `reply-timestamp` | Shows a timestamp on reply previews. | `message-intercept`, `storage` |
+| `reveal-all-spoilers` | Ctrl-click reveals all spoilers of a message, Ctrl+Shift-click all of the channel. | `ui-input`, `message-intercept`, `context-timeline` |
+| `code-highlight` | Syntax highlighting for code blocks in 16 languages. | `message-intercept`, `storage` |
+| `unindent` | Trims leading indentation from code blocks you send and receive. | `message-send`, `message-render` |
+| `translate` | Translates messages with Google Translate or DeepL. | `ui-mount`, `net-fetch`, `message-intercept`, `context-timeline`, `composer`, `storage` |
+| `more-quick-reactions` | Adds a row of your most used reactions to the message toolbar. | `ui-mount`, `actions-react`, `storage`, `context-timeline`, `context-basic` |
+| `super-reaction-tweaks` | Adds Super react to the reaction menu and can make super reactions the default. | `ui-mount`, `actions-react`, `actions-settings`, `storage` |
+
+### Composer
+
+What you type and send.
+
+| Plugin | What it does | Permissions |
+| --- | --- | --- |
+| `link-cleaner` | Strips tracking parameters from links before a message is sent. | `message-send` |
+| `clear-urls` | Removes tracking parameters from links you send, using the ClearURLs rules. | `message-send`, `net-fetch`, `storage` |
+| `text-shortcuts` | Expands emoticons like :shrug: and your own ;shortcuts before sending. | `message-send`, `storage`, `ui-slots` |
+| `text-replace` | Replaces text in your messages with string and regex rules. | `message-send`, `storage`, `ui-mount` |
+| `send-timestamps` | Timestamp picker button and backtick shortcut for Discord timestamps. | `ui-mount`, `composer`, `message-send`, `storage` |
+| `fake-nitro` | Sends emoji you cannot use as image links and shows received emoji links inline. | `composer`, `context-expressions`, `message-send`, `message-intercept` |
+| `quick-replies` | Saved snippets you send from a composer popover or with /snip. | `ui-slots`, `storage`, `actions-send`, `context-basic` |
+| `custom-commands` | Your own slash commands that send saved text. | `ui-slots`, `ui-mount`, `storage`, `actions-send` |
+| `quick-mention` | Message toolbar button that puts a mention in the composer. | `ui-mount`, `composer` |
+| `quick-reply` | Ctrl+Up and Ctrl+Down reply to messages, with Shift they edit your own. | `ui-keybinds`, `context-basic`, `context-timeline`, `context-relationships`, `actions-compose`, `storage` |
+| `no-reply-mention` | Turns the reply ping off by default, with lists of exceptions. | `message-send`, `context-timeline`, `context-roles`, `storage` |
+| `silent-message-toggle` | Composer button to send the next message silently. | `message-send`, `ui-mount`, `context-basic`, `storage` |
+| `silent-type` | Hides that you are typing from other people. | `typing-hidden` |
+| `anonymise-file-names` | Renames uploaded files to random, consistent or timestamp names. | `message-send`, `ui-mount`, `storage` |
+| `preview-message` | Shows a rendered preview of your draft above the composer. | `ui-mount`, `composer` |
+| `character-counter` | Character counter for the message box. | `composer-watch`, `ui-mount`, `storage` |
+| `fav-emoji-first` | Puts the emoji you send most first in emoji autocomplete. | `ui-input`, `context-expressions`, `message-send`, `storage` |
+| `no-server-emojis` | Keeps server emoji out of emoji autocomplete. | `ui-input`, `context-basic`, `storage` |
+| `sticker-paste` | Picking a sticker attaches it to the draft instead of sending it. | `ui-mount`, `context-expressions`, `composer` |
+| `petpet` | The /petpet command sends a headpat gif of a user. | `ui-slots`, `context-attachments`, `actions-upload` |
+
+### Users and profiles
+
+Names, badges, profile popouts and the friends list.
+
+| Plugin | What it does | Permissions |
+| --- | --- | --- |
+| `user-notes` | Private notes on people, shown as a badge next to their name. | `ui-slots`, `storage`, `user-display` |
+| `user-pronouns` | Shows the pronouns from user profiles next to names. | `user-display`, `context-profiles`, `context-basic`, `storage` |
+| `usrbg` | Shows USRBG banners in profiles. | `user-display`, `net-fetch`, `context-profiles`, `storage` |
+| `fake-profile-themes` | Shows the profile colors people hide in their bio with 3y3 encoding. | `ui-mount`, `context-profiles`, `storage` |
+| `decor` | Shows the avatar decorations people picked in Decor. | `user-display`, `net-fetch`, `storage` |
+| `better-role-dot` | Role color dot next to names that copies the color when clicked. | `user-display`, `context-roles`, `actions-clipboard`, `ui-mount`, `storage` |
+| `better-role-context` | Role menu entries to copy the color and id and to view the role icon. | `ui-mount`, `context-roles`, `actions-clipboard`, `storage` |
+| `irc-colors` | Gives every user a stable name color, like IRC clients. | `user-display`, `storage`, `context-roles` |
+| `show-me-your-name` | Shows usernames next to nicknames, or usernames only. | `user-display`, `context-roles`, `context-relationships`, `storage` |
+| `platform-indicators` | Desktop, mobile and web badges for users who are online. | `user-display`, `context-presence`, `storage` |
+| `user-voice-show` | Badge on users who are in your voice channel. | `user-display`, `context-voice`, `storage` |
+| `show-timeout-duration` | Shows how much longer a member is timed out. | `user-display`, `context-roles`, `storage` |
+| `role-color-everywhere` | Uses the top role color for names in more places. | `user-display`, `message-intercept`, `context-roles`, `storage` |
+| `force-owner-crown` | Crown badge next to the server owner, even in large servers. | `user-display`, `context-directory` |
+| `show-connections` | Connected accounts in the profile popout. | `ui-mount`, `context-profiles`, `actions-clipboard`, `storage` |
+| `review-db` | ReviewDB reviews about a user in the profile popout, read only. | `ui-mount`, `net-fetch`, `storage` |
+| `mutual-group-dms` | Group DMs you share with a user, in the profile popout. | `ui-mount`, `context-directory`, `context-private`, `actions-navigate` |
+| `view-icons` | View avatar, banner and icon entries in member and server menus. | `ui-mount`, `context-profiles`, `context-directory`, `storage` |
+| `copy-user-urls` | Copy User URL entry in the user menu. | `ui-mount`, `actions-clipboard` |
+| `account-server-profile` | Shows your nickname, roles and join date for the current server from the account panel. | `ui-mount`, `context-basic`, `context-roles`, `storage` |
+| `implicit-relationships` | Friends tab for people you share servers with. | `ui-mount`, `context-relationships` |
+| `sort-friend-requests` | Friend requests tab sorted by date. | `ui-mount`, `context-relationships`, `storage` |
+
+### Channels and servers
+
+Channel list, server list, voice and server details.
+
+| Plugin | What it does | Permissions |
+| --- | --- | --- |
+| `see-hidden-channels` | Shows channels you cannot open in the channel list, dimmed with a lock. | `channels-hidden` |
+| `keep-current-channel` | Reopens the channel you were in before a restart. | `context-basic`, `storage`, `actions-navigate` |
+| `typing-indicator` | Typing badge on channels in the channel list. | `ui-input`, `context-timeline`, `context-private`, `context-read-state`, `context-relationships`, `context-basic`, `context-members`, `storage` |
+| `member-count` | Online, total and voice member counts for a server. | `ui-mount`, `context-directory`, `context-voice`, `storage` |
+| `server-info` | Server details window from the server menu. | `ui-mount`, `context-directory` |
+| `server-list-indicators` | Online friend count or server count in the server list. | `ui-mount`, `context-relationships`, `context-presence`, `context-directory`, `storage` |
+| `permissions-viewer` | Shows the permissions of a user or channel and the roles of a server. | `ui-mount`, `context-roles`, `context-directory`, `context-basic`, `storage` |
+| `new-guild-settings` | Applies default notification settings to servers when you join them. | `context-directory`, `actions-settings`, `storage` |
+| `vc-double-click` | Join voice channels with a double click instead of a single click. | `ui-input`, `context-directory`, `context-voice`, `actions-voice`, `actions-navigate` |
+| `call-timer` | Shows how long you have been in a call. | `context-voice`, `ui-mount`, `storage` |
+| `vc-narrator` | Speaks when people join, leave or move in your voice channel. | `context-voice`, `context-members`, `context-basic`, `actions-speak`, `storage` |
+| `jump-to-top` | Button to jump to the first message of a channel. | `ui-mount`, `actions-compose` |
+| `expression-cloner` | Clones emoji and stickers into a server you manage. | `ui-mount`, `context-directory`, `context-roles`, `context-expressions`, `actions-guild` |
+
+### Attachments
+
+Files, images, emoji and stickers.
+
+| Plugin | What it does | Permissions |
+| --- | --- | --- |
+| `better-gif-alt-text` | Shows the GIF tags as the alt text of GIF embeds. | `message-intercept` |
+| `blur-nsfw` | Blurs attachments in NSFW channels until hovered. | `message-intercept` |
+| `fix-images-quality` | Loads attached images at their original resolution. | `message-intercept`, `storage` |
+| `image-filename` | Shows the file name of an image as a tooltip. | `message-intercept`, `storage` |
+| `no-mosaic` | Stacks images instead of the image mosaic. | `message-intercept`, `storage` |
+| `hide-attachments` | Per-message button that hides attachments and embeds. | `ui-mount`, `message-intercept`, `storage` |
+| `copy-file-contents` | Copy button on text file attachments. | `ui-mount`, `context-timeline`, `context-attachments`, `actions-clipboard` |
+| `direct-file-download` | Save as button on attachments that opens the save dialog. | `ui-mount`, `actions-save` |
+| `voice-download` | Download button on voice messages and other audio attachments. | `ui-mount`, `context-timeline`, `actions-save` |
+| `copy-emoji-markdown` | Copies an emoji as formatted text from its menu. | `ui-mount`, `actions-clipboard`, `storage` |
+| `copy-sticker-links` | Copies or opens the link of a sticker from its menu. | `ui-mount`, `context-expressions`, `actions-clipboard`, `actions-open-url` |
+| `reverse-image-search` | Image search entries in the image menu. | `ui-mount`, `actions-open-url` |
+
+### Presence and notifications
+
+Status, notification behaviour and sessions.
+
+| Plugin | What it does | Permissions |
+| --- | --- | --- |
+| `custom-idle` | Sets your status to idle after a time you choose. | `context-presence`, `actions-presence`, `context-basic`, `ui-mount`, `storage` |
+| `one-ping-per-dm` | One notification sound per DM until you read it. | `notifications-filter`, `context-read-state`, `context-private`, `storage` |
+| `read-all-notifications` | Button to mark every server as read. | `ui-mount`, `context-directory`, `context-read-state`, `actions-ack` |
+| `relationship-notifier` | Notifies you when a friend, group chat or server removes you. | `context-relationships`, `context-directory`, `context-private`, `actions-notify`, `ui-mount`, `storage` |
+| `better-sessions` | Session list with exact times, custom names and alerts for new sessions. | `context-sessions`, `ui-mount`, `actions-notify`, `storage` |
+| `notification-volume` | Separate volume for the notification chime. | `actions-settings`, `storage` |
+
+### Shell and client options
+
+Changes to the client layout and settings.
+
+| Plugin | What it does | Permissions |
+| --- | --- | --- |
+| `better-folders` | Folder sidebar that lists the servers of open folders. | `actions-settings`, `storage` |
+| `plain-folder-icon` | Plain folder icons instead of small server icons. | `actions-settings` |
+| `pin-dms` | Pins DMs into categories at the top of the DM list. | `ui-mount`, `context-directory`, `context-private`, `context-timeline`, `actions-settings`, `storage` |
+| `override-forum-defaults` | Default layout and sort order for forum channels. | `actions-settings`, `storage` |
+| `show-all-message-buttons` | Always shows every button in the message toolbar. | `actions-settings` |
+| `no-typing-animation` | Stops the animation of the typing dots. | `actions-settings` |
+| `web-keybinds` | Alt+Left and Alt+Right navigate back and forward, with title bar buttons. | `ui-keybinds`, `actions-navigate`, `ui-mount`, `storage` |
+| `startup-timings` | Lists how long each client startup phase took. | `context-basic`, `ui-mount` |
+| `local-status-badge` | Status bar item with the channel id and a badge that cycles through three colors. | `context-basic`, `ui-slots` |
+
+### Tools
+
+Helpers and test fixtures.
+
+| Plugin | What it does | Permissions |
+| --- | --- | --- |
+| `toolbox` | Title bar button with quick actions and the list of enabled plugins. | `ui-mount`, `plugins-list`, `context-basic`, `actions-navigate`, `actions-clipboard`, `storage` |
+| `notes-panel` | Notes page in the server rail, a Save to notes message action and a status bar counter. | `ui-mount`, `storage`, `context-timeline` |
+| `view-raw` | Copy or view the raw data of messages, members and channels. | `ui-mount`, `context-timeline`, `context-roles`, `context-directory`, `actions-clipboard`, `storage` |
+| `replace-google-search` | Search selected text with the engine of your choice. | `ui-mount`, `actions-open-url`, `storage` |
+| `open-in-app` | Opens Spotify, Steam, Tidal and Apple Music links in their apps. | `actions-open-url`, `storage` |
+| `conformance-probe` | Test fixture the conformance runner pushes to its limits, not for users. | none |
+
+## Overlaps
+
+Two pairs of plugins do similar things. They can run together, and each is the better choice in one case.
+
+| Plugins | Difference |
+| --- | --- |
+| `clear-urls` and `link-cleaner` | `link-cleaner` is a small plugin with a fixed list of tracking parameters and no network access. `clear-urls` uses the full ClearURLs rule set, which it downloads and refreshes, so it knows many more sites but needs `net-fetch` |
+| `custom-commands` and `quick-replies` | `quick-replies` keeps snippets you pick from a composer popover or send with `/snip <name>`. `custom-commands` turns saved text into slash commands of their own (`/tags create`, then `/<name>`) with arguments |
 
 ## Commands
 

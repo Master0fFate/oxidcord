@@ -114,6 +114,8 @@ Contextual points depend on what the user is looking at. A plugin declares that 
 
 `attachment-action` renders once per attachment as a row of compact icon buttons and keeps only the first 4 root nodes. Inside `render-view` and `on-view-event`, `ui::context-detail()` returns the attachment id. `reply-preview` is clipped to 4 root nodes the same way.
 
+Providers of plugins without `context-private` are skipped when the context has no `guild-id` (a DM or group DM), so their `render-view` is not called for it.
+
 ```rust
 impl PluginExt for Topic {
 	fn render_view(&mut self, point: &str, context: &UiContext) -> Option<Vec<Node>> {
@@ -150,30 +152,30 @@ fn on_view_event(&mut self, event: ViewEvent) -> Reply {
 }
 ```
 
-View events, menu items and commands count as user actions (see `overview.md`). After a plugin handles one, the host renders the messages of the open channel again so that changed plugin state shows up in intercepted messages.
+View events, menu items and commands count as user actions (see `overview.md`). After a plugin handles one, the host updates mounted views at once and renders the messages of the open channel again only when the plugin's patches, message accessories or filter results changed.
 
 ## Context menus
 
 `menu::set(menu, items)` replaces the plugin's items in one menu. Menus and where they open:
 
-| Menu | Opens on |
-| --- | --- |
-| `message-context-menu` | A message |
-| `user-context-menu` | A member row |
-| `channel-context-menu` | A channel row |
-| `server-context-menu` | A server icon or header |
-| `link-context-menu` | A link in a message (embeds, videos, files) |
-| `emoji-context-menu` | An emoji in the picker or in message text |
-| `sticker-context-menu` | A sticker in the picker or under a message |
-| `image-context-menu` | An image in a message, added to the message menu |
-| `role-context-menu` | A role chip in the profile popout |
-| `selection-context-menu` | Selected text, added to the message menu |
-| `composer-context-menu` | The message input |
-| `account-panel-menu` | The account area at the bottom of the channel list |
-| `attachment-context-menu` | An attachment, added to the message menu |
-| `reaction-context-menu` | A reaction on a message |
+| Menu | Opens on | `context-detail` |
+| --- | --- | --- |
+| `message-context-menu` | A message | none |
+| `user-context-menu` | A member row | none |
+| `channel-context-menu` | A channel row, including DM rows | none |
+| `server-context-menu` | A server icon or header | none |
+| `link-context-menu` | A link in a message (embeds, videos, files). Rendered on desktop | none |
+| `emoji-context-menu` | An emoji in the picker or in message text | `emoji` |
+| `sticker-context-menu` | A sticker in the picker or under a message | `sticker-id` |
+| `image-context-menu` | An image in a message, added to the message menu | `image-url` |
+| `role-context-menu` | A role chip in the profile popout | `role-id` |
+| `selection-context-menu` | Selected text, added to the message menu | `selection` |
+| `composer-context-menu` | The message input | `selection` when text is selected |
+| `account-panel-menu` | The account area at the bottom of the channel list | none |
+| `attachment-context-menu` | An attachment, added to the message menu | `attachment-id` |
+| `reaction-context-menu` | A reaction on a message | `reaction` |
 
-A menu without plugin items does not open at all on the surfaces that had no menu before. The context menus that carry a detail fill `ui::context-detail()` and pass it to `on-menu-item`: `emoji`, `sticker-id`, `role-id`, `attachment-id`, `selection`, `image-url` and `reaction`. `menu::set_ext` adds the flags `has-selection`, `is-image`, `own-role` and `in-voice` to an item next to the `when` flags.
+A menu without plugin items does not open at all on the surfaces that had no menu before.
 
 ```rust
 use oxidcord_plugin_sdk::menu;
@@ -188,38 +190,80 @@ menu::set(
 )?;
 ```
 
-An item is shown only when every flag in `when` holds: `in-guild`, `in-dm`, `own-message`, `others-message`, `has-content`, `has-attachments`, `self-user`, `other-user`. An item with a `parent` becomes an entry of that item's submenu, one level deep. Picking an item calls `on-menu-item(menu, key, context)` with the ids of the message, user, channel or server the menu was opened on.
+An item is shown only when every flag in `when` holds: `in-guild`, `in-dm`, `own-message`, `others-message`, `has-content`, `has-attachments`, `self-user`, `other-user`. An item with a `parent` becomes an entry of that item's submenu, one level deep. A menu holds up to 16 items per plugin. Picking an item calls `on-menu-item(menu, key, context)` with the ids of the message, user, channel or server the menu was opened on.
+
+`menu::set_ext` adds flags that depend on the detail of the target. An item is shown only when every extra flag holds as well:
+
+| Flag | Holds when |
+| --- | --- |
+| `has-selection` | The menu was opened on selected text |
+| `is-image` | The menu was opened on an image |
+| `own-role` | The role in `role-context-menu` is one you hold |
+| `in-voice` | You are in a call, on any menu |
+
+`ui::context-detail()` returns the `context-detail` record of the target while `render-view`, `on-view-event` or `on-menu-item` runs, and `none` otherwise. Its fields are `emoji`, `sticker-id`, `role-id`, `attachment-id`, `selection` (up to 4000 bytes), `image-url` and `reaction`; only the field that belongs to the menu in the table is set.
+
+Direct messages: items of a plugin without `context-private` are not shown on a DM target (a DM row, a message or user in a DM), `on-menu-item` is not called for one, and `context-detail` has `selection`, `image-url` and `attachment-id` cleared. A plugin with `context-private` can use the `in-dm` flag. Use `in-guild` on items that must not appear in DMs.
 
 1.0 plugins that put `button` nodes into a slot named like a menu keep working, their buttons are appended to the menu.
 
 ## Message patches
 
-`PatchExt` extras are drawn by the message list:
+`intercept-message-ext` returns a `message-patch-ext`: the `message-patch` described in `interception.md` plus the extras below. The message list draws them:
 
-| Extra | Result |
-| --- | --- |
-| `attachment` overrides | `blur` covers the attachment with a tiny upscaled copy and the label "Hover to reveal" until the pointer is over it, `alt` shows a caption, `tooltip` shows a hover hint, `url` swaps the file (same host only), `hidden` removes it |
-| `layout` | `stacked` scales images and videos to the column width, `inline-video` plays video attachments inline even when inline media is off, default keeps the usual layout |
-| `reply_annotation` | Muted italic text at the end of the reply quote |
-| `reveal_spoilers` | Spoiler text and spoiler attachments of the message show uncovered |
-| `tooltip` | Hover hint on the whole message row |
-| `code_block(index, node)` | Replaces the plain code block with the same ordinal by colored `code-span` lines (`text`, `color`, `bold`, `italic`) |
+| Extra | Result | Limits |
+| --- | --- | --- |
+| `attachments` overrides | `blur` covers the attachment with a tiny upscaled copy and the label "Hover to reveal" until the pointer is over it, `alt` shows a caption, `tooltip` shows a hover hint, `url` swaps the file (same host as the original only), `hidden` removes it | 10 overrides per message, only for attachment ids the message has. `alt` 1000 bytes, `tooltip` 200 bytes |
+| `layout` | `stacked` scales images and videos to the column width, `inline-video` plays video attachments inline even when inline media is off, `default` keeps the usual layout | |
+| `reply-annotation` | Muted italic text at the end of the reply quote | 200 bytes |
+| `reveal-spoilers` | Spoiler text and spoiler attachments of the message show uncovered | |
+| `tooltip` | Hover hint on the whole message row | 200 bytes |
+| `code-blocks` | `(index, code-block-node)` replaces the plain code block with that ordinal by colored `code-span` lines (`text`, `color`, `bold`, `italic`) and an optional language label | 2000 lines and 128 KiB of text in total, 400 spans per line, 512 bytes per span, 32 bytes language |
 
-Attachment overrides of several plugins merge per attachment id: the first plugin that sets `alt`, `tooltip` or `url` wins that field, and `blur` and `hidden` apply when any plugin sets them.
+Merge rules when several plugins patch one message:
+
+- Attachment overrides merge per attachment id. The first plugin that sets `alt`, `tooltip` or `url` for an id wins that field, and `blur` and `hidden` apply when any plugin sets them. A plugin's `base.hidden-attachments` also hides.
+- `layout`, `reply-annotation`, `tooltip` and each `code-blocks` index come from the first plugin in priority order that set them. `reveal-spoilers` applies when any plugin sets it.
+- The fields of `base` merge as described under "Ordering" in `interception.md`.
+
+`message-meta` (delivered with `intercept-message-ext`) carries the guild id, the replied message, flags, send latency, author role color, pinned, edited time and the NSFW flag of the channel; see `data.md`.
 
 ## User display
 
-`display-user-full` overrides draw in messages, the member list, DM rows, reply previews, the typing line and the profile popout: `name`, a muted `suffix` and `pronouns` after the name, `badges` as small icons, images or labels with tooltips, `avatar`, `banner` (popout) and `decoration` as a ring over the avatar. A badge with a `key` is clickable and calls `on-badge-click`.
+`display-user-full` overrides draw in messages, the member list, DM rows, reply previews, the typing line and the profile popout.
 
-Overrides from several plugins merge per user in plugin priority order. The first plugin that sets `name`, `suffix`, `color`, `avatar`, `banner`, `decoration` or `pronouns` wins that field, badges of every plugin are listed in priority order and capped at 8, and a badge click calls `on-badge-click` of the plugin that made the badge. This applies to `display-user` and `display-user-full` alike.
+| Field | Result | Limits |
+| --- | --- | --- |
+| `name` | Replaces the display name | 80 characters, control characters removed |
+| `suffix` | Muted text after the name | 64 bytes |
+| `color` | Name color, theme token or RGBA | |
+| `pronouns` | Pronouns after the name | 32 bytes |
+| `badges` | Small icons, images or labels with tooltips | 8 per user. Each needs an `icon` (Lucide name), an `image` (an allowed URL) or a `label` (32 bytes). `tooltip` 128 bytes. A `key` makes the badge clickable |
+| `avatar` | Replaces the avatar image | Image URL, see "Images" in `overview.md` |
+| `banner` | Profile popout banner | Image URL |
+| `decoration` | A ring image drawn over the avatar | Image URL |
+
+A badge with a `key` calls `on-badge-click(user-id, key)` of the plugin that made it; this is a user action. The hook receives `presence` for the user when the plugin holds `context-presence`, and `none` otherwise.
+
+Overrides from several plugins merge per user in plugin priority order. The first plugin that sets `name`, `suffix`, `color`, `avatar`, `banner`, `decoration` or `pronouns` wins that field, and the badges of every plugin are listed in priority order and capped at 8. This applies to `display-user` and `display-user-full` alike. A plugin can use `invalidate-user` to have its override computed again.
 
 ## Click watches
 
-`ui::watch_clicks` registers which message clicks a plugin receives in `on-message-click`: the click kinds, an exact modifier combination and optionally the click targets. A plugin holds up to 4 watches, one watch per modifier combination. A new watch replaces the one with the same modifiers, and a watch without kinds clears that modifier set. A fifth modifier combination is rejected with `host-error::invalid`, and registering an identical watch again changes nothing. A click that matches a watch is taken by the plugin and does not reach the client.
+`ui::watch_clicks` registers which message clicks a plugin receives in `on-message-click`, and `ui::watch_channel_clicks` does the same for clicks on channels in the channel list in `on-channel-click`. Both need `ui-input` and the matching manifest hook (`message-click`, `channel-click`).
+
+A `click-watch` has:
+
+- `kinds`: up to 3 of `single`, `double`, `middle`. A watch without kinds clears the watch for its modifiers.
+- `modifiers`: an exact combination of `ctrl`, `shift`, `alt` and `meta`. A click with other modifiers does not match.
+- `targets` (message watches only): up to 16 of `body`, `spoiler(index)`, `attachment(id)`, `embed(index)`, `author` and `reply-preview`. An empty list matches every target. Targets match by kind; the index or id in a watch is not compared.
+
+A plugin holds up to 4 watches per kind of watch, one per modifier combination. A new watch replaces the one with the same modifiers, and registering an identical watch again changes nothing. A fifth modifier combination is rejected with `host-error::invalid("at most 4 click watches")`.
+
+A click that matches a watch of a plugin that will receive it is taken by that plugin and does not reach the client. A click is not taken when no plugin would receive it, for example because the plugin has not declared the hook, is disabled, or cannot see the channel (a DM without `context-private`). `on-message-click` and `on-channel-click` run as user actions.
 
 ## Client options
 
-`set-client-option` values are applied by the client while the plugin is enabled: message toolbar always shown, plain folder icons, folder sidebar (open folders list their servers in a second column beside the rail), forum layout (1 list, 2 gallery) and sort (0 latest activity, 1 creation date), notification volume (0 to 100), streamer mode, typing animation, burst reactions by default and reply ping default. `set-dm-sections` shows the given sections above the other DMs with collapsible headers.
+`set-client-option` values are applied by the client while the plugin is enabled. The options and their ranges are listed in `actions.md`. `set-dm-sections` shows the given sections above the other DMs with collapsible headers.
 
 ## Toasts and modals
 
