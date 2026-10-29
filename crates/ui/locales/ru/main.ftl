@@ -397,6 +397,7 @@ catalog-url = URL каталога
 catalog-refresh = Обновить
 catalog-install = Установить
 catalog-installed = Установлен
+catalog-update = Обновить
 catalog-reviewed = Проверен
 catalog-empty = Каталог пуст. Обновите его, чтобы загрузить.
 catalog-permissions = { $count ->

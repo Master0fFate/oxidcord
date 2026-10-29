@@ -362,6 +362,7 @@ catalog-url = カタログのURL
 catalog-refresh = 更新
 catalog-install = インストール
 catalog-installed = インストール済み
+catalog-update = 更新
 catalog-reviewed = 確認済み
 catalog-empty = カタログは空です。更新して読み込んでください。
 catalog-permissions = { $count }個の権限

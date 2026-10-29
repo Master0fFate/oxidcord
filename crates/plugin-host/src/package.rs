@@ -389,6 +389,21 @@ pub fn discover(plugins_dir: &Path) -> Vec<PathBuf> {
 	found
 }
 
+pub fn remove_other_versions(installed_dir: &Path) {
+	let Some(entries) = installed_dir
+		.parent()
+		.and_then(|id_dir| fs::read_dir(id_dir).ok())
+	else {
+		return;
+	};
+	for entry in entries.flatten() {
+		let dir = entry.path();
+		if dir != installed_dir && Version::parse(&entry.file_name().to_string_lossy()).is_ok() {
+			let _ = fs::remove_dir_all(&dir);
+		}
+	}
+}
+
 fn latest_version_dir(id_dir: &Path) -> Option<PathBuf> {
 	fs::read_dir(id_dir)
 		.ok()?

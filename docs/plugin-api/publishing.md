@@ -31,7 +31,7 @@ Clients only accept catalogs signed by the key built into them. A custom catalog
 
 The catalog lists every first-party plugin except `conformance-probe`. Each entry points at an archive in `packs/` on the `main` branch.
 
-1. Bump `version` in the plugin's `plugin.toml` for every change. Clients compare versions and reinstall only newer ones.
+1. Bump `version` in the plugin's `plugin.toml` for every change and never change `id`: the id is the plugin's identity across updates. The client matches installed plugins to catalog entries by id, shows Update when the catalog version is newer, Installed otherwise, and replaces the older version folder after the update loads.
 2. Rebuild everything and regenerate: `cargo xtask plugin catalog --dir plugins --out plugins/catalog.json --packed packs --base-url https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs`. The command builds each plugin in release mode, writes `packs/<id>-<version>.oxidcord-plugin`, and takes a few minutes for the whole set.
 3. The command writes `reviewed: false` for every entry. Set it back to `true` for the entries whose source you read for that version (keep the flag of plugins that did not change), and leave the rest `false`.
 4. Review the diff of `plugins/catalog.json`: only the plugins that changed should have a new `version` or `sha256`.

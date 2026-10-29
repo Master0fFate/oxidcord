@@ -390,6 +390,7 @@ catalog-url = URL katalogu
 catalog-refresh = Obnovit
 catalog-install = Nainstalovat
 catalog-installed = Nainstalováno
+catalog-update = Aktualizovat
 catalog-reviewed = Zkontrolováno
 catalog-empty = Katalog je prázdný. Obnov ho, aby se načetl.
 catalog-permissions = { $count ->

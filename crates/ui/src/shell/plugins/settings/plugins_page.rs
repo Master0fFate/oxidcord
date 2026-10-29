@@ -553,9 +553,12 @@ impl PluginsPage {
 		theme: &Theme,
 		cx: &mut Context<Self>,
 	) -> AnyElement {
-		let present = installed
+		let installed_version = installed
 			.iter()
-			.any(|info| info.id == entry.id && info.version == entry.version);
+			.find(|info| info.id == entry.id)
+			.map(|info| &info.version);
+		let outdated = installed_version.is_some_and(|version| *version < entry.version);
+		let present = installed_version.is_some() && !outdated;
 		let target = entry.clone();
 		card(theme)
 			.child(
@@ -605,11 +608,13 @@ impl PluginsPage {
 						Button::new(("catalog-install", index))
 							.small()
 							.primary()
-							.label(if present {
-								cx.t("catalog-installed")
+							.label(cx.t(if present {
+								"catalog-installed"
+							} else if outdated {
+								"catalog-update"
 							} else {
-								cx.t("catalog-install")
-							})
+								"catalog-install"
+							}))
 							.disabled(present)
 							.on_click(cx.listener(move |this, _, window, cx| {
 								this.review_catalog(&target, window, cx)

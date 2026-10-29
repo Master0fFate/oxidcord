@@ -8,6 +8,7 @@ use parking_lot::Mutex;
 use plugin_host::catalog::{Catalog, CatalogEntry, ThemeCatalog};
 use plugin_host::{
 	Grants, HookFlags, LatencyStats, Package, Permission, PluginManager, PluginState, THEME_FILE,
+	remove_other_versions,
 };
 use store::Store;
 
@@ -156,6 +157,7 @@ impl PluginHub {
 		let outcome = self.manager.load_one(&installed.dir);
 		self.sync_themes();
 		outcome?;
+		remove_other_versions(&installed.dir);
 		Ok(())
 	}
 

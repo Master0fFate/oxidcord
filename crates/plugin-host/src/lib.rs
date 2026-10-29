@@ -51,6 +51,7 @@ pub use manifest::{API_VERSION, MANIFEST_FILE, Manifest, PermissionRequest, URL_
 pub use mounts::{Mount, Mounts, ViewContext};
 pub use package::{
 	InstalledPlugin, MAX_PACKAGE_BYTES, PACKAGE_EXTENSION, Package, PackageFile, THEME_FILE, Trust,
+	remove_other_versions,
 };
 pub use patches::{Patches, PluginPatch};
 pub use permission::{Permission, Tier};

@@ -383,6 +383,7 @@ catalog-url = Katalog-URL
 catalog-refresh = Aktualisieren
 catalog-install = Installieren
 catalog-installed = Installiert
+catalog-update = Aktualisieren
 catalog-reviewed = Geprüft
 catalog-empty = Der Katalog ist leer. Aktualisiere ihn, um ihn zu laden.
 catalog-permissions = { $count ->

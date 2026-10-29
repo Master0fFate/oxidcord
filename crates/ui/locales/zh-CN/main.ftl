@@ -362,6 +362,7 @@ catalog-url = 目录 URL
 catalog-refresh = 刷新
 catalog-install = 安装
 catalog-installed = 已安装
+catalog-update = 更新
 catalog-reviewed = 已审核
 catalog-empty = 目录为空，刷新以加载。
 catalog-permissions = { $count } 项权限

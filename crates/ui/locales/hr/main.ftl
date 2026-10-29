@@ -389,6 +389,7 @@ catalog-url = URL kataloga
 catalog-refresh = Osvježi
 catalog-install = Instaliraj
 catalog-installed = Instalirano
+catalog-update = Ažuriraj
 catalog-reviewed = Pregledano
 catalog-empty = Katalog je prazan. Osvježite ga da se učita.
 catalog-permissions = { $count ->
