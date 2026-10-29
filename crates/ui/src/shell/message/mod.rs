@@ -989,9 +989,9 @@ fn media_source(message: &Arc<Message>, effects: Option<&PatchEffects>) -> Optio
 			let mut shown = attachment.clone();
 			if let Some(url) = effects
 				.attachment_override(attachment.id)
-				.and_then(|over| over.url.clone())
+				.and_then(|over| over.url.as_ref())
 			{
-				shown.url = Some(url);
+				shown.url = Some(url.clone());
 				shown.proxy_url = None;
 			}
 			shown

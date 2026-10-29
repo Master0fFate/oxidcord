@@ -19,7 +19,7 @@ struct MessageClickActions {
 impl Default for MessageClickActions {
 	fn default() -> Self {
 		Self {
-			delete_on_click: true,
+			delete_on_click: false,
 			double_click_edit: true,
 			double_click_reply: true,
 			require_modifier: false,
@@ -57,7 +57,11 @@ impl MessageClickActions {
 				ClickKind::Double,
 				double && self.require_modifier,
 			),
-			(Modifiers::ALT, ClickKind::Single, self.delete_on_click),
+			(
+				Modifiers::CTRL | Modifiers::ALT,
+				ClickKind::Single,
+				self.delete_on_click,
+			),
 		];
 		for (modifiers, kind, wanted) in watches {
 			let watch = ClickWatch {
@@ -127,7 +131,7 @@ impl Plugin for MessageClickActions {
 	}
 
 	fn settings_schema(&self) -> String {
-		r#"{"type":"object","properties":{"enableDeleteOnClick":{"type":"boolean","title":"Delete on Alt click","description":"Delete your message when you Alt click it. Vencord uses Backspace and click, which plugins cannot detect","default":true},"enableDoubleClickToEdit":{"type":"boolean","title":"Double click to edit","description":"Enable double click to edit","default":true},"enableDoubleClickToReply":{"type":"boolean","title":"Double click to reply","description":"Enable double click to reply","default":true},"requireModifier":{"type":"boolean","title":"Require Ctrl or Shift","description":"Only do double click actions when Shift or Ctrl is held","default":false}}}"#
+		r#"{"type":"object","properties":{"enableDeleteOnClick":{"type":"boolean","title":"Delete on Ctrl Alt click","description":"Delete your message when you Ctrl and Alt click it. Vencord uses Backspace and click, which plugins cannot detect","default":false},"enableDoubleClickToEdit":{"type":"boolean","title":"Double click to edit","description":"Enable double click to edit","default":true},"enableDoubleClickToReply":{"type":"boolean","title":"Double click to reply","description":"Enable double click to reply","default":true},"requireModifier":{"type":"boolean","title":"Require Ctrl or Shift","description":"Only do double click actions when Shift or Ctrl is held","default":false}}}"#
 			.to_owned()
 	}
 }

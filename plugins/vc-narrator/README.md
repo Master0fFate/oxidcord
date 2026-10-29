@@ -11,10 +11,11 @@ Settings (same keys as Vencord):
 
 Limitations: partial port.
 - Speech works on Windows only today, other systems answer `unavailable` and nothing is said.
-- Plugins can say one line per two seconds, announcements that arrive together are joined into one sentence and cut at 300 characters, a line right after another one is dropped.
+- Plugins can say one line per two seconds, announcements that arrive together are joined into one sentence and cut at 300 characters, and a line that comes too soon after another one is queued and said as soon as the limit allows.
 - Only your own mute and deafen state is known, like Vencord's own-only messages. Someone moving to another channel is announced as leaving.
 - Names are display names, Vencord says the username for `{{USER}}`. Names are cleaned without Unicode normalisation, symbols and emoji are dropped.
 - Voice selection is not available, the system voice is used. Rate is limited to 0.5 to 2 by the client.
+- Calls in direct messages are not narrated, the plugin does not hold `context-private`.
 - Leaving a call sends no event, so while you are in a call a check runs once a second to notice it and say your leave line.
 
 Permissions: `context-voice`, `context-members`, `context-basic`, `actions-speak`, `storage`.

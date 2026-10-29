@@ -1,10 +1,12 @@
 use plugin_sdk::types::SettingChange;
 use plugin_sdk::{
-	Event, Plugin, PluginExt, VoiceInfo, actions, data, export_plugin, host, log, storage, timer,
+	Event, HostError, Plugin, PluginExt, VoiceInfo, actions, data, export_plugin, host, log, storage, timer,
 };
 
 const WATCH_TAG: &str = "watch";
 const WATCH_MS: u32 = 1_000;
+const FLUSH_TAG: &str = "flush";
+const FLUSH_MS: u32 = 2_000;
 const MAX_SPOKEN_CHARS: usize = 300;
 const MIN_RATE: f32 = 0.5;
 const MAX_RATE: f32 = 2.0;
@@ -195,6 +197,8 @@ struct VcNarrator {
 	call: Option<VoiceInfo>,
 	channel_name: String,
 	watcher: Option<u64>,
+	pending: Vec<String>,
+	flusher: Option<u64>,
 }
 
 impl VcNarrator {
@@ -212,13 +216,38 @@ impl VcNarrator {
 		host::display_name(guild_id, user_id).unwrap_or_default()
 	}
 
-	fn say(&self, lines: &[String]) {
-		let text: String = lines.join(". ").chars().take(MAX_SPOKEN_CHARS).collect();
-		if text.trim().is_empty() {
+	fn say(&mut self, lines: &[String]) {
+		self.pending
+			.extend(lines.iter().filter(|line| !line.trim().is_empty()).cloned());
+		self.flush();
+	}
+
+	fn flush(&mut self) {
+		if self.pending.is_empty() {
 			return;
 		}
-		if let Err(error) = actions::speak(&text, self.config.rate, self.config.volume) {
-			log::debug!("could not speak: {error:?}");
+		let text: String = self.pending.join(". ").chars().take(MAX_SPOKEN_CHARS).collect();
+		match actions::speak(&text, self.config.rate, self.config.volume) {
+			Err(HostError::RateLimited) => self.schedule_flush(),
+			outcome => {
+				self.pending.clear();
+				if let Err(error) = outcome {
+					log::debug!("could not speak: {error:?}");
+				}
+			}
+		}
+	}
+
+	fn schedule_flush(&mut self) {
+		if self.flusher.is_some() {
+			return;
+		}
+		match timer::once(FLUSH_MS, FLUSH_TAG) {
+			Ok(id) => self.flusher = Some(id),
+			Err(error) => {
+				self.pending.clear();
+				log::debug!("could not queue speech: {error:?}");
+			}
 		}
 	}
 
@@ -305,8 +334,13 @@ impl Plugin for VcNarrator {
 
 impl PluginExt for VcNarrator {
 	fn on_timer(&mut self, _id: u64, tag: &str) {
-		if tag == WATCH_TAG && matches!(data::voice_detail(), Ok(None)) {
-			self.finish_call();
+		match tag {
+			WATCH_TAG if !matches!(data::voice_detail(), Ok(Some(_))) => self.finish_call(),
+			FLUSH_TAG => {
+				self.flusher = None;
+				self.flush();
+			}
+			_ => {}
 		}
 	}
 }

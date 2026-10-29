@@ -70,7 +70,7 @@ The host calls a `hooks2` hook only for plugins that export `hooks2` and list th
 | `on-notification` | `notification` | `notifications-filter` | 250 ms |
 | `on-badge-click` | none | `user-display` | 2 s |
 
-`autocomplete-emoji` answers with indices into the candidate list. The composer shows the listed candidates in that order and hides the ones that are not listed. An empty answer leaves the default suggestions. The answer is only applied when it arrives within 300 ms of typing and the first suggestion is still selected.
+`autocomplete-emoji` answers with indices into the candidate list. The composer shows the listed candidates in that order and hides the ones that are not listed. An empty answer leaves the default suggestions. Answers are chained in plugin order: each plugin receives the candidates as the previous plugin ordered and filtered them, and its indices refer to that list, so a filter and a reorder from different plugins combine. The answer is only applied when it arrives within 300 ms of typing and the first suggestion is still selected.
 
 The 1.2 `client` and `ui` functions are declared and permission checked, and the host answers `host-error::unavailable` until the features that back them ship.
 

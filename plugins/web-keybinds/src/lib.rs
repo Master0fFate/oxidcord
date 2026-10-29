@@ -7,9 +7,7 @@ const BUTTONS_KEY: &str = "showNavigationButtons";
 const MOUNT_KEY: &str = "navigation";
 const BACK: &str = "back";
 const FORWARD: &str = "forward";
-const SETTINGS: &str = "settings";
-const SETTINGS_PAGE: &str = "my-account";
-const BINDINGS: [(&str, &str); 3] = [(SETTINGS, "ctrl+,"), (BACK, "alt+left"), (FORWARD, "alt+right")];
+const BINDINGS: [(&str, &str); 2] = [(BACK, "alt+left"), (FORWARD, "alt+right")];
 
 struct WebKeybinds {
 	show_buttons: bool,
@@ -49,7 +47,6 @@ impl WebKeybinds {
 
 fn run(id: &str) {
 	let outcome = match id {
-		SETTINGS => actions::open_settings(SETTINGS_PAGE),
 		BACK => actions::navigate_back(),
 		FORWARD => actions::navigate_forward(),
 		_ => return,

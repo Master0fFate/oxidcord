@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui::{App, Entity, Global, SharedString};
-use plugin_host::api::model::{ContextDetail, MenuItem, MenuWhenExt, ViewTree};
+use plugin_host::api::model::{AttachmentOverride, ContextDetail, MenuItem, MenuWhenExt, ViewTree};
 use plugin_host::mounts::{Contextual, MenuEntry};
 use plugin_host::{PluginPatch, PluginStorage, ViewContext};
 use session::Command;
@@ -29,6 +29,32 @@ pub struct Surface {
 pub struct PatchSet {
 	pub patches: Arc<[PluginPatch]>,
 	pub accessories: Vec<Option<Arc<ViewTree>>>,
+	pub attachments: HashMap<u64, AttachmentOverride>,
+}
+
+fn merged_attachments(patches: &[PluginPatch]) -> HashMap<u64, AttachmentOverride> {
+	let mut merged: HashMap<u64, AttachmentOverride> = HashMap::new();
+	for over in patches.iter().flat_map(|patch| patch.attachments.iter()) {
+		match merged.get_mut(&over.id) {
+			Some(first) => {
+				first.blur |= over.blur;
+				first.hidden |= over.hidden;
+				if first.alt.is_none() {
+					first.alt.clone_from(&over.alt);
+				}
+				if first.tooltip.is_none() {
+					first.tooltip.clone_from(&over.tooltip);
+				}
+				if first.url.is_none() {
+					first.url.clone_from(&over.url);
+				}
+			}
+			None => {
+				merged.insert(over.id, over.clone());
+			}
+		}
+	}
+	merged
 }
 
 pub type Patched = Rc<PatchSet>;
@@ -37,6 +63,7 @@ pub struct MenuGroup {
 	pub plugin_id: Arc<str>,
 	pub items: Arc<[MenuItem]>,
 	pub extra: Arc<[(String, MenuWhenExt)]>,
+	pub private: bool,
 }
 
 #[derive(Default)]
@@ -268,10 +295,12 @@ impl PluginBridge {
 					     plugin_id,
 					     items,
 					     extra,
+					     private,
 					 }| MenuGroup {
 						plugin_id: Arc::clone(plugin_id),
 						items: Arc::clone(items),
 						extra: Arc::clone(extra),
+						private: *private,
 					},
 				)
 				.collect(),
@@ -301,6 +330,7 @@ impl PluginBridge {
 		}
 		let patched: Patched = Rc::new(PatchSet {
 			accessories: current.iter().map(|patch| patch.accessory.clone()).collect(),
+			attachments: merged_attachments(&current),
 			patches: current,
 		});
 		cache.patches.insert(message_id, patched.clone());

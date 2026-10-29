@@ -46,9 +46,9 @@ impl<'de> Visitor<'de> for UsersVisitor {
 
 	fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Users, A::Error> {
 		let mut users = Vec::new();
-		while let Some((id, etag)) = map.next_entry::<&str, &str>()? {
+		while let Some((id, etag)) = map.next_entry::<String, String>()? {
 			if let Ok(id) = id.parse() {
-				users.push((id, parse_etag(etag)));
+				users.push((id, parse_etag(&etag)));
 			}
 		}
 		Ok(Users(users))

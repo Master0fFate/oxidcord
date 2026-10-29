@@ -4,14 +4,14 @@ version = "0.1.0"
 api = "^1.2"
 authors = ["fate"]
 license = "MIT OR Apache-2.0"
-description = "Double click to edit/reply, Alt click to delete"
+description = "Double click to edit/reply, Ctrl+Alt click to delete"
 entry = "message_click_actions.wasm"
 min_host = "0.4.3"
 hooks = ["message-click"]
 
 [[permissions]]
 permission = "ui-input"
-reason = "Listens for double clicks and Alt clicks on messages."
+reason = "Listens for double clicks and Ctrl+Alt clicks on messages."
 
 [[permissions]]
 permission = "context-timeline"
@@ -23,7 +23,7 @@ reason = "Starts the edit or reply in the composer."
 
 [[permissions]]
 permission = "actions-delete"
-reason = "Deletes your message when you Alt click it."
+reason = "Deletes your message when you Ctrl+Alt click it."
 
 [[permissions]]
 permission = "storage"

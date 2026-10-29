@@ -51,16 +51,37 @@ fn matches(watch: &ClickWatch, kind: ClickKind, modifiers: Modifiers, target: Op
 		})
 }
 
-fn store(map: &mut HashMap<Arc<str>, Vec<ClickWatch>>, plugin_id: &Arc<str>, watch: &ClickWatch) {
+pub struct TooManyWatches;
+
+fn store(
+	map: &mut HashMap<Arc<str>, Vec<ClickWatch>>,
+	plugin_id: &Arc<str>,
+	watch: &ClickWatch,
+) -> Result<bool, TooManyWatches> {
 	let watch = sanitized(watch);
 	let watches = map.entry(Arc::clone(plugin_id)).or_default();
-	watches.retain(|kept| kept.modifiers != watch.modifiers);
-	if !watch.kinds.is_empty() && watches.len() < MAX_WATCHES {
-		watches.push(watch);
-	}
+	let existing = watches.iter().position(|kept| kept.modifiers == watch.modifiers);
+	let outcome = match existing {
+		Some(index) if watch.kinds.is_empty() => {
+			watches.remove(index);
+			Ok(true)
+		}
+		Some(index) if watches[index] == watch => Ok(false),
+		Some(index) => {
+			watches[index] = watch;
+			Ok(true)
+		}
+		None if watch.kinds.is_empty() => Ok(false),
+		None if watches.len() >= MAX_WATCHES => Err(TooManyWatches),
+		None => {
+			watches.push(watch);
+			Ok(true)
+		}
+	};
 	if watches.is_empty() {
 		map.remove(&**plugin_id);
 	}
+	outcome
 }
 
 fn snapshot(map: &HashMap<Arc<str>, Vec<ClickWatch>>) -> Vec<(Arc<str>, ClickWatch)> {
@@ -93,14 +114,22 @@ impl Watches {
 		self.revision.load(Ordering::Acquire)
 	}
 
-	pub fn watch_messages(&self, plugin_id: &Arc<str>, watch: ClickWatch) {
-		store(&mut self.inner.write().messages, plugin_id, &watch);
-		self.revision.fetch_add(1, Ordering::AcqRel);
+	pub fn watch_messages(&self, plugin_id: &Arc<str>, watch: ClickWatch) -> Result<(), TooManyWatches> {
+		let changed = store(&mut self.inner.write().messages, plugin_id, &watch)?;
+		self.bump_if(changed);
+		Ok(())
 	}
 
-	pub fn watch_channels(&self, plugin_id: &Arc<str>, watch: ClickWatch) {
-		store(&mut self.inner.write().channels, plugin_id, &watch);
-		self.revision.fetch_add(1, Ordering::AcqRel);
+	pub fn watch_channels(&self, plugin_id: &Arc<str>, watch: ClickWatch) -> Result<(), TooManyWatches> {
+		let changed = store(&mut self.inner.write().channels, plugin_id, &watch)?;
+		self.bump_if(changed);
+		Ok(())
+	}
+
+	fn bump_if(&self, changed: bool) {
+		if changed {
+			self.revision.fetch_add(1, Ordering::AcqRel);
+		}
 	}
 
 	pub fn watches_messages(&self) -> bool {

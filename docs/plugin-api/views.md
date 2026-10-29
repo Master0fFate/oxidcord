@@ -215,7 +215,7 @@ Overrides from several plugins merge per user in plugin priority order. The firs
 
 ## Click watches
 
-`ui::watch_clicks` registers which message clicks a plugin receives in `on-message-click`: the click kinds, an exact modifier combination and optionally the click targets. A plugin holds up to 4 watches, one per modifier combination. A new watch replaces the one with the same modifiers, and a watch without kinds removes it. A click that matches a watch is taken by the plugin and does not reach the client.
+`ui::watch_clicks` registers which message clicks a plugin receives in `on-message-click`: the click kinds, an exact modifier combination and optionally the click targets. A plugin holds up to 4 watches, one watch per modifier combination. A new watch replaces the one with the same modifiers, and a watch without kinds clears that modifier set. A fifth modifier combination is rejected with `host-error::invalid`, and registering an identical watch again changes nothing. A click that matches a watch is taken by the plugin and does not reach the client.
 
 ## Client options
 

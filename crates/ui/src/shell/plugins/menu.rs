@@ -222,6 +222,9 @@ fn shown(group: &MenuGroup, item: &MenuItem, target: &MenuTarget, voice: bool) -
 	if !target.when.contains(item.when) {
 		return false;
 	}
+	if !group.private && target.when.contains(MenuWhen::IN_DM) {
+		return false;
+	}
 	let Some((_, wanted)) = group.extra.iter().find(|(key, _)| *key == item.key) else {
 		return true;
 	};

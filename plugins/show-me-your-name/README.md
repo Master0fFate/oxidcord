@@ -9,7 +9,7 @@ Settings:
 
 The nickname is the server nickname, or your friend nickname per the setting above, or the display name when there is none. When the username and the nickname are the same text only one is shown.
 
-Limits: the Vencord setting `inReplies` is not part of this port, the client applies the name to messages, reply previews, the member list and the popout together. Streamer mode does not shorten the username. Only one display plugin can set the name of a user, if another enabled plugin returns an override for the same user first, this one is skipped for that user.
+Limits: the Vencord setting `inReplies` is not part of this port, the client applies the name to messages, reply previews, the member list and the popout together. Streamer mode does not shorten the username. Display overrides of several plugins merge per field: the first plugin in priority order that sets a field wins that field, and badges of all plugins are listed together.
 
 Permissions: `user-display`, `context-roles`, `context-relationships`, `storage`.
 

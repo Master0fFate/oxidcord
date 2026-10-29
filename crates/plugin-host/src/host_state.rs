@@ -269,6 +269,13 @@ impl HostState {
 		result
 	}
 
+	fn may_fetch(&self) -> Result<(), HostError> {
+		match self.context {
+			CallContext::Init | CallContext::Event | CallContext::Timer | CallContext::UserAction => Ok(()),
+			_ => Err(HostError::Unavailable),
+		}
+	}
+
 	fn loads(&self) -> Result<(), HostError> {
 		match self.context {
 			CallContext::Event | CallContext::Timer | CallContext::UserAction => Ok(()),
@@ -395,6 +402,7 @@ impl host::Host for HostState {
 
 	fn fetch(&mut self, req: FetchRequest) -> Result<FetchResponse, HostError> {
 		self.require(Permission::NetFetch)?;
+		self.may_fetch()?;
 		within_rate(self.rate.fetch.take())?;
 		let grants = &self.services.grants;
 		let plugin = &self.plugin;
@@ -664,6 +672,7 @@ impl ui::Host for HostState {
 				plugin_id: Arc::clone(&self.plugin),
 				items: menu_items(items).into(),
 				extra: Arc::from([]),
+				private: self.has_private_access(),
 			},
 		);
 		self.changed();
@@ -723,6 +732,7 @@ impl ui::Host for HostState {
 				plugin_id: Arc::clone(&self.plugin),
 				items: kept.into(),
 				extra: extra.into(),
+				private: self.has_private_access(),
 			},
 		);
 		self.changed();
@@ -740,15 +750,19 @@ impl ui::Host for HostState {
 	fn watch_clicks(&mut self, watch: ClickWatch) -> Result<(), HostError> {
 		self.require(Permission::UiInput)?;
 		within_rate(self.rate.ui.take())?;
-		self.services.watches.watch_messages(&self.plugin, watch);
-		Ok(())
+		self.services
+			.watches
+			.watch_messages(&self.plugin, watch)
+			.map_err(|_| invalid("at most 4 click watches"))
 	}
 
 	fn watch_channel_clicks(&mut self, watch: ClickWatch) -> Result<(), HostError> {
 		self.require(Permission::UiInput)?;
 		within_rate(self.rate.ui.take())?;
-		self.services.watches.watch_channels(&self.plugin, watch);
-		Ok(())
+		self.services
+			.watches
+			.watch_channels(&self.plugin, watch)
+			.map_err(|_| invalid("at most 4 click watches"))
 	}
 }
 

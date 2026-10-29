@@ -372,7 +372,7 @@ impl Core {
 	fn clone_emoji(&mut self, guild_id: Snowflake, emoji_id: Snowflake, animated: bool, name: String) {
 		if !self.guild_allows(
 			guild_id,
-			Permissions::CREATE_GUILD_EXPRESSIONS,
+			Permissions::CREATE_GUILD_EXPRESSIONS | Permissions::MANAGE_GUILD_EXPRESSIONS,
 			"Create Expressions",
 		) {
 			return;
@@ -402,7 +402,7 @@ impl Core {
 	fn clone_sticker(&mut self, guild_id: Snowflake, sticker_id: Snowflake) {
 		if !self.guild_allows(
 			guild_id,
-			Permissions::CREATE_GUILD_EXPRESSIONS,
+			Permissions::CREATE_GUILD_EXPRESSIONS | Permissions::MANAGE_GUILD_EXPRESSIONS,
 			"Create Expressions",
 		) {
 			return;

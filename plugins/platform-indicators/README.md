@@ -8,7 +8,7 @@ Settings:
 - `list`, `badges`, `messages`: Vencord shows the icons in three places. Oxidcord draws the badges of a plugin in all the places it supports at once, so these three only decide together whether any badge is emitted: all three off turns it off.
 - `colorMobileIndicator`: color the mobile icon by status like the others. When off the mobile icon keeps the default color. Default on.
 
-Limits: the client only reports desktop, mobile and web per user, the embedded and VR platforms of Vencord appear only when the client reports them. Only one display plugin can decorate a user, if another enabled plugin returns an override for the same user first, this one is skipped for that user.
+Limits: the client only reports desktop, mobile and web per user, the embedded and VR platforms of Vencord appear only when the client reports them. Display overrides of several plugins merge per field: the first plugin in priority order that sets a field wins that field, and badges of all plugins are listed together.
 
 Permissions: `user-display`, `context-presence`, `storage`.
 

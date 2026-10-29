@@ -8,7 +8,7 @@ The rules are downloaded three seconds after the plugin starts when the saved co
 
 `link-cleaner` is a small separate plugin with a fixed list. This one uses the full ClearURLs data and needs network access to GitHub.
 
-Limits: the regex engine is `regex-lite`, so a rule with look-around or backreferences would be skipped (none of the current rules use them). Links inside code blocks are cleaned too. Messages are only changed when the result is not empty and fits in 4000 bytes.
+Limits: the regex engine is `regex-lite`, so a rule with look-around or backreferences would be skipped (none of the current rules use them). Links inside code blocks are cleaned too. Message edits are not cleaned, only new messages. Messages are only changed when the result is not empty and fits in 4000 bytes.
 
 Permissions: `message-send`, `net-fetch` (host `raw.githubusercontent.com`), `storage`.
 

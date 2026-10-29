@@ -2,7 +2,7 @@
 
 Adds Clone to server to the menu of an emoji and of a sticker. It opens a window with a preview, a server list and, for emoji, a name field. Pressing Clone adds the emoji or sticker to the chosen server.
 
-The servers in the list are the ones you own and the ones where your permissions include Administrator or Create Expressions. The client downloads the image and uploads it, and checks the permission again before doing so. If the server has no free slot or the image is too large, the client shows the error from Discord.
+The servers in the list are the ones you own and the ones where your permissions include Administrator, Manage Expressions or Create Expressions. The client downloads the image and uploads it, and checks the permission again before doing so. If the server has no free slot or the image is too large, the client shows the error from Discord.
 
 Emoji names are 2 to 32 letters, digits or underscores, a trailing `~1` style suffix is removed from the default name. Stickers keep their own name and tags.
 

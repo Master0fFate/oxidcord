@@ -976,6 +976,9 @@ impl PluginManager {
 		detail: Option<ContextDetail>,
 	) -> Result<()> {
 		let hide_private = self.hides_private(plugin_id, context.guild_id);
+		if hide_private && context.channel_id.is_some() {
+			return Ok(());
+		}
 		self.instance(plugin_id)?
 			.menu_item(
 				menu.to_owned(),
@@ -1213,11 +1216,13 @@ impl PluginManager {
 		if sets.autocomplete.is_empty() {
 			return Vec::new();
 		}
-		let shared: Arc<[EmojiInfo]> = candidates
+		let original: Arc<[EmojiInfo]> = candidates
 			.iter()
 			.take(MAX_AUTOCOMPLETE_CANDIDATES)
 			.cloned()
 			.collect();
+		let mut shared = Arc::clone(&original);
+		let mut chain: Vec<u32> = Vec::new();
 		let started = Instant::now();
 		let budget = self.runtime.config().timeouts.autocomplete_emoji;
 		for entry in &sets.autocomplete {
@@ -1238,14 +1243,23 @@ impl PluginManager {
 						.into_iter()
 						.filter(|&index| (index as usize) < shared.len() && seen.insert(index))
 						.collect();
-					if !order.is_empty() {
-						return order;
+					if order.is_empty() {
+						continue;
 					}
+					chain = if chain.is_empty() {
+						order
+					} else {
+						order.into_iter().map(|index| chain[index as usize]).collect()
+					};
+					shared = chain
+						.iter()
+						.map(|&index| original[index as usize].clone())
+						.collect();
 				}
 				Err(error) => entry.plugin.failed(Breaker::Autocomplete, &error),
 			}
 		}
-		Vec::new()
+		chain
 	}
 
 	pub fn decorate_channels(&self, channels: &Arc<[ChannelDetail]>) -> Vec<ChannelBadges> {

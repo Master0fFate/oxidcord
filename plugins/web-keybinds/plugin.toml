@@ -10,11 +10,11 @@ min_host = "0.4.3"
 
 [[permissions]]
 permission = "ui-keybinds"
-reason = "Listens for Ctrl+comma, Alt+Left and Alt+Right."
+reason = "Listens for Alt+Left and Alt+Right."
 
 [[permissions]]
 permission = "actions-navigate"
-reason = "Opens the settings and goes back and forward."
+reason = "Goes back and forward."
 
 [[permissions]]
 permission = "ui-mount"

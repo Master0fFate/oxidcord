@@ -164,7 +164,12 @@ impl ViewRaw {
 					[menu::item(USER_ITEM, "View raw").when(menu::When::IN_GUILD)],
 				)
 			})
-			.and_then(|()| menu::set(menu::CHANNEL, [menu::item(CHANNEL_ITEM, "View raw")]));
+			.and_then(|()| {
+				menu::set(
+					menu::CHANNEL,
+					[menu::item(CHANNEL_ITEM, "View raw").when(menu::When::IN_GUILD)],
+				)
+			});
 		if let Err(error) = menus {
 			log::warn!("could not update the menu entries: {error:?}");
 		}

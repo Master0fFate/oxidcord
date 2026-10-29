@@ -146,7 +146,7 @@ impl Core {
 			} => {
 				if self.guild_allows(
 					guild_id,
-					Permissions::CREATE_GUILD_EXPRESSIONS,
+					Permissions::CREATE_GUILD_EXPRESSIONS | Permissions::MANAGE_GUILD_EXPRESSIONS,
 					"Create Expressions",
 				) {
 					let file = UploadFile {

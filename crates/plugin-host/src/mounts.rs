@@ -108,6 +108,7 @@ pub struct MenuEntry {
 	pub plugin_id: Arc<str>,
 	pub items: Arc<[MenuItem]>,
 	pub extra: Arc<[(String, MenuWhenExt)]>,
+	pub private: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]

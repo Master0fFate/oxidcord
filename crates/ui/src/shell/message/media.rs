@@ -233,7 +233,7 @@ pub fn attachments(items: &[Attachment], env: &BodyEnv, inline: bool, cx: &App) 
 				.effects()
 				.and_then(|effects| effects.attachment_override(attachment.id))
 			{
-				Some(over) => customized(content, attachment, &over, look, env, cx),
+				Some(over) => customized(content, attachment, over, look, env, cx),
 				None => content,
 			};
 			let hidden = is_spoiler(attachment) && !env.is_revealed(SPOILER_ITEM | index);

@@ -15,6 +15,7 @@ const NAME_FIELD: &str = "name";
 const GUILD_FIELD: &str = "guild";
 const SUBMIT: &str = "submit";
 const ADMINISTRATOR: u64 = 1 << 3;
+const MANAGE_GUILD_EXPRESSIONS: u64 = 1 << 30;
 const CREATE_GUILD_EXPRESSIONS: u64 = 1 << 43;
 const MAX_GUILDS: usize = 100;
 const PNG_FORMAT: u8 = 1;
@@ -68,7 +69,9 @@ fn can_create(guild: &GuildSummary) -> bool {
 			.ok()
 			.and_then(|channels| channels.first().map(|channel| channel.id))
 			.and_then(|channel| data::channel_permissions(channel, None).ok())
-			.is_some_and(|bits| bits & (ADMINISTRATOR | CREATE_GUILD_EXPRESSIONS) != 0)
+			.is_some_and(|bits| {
+				bits & (ADMINISTRATOR | MANAGE_GUILD_EXPRESSIONS | CREATE_GUILD_EXPRESSIONS) != 0
+			})
 }
 
 fn candidates() -> Vec<GuildSummary> {

@@ -1,10 +1,14 @@
+use std::io::Cursor;
+
 use gif::{DisposalMethod, Encoder, EncodingError, Frame, Repeat};
 use image::imageops::{self, FilterType};
-use image::{Rgba, RgbaImage};
+use image::{ImageReader, Limits, Rgba, RgbaImage};
 use plugin_sdk::model::FileBlob;
 use plugin_sdk::types::OutgoingMessage;
 use plugin_sdk::{Plugin, PluginExt, actions, data, export_plugin, log, ui};
 
+const MAX_AVATAR_SIDE: u32 = 1024;
+const MAX_DECODE_BYTES: u64 = 16 * 1024 * 1024;
 const COMMAND: &str = "petpet";
 const DESCRIPTION: &str = "Create a petpet gif: /petpet <user mention or id> [delay in ms]";
 const USAGE: &str = "use /petpet <user mention or id> [delay in ms]";
@@ -172,6 +176,16 @@ fn describe(error: impl std::fmt::Debug) -> String {
 	format!("{error:?}")
 }
 
+fn decode_avatar(bytes: &[u8]) -> image::ImageResult<RgbaImage> {
+	let mut reader = ImageReader::new(Cursor::new(bytes)).with_guessed_format()?;
+	let mut limits = Limits::default();
+	limits.max_image_width = Some(MAX_AVATAR_SIDE);
+	limits.max_image_height = Some(MAX_AVATAR_SIDE);
+	limits.max_alloc = Some(MAX_DECODE_BYTES);
+	reader.limits(limits);
+	Ok(reader.decode()?.to_rgba8())
+}
+
 impl Plugin for Petpet {
 	fn init(&mut self) -> Result<(), String> {
 		if let Err(error) = ui::register_command(COMMAND, DESCRIPTION) {
@@ -192,9 +206,7 @@ impl Plugin for Petpet {
 		};
 		let delay = (delay_ms.clamp(MIN_DELAY_MS, MAX_DELAY_MS) / 10) as u16;
 		let bytes = data::avatar_bytes(user_id, SIZE).map_err(describe)?;
-		let avatar = image::load_from_memory(&bytes)
-			.map_err(|error| format!("could not read the avatar: {error}"))?
-			.to_rgba8();
+		let avatar = decode_avatar(&bytes).map_err(|error| format!("could not read the avatar: {error}"))?;
 		let gif = build_gif(&avatar, delay).map_err(|error| format!("could not encode the gif: {error}"))?;
 		let message = OutgoingMessage {
 			channel_id,

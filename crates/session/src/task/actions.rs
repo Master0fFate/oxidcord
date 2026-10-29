@@ -52,7 +52,7 @@ impl Core {
 			let state = self.state.read();
 			state
 				.current_user_id()
-				.is_some_and(|me| state.guild_permissions(guild_id, me).contains(needed))
+				.is_some_and(|me| state.guild_permissions(guild_id, me).intersects(needed))
 		};
 		if !allowed {
 			self.reject(format!("You need the {what} permission"));

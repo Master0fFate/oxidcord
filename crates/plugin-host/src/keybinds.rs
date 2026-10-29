@@ -16,10 +16,10 @@ const KEYS: [&str; 57] = [
 	"f6", "f7", "f8", "f9", "f10", "f11", "f12", "up", "down", "left", "right", "home", "end", "pageup",
 	"pagedown", ",",
 ];
-const CORE_CHORDS: [&str; 22] = [
+const CORE_CHORDS: [&str; 24] = [
 	"ctrl+k", "meta+k", "ctrl+0", "meta+0", "alt+up", "alt+down", "alt+f4", "ctrl+a", "meta+a", "ctrl+c",
 	"meta+c", "ctrl+v", "meta+v", "ctrl+x", "meta+x", "ctrl+z", "meta+z", "ctrl+y", "meta+y", "ctrl+w",
-	"meta+w", "meta+q",
+	"meta+w", "meta+q", "ctrl+,", "meta+,",
 ];
 
 fn canonical_key(key: &str) -> Option<&'static str> {
