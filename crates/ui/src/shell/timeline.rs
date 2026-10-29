@@ -733,8 +733,17 @@ impl Timeline {
 				.auto_grow(1, 10)
 				.submit_on_enter(true)
 		});
+		let content = {
+			let data = self.data.read(cx);
+			let snapshot = data.state();
+			let lookup = Lookup {
+				state: &snapshot,
+				guild: self.guild,
+			};
+			inline_emoji::content(content, &lookup)
+		};
 		input.update(cx, |state, cx| {
-			state.set_value(inline_emoji::content(content), window, cx);
+			state.set_value(content, window, cx);
 			state.focus(window, cx);
 		});
 		let subscription = cx.subscribe_in(
@@ -743,7 +752,7 @@ impl Timeline {
 			move |this, input, event: &InputEvent, window, cx| {
 				if let InputEvent::Change = event {
 					if let Some(editing) = &mut this.editing {
-						editing.tokens.sync(input, window, cx);
+						editing.tokens.sync(input, &this.data, this.guild, window, cx);
 					}
 					return;
 				}

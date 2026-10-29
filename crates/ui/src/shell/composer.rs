@@ -9,7 +9,7 @@ use gpui::{
 	Styled as _, StyledImage as _, Subscription, Task, Window, div, img, prelude::FluentBuilder as _,
 	pulsating_between, px,
 };
-use gpui_component::input::{Escape, InputEvent, Textarea, TextareaState};
+use gpui_component::input::{Escape, InputContent, InputEvent, Textarea, TextareaState};
 use gpui_component::menu::ContextMenuExt as _;
 use media::SizeHint;
 use plugin_host::ViewContext;
@@ -31,7 +31,7 @@ use crate::data::{Data, DataEvent};
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
 use crate::images::{Images, frame_id};
-use crate::lookup::avatar_for;
+use crate::lookup::{Lookup, avatar_for};
 use crate::theme::{Theme, rem, with_alpha};
 
 const DRAFT_DELAY: Duration = Duration::from_millis(500);
@@ -237,9 +237,10 @@ impl Composer {
 			.unwrap_or_default();
 		let placeholder = self.placeholder(cx);
 		self.awaiting_draft = draft.is_empty();
+		let content = self.tokenized(draft, cx);
 		self.input.update(cx, |state, cx| {
 			state.set_placeholder(placeholder, window, cx);
-			state.set_value(inline_emoji::content(draft), window, cx);
+			state.set_value(content, window, cx);
 		});
 		cx.notify();
 	}
@@ -254,9 +255,7 @@ impl Composer {
 		let draft = self.data.read(cx).state().draft(channel).map(str::to_owned);
 		if let Some(draft) = draft {
 			self.awaiting_draft = false;
-			self.input.update(cx, |state, cx| {
-				state.set_value(inline_emoji::content(draft), window, cx)
-			});
+			self.set_text(draft, window, cx);
 		}
 	}
 
@@ -285,10 +284,21 @@ impl Composer {
 	}
 
 	pub fn set_text(&mut self, text: String, window: &mut Window, cx: &mut Context<Self>) {
+		let content = self.tokenized(text, cx);
 		self.input.update(cx, |state, cx| {
-			state.set_value(inline_emoji::content(text), window, cx);
+			state.set_value(content, window, cx);
 			state.focus(window, cx);
 		});
+	}
+
+	fn tokenized(&self, text: String, cx: &Context<Self>) -> InputContent {
+		let data = self.data.read(cx);
+		let snapshot = data.state();
+		let lookup = Lookup {
+			state: &snapshot,
+			guild: self.guild,
+		};
+		inline_emoji::content(text, &lookup)
 	}
 
 	pub fn add_sticker(&mut self, sticker: Snowflake, cx: &mut Context<Self>) {
@@ -299,8 +309,17 @@ impl Composer {
 	}
 
 	pub fn insert(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
+		let spans = {
+			let data = self.data.read(cx);
+			let snapshot = data.state();
+			let lookup = Lookup {
+				state: &snapshot,
+				guild: self.guild,
+			};
+			inline_emoji::spans(text, &lookup)
+		};
 		self.input.update(cx, |state, cx| {
-			inline_emoji::insert(state, text, window, cx);
+			inline_emoji::insert(state, text, spans, window, cx);
 			state.focus(window, cx);
 		});
 	}
@@ -374,7 +393,8 @@ impl Composer {
 
 	fn on_change(&mut self, window: &mut Window, cx: &mut Context<Self>) {
 		self.awaiting_draft = false;
-		self.emoji_tokens.sync(&self.input, window, cx);
+		self.emoji_tokens
+			.sync(&self.input, &self.data, self.guild, window, cx);
 		let text = self.input.read(cx).value();
 		if !text.is_empty()
 			&& let Some(channel) = self.channel
@@ -725,11 +745,9 @@ impl Composer {
 		};
 		let insert = item.insert.clone();
 		let range = popup.start..popup.cursor;
-		self.input.update(cx, |state, cx| {
-			state.set_selected_range(range, cx);
-			inline_emoji::insert(state, &insert, window, cx);
-			state.focus(window, cx);
-		});
+		self.input
+			.update(cx, |state, cx| state.set_selected_range(range, cx));
+		self.insert(&insert, window, cx);
 		cx.notify();
 	}
 

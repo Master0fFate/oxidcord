@@ -1,13 +1,16 @@
 use std::ops::Range;
 
 use gpui::{
-	AnyElement, App, Context, Entity, InteractiveElement as _, IntoElement as _, ParentElement as _,
-	SharedString, Styled as _, Window, div, img, prelude::FluentBuilder as _,
+	AnyElement, App, Context, Entity, FontWeight, InteractiveElement as _, IntoElement as _,
+	ParentElement as _, SharedString, Styled as _, Window, div, img, prelude::FluentBuilder as _,
 };
 use gpui_component::input::{InlineToken, InlineTokenContext, InputContent, TextareaState};
 use media::SizeHint;
+use protocol::Snowflake;
 
+use crate::data::Data;
 use crate::images::{Images, frame_id};
+use crate::lookup::Lookup;
 use crate::theme::{Theme, with_alpha};
 
 const CUSTOM_PIXELS: u32 = 48;
@@ -36,15 +39,37 @@ fn custom_token(markup: &str) -> Option<InlineToken> {
 	Some(InlineToken::new(url, markup).with_label(format!(":{name}:")))
 }
 
-fn custom_spans(text: &str) -> Vec<(Range<usize>, InlineToken)> {
+fn mention_token(markup: &str, lookup: &Lookup) -> Option<InlineToken> {
+	let inner = markup.strip_prefix('<')?.strip_suffix('>')?;
+	let label = if let Some(id) = inner.strip_prefix("@&") {
+		let (name, _) = lookup.role(id.parse().ok()?)?;
+		format!("@{name}")
+	} else if let Some(id) = inner.strip_prefix("@!").or_else(|| inner.strip_prefix('@')) {
+		format!("@{}", lookup.user(id.parse().ok()?))
+	} else {
+		let id = inner.strip_prefix('#')?;
+		format!("#{}", lookup.channel(id.parse().ok()?)?)
+	};
+	Some(InlineToken::new(markup, markup).with_label(label))
+}
+
+fn is_mention(id: &str) -> bool {
+	id.starts_with('<')
+}
+
+fn markup_spans(text: &str, lookup: &Lookup) -> Vec<(Range<usize>, InlineToken)> {
 	let mut found = Vec::new();
 	let mut search = 0;
 	while let Some(offset) = text[search..].find('<') {
 		let start = search + offset;
 		let window = &text[start..text.len().min(start + MAX_MARKUP)];
-		let token = window
-			.find('>')
-			.and_then(|close| Some((close, custom_token(&window[..=close])?)));
+		let token = window.find('>').and_then(|close| {
+			let markup = &window[..=close];
+			Some((
+				close,
+				custom_token(markup).or_else(|| mention_token(markup, lookup))?,
+			))
+		});
 		match token {
 			Some((close, token)) => {
 				found.push((start..start + close + 1, token));
@@ -56,9 +81,9 @@ fn custom_spans(text: &str) -> Vec<(Range<usize>, InlineToken)> {
 	found
 }
 
-pub fn spans(text: &str) -> Vec<(Range<usize>, InlineToken)> {
+pub fn spans(text: &str, lookup: &Lookup) -> Vec<(Range<usize>, InlineToken)> {
 	let mut found = if text.contains('<') {
-		custom_spans(text)
+		markup_spans(text, lookup)
 	} else {
 		Vec::new()
 	};
@@ -71,18 +96,24 @@ pub fn spans(text: &str) -> Vec<(Range<usize>, InlineToken)> {
 	found
 }
 
-pub fn content(text: impl Into<SharedString>) -> InputContent {
+pub fn content(text: impl Into<SharedString>, lookup: &Lookup) -> InputContent {
 	let text = text.into();
-	spans(&text)
+	spans(&text, lookup)
 		.into_iter()
 		.fold(InputContent::new(text.clone()), |content, (range, token)| {
 			content.clone().with_token(range, token).unwrap_or(content)
 		})
 }
 
-pub fn insert(state: &mut TextareaState, text: &str, window: &mut Window, cx: &mut Context<TextareaState>) {
+pub fn insert(
+	state: &mut TextareaState,
+	text: &str,
+	spans: Vec<(Range<usize>, InlineToken)>,
+	window: &mut Window,
+	cx: &mut Context<TextareaState>,
+) {
 	let mut cursor = 0;
-	for (range, token) in spans(text) {
+	for (range, token) in spans {
 		if cursor < range.start {
 			state.replace(text[cursor..range.start].to_owned(), window, cx);
 		}
@@ -102,7 +133,14 @@ pub struct EmojiTokens {
 }
 
 impl EmojiTokens {
-	pub fn sync(&mut self, input: &Entity<TextareaState>, window: &mut Window, cx: &mut App) {
+	pub fn sync(
+		&mut self,
+		input: &Entity<TextareaState>,
+		data: &Entity<Data>,
+		guild: Option<Snowflake>,
+		window: &mut Window,
+		cx: &mut App,
+	) {
 		let (text, missing, selection) = {
 			let state = input.read(cx);
 			let text = state.value();
@@ -110,7 +148,13 @@ impl EmojiTokens {
 				return;
 			}
 			let taken = state.tokens();
-			let missing: Vec<_> = spans(&text)
+			let data = data.read(cx);
+			let snapshot = data.state();
+			let lookup = Lookup {
+				state: &snapshot,
+				guild,
+			};
+			let missing: Vec<_> = spans(&text, &lookup)
 				.into_iter()
 				.filter(|(range, _)| {
 					!taken.iter().any(|span| {
@@ -138,10 +182,28 @@ impl EmojiTokens {
 
 pub fn render(context: &InlineTokenContext, _: &mut Window, cx: &mut App) -> AnyElement {
 	let side = context.line_height();
-	let url = context.token().id();
+	let theme = cx.global::<Theme>();
+	let token = context.token();
+	if is_mention(token.id()) {
+		return div()
+			.flex()
+			.flex_none()
+			.items_center()
+			.h(side)
+			.px(theme.space_2)
+			.rounded(theme.radius_sm)
+			.bg(theme.mention_background)
+			.text_color(theme.mention_text)
+			.font_weight(FontWeight::MEDIUM)
+			.when(context.is_selected(), |pill| {
+				pill.bg(with_alpha(theme.brand, SELECTED_ALPHA))
+			})
+			.child(token.label().clone())
+			.into_any_element();
+	}
+	let url = token.id();
 	let pixels = (side.as_f32() * 2.) as u32;
 	let image = cx.global::<Images>().get(url, SizeHint::square(pixels));
-	let theme = cx.global::<Theme>();
 	div()
 		.flex()
 		.flex_none()
