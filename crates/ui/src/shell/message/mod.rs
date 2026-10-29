@@ -16,7 +16,7 @@ use std::time::Duration;
 use chrono::{DateTime, Local, Utc};
 use gpui::{
 	Animation, AnimationExt as _, AnyElement, App, ClickEvent, Entity, FontWeight, Hsla,
-	InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Point, SharedString,
+	InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Pixels, Point, SharedString,
 	StatefulInteractiveElement as _, Styled as _, Window, div, hsla, prelude::FluentBuilder as _,
 	pulsating_between,
 };
@@ -848,7 +848,8 @@ fn toolbar(view: &MessageView, group: SharedString, env: &RowEnv, cx: &App) -> A
 		.border_1()
 		.border_color(theme.divider)
 		.bg(theme.background_primary)
-		.occlude()
+		.on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+		.on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
 		.when(can.react, |bar| {
 			bar.child(
 				IconButton::new(("message-react", key), IconKind::Emoji)
