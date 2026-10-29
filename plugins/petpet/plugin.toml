@@ -1,0 +1,21 @@
+id = "dev.oxidcord.petpet"
+name = "Petpet"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Adds a /petpet slash command to create headpet gifs from any image"
+entry = "petpet.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "ui-slots"
+reason = "Adds the /petpet command."
+
+[[permissions]]
+permission = "context-attachments"
+reason = "Downloads the avatar of the user you pet."
+
+[[permissions]]
+permission = "actions-upload"
+reason = "Sends the finished gif as a message with a file."

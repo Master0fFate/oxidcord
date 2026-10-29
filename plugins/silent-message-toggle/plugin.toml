@@ -1,0 +1,26 @@
+id = "dev.oxidcord.silent-message-toggle"
+name = "Silent Message Toggle"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Adds a button to the chat bar to toggle sending a silent message."
+entry = "silent_message_toggle.wasm"
+min_host = "0.4.3"
+hooks = ["before-send"]
+
+[[permissions]]
+permission = "message-send"
+reason = "Marks your next message as silent right before it is sent."
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the silent message toggle to the composer."
+
+[[permissions]]
+permission = "context-basic"
+reason = "Turns the toggle off when you switch channels."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

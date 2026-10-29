@@ -1,0 +1,26 @@
+id = "dev.oxidcord.no-reply-mention"
+name = "No Reply Mention"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Disables reply pings by default"
+entry = "no_reply_mention.wasm"
+min_host = "0.4.3"
+hooks = ["before-send"]
+
+[[permissions]]
+permission = "message-send"
+reason = "Sets whether a reply pings the author right before it is sent."
+
+[[permissions]]
+permission = "context-timeline"
+reason = "Finds the author of the message you reply to."
+
+[[permissions]]
+permission = "context-roles"
+reason = "Reads the roles of that author for the role list."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

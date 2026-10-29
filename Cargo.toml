@@ -63,6 +63,7 @@ hex = "0.4"
 zeroize = { version = "1", features = ["derive"] }
 directories = "6.0"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "ico"] }
+gif = "0.14"
 fast_image_resize = "6.1"
 blurhash = "0.2"
 thumbhash = "0.1"

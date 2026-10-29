@@ -1,0 +1,21 @@
+id = "dev.oxidcord.sticker-paste"
+name = "Sticker Paste"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Makes picking a sticker insert it into the chatbox instead of instantly sending"
+entry = "sticker_paste.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the sticker button to the composer and its picker dialog."
+
+[[permissions]]
+permission = "context-expressions"
+reason = "Lists the stickers you can use."
+
+[[permissions]]
+permission = "composer"
+reason = "Attaches the sticker you picked to your draft."

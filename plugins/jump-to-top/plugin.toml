@@ -1,0 +1,17 @@
+id = "dev.oxidcord.jump-to-top"
+name = "Jump To Top"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Adds a button to jump to the first message in a channel"
+entry = "jump_to_top.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the jump button to the channel header."
+
+[[permissions]]
+permission = "actions-compose"
+reason = "Scrolls the channel to its first message."

@@ -1,0 +1,22 @@
+id = "dev.oxidcord.character-counter"
+name = "Character Counter"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Adds a character counter to the chat input"
+entry = "character_counter.wasm"
+min_host = "0.4.3"
+hooks = ["draft-change"]
+
+[[permissions]]
+permission = "composer-watch"
+reason = "Counts the characters of the message you are typing."
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Shows the counter under the composer."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

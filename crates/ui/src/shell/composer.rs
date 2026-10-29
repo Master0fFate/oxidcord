@@ -488,11 +488,6 @@ impl Composer {
 				sorted.push(item.clone());
 			}
 		}
-		for (item, taken) in self.emoji_candidates.iter().zip(taken) {
-			if !taken {
-				sorted.push(item.clone());
-			}
-		}
 		sorted.truncate(MAX_SUGGESTIONS);
 		if let Some(popup) = &mut self.autocomplete
 			&& !sorted.is_empty()

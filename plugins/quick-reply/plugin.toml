@@ -1,0 +1,33 @@
+id = "dev.oxidcord.quick-reply"
+name = "Quick Reply"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Reply to (ctrl + up/down) and edit (ctrl + shift + up/down) messages via keybinds"
+entry = "quick_reply.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "ui-keybinds"
+reason = "Listens for Ctrl+Up, Ctrl+Down, Ctrl+Shift+Up and Ctrl+Shift+Down."
+
+[[permissions]]
+permission = "context-basic"
+reason = "Finds the channel you are in and resets when you switch channels."
+
+[[permissions]]
+permission = "context-timeline"
+reason = "Reads the recent messages of the channel to step through them."
+
+[[permissions]]
+permission = "context-relationships"
+reason = "Finds blocked users so their messages can be skipped."
+
+[[permissions]]
+permission = "actions-compose"
+reason = "Starts the reply or the edit in the composer."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

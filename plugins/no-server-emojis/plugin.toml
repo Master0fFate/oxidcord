@@ -1,0 +1,22 @@
+id = "dev.oxidcord.no-server-emojis"
+name = "No Server Emojis"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Do not show server emojis in the autocomplete menu."
+entry = "no_server_emojis.wasm"
+min_host = "0.4.3"
+hooks = ["autocomplete-emoji"]
+
+[[permissions]]
+permission = "ui-input"
+reason = "Filters the emoji suggestions while you type a :shortcode."
+
+[[permissions]]
+permission = "context-basic"
+reason = "Finds the server of the channel you type in."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

@@ -70,6 +70,8 @@ The host calls a `hooks2` hook only for plugins that export `hooks2` and list th
 | `on-notification` | `notification` | `notifications-filter` | 250 ms |
 | `on-badge-click` | none | `user-display` | 2 s |
 
+`autocomplete-emoji` answers with indices into the candidate list. The composer shows the listed candidates in that order and hides the ones that are not listed. An empty answer leaves the default suggestions. The answer is only applied when it arrives within 300 ms of typing and the first suggestion is still selected.
+
 The 1.2 `client` and `ui` functions are declared and permission checked, and the host answers `host-error::unavailable` until the features that back them ship.
 
 Events: `message-created`, `message-updated`, `message-deleted`, `reaction-added`, `typing`, `channel-switched`, `setting-changed`, `connection`, `voice-changed`. Message, reaction and typing events need `context-timeline`, and events from direct messages also need `context-private`. `channel-switched` needs `context-basic`. `voice-changed` needs `context-voice`, and calls in direct messages also need `context-private`. `setting-changed` and `connection` are always delivered.

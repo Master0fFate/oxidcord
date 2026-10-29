@@ -1,0 +1,22 @@
+id = "dev.oxidcord.anonymise-file-names"
+name = "Anonymise File Names"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Anonymise uploaded file names"
+entry = "anonymise_file_names.wasm"
+min_host = "0.4.3"
+hooks = ["before-send"]
+
+[[permissions]]
+permission = "message-send"
+reason = "Renames the files of a message right before it is sent."
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the composer button that switches anonymous names on or off for the next send."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

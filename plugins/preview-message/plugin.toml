@@ -1,0 +1,17 @@
+id = "dev.oxidcord.preview-message"
+name = "Preview Message"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Preview your message before sending it."
+entry = "preview_message.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the preview button to the composer and shows the preview above it."
+
+[[permissions]]
+permission = "composer"
+reason = "Reads the draft you are typing when you press the preview button."

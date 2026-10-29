@@ -10,11 +10,11 @@ use crate::convert::valid_key;
 pub const MAX_KEYBINDS_PER_PLUGIN: usize = 32;
 
 const MODIFIERS: [&str; 4] = ["ctrl", "alt", "shift", "meta"];
-const KEYS: [&str; 56] = [
+const KEYS: [&str; 57] = [
 	"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u",
 	"v", "w", "x", "y", "z", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "f1", "f2", "f3", "f4", "f5",
 	"f6", "f7", "f8", "f9", "f10", "f11", "f12", "up", "down", "left", "right", "home", "end", "pageup",
-	"pagedown",
+	"pagedown", ",",
 ];
 const CORE_CHORDS: [&str; 22] = [
 	"ctrl+k", "meta+k", "ctrl+0", "meta+0", "alt+up", "alt+down", "alt+f4", "ctrl+a", "meta+a", "ctrl+c",
@@ -26,6 +26,7 @@ fn canonical_key(key: &str) -> Option<&'static str> {
 	let key = match key {
 		"pgup" => "pageup",
 		"pgdn" => "pagedown",
+		"comma" => ",",
 		other => other,
 	};
 	KEYS.iter().copied().find(|known| *known == key)

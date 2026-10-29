@@ -243,6 +243,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "anonymise-file-names"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
 name = "anstream"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1275,6 +1282,13 @@ dependencies = [
  "chacha20 0.10.2",
  "cipher 0.5.2",
  "poly1305 0.9.1",
+]
+
+[[package]]
+name = "character-counter"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
 ]
 
 [[package]]
@@ -2885,6 +2899,14 @@ name = "fastrand"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
+
+[[package]]
+name = "fav-emoji-first"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+ "serde_json",
+]
 
 [[package]]
 name = "fax"
@@ -5241,6 +5263,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "jump-to-top"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
 name = "k256"
 version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6404,6 +6433,20 @@ dependencies = [
 
 [[package]]
 name = "no-mosaic"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
+name = "no-reply-mention"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
+name = "no-server-emojis"
 version = "0.4.3"
 dependencies = [
  "oxidcord-plugin-sdk",
@@ -7886,6 +7929,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
+name = "petpet"
+version = "0.4.3"
+dependencies = [
+ "gif 0.14.2",
+ "image",
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
 name = "phf"
 version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8246,6 +8298,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "preview-message"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
 name = "primal-check"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8447,6 +8506,13 @@ dependencies = [
 
 [[package]]
 name = "quick-replies"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
+name = "quick-reply"
 version = "0.4.3"
 dependencies = [
  "oxidcord-plugin-sdk",
@@ -9938,6 +10004,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "silent-message-toggle"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
 name = "silent-type"
 version = "0.4.3"
 dependencies = [
@@ -10208,6 +10281,13 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
+
+[[package]]
+name = "sticker-paste"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
 
 [[package]]
 name = "str_indices"
@@ -12321,6 +12401,13 @@ dependencies = [
  "log",
  "once_cell",
  "pkg-config",
+]
+
+[[package]]
+name = "web-keybinds"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
 ]
 
 [[package]]
