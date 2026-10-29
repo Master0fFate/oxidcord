@@ -1,0 +1,17 @@
+id = "dev.oxidcord.direct-file-download"
+name = "Direct File Download"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Directly download files from Discord instead of opening them in the browser."
+entry = "direct_file_download.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the download button on attachments and the Save as menu entry."
+
+[[permissions]]
+permission = "actions-save"
+reason = "Saves the attachment you ask for."

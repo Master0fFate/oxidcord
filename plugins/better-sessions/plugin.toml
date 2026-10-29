@@ -1,0 +1,25 @@
+id = "dev.oxidcord.better-sessions"
+name = "Better Sessions"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Exact timestamps, custom names and notifications for new sessions."
+entry = "better_sessions.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "context-sessions"
+reason = "Reads the list of devices logged in to your account."
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Shows the sessions list with exact times and custom names on the plugin settings page."
+
+[[permissions]]
+permission = "actions-notify"
+reason = "Tells you when a new session appears."
+
+[[permissions]]
+permission = "storage"
+reason = "Remembers the sessions you have seen, the custom names and the plugin settings."

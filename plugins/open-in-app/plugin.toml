@@ -1,0 +1,19 @@
+id = "dev.oxidcord.open-in-app"
+name = "Open In App"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Open links in their respective apps instead of your browser."
+entry = "open_in_app.wasm"
+min_host = "0.4.3"
+hooks = ["link-click"]
+url_schemes = ["spotify", "steam", "tidal", "music"]
+
+[[permissions]]
+permission = "actions-open-url"
+reason = "Sees the links you click and opens the matching app address instead."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

@@ -1,0 +1,29 @@
+id = "dev.oxidcord.expression-cloner"
+name = "Expression Cloner"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Clone emotes and stickers to your own server."
+entry = "expression_cloner.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds Clone to server to the emoji and sticker menus and opens the clone window."
+
+[[permissions]]
+permission = "context-directory"
+reason = "Lists your servers and their channels to find where you can add expressions."
+
+[[permissions]]
+permission = "context-roles"
+reason = "Reads your permissions to show only servers where you can add expressions."
+
+[[permissions]]
+permission = "context-expressions"
+reason = "Looks up the format of the sticker for the preview."
+
+[[permissions]]
+permission = "actions-guild"
+reason = "Copies the emoji or sticker into the server you choose."

@@ -1,0 +1,21 @@
+id = "dev.oxidcord.replace-google-search"
+name = "Replace Google Search"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Search selected text with the engine of your choice."
+entry = "replace_google_search.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the search entry to the menu of selected text."
+
+[[permissions]]
+permission = "actions-open-url"
+reason = "Opens the search page in the browser."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

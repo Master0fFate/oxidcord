@@ -857,7 +857,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "better-role-context"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
 name = "better-role-dot"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
+name = "better-sessions"
 version = "0.4.3"
 dependencies = [
  "oxidcord-plugin-sdk",
@@ -1605,6 +1619,27 @@ checksum = "1a373e3602691c3cdea496d2f0ee5935151e6168fe87739483c463db1b2f2f87"
 dependencies = [
  "time",
  "version_check",
+]
+
+[[package]]
+name = "copy-emoji-markdown"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
+name = "copy-file-contents"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
+name = "copy-sticker-links"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
 ]
 
 [[package]]
@@ -2364,6 +2399,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "direct-file-download"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
 name = "directories"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2831,6 +2873,13 @@ checksum = "8be9f3dfaaffdae2972880079a491a1a8bb7cbed0b8dd7a347f668b4150a3b93"
 dependencies = [
  "event-listener",
  "pin-project-lite",
+]
+
+[[package]]
+name = "expression-cloner"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
 ]
 
 [[package]]
@@ -6397,6 +6446,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "new-guild-settings"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
 name = "new_debug_unreachable"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7248,6 +7304,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
+name = "open-in-app"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
 name = "openh264"
 version = "0.9.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7927,6 +7990,13 @@ name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
+
+[[package]]
+name = "permissions-viewer"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
 
 [[package]]
 name = "petpet"
@@ -8970,6 +9040,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
+name = "replace-google-search"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
 name = "reply-timestamp"
 version = "0.4.3"
 dependencies = [
@@ -9054,6 +9131,13 @@ dependencies = [
 
 [[package]]
 name = "reveal-all-spoilers"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
+]
+
+[[package]]
+name = "reverse-image-search"
 version = "0.4.3"
 dependencies = [
  "oxidcord-plugin-sdk",
@@ -9832,6 +9916,13 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
+]
+
+[[package]]
+name = "server-info"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
 ]
 
 [[package]]
@@ -11870,6 +11961,13 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "voice-download"
+version = "0.4.3"
+dependencies = [
+ "oxidcord-plugin-sdk",
 ]
 
 [[package]]

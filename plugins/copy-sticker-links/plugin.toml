@@ -1,0 +1,25 @@
+id = "dev.oxidcord.copy-sticker-links"
+name = "Copy Sticker Links"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Adds the ability to copy and open sticker links."
+entry = "copy_sticker_links.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the Copy link and Open link entries to the sticker menu."
+
+[[permissions]]
+permission = "context-expressions"
+reason = "Looks up the format of the sticker to build the right link."
+
+[[permissions]]
+permission = "actions-clipboard"
+reason = "Copies the sticker link."
+
+[[permissions]]
+permission = "actions-open-url"
+reason = "Opens the sticker link in the browser."

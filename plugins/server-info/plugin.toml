@@ -1,0 +1,17 @@
+id = "dev.oxidcord.server-info"
+name = "Server Info"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "View info about a server."
+entry = "server_info.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the Server info entry to the server menu and opens the window."
+
+[[permissions]]
+permission = "context-directory"
+reason = "Reads the details and the channel count of the server you ask for."

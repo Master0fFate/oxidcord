@@ -1,0 +1,29 @@
+id = "dev.oxidcord.permissions-viewer"
+name = "Permissions Viewer"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "View the permissions a user or channel has, and the roles of a server."
+entry = "permissions_viewer.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the View permissions and View roles entries and opens the window."
+
+[[permissions]]
+permission = "context-roles"
+reason = "Reads the roles of a server, the roles of a member and permission bits."
+
+[[permissions]]
+permission = "context-directory"
+reason = "Lists the channels of a server to pick one for a member."
+
+[[permissions]]
+permission = "context-basic"
+reason = "Reads the channel you have open."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

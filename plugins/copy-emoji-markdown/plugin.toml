@@ -1,0 +1,21 @@
+id = "dev.oxidcord.copy-emoji-markdown"
+name = "Copy Emoji Markdown"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Allows you to copy emojis as formatted string."
+entry = "copy_emoji_markdown.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the Copy emoji entry to the emoji menu."
+
+[[permissions]]
+permission = "actions-clipboard"
+reason = "Copies the emoji text."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

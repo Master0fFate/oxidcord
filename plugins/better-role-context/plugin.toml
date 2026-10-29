@@ -1,0 +1,25 @@
+id = "dev.oxidcord.better-role-context"
+name = "Better Role Context"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Adds options to copy the role color and id and to view the role icon when right clicking roles."
+entry = "better_role_context.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the entries to the role menu and opens the icon window."
+
+[[permissions]]
+permission = "context-roles"
+reason = "Reads the color and icon of the role you ask for."
+
+[[permissions]]
+permission = "actions-clipboard"
+reason = "Copies the role color and id."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

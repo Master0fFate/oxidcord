@@ -1,0 +1,25 @@
+id = "dev.oxidcord.copy-file-contents"
+name = "Copy File Contents"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Adds a button to text file attachments to copy their contents."
+entry = "copy_file_contents.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the copy button next to text attachments."
+
+[[permissions]]
+permission = "context-timeline"
+reason = "Reads the name, type and size of the attachment to show the button on small text files only."
+
+[[permissions]]
+permission = "context-attachments"
+reason = "Downloads the text file you click copy on."
+
+[[permissions]]
+permission = "actions-clipboard"
+reason = "Copies the text to the clipboard."

@@ -1,0 +1,17 @@
+id = "dev.oxidcord.reverse-image-search"
+name = "Reverse Image Search"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Adds image search to image context menus."
+entry = "reverse_image_search.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the Search image menu to the image menu."
+
+[[permissions]]
+permission = "actions-open-url"
+reason = "Opens the search engine page in the browser."
