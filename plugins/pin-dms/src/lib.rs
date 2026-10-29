@@ -10,8 +10,7 @@ use plugin_sdk::{
 
 const CATEGORIES_KEY: &str = "categories";
 const ORDER_KEY: &str = "pinOrder";
-const CAN_COLLAPSE_KEY: &str = "canCollapseDmSection";
-const COLLAPSED_KEY: &str = "dmSectionCollapsed";
+const COLLAPSED_KEY: &str = "startCollapsed";
 const MOUNT_KEY: &str = "categories";
 const PIN_PARENT: &str = "pin";
 const PIN_PREFIX: &str = "pin-";
@@ -40,7 +39,6 @@ struct Category {
 #[derive(Default)]
 struct Config {
 	custom_order: bool,
-	can_collapse: bool,
 	collapsed: bool,
 }
 
@@ -52,15 +50,10 @@ impl Config {
 	fn set(&mut self, key: &str, value: &str) -> bool {
 		match key {
 			ORDER_KEY => self.custom_order = value.trim() == "custom",
-			CAN_COLLAPSE_KEY => self.can_collapse = parse_flag(value),
 			COLLAPSED_KEY => self.collapsed = parse_flag(value),
 			_ => return false,
 		}
 		true
-	}
-
-	fn starts_collapsed(&self) -> bool {
-		self.can_collapse && self.collapsed
 	}
 }
 
@@ -207,7 +200,7 @@ impl PinDms {
 				DmSection {
 					title: category.name.clone(),
 					channels,
-					collapsed: self.config.starts_collapsed(),
+					collapsed: self.config.collapsed,
 				}
 			})
 			.collect()
@@ -354,7 +347,7 @@ impl PinDms {
 
 impl Plugin for PinDms {
 	fn init(&mut self) -> Result<(), String> {
-		for key in [ORDER_KEY, CAN_COLLAPSE_KEY, COLLAPSED_KEY] {
+		for key in [ORDER_KEY, COLLAPSED_KEY] {
 			if let Ok(Some(saved)) = storage::get(&format!("settings.{key}")) {
 				self.config.set(key, &String::from_utf8_lossy(&saved));
 			}
@@ -389,7 +382,7 @@ impl Plugin for PinDms {
 	}
 
 	fn settings_schema(&self) -> String {
-		r#"{"type":"object","properties":{"pinOrder":{"type":"string","title":"Pin order","description":"Which order should pinned DMs be displayed in? mostRecent sorts by the latest message, custom keeps the order you set with Move pin up and down in the DM menu","enum":["mostRecent","custom"],"default":"mostRecent"},"canCollapseDmSection":{"type":"boolean","title":"Can collapse DM section","description":"Start the pinned sections collapsed when Collapse DM section is on","default":false},"dmSectionCollapsed":{"type":"boolean","title":"Collapse DM section","description":"Start the pinned sections collapsed, needs Can collapse DM section","default":false}}}"#
+		r#"{"type":"object","properties":{"pinOrder":{"type":"string","title":"Pin order","description":"Which order should pinned DMs be displayed in? mostRecent sorts by the latest message, custom keeps the order you set with Move pin up and down in the DM menu","enum":["mostRecent","custom"],"default":"mostRecent"},"startCollapsed":{"type":"boolean","title":"Start collapsed","description":"Start the pinned sections collapsed, you can still open them by clicking the header","default":false}}}"#
 			.to_owned()
 	}
 }

@@ -4,7 +4,7 @@ version = "0.1.0"
 api = "^1.2"
 authors = ["fate"]
 license = "MIT OR Apache-2.0"
-description = "Adds a button to the titlebar that houses quick actions."
+description = "Title bar button with the plugin settings, the client version and the list of enabled plugins."
 entry = "toolbox.wasm"
 min_host = "0.4.3"
 

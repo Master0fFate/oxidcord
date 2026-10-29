@@ -62,7 +62,7 @@ impl Plugin for BetterRoleDot {
 	}
 
 	fn settings_schema(&self) -> String {
-		r#"{"type":"object","properties":{"bothStyles":{"type":"boolean","title":"Both styles","description":"Show both the role dot and the colored name","default":false},"copyRoleColorInProfilePopout":{"type":"boolean","title":"Copy in profile popout","description":"Not separate here: clicking the dot copies the role color wherever the dot shows","default":false}}}"#
+		r#"{"type":"object","properties":{"bothStyles":{"type":"boolean","title":"Both styles","description":"Show both the role dot and the colored name","default":false}}}"#
 			.to_owned()
 	}
 }

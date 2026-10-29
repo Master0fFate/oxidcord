@@ -154,7 +154,7 @@ impl Plugin for FakeProfileThemes {
 	}
 
 	fn settings_schema(&self) -> String {
-		r#"{"type":"object","properties":{"nitroFirst":{"type":"boolean","title":"Nitro colors first","description":"Skip the hidden colors when the profile already has a Nitro accent color","default":true}}}"#
+		r#"{"type":"object","properties":{"nitroFirst":{"type":"boolean","title":"Accent color first","description":"Skip the hidden colors when the profile already has an accent color","default":true}}}"#
 			.to_owned()
 	}
 }

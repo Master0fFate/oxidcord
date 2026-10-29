@@ -3,22 +3,14 @@ use plugin_sdk::patch::{Patch, PatchExt};
 use plugin_sdk::types::SettingChange;
 use plugin_sdk::{Color, Event, Md, Plugin, PluginExt, User, data, export_plugin, storage};
 
-const SETTING_KEYS: [&str; 7] = [
-	"chatMentions",
-	"memberList",
-	"voiceUsers",
-	"reactorsList",
-	"pollResults",
-	"colorChatMessages",
-	"messageSaturation",
-];
+const SETTING_KEYS: [&str; 4] = ["chatMentions", "names", "colorChatMessages", "messageSaturation"];
 const DEFAULT_SATURATION: u32 = 30;
 const MENTION_BACKGROUND_ALPHA: u32 = 0x33;
 const OPAQUE: u32 = 0xff;
 
 struct RoleColorEverywhere {
 	chat_mentions: bool,
-	name_surfaces: [bool; 4],
+	names: bool,
 	color_chat_messages: bool,
 	message_saturation: u32,
 }
@@ -27,7 +19,7 @@ impl Default for RoleColorEverywhere {
 	fn default() -> Self {
 		Self {
 			chat_mentions: true,
-			name_surfaces: [true; 4],
+			names: true,
 			color_chat_messages: false,
 			message_saturation: DEFAULT_SATURATION,
 		}
@@ -52,18 +44,11 @@ impl RoleColorEverywhere {
 	fn set(&mut self, key: &str, value: &str) {
 		match key {
 			"chatMentions" => self.chat_mentions = parse_flag(value),
-			"memberList" => self.name_surfaces[0] = parse_flag(value),
-			"voiceUsers" => self.name_surfaces[1] = parse_flag(value),
-			"reactorsList" => self.name_surfaces[2] = parse_flag(value),
-			"pollResults" => self.name_surfaces[3] = parse_flag(value),
+			"names" => self.names = parse_flag(value),
 			"colorChatMessages" => self.color_chat_messages = parse_flag(value),
 			"messageSaturation" => self.message_saturation = parse_saturation(value),
 			_ => {}
 		}
-	}
-
-	fn colors_names(&self) -> bool {
-		self.name_surfaces.contains(&true)
 	}
 
 	fn mention(&self, guild_id: u64, user_id: u64) -> Option<Md> {
@@ -143,7 +128,7 @@ impl Plugin for RoleColorEverywhere {
 	}
 
 	fn settings_schema(&self) -> String {
-		r#"{"type":"object","properties":{"chatMentions":{"type":"boolean","title":"Chat mentions","description":"Show role colors in chat mentions","default":true},"memberList":{"type":"boolean","title":"Member list","description":"Color names with the role color. Names are colored everywhere or nowhere, so this is on while any of the four name settings is on","default":true},"voiceUsers":{"type":"boolean","title":"Voice users","description":"Same switch as the member list setting","default":true},"reactorsList":{"type":"boolean","title":"Reactors list","description":"Same switch as the member list setting","default":true},"pollResults":{"type":"boolean","title":"Poll results","description":"Same switch as the member list setting","default":true},"colorChatMessages":{"type":"boolean","title":"Color chat messages","description":"Tint the stripe of a message with the role color of its author","default":false},"messageSaturation":{"type":"integer","title":"Message saturation","description":"Intensity of message coloring","minimum":0,"maximum":100,"default":30}}}"#
+		r#"{"type":"object","properties":{"chatMentions":{"type":"boolean","title":"Chat mentions","description":"Show role colors in chat mentions","default":true},"names":{"type":"boolean","title":"Names","description":"Color names with the role color wherever the client shows a name","default":true},"colorChatMessages":{"type":"boolean","title":"Color chat messages","description":"Tint the stripe of a message with the role color of its author","default":false},"messageSaturation":{"type":"integer","title":"Message saturation","description":"Intensity of message coloring","minimum":0,"maximum":100,"default":30}}}"#
 			.to_owned()
 	}
 }
@@ -155,7 +140,7 @@ impl PluginExt for RoleColorEverywhere {
 		user: &User,
 		_presence: Option<&Presence>,
 	) -> Option<DisplayOverrideFull> {
-		if !self.colors_names() {
+		if !self.names {
 			return None;
 		}
 		let color = data::member_info(guild_id?, user.id)

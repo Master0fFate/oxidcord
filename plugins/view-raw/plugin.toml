@@ -4,7 +4,7 @@ version = "0.1.0"
 api = "^1.2"
 authors = ["fate"]
 license = "MIT OR Apache-2.0"
-description = "Copy and view the raw data of messages, members and channels."
+description = "Shows the client data of a message, member or channel as JSON with copy buttons."
 entry = "view_raw.wasm"
 min_host = "0.4.3"
 

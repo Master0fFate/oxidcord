@@ -4,7 +4,7 @@ version = "0.1.0"
 api = "^1.2"
 authors = ["fate"]
 license = "MIT OR Apache-2.0"
-description = "Renders the avatars of users who reacted to a message"
+description = "Shows who reacted to a message after a click on a toolbar button or the reaction menu."
 entry = "who_reacted.wasm"
 min_host = "0.4.3"
 

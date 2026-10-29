@@ -4,7 +4,7 @@ version = "0.1.0"
 api = "^1.2"
 authors = ["fate"]
 license = "MIT OR Apache-2.0"
-description = "Makes picking a sticker insert it into the chatbox instead of instantly sending"
+description = "Composer button that attaches a picked sticker to your draft instead of sending it at once."
 entry = "sticker_paste.wasm"
 min_host = "0.4.3"
 

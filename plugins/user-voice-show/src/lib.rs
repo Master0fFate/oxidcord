@@ -6,45 +6,26 @@ use plugin_sdk::{Event, Plugin, PluginExt, User, actions, data, export_plugin, l
 
 const REFRESH_MS: u32 = 10_000;
 const REFRESH_TAG: &str = "refresh";
-const SETTING_KEYS: [&str; 3] = ["showInUserProfileModal", "showInMemberList", "showInMessages"];
+const SHOW_KEY: &str = "show";
 
-struct Config {
-	profile: bool,
-	member_list: bool,
-	messages: bool,
-}
-
-impl Default for Config {
-	fn default() -> Self {
-		Self {
-			profile: true,
-			member_list: true,
-			messages: true,
-		}
-	}
-}
-
-impl Config {
-	fn set(&mut self, key: &str, value: &str) {
-		let on = !matches!(value.trim(), "false" | "0" | "off");
-		match key {
-			"showInUserProfileModal" => self.profile = on,
-			"showInMemberList" => self.member_list = on,
-			"showInMessages" => self.messages = on,
-			_ => {}
-		}
-	}
-
-	fn emits_badges(&self) -> bool {
-		self.profile || self.member_list || self.messages
-	}
-}
-
-#[derive(Default)]
 struct UserVoiceShow {
-	config: Config,
+	show: bool,
 	channel_name: String,
 	participants: HashSet<u64>,
+}
+
+impl Default for UserVoiceShow {
+	fn default() -> Self {
+		Self {
+			show: true,
+			channel_name: String::new(),
+			participants: HashSet::new(),
+		}
+	}
+}
+
+fn parse_flag(raw: &str) -> bool {
+	!matches!(raw.trim(), "false" | "0" | "off")
 }
 
 impl UserVoiceShow {
@@ -78,10 +59,8 @@ impl UserVoiceShow {
 
 impl Plugin for UserVoiceShow {
 	fn init(&mut self) -> Result<(), String> {
-		for key in SETTING_KEYS {
-			if let Ok(Some(saved)) = storage::get(&format!("settings.{key}")) {
-				self.config.set(key, &String::from_utf8_lossy(&saved));
-			}
+		if let Ok(Some(saved)) = storage::get(&format!("settings.{SHOW_KEY}")) {
+			self.show = parse_flag(&String::from_utf8_lossy(&saved));
 		}
 		self.sync();
 		if let Err(error) = timer::every(REFRESH_MS, REFRESH_TAG) {
@@ -93,13 +72,15 @@ impl Plugin for UserVoiceShow {
 	fn on_event(&mut self, event: Event) {
 		match event {
 			Event::VoiceChanged(_) => self.sync(),
-			Event::SettingChanged(SettingChange { key, value }) => self.config.set(&key, &value),
+			Event::SettingChanged(SettingChange { key, value }) if key == SHOW_KEY => {
+				self.show = parse_flag(&value);
+			}
 			_ => {}
 		}
 	}
 
 	fn settings_schema(&self) -> String {
-		r#"{"type":"object","properties":{"showInUserProfileModal":{"type":"boolean","title":"Profiles","description":"Show a user's voice channel indicator in their profile next to the name","default":true},"showInMemberList":{"type":"boolean","title":"Member list","description":"Show a user's voice channel indicator in the member and direct message lists","default":true},"showInMessages":{"type":"boolean","title":"Messages","description":"Show a user's voice channel indicator in messages","default":true}}}"#
+		r#"{"type":"object","properties":{"show":{"type":"boolean","title":"Show indicator","description":"Show a speaker badge next to every user who is in the voice call you are in","default":true}}}"#
 			.to_owned()
 	}
 }
@@ -111,7 +92,7 @@ impl PluginExt for UserVoiceShow {
 		user: &User,
 		_presence: Option<&Presence>,
 	) -> Option<DisplayOverrideFull> {
-		if !self.config.emits_badges() || !self.participants.contains(&user.id) {
+		if !self.show || !self.participants.contains(&user.id) {
 			return None;
 		}
 		Some(DisplayOverrideFull {

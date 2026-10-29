@@ -6,11 +6,11 @@ A first category named Pinned always exists. The Pinned DMs page in the plugin p
 
 Settings:
 - `pinOrder`: `mostRecent` sorts each section by the latest message, `custom` keeps the order you set with Move pin up and Move pin down in the DM menu. Default `mostRecent`.
-- `canCollapseDmSection` and `dmSectionCollapsed`: when both are on the pinned sections start collapsed. Default off.
+- `startCollapsed`: the pinned sections start collapsed. Default off.
 
 Limitations: partial port.
 - The DM menu offers Unpin DM, Move pin up and Move pin down on every DM, they do nothing on a DM that is not pinned. Move pin only shows with `pinOrder` custom.
-- The client always lets you fold a section by clicking its header, `canCollapseDmSection` only decides the starting state. The list of DMs that are not pinned cannot be collapsed.
+- The client always lets you fold a section by clicking its header, `startCollapsed` only decides the starting state. The list of DMs that are not pinned cannot be collapsed.
 - Categories have no colour and no rename. At most 8 categories, 200 pinned DMs in total.
 - `mostRecent` reorders about two seconds after a pinned DM gets a message, ordering is by message id.
 - Vencord keeps categories per account inside its settings, here they live in the plugin storage of this install.

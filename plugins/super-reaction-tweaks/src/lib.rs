@@ -65,7 +65,7 @@ impl Plugin for SuperReactionTweaks {
 	}
 
 	fn settings_schema(&self) -> String {
-		r#"{"type":"object","properties":{"superReactByDefault":{"type":"boolean","title":"Super react by default","description":"Reaction picker will default to Super Reactions","default":true},"unlimitedSuperReactionPlaying":{"type":"boolean","title":"Unlimited playing","description":"Not applicable, the client has no limit on playing super reactions","default":false},"superReactionPlayingLimit":{"type":"integer","title":"Playing limit","description":"Not applicable, the client has no limit on playing super reactions","minimum":0,"maximum":100,"default":20}}}"#
+		r#"{"type":"object","properties":{"superReactByDefault":{"type":"boolean","title":"Super react by default","description":"Reaction picker will default to Super Reactions","default":true}}}"#
 			.to_owned()
 	}
 }

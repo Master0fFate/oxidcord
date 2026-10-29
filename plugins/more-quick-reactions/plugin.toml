@@ -4,7 +4,7 @@ version = "0.1.0"
 api = "^1.2"
 authors = ["fate"]
 license = "MIT OR Apache-2.0"
-description = "Increases the number of reactions available in the Quick React hover menu."
+description = "Adds a row of your most used reactions to the message hover bar."
 entry = "more_quick_reactions.wasm"
 min_host = "0.4.3"
 

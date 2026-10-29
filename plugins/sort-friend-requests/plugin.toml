@@ -4,7 +4,7 @@ version = "0.1.0"
 api = "^1.2"
 authors = ["fate"]
 license = "MIT OR Apache-2.0"
-description = "Sorts friend requests by date of receipt."
+description = "Requests by date tab on the Friends page with incoming and outgoing requests, newest first."
 entry = "sort_friend_requests.wasm"
 min_host = "0.4.3"
 

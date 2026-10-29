@@ -134,7 +134,7 @@ impl Plugin for CodeHighlight {
 	}
 
 	fn settings_schema(&self) -> String {
-		r#"{"type":"object","properties":{"theme":{"type":"string","title":"Theme","description":"Color palette of the code","enum":["dark-plus","one-dark","monokai","github-light"],"default":"dark-plus"},"bgOpacity":{"type":"integer","title":"Background opacity","description":"Not applicable, the client draws the code background","minimum":0,"maximum":100,"default":100}}}"#
+		r#"{"type":"object","properties":{"theme":{"type":"string","title":"Theme","description":"Color palette of the code","enum":["dark-plus","one-dark","monokai","github-light"],"default":"dark-plus"}}}"#
 			.to_owned()
 	}
 }

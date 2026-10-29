@@ -4,7 +4,7 @@ version = "0.1.0"
 api = "^1.2"
 authors = ["fate"]
 license = "MIT OR Apache-2.0"
-description = "Adds Startup Timings to the Settings menu."
+description = "Lists the client startup phases on the plugin settings page."
 entry = "startup_timings.wasm"
 min_host = "0.4.3"
 

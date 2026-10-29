@@ -4,7 +4,7 @@ version = "0.1.0"
 api = "^1.2"
 authors = ["fate"]
 license = "MIT OR Apache-2.0"
-description = "Right click your account panel in the bottom left to view your profile in the current server"
+description = "A row above the account panel and a menu entry open your avatar, nickname, roles and join date in the open server."
 entry = "account_server_profile.wasm"
 min_host = "0.4.3"
 

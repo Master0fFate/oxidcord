@@ -4,9 +4,8 @@ Adds Super react to the menu of a reaction on a message: it adds your own super 
 
 Settings:
 - `superReactByDefault`: the reaction picker adds super reactions instead of normal ones. Default on. Turning the plugin off puts the picker back.
-- `unlimitedSuperReactionPlaying` and `superReactionPlayingLimit`: kept so the settings keep their place, they are not applicable, the client has no limit on playing super reactions that a plugin could change.
 
-Limits: Discord only accepts super reactions from accounts that can use them, the note on the failed click is the answer of the client.
+Limits: Vencord's settings for the super reaction playing limit are not part of this port, the client has no such limit. Discord only accepts super reactions from accounts that can use them, the note on the failed click is the answer of the client.
 
 Permissions: `ui-mount`, `actions-react`, `actions-settings`, `storage`.
 

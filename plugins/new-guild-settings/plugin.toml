@@ -4,7 +4,7 @@ version = "0.1.0"
 api = "^1.2"
 authors = ["fate"]
 license = "MIT OR Apache-2.0"
-description = "Automatically mute new servers and change various other settings upon joining."
+description = "Applies your notification settings to servers when you join them."
 entry = "new_guild_settings.wasm"
 min_host = "0.4.3"
 

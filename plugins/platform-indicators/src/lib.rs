@@ -5,21 +5,17 @@ use plugin_sdk::types::SettingChange;
 use plugin_sdk::{Event, Plugin, PluginExt, User, actions, export_plugin, log, storage};
 
 const SEEN_CAPACITY: usize = 4096;
-const SETTING_KEYS: [&str; 4] = ["list", "badges", "messages", "colorMobileIndicator"];
+const SETTING_KEYS: [&str; 2] = ["show", "colorMobileIndicator"];
 
 struct Config {
-	list: bool,
-	badges: bool,
-	messages: bool,
+	show: bool,
 	color_mobile: bool,
 }
 
 impl Default for Config {
 	fn default() -> Self {
 		Self {
-			list: true,
-			badges: true,
-			messages: true,
+			show: true,
 			color_mobile: true,
 		}
 	}
@@ -29,16 +25,10 @@ impl Config {
 	fn set(&mut self, key: &str, value: &str) {
 		let on = !matches!(value.trim(), "false" | "0" | "off");
 		match key {
-			"list" => self.list = on,
-			"badges" => self.badges = on,
-			"messages" => self.messages = on,
+			"show" => self.show = on,
 			"colorMobileIndicator" => self.color_mobile = on,
 			_ => {}
 		}
-	}
-
-	fn emits_badges(&self) -> bool {
-		self.list || self.badges || self.messages
 	}
 }
 
@@ -89,7 +79,7 @@ impl PluginExt for PlatformIndicators {
 		user: &User,
 		presence: Option<&Presence>,
 	) -> Option<DisplayOverrideFull> {
-		let presence = presence.filter(|_| !user.bot && self.config.emits_badges())?;
+		let presence = presence.filter(|_| !user.bot && self.config.show)?;
 		if self.seen.len() >= SEEN_CAPACITY {
 			self.seen.clear();
 		}
@@ -157,7 +147,7 @@ impl Plugin for PlatformIndicators {
 	}
 
 	fn settings_schema(&self) -> String {
-		r#"{"type":"object","properties":{"list":{"type":"boolean","title":"Member list","description":"Show indicators in the member list","default":true},"badges":{"type":"boolean","title":"Profiles","description":"Show indicators in user profiles, as badges","default":true},"messages":{"type":"boolean","title":"Messages","description":"Show indicators inside messages","default":true},"colorMobileIndicator":{"type":"boolean","title":"Color mobile indicator","description":"Make the mobile indicator match the color of the user status","default":true}}}"#
+		r#"{"type":"object","properties":{"show":{"type":"boolean","title":"Show indicators","description":"Show a platform icon next to the name of every user who is online","default":true},"colorMobileIndicator":{"type":"boolean","title":"Color mobile indicator","description":"Make the mobile indicator match the color of the user status","default":true}}}"#
 			.to_owned()
 	}
 }

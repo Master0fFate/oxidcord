@@ -74,7 +74,7 @@ impl Plugin for NoReplyMention {
 	}
 
 	fn settings_schema(&self) -> String {
-		r#"{"type":"object","properties":{"userList":{"type":"string","title":"User list","description":"User ids the rule is about, separated by commas or spaces","default":""},"roleList":{"type":"string","title":"Role list","description":"Role ids the rule is about, separated by commas or spaces","default":""},"shouldPingListed":{"type":"boolean","title":"Only ping the listed users / roles","description":"On: only listed users and roles are pinged. Off: everyone except them is pinged","default":true},"inverseShiftReply":{"type":"boolean","title":"Invert shift replying","description":"Not applicable, plugins cannot see the Shift key of the composer","default":false}}}"#
+		r#"{"type":"object","properties":{"userList":{"type":"string","title":"User list","description":"User ids the rule is about, separated by commas or spaces","default":""},"roleList":{"type":"string","title":"Role list","description":"Role ids the rule is about, separated by commas or spaces","default":""},"shouldPingListed":{"type":"boolean","title":"Only ping the listed users / roles","description":"On: only listed users and roles are pinged. Off: everyone except them is pinged","default":true}}}"#
 			.to_owned()
 	}
 }

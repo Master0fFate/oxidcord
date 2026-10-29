@@ -16,12 +16,7 @@ fn blurred(id: u64) -> AttachmentOverride {
 	}
 }
 
-impl Plugin for BlurNsfw {
-	fn settings_schema(&self) -> String {
-		r#"{"type":"object","properties":{"blurAmount":{"type":"number","title":"Blur amount","description":"Not applicable, the client uses a fixed blur","minimum":0,"maximum":100,"default":10}}}"#
-			.to_owned()
-	}
-}
+impl Plugin for BlurNsfw {}
 
 impl PluginExt for BlurNsfw {
 	fn intercept_message_ext(
