@@ -146,6 +146,7 @@ fn main() -> anyhow::Result<()> {
 		(None, false) => Paths::discover(),
 	}
 	.context("prepare data directories")?;
+	install_panic_hook(paths.logs_dir());
 	match updater::apply_pending_on_start(paths.data_dir()) {
 		Ok(outcome) if outcome.should_exit() => return Ok(()),
 		Ok(_) => {}
@@ -334,6 +335,9 @@ fn unix_now() -> i64 {
 fn init_tracing(filter: &str) {
 	let filter = EnvFilter::try_new(filter).unwrap_or_else(|_| EnvFilter::new("info"));
 	tracing_subscriber::fmt().with_env_filter(filter).init();
+}
+
+fn install_panic_hook(logs: PathBuf) {
 	let default_hook = std::panic::take_hook();
 	std::panic::set_hook(Box::new(move |info| {
 		let message = info
@@ -342,8 +346,24 @@ fn init_tracing(filter: &str) {
 			.map(|text| (*text).to_owned())
 			.or_else(|| info.payload().downcast_ref::<String>().cloned())
 			.unwrap_or_default();
-		let location = info.location().map(|at| format!("{}:{}", at.file(), at.line()));
+		let location = info
+			.location()
+			.map(|at| format!("{}:{}", at.file(), at.line()))
+			.unwrap_or_default();
 		tracing::error!(message, location, "panic");
+		let line = format!(
+			"{} {location} {message}
+",
+			unix_now()
+		);
+		let appended = std::fs::OpenOptions::new()
+			.create(true)
+			.append(true)
+			.open(logs.join("panic.log"))
+			.and_then(|mut file| std::io::Write::write_all(&mut file, line.as_bytes()));
+		if let Err(error) = appended {
+			tracing::warn!(%error, "could not write the panic log");
+		}
 		default_hook(info);
 	}));
 }
