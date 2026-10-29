@@ -108,21 +108,19 @@ pub(crate) fn running() -> Vec<Process> {
 
 	const PATH_CAPACITY: usize = 4096;
 
-	let count = unsafe { proc_listallpids(std::ptr::null_mut(), 0) };
-	if count <= 0 {
+	const PID_BYTES: usize = size_of::<c_int>();
+	const PID_SLACK: usize = 64;
+
+	let bytes = unsafe { proc_listallpids(std::ptr::null_mut(), 0) };
+	if bytes <= 0 {
 		return Vec::new();
 	}
-	let mut pids = vec![0 as c_int; count as usize * 2];
-	let filled = unsafe {
-		proc_listallpids(
-			pids.as_mut_ptr().cast(),
-			(pids.len() * size_of::<c_int>()) as c_int,
-		)
-	};
+	let mut pids = vec![0 as c_int; bytes as usize / PID_BYTES + PID_SLACK];
+	let filled = unsafe { proc_listallpids(pids.as_mut_ptr().cast(), (pids.len() * PID_BYTES) as c_int) };
 	if filled <= 0 {
 		return Vec::new();
 	}
-	pids.truncate(filled as usize);
+	pids.truncate(filled as usize / PID_BYTES);
 	let mut buffer = vec![0u8; PATH_CAPACITY];
 	pids.into_iter()
 		.filter(|&pid| pid > 0)
