@@ -29,11 +29,12 @@ mod host {
 	use windows::Win32::Graphics::Gdi::{BLACK_BRUSH, ClientToScreen, GetStockObject, HBRUSH};
 	use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 	use windows::Win32::UI::WindowsAndMessaging::{
-		CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW, HWND_MESSAGE,
-		IsIconic, IsWindowVisible, KillTimer, MA_NOACTIVATE, MSG, PostMessageW, PostQuitMessage,
-		RegisterClassW, SW_HIDE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOZORDER, SetTimer, SetWindowPos,
-		ShowWindow, TranslateMessage, WINDOW_EX_STYLE, WM_APP, WM_CLOSE, WM_DESTROY, WM_MOUSEACTIVATE,
-		WM_TIMER, WNDCLASSW, WS_CLIPCHILDREN, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
+		CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GW_HWNDPREV, GetForegroundWindow,
+		GetMessageW, GetWindow, HWND_MESSAGE, HWND_TOP, IsIconic, IsWindowVisible, KillTimer, MA_NOACTIVATE,
+		MSG, PostMessageW, PostQuitMessage, RegisterClassW, SW_HIDE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE,
+		SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetTimer, SetWindowPos, ShowWindow, TranslateMessage,
+		WINDOW_EX_STYLE, WM_APP, WM_CLOSE, WM_DESTROY, WM_MOUSEACTIVATE, WM_TIMER, WNDCLASSW,
+		WS_CLIPCHILDREN, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
 	};
 	use windows::core::{PCWSTR, w};
 	use wry::dpi::{PhysicalPosition, PhysicalSize};
@@ -321,7 +322,7 @@ mod host {
 					0,
 					1,
 					1,
-					Some(self.owner),
+					None,
 					None,
 					instance.map(Into::into),
 					None,
@@ -381,7 +382,11 @@ mod host {
 		}
 
 		fn owner_origin(&self) -> Option<POINT> {
-			let visible = unsafe { IsWindowVisible(self.owner).as_bool() && !IsIconic(self.owner).as_bool() };
+			let visible = unsafe {
+				IsWindowVisible(self.owner).as_bool()
+					&& !IsIconic(self.owner).as_bool()
+					&& GetForegroundWindow() == self.owner
+			};
 			if !visible {
 				return None;
 			}
@@ -395,7 +400,7 @@ mod host {
 			let origin = self.owner_origin();
 			for frame in self.frames.values_mut() {
 				match origin.filter(|_| frame.shown) {
-					Some(origin) => frame.show(origin),
+					Some(origin) => frame.show(origin, self.owner),
 					None => frame.hide(),
 				}
 			}
@@ -425,9 +430,10 @@ mod host {
 	}
 
 	impl Frame {
-		fn show(&mut self, origin: POINT) {
+		fn show(&mut self, origin: POINT, owner: HWND) {
 			let placement = (self.clip, origin);
 			if self.placed == Some(placement) {
+				self.raise(owner);
 				return;
 			}
 			let first = self.placed.is_none();
@@ -449,6 +455,25 @@ mod host {
 			if first {
 				let _ = unsafe { ShowWindow(self.popup, SW_SHOWNOACTIVATE) };
 			}
+			self.raise(owner);
+		}
+
+		fn raise(&self, owner: HWND) {
+			let above_owner = unsafe { GetWindow(owner, GW_HWNDPREV) }.is_ok_and(|above| above == self.popup);
+			if above_owner {
+				return;
+			}
+			let _ = unsafe {
+				SetWindowPos(
+					self.popup,
+					Some(HWND_TOP),
+					0,
+					0,
+					0,
+					0,
+					SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
+				)
+			};
 		}
 
 		fn hide(&mut self) {
