@@ -1,15 +1,19 @@
+#[cfg(windows)]
 use std::sync::OnceLock;
+#[cfg(windows)]
 use std::sync::mpsc::Sender;
 
 const NORMAL_RATE: f32 = 1.0;
 const FULL_VOLUME: f32 = 1.0;
 
+#[cfg(windows)]
 struct Utterance {
 	text: String,
 	rate: f32,
 	volume: f32,
 }
 
+#[cfg(windows)]
 static SPEAKER: OnceLock<Option<Sender<Utterance>>> = OnceLock::new();
 
 pub fn available() -> bool {
@@ -20,6 +24,12 @@ pub fn speak(text: &str) {
 	speak_with(text, NORMAL_RATE, FULL_VOLUME);
 }
 
+#[cfg(not(windows))]
+pub fn speak_with(_text: &str, _rate: f32, _volume: f32) -> bool {
+	false
+}
+
+#[cfg(windows)]
 pub fn speak_with(text: &str, rate: f32, volume: f32) -> bool {
 	let Some(speaker) = SPEAKER.get_or_init(start) else {
 		return false;
@@ -89,9 +99,4 @@ fn start() -> Option<Sender<Utterance>> {
 			None
 		}
 	}
-}
-
-#[cfg(not(windows))]
-fn start() -> Option<Sender<Utterance>> {
-	None
 }
