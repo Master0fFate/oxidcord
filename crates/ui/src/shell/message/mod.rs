@@ -782,12 +782,14 @@ fn forward_block(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 		lines.push(render_body(&document, &body_env, cx));
 	}
 	let body_env = BodyEnv::new(theme, env.lookup, env.dispatch, id, env.revealed, env.prefs);
-	lines.extend(media::attachments(
-		&source.attachments,
-		&body_env,
-		env.prefs.inline_media,
-		cx,
-	));
+	if !source.flags.contains(protocol::MessageFlags::IS_COMPONENTS_V2) {
+		lines.extend(media::attachments(
+			&source.attachments,
+			&body_env,
+			env.prefs.inline_media,
+			cx,
+		));
+	}
 	if !source.flags.contains(protocol::MessageFlags::SUPPRESS_EMBEDS) {
 		lines.extend(media::embeds(
 			&source.embeds,
@@ -796,6 +798,12 @@ fn forward_block(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 			cx,
 		));
 	}
+	lines.extend(components::render_forwarded(
+		message,
+		&source.components,
+		&body_env,
+		cx,
+	));
 	lines.extend(media::stickers(&source.sticker_items, &body_env, cx));
 	if lines.is_empty() {
 		return header.into_any_element();

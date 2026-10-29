@@ -63,6 +63,7 @@ enum Special {
 	EmbedGifv,
 	EmbedArticle,
 	EmbedLink,
+	EmbedCard,
 	EmbedSpotify,
 	VideoFile,
 	WebmFile,
@@ -173,6 +174,7 @@ fn special_list(spec: &ChannelSpec) -> Vec<Special> {
 		Unknown,
 		Malformed,
 		EmbedLink,
+		EmbedCard,
 		VideoFile,
 		GifLink,
 		AudioFile,
@@ -493,6 +495,34 @@ impl<'a> Generator<'a, '_> {
 					description: Some("No image, no author, just a title and a line of text.".to_owned()),
 					..Embed::default()
 				}]);
+			}
+			Special::EmbedCard => {
+				let link = "https://e.buu.sh/VpgCHM5ZgJQefrnJs1xM7HwoxGPoCyG6u2Zikhud_UX504GfHs8RlLjK3OsYeVcTAQgB_WndkDZD9Gz8N2Dj6b_x9pKdw5yRqAaWM8Vg_Q_i";
+				message.content = link.to_owned();
+				let avatar = self.media("https://e.buu.sh/mock-avatar.png", 128, 128);
+				message.flags = MessageFlags::IS_COMPONENTS_V2;
+				message.application_id = Some(author.id);
+				message.components = serde_json::from_value(json!([{
+					"type": 17,
+					"accent_color": 0x800080,
+					"components": [
+						{
+							"type": 9,
+							"components": [
+								{ "type": 10, "content": "## Nathan Daniels" },
+								{ "type": 10, "content": "-# @Josh67Joshua" },
+								{ "type": 10, "content": "Bel, now understood to be short for GPT-6.2 Betelgeuse, is based on the Dougtrio pre-train series." },
+								{ "type": 10, "content": "💬 13 · 🔁 8 · ❤️ 166 · 🔖 30 · 👁️ 10.8K · 2 hours ago" }
+							],
+							"accessory": { "type": 11, "media": { "url": avatar.url, "proxy_url": avatar.proxy_url, "width": 128, "height": 128 } }
+						},
+						{
+							"type": 1,
+							"components": [{ "type": 2, "style": 5, "label": "Open on X", "url": "https://x.com/Josh67Joshua" }]
+						}
+					]
+				}]))
+				.unwrap_or_default();
 			}
 			Special::EmbedSpotify => {
 				let link = "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT";

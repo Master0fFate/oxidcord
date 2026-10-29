@@ -38,7 +38,26 @@ const OPTION_EMOJI: f32 = 20.;
 const OPTION_WIDTH: f32 = 360.;
 
 pub fn render(message: &Message, env: &BodyEnv, cx: &App) -> Vec<AnyElement> {
-	if message.components.is_empty() {
+	build(message, &message.components, true, env, cx)
+}
+
+pub fn render_forwarded(
+	message: &Message,
+	components: &[Component],
+	env: &BodyEnv,
+	cx: &App,
+) -> Vec<AnyElement> {
+	build(message, components, false, env, cx)
+}
+
+fn build(
+	message: &Message,
+	components: &[Component],
+	interactive: bool,
+	env: &BodyEnv,
+	cx: &App,
+) -> Vec<AnyElement> {
+	if components.is_empty() {
 		return Vec::new();
 	}
 	let builder = Builder {
@@ -46,10 +65,10 @@ pub fn render(message: &Message, env: &BodyEnv, cx: &App) -> Vec<AnyElement> {
 		env,
 		theme: env.theme,
 		cx,
+		interactive,
 		next_id: Cell::new(0),
 	};
-	message
-		.components
+	components
 		.iter()
 		.filter_map(|component| builder.component(component))
 		.collect()
@@ -60,6 +79,7 @@ struct Builder<'a> {
 	env: &'a BodyEnv<'a>,
 	theme: &'a Theme,
 	cx: &'a App,
+	interactive: bool,
 	next_id: Cell<usize>,
 }
 
@@ -185,6 +205,9 @@ impl Builder<'_> {
 	}
 
 	fn usage(&self, component: &Component, values: Option<Vec<String>>) -> Option<RowAction> {
+		if !self.interactive {
+			return None;
+		}
 		let message = self.message;
 		Some(RowAction::UseComponent(ComponentUse {
 			guild_id: message.guild_id,
