@@ -10,7 +10,7 @@ use super::{Picker, PickerEvent};
 use crate::components::{Avatar, tooltip};
 use crate::i18n::Translate as _;
 use crate::icons::{Icon, IconKind};
-use crate::shell::community::art::{cover, sticker_url};
+use crate::shell::community::art::{cover, cover_still, sticker_url};
 use crate::shell::plugins::{MenuTarget, plugin_menu};
 use crate::theme::{Theme, rem};
 
@@ -142,15 +142,17 @@ impl Picker {
 			}))
 			.on_click(cx.listener(move |this, _, _, cx| this.pick_sticker(&picked, cx)));
 		let element = match url {
-			Some(url) => cell
-				.child(div().size(theme.picker_sticker - theme.space_8).child(cover(
+			Some(url) => {
+				let art = if hovered { cover } else { cover_still };
+				cell.child(div().size(theme.picker_sticker - theme.space_8).child(art(
 					&url,
 					theme.picker_sticker,
 					theme.picker_sticker,
 					ObjectFit::Contain,
 					cx,
 				)))
-				.into_any_element(),
+				.into_any_element()
+			}
 			None => cell
 				.tooltip(tooltip(cx.t("picker-sticker-lottie")))
 				.child(

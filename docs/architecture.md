@@ -11,7 +11,7 @@ crates/session      session task: gateway and REST clients, command handling, pl
 crates/state        normalized store, permission math, read state, message cache
 crates/store        sqlite cache and settings, token in the OS keyring
 crates/markdown     Discord markdown parser to AST to layout model
-crates/media        image and animation decoding, texture cache, ranged fetch, embed provider allowlist, bundled Twemoji pack
+crates/media        image, animation and Lottie sticker decoding, texture cache, ranged fetch, embed provider allowlist, bundled Twemoji pack
 crates/player       audio and video playback for chat media: symphonia demux, FFmpeg codec pack, platform decoders
 crates/ui           native views and components, theme tokens
 crates/platform     tray, notifications, keyring, single instance, hotkeys, idle time, speech, file dialogs, notification sounds

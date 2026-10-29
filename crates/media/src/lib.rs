@@ -4,6 +4,7 @@ pub mod cdn;
 mod decode;
 mod error;
 pub mod fetch;
+mod lottie;
 pub mod placeholder;
 pub mod providers;
 mod resize;

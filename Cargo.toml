@@ -65,6 +65,8 @@ directories = "6.0"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "ico"] }
 gif = "0.14"
 fast_image_resize = "6.1"
+velato = { version = "0.12", default-features = false }
+vello_cpu = { version = "0.3", default-features = false, features = ["std", "u8_pipeline"] }
 blurhash = "0.2"
 thumbhash = "0.1"
 lru = "0.19"

@@ -12,6 +12,7 @@ use crate::cache::{DEFAULT_MEMORY_LIMIT_BYTES, DiskCache, MemoryCache, SizeHint,
 use crate::decode::{Limits, decode};
 use crate::error::{MediaError, Result, redact_url};
 use crate::fetch::MediaFetcher;
+use crate::lottie;
 use crate::resize::resize_decoded;
 use crate::twemoji;
 use crate::types::Decoded;
@@ -149,10 +150,15 @@ impl MediaService {
 		let mut limits = self.inner.limits.clone();
 		limits.first_frame_only = still;
 		let source = bytes.clone();
-		let decoded =
-			spawn_blocking(move || decode(&source, &limits).map(|decoded| shrink_to_hint(decoded, hint)))
-				.await
-				.map_err(|error| MediaError::Decode(format!("decode task failed: {error}")))??;
+		let decoded = spawn_blocking(move || {
+			if lottie::is_lottie(&source) {
+				lottie::decode(&source, &limits, hint)
+			} else {
+				decode(&source, &limits).map(|decoded| shrink_to_hint(decoded, hint))
+			}
+		})
+		.await
+		.map_err(|error| MediaError::Decode(format!("decode task failed: {error}")))??;
 		if !from_disk {
 			self.store_on_disk(url, bytes).await;
 		}
