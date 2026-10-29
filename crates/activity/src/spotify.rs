@@ -7,7 +7,7 @@ use reqwest::StatusCode;
 use rest::RestClient;
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, watch};
-use tokio::time::{interval, sleep, timeout};
+use tokio::time::{Instant, interval, sleep, sleep_until, timeout};
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 use url::Url;
@@ -21,6 +21,7 @@ const PING_INTERVAL: Duration = Duration::from_secs(30);
 const RETRY_MIN: Duration = Duration::from_secs(5);
 const RETRY_MAX: Duration = Duration::from_secs(5 * 60);
 const SPOTIFY_FLAGS: u64 = 48;
+const END_GRACE: Duration = Duration::from_secs(5);
 const MAX_MESSAGE_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -109,7 +110,7 @@ async fn subscribe(http: &reqwest::Client, token: &str, connection_id: &str) -> 
 	}
 }
 
-fn player_states(message: &Value) -> impl Iterator<Item = &Value> {
+fn events(message: &Value) -> impl Iterator<Item = &Value> {
 	message
 		.get("payloads")
 		.and_then(Value::as_array)
@@ -117,8 +118,52 @@ fn player_states(message: &Value) -> impl Iterator<Item = &Value> {
 		.flatten()
 		.filter_map(|payload| payload.get("events")?.as_array())
 		.flatten()
-		.filter(|event| event.get("type").and_then(Value::as_str) == Some("PLAYER_STATE_CHANGED"))
-		.filter_map(|event| event.get("event")?.get("state"))
+}
+
+fn ends_at(state: &Value) -> Option<Instant> {
+	let duration = state.get("item")?.get("duration_ms")?.as_i64()?;
+	let progress = state.get("progress_ms").and_then(Value::as_i64).unwrap_or(0);
+	let remaining = u64::try_from(duration - progress).unwrap_or(0);
+	Some(Instant::now() + Duration::from_millis(remaining) + END_GRACE)
+}
+
+fn no_active_device(event: &Value) -> bool {
+	event
+		.get("event")
+		.and_then(|event| event.get("devices"))
+		.and_then(Value::as_array)
+		.is_some_and(|devices| {
+			!devices
+				.iter()
+				.any(|device| device.get("is_active").and_then(Value::as_bool) == Some(true))
+		})
+}
+
+struct Player<'a> {
+	account: &'a SpotifyAccount,
+	inputs: &'a mpsc::UnboundedSender<Input>,
+	expiry: Option<Instant>,
+}
+
+impl Player<'_> {
+	fn publish(&mut self, activity: Option<Value>, expiry: Option<Instant>) {
+		self.expiry = activity.is_some().then_some(expiry).flatten();
+		let _ = self.inputs.send(Input::Spotify(activity));
+	}
+
+	fn apply(&mut self, message: &Value) {
+		for event in events(message) {
+			match event.get("type").and_then(Value::as_str) {
+				Some("PLAYER_STATE_CHANGED") => {
+					if let Some(state) = event.get("event").and_then(|event| event.get("state")) {
+						self.publish(build(state, self.account.user_id), ends_at(state));
+					}
+				}
+				Some("DEVICE_STATE_CHANGED") if no_active_device(event) => self.publish(None, None),
+				_ => {}
+			}
+		}
+	}
 }
 
 async fn session(
@@ -144,7 +189,13 @@ async fn session(
 	let mut pings = interval(PING_INTERVAL);
 	pings.tick().await;
 	let mut subscribed = false;
+	let mut player = Player {
+		account,
+		inputs,
+		expiry: None,
+	};
 	loop {
+		let expiry = player.expiry;
 		tokio::select! {
 			incoming = socket.next() => {
 				let text = match incoming {
@@ -167,12 +218,12 @@ async fn session(
 					tracing::debug!("spotify player events subscribed");
 					continue;
 				}
-				if !subscribed {
-					continue;
+				if subscribed {
+					player.apply(&message);
 				}
-				for state in player_states(&message) {
-					let _ = inputs.send(Input::Spotify(build(state, account.user_id)));
-				}
+			}
+			() = sleep_until(expiry.unwrap_or_else(Instant::now)), if expiry.is_some() => {
+				player.publish(None, None);
 			}
 			_ = pings.tick() => {
 				if socket.send(Message::text(r#"{"type":"ping"}"#)).await.is_err() {

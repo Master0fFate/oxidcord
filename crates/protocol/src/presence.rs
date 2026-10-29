@@ -55,8 +55,10 @@ pub struct ActivityParty {
 pub struct ActivityAssets {
 	pub large_image: Option<String>,
 	pub large_text: Option<String>,
+	pub large_url: Option<String>,
 	pub small_image: Option<String>,
 	pub small_text: Option<String>,
+	pub small_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -80,7 +82,9 @@ pub struct Activity {
 	pub timestamps: Option<ActivityTimestamps>,
 	pub application_id: Option<Snowflake>,
 	pub details: Option<String>,
+	pub details_url: Option<String>,
 	pub state: Option<String>,
+	pub state_url: Option<String>,
 	pub emoji: Option<PartialEmoji>,
 	pub party: Option<ActivityParty>,
 	pub assets: Option<ActivityAssets>,

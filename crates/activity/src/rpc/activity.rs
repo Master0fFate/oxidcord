@@ -111,6 +111,11 @@ async fn assets(app: &RpcApp, apps: &Apps, raw: &Value) -> Result<Option<Value>,
 		"large_text",
 		text(raw, &["assets", "large_text"], TEXT_MIN, TEXT_MAX)?,
 	);
+	put(
+		&mut assets,
+		"large_url",
+		text(raw, &["assets", "large_url"], 1, URL_MAX)?,
+	);
 	if let Some(key) = text(raw, &["assets", "small_image"], 1, URL_MAX)? {
 		put(&mut assets, "small_image", image(app, apps, &key).await);
 	}
@@ -118,6 +123,11 @@ async fn assets(app: &RpcApp, apps: &Apps, raw: &Value) -> Result<Option<Value>,
 		&mut assets,
 		"small_text",
 		text(raw, &["assets", "small_text"], TEXT_MIN, TEXT_MAX)?,
+	);
+	put(
+		&mut assets,
+		"small_url",
+		text(raw, &["assets", "small_url"], 1, URL_MAX)?,
 	);
 	Ok((!assets.is_empty()).then_some(Value::Object(assets)))
 }

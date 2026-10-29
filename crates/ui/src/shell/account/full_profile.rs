@@ -9,6 +9,7 @@ use gpui_component::scroll::ScrollableElement as _;
 use media::SizeHint;
 use protocol::Snowflake;
 
+use super::activity::{ActivityView, OpenLink, activity_card_full};
 use super::profile_data::ProfileData;
 use super::{AccountHub, parts, rich};
 use crate::components::{Avatar, IconButton};
@@ -90,8 +91,26 @@ impl AccountHub {
 			.into_any_element()
 	}
 
-	fn info_tab(&self, profile: &ProfileData, theme: &Theme, cx: &Context<Self>) -> AnyElement {
+	fn info_tab(
+		&self,
+		profile: &ProfileData,
+		activities: &[ActivityView],
+		open: &OpenLink,
+		theme: &Theme,
+		cx: &Context<Self>,
+	) -> AnyElement {
 		let mut column = div().flex().flex_col().gap(theme.space_16);
+		if !activities.is_empty() {
+			let now = chrono::Utc::now().timestamp_millis();
+			column = column.child(
+				div().flex().flex_col().gap(theme.space_8).children(
+					activities
+						.iter()
+						.enumerate()
+						.map(|(index, activity)| activity_card_full(activity, index, now, open, theme, cx)),
+				),
+			);
+		}
 		if let Some(bio) = profile.bio.as_deref() {
 			column = column.child(
 				div()
@@ -248,6 +267,8 @@ impl AccountHub {
 	pub(super) fn full_profile_card(
 		&self,
 		profile: &ProfileData,
+		activities: &[ActivityView],
+		open: &OpenLink,
 		theme: &Theme,
 		cx: &mut Context<Self>,
 	) -> AnyElement {
@@ -261,7 +282,7 @@ impl AccountHub {
 		});
 		let tab = self.full.as_ref().map_or(FullTab::Info, |full| full.tab);
 		let body = match tab {
-			FullTab::Info => self.info_tab(profile, theme, cx),
+			FullTab::Info => self.info_tab(profile, activities, open, theme, cx),
 			FullTab::Servers => self.servers_tab(profile, theme, cx),
 			FullTab::Friends => self.friends_tab(profile, theme, cx),
 		};

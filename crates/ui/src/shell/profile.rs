@@ -13,7 +13,8 @@ use protocol::Snowflake;
 use session::Command;
 
 use super::account::{self, ProfileData};
-use super::plugins::{self, MenuTarget, plugin_menu};
+use super::plugins::{self, LinkOrigin, MenuTarget, plugin_menu};
+use super::{SettingsBackend, links};
 use crate::components::{Avatar, Divider};
 use crate::data::{Data, DataEvent};
 use crate::format;
@@ -32,6 +33,7 @@ pub enum ProfileEvent {
 
 pub struct ProfileCard {
 	data: Entity<Data>,
+	backend: Rc<SettingsBackend>,
 	user: Snowflake,
 	guild: Option<Snowflake>,
 	requested_icons: HashSet<Snowflake>,
@@ -45,6 +47,7 @@ impl EventEmitter<ProfileEvent> for ProfileCard {}
 impl ProfileCard {
 	pub fn new(
 		data: Entity<Data>,
+		backend: Rc<SettingsBackend>,
 		user: Snowflake,
 		guild: Option<Snowflake>,
 		cx: &mut Context<Self>,
@@ -88,6 +91,7 @@ impl ProfileCard {
 		});
 		Self {
 			data,
+			backend,
 			user,
 			guild,
 			requested_icons: HashSet::new(),
@@ -118,18 +122,31 @@ impl Render for ProfileCard {
 		}
 		self.ticking = activities.iter().any(|activity| activity.is_timed());
 		let now = chrono::Utc::now().timestamp_millis();
-		let activity_cards: Vec<_> = activities
-			.iter()
-			.map(|activity| account::activity_card(activity, now, &theme, cx))
-			.collect();
 		let Some(profile) = profile else {
 			return div().into_any_element();
 		};
+		let (user, guild) = (self.user, self.guild);
+		let backend = self.backend.clone();
+		let open: account::OpenLink = Rc::new(move |url, window, cx| {
+			links::open_link(url, LinkOrigin::default(), &backend, window, cx);
+		});
+		let deck = (!activities.is_empty()).then(|| {
+			account::activity_deck(
+				&activities,
+				now,
+				&open,
+				&theme,
+				cx,
+				cx.listener(move |_, _, _, cx| {
+					cx.emit(ProfileEvent::OpenFull { user, guild });
+					cx.emit(ProfileEvent::Close);
+				}),
+			)
+		});
 		let weak = cx.weak_entity();
 		let close: account::CloseFn = Rc::new(move |_, cx| {
 			weak.update(cx, |_, cx| cx.emit(ProfileEvent::Close)).ok();
 		});
-		let (user, guild) = (self.user, self.guild);
 		let cutout = theme.background_floating;
 		let banner = account::banner(&profile, theme.profile_banner_height, &theme, cx);
 		let plugin_badges = profile
@@ -247,7 +264,7 @@ impl Render for ProfileCard {
 							),
 					)
 					.child(Divider::horizontal())
-					.children(activity_cards)
+					.children(deck)
 					.when_some(bio, |card, bio| {
 						card.child(
 							div()

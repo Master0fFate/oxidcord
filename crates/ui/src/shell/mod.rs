@@ -470,7 +470,7 @@ impl Shell {
 		);
 		let call_toast = cx.new(|cx| CallToast::new(data.clone(), window, cx));
 		let home_pages = HomePages::new(data.clone(), window, cx);
-		let account = cx.new(|cx| AccountHub::new(data.clone(), cx));
+		let account = cx.new(|cx| AccountHub::new(data.clone(), backend.clone(), cx));
 		let groups = Groups::new(data.clone(), window, cx);
 		subscriptions.push(cx.subscribe(&groups.members, |this, _, event: &GroupEvent, cx| {
 			let GroupEvent::OpenProfile { user, at } = event;
@@ -1175,7 +1175,8 @@ impl Shell {
 	fn open_profile(&mut self, user: Snowflake, at: Point<Pixels>, anchor: Anchor, cx: &mut Context<Self>) {
 		let data = self.data.clone();
 		let guild = self.guild;
-		let card = cx.new(|cx| ProfileCard::new(data, user, guild, cx));
+		let backend = self.backend.clone();
+		let card = cx.new(|cx| ProfileCard::new(data, backend, user, guild, cx));
 		let subscription = cx.subscribe(&card, |this, _, event: &ProfileEvent, cx| {
 			if let ProfileEvent::OpenFull { user, guild } = event {
 				this.account
