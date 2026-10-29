@@ -210,11 +210,16 @@ impl State {
 			} else if confirmed {
 				changes.messages.insert(channel_id);
 			}
-			if let Some(pending) = pending {
-				if cache.by_id.contains_key(&message.id) {
-					let millis = u32::try_from(pending.sent_at.elapsed().as_millis()).unwrap_or(u32::MAX);
-					cache.record_latency(message.id, millis);
+			let millis = match &pending {
+				Some(pending) => {
+					Some(u32::try_from(pending.sent_at.elapsed().as_millis()).unwrap_or(u32::MAX))
 				}
+				None => nonce_latency_ms(message),
+			};
+			if let Some(millis) = millis.filter(|_| cache.by_id.contains_key(&message.id)) {
+				cache.record_latency(message.id, millis);
+			}
+			if let Some(pending) = pending {
 				if let Some(by) = pending.plugin {
 					self.sent_by_plugin.insert(message.id, by);
 				}
@@ -660,4 +665,12 @@ impl State {
 			.entry(typing.user_id)
 			.or_insert_with(|| stripped_member(member));
 	}
+}
+
+fn nonce_latency_ms(message: &Message) -> Option<u32> {
+	let nonce = Snowflake(message.nonce.as_ref()?.0.parse().ok()?);
+	let delta = message.id.timestamp() - nonce.timestamp();
+	let millis = delta.num_milliseconds();
+	(millis >= 0 && nonce.timestamp().timestamp_millis() > protocol::DISCORD_EPOCH_MS)
+		.then(|| u32::try_from(millis).unwrap_or(u32::MAX))
 }

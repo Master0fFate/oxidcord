@@ -110,7 +110,7 @@ impl PluginExt for Highlighter {
 
 A plugin that lists `intercept` in `hooks` gets `intercept-message-ext(msg, meta, content)` instead of `intercept-message`, and returns a `message-patch-ext`. It is the same call plus a `message-meta` and extra fields next to `base: message-patch`.
 
-`message-meta`: `guild-id`, `reply-to` (a `message-ref`), `flags`, `latency-ms` (send latency, only for your own messages), `author-color` (role color of the author), `pinned`, `edited-ms`, `nsfw-channel`.
+`message-meta`: `guild-id`, `reply-to` (a `message-ref`), `flags`, `latency-ms` (send latency of live messages: measured for your own, id minus nonce for other people's), `author-color` (role color of the author), `pinned`, `edited-ms`, `nsfw-channel`.
 
 `message-patch-ext` extras:
 

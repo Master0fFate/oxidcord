@@ -4,7 +4,7 @@ Adds a line under a message that took a while to send, like `Sent with a delay o
 
 Settings: `latency` (threshold in seconds, default 2) and `showMillis` (default off, otherwise the delay is rounded to whole seconds).
 
-Limits: the client only measures the delay of messages you sent yourself (time between pressing send and the message coming back from the server). Vencord compares the message id with the nonce, which is not available for messages from other people, so no line ever shows for them. Vencord's `detectDiscordKotlin` and the "clock is ahead" text are not part of this port.
+Limits: the delay of your own messages is the time between pressing send and the message coming back from the server. For messages from other people it is the difference between the message id and the nonce, like Vencord, so it exists for live messages only and never for history loaded later. Vencord's `detectDiscordKotlin` and the "clock is ahead" text are not part of this port.
 
 Permissions: `message-intercept`, `storage`.
 
