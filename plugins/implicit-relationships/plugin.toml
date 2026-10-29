@@ -1,6 +1,6 @@
 id = "dev.oxidcord.implicit-relationships"
 name = "Implicit Relationships"
-version = "0.1.0"
+version = "0.1.1"
 api = "^1.2"
 authors = ["fate"]
 license = "MIT OR Apache-2.0"

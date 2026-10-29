@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "generated_at": "2026-10-29T03:23:01Z",
+  "generated_at": "2026-10-29T03:26:13Z",
   "plugins": [
     {
       "id": "dev.oxidcord.account-server-profile",
       "name": "Account Server Profile",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "A row above the account panel and a menu entry open your avatar, nickname, roles and join date in the open server.",
       "permissions": [
         "ui-mount",
@@ -13,44 +13,44 @@
         "context-roles",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.account-server-profile-0.1.0.oxidcord-plugin",
-      "sha256": "7dab3cba9571598c19f7f48163f23255e81f119f064fb6dfc9e4ea7321af8630",
-      "length": 113796,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.account-server-profile-0.1.1.oxidcord-plugin",
+      "sha256": "cc054c7fa3b9887fba9fa20cbb996d964113db89dcef43447b74e6a461cb7b09",
+      "length": 113799,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.anonymise-file-names",
       "name": "Anonymise File Names",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Anonymise uploaded file names",
       "permissions": [
         "message-send",
         "ui-mount",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.anonymise-file-names-0.1.0.oxidcord-plugin",
-      "sha256": "b28afcac781f1d3ed5d2833303258f03f0eeb7c71e765bb3dbb0f87b779f8bbd",
-      "length": 102159,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.anonymise-file-names-0.1.1.oxidcord-plugin",
+      "sha256": "5f3ee84e6beda8d68f7a8652083242b5e1f5d591d3c689450c8bd99c72e9916b",
+      "length": 102160,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.better-folders",
       "name": "Better Folders",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Shows the servers of an open folder in a sidebar next to the server list.",
       "permissions": [
         "actions-settings",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.better-folders-0.1.0.oxidcord-plugin",
-      "sha256": "4cb5f5467849fecf8dc200a782b798e49fabc4aba6cecb76b7ff6a095fd07d2c",
-      "length": 90893,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.better-folders-0.1.1.oxidcord-plugin",
+      "sha256": "5e92313e947526fcb37a7c8af6bd9ce7ff79c34e8e1d53fb4a5e0ee4f733cf32",
+      "length": 90894,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.better-role-context",
       "name": "Better Role Context",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Adds options to copy the role color and id and to view the role icon when right clicking roles.",
       "permissions": [
         "ui-mount",
@@ -58,15 +58,15 @@
         "actions-clipboard",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.better-role-context-0.1.0.oxidcord-plugin",
-      "sha256": "3855fdbc3f14d2d8d377af18bbfa4febabdb2ead6df06e418e4755572659e833",
-      "length": 104393,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.better-role-context-0.1.1.oxidcord-plugin",
+      "sha256": "8981e63d658f5a8b646508a906a6c2c3d17b66b371e6e54435033d1847f2917a",
+      "length": 104394,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.better-role-dot",
       "name": "Better Role Dot",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Colored badge next to names in the top role color, a click copies the color.",
       "permissions": [
         "user-display",
@@ -75,15 +75,15 @@
         "ui-mount",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.better-role-dot-0.1.0.oxidcord-plugin",
-      "sha256": "053be2c33d06ebe80ccf3df674502b7038975e014b72f7ea9016789d0ba73af7",
-      "length": 105678,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.better-role-dot-0.1.1.oxidcord-plugin",
+      "sha256": "cba2fb394975feafbd1fff587d25b4e46a198cd48033b54b23bc0a6a015605f0",
+      "length": 105680,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.better-sessions",
       "name": "Better Sessions",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Lists your logged in devices on the plugin page with custom names and a notification for new sessions.",
       "permissions": [
         "context-sessions",
@@ -91,102 +91,102 @@
         "actions-notify",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.better-sessions-0.1.0.oxidcord-plugin",
-      "sha256": "0eb9e2d95d796c684aa3312ca495eea4df87c90dc9802baabfb7f0bd5c92a2bd",
-      "length": 138122,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.better-sessions-0.1.1.oxidcord-plugin",
+      "sha256": "357fa7253a8e6699aca111938c944806b7d8e6f3086604fa081fc889785e12fe",
+      "length": 138123,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.blur-nsfw",
       "name": "Blur NSFW",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Blurs attachments in age restricted channels until you hover them.",
       "permissions": [
         "message-intercept"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.blur-nsfw-0.1.0.oxidcord-plugin",
-      "sha256": "5fd72d5435a6b8ce54872a4f10ac494f129840d66033d671919328a01bd4fec9",
-      "length": 88525,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.blur-nsfw-0.1.1.oxidcord-plugin",
+      "sha256": "5238e2734f077f96144e751aaaa900f3a36f6249a98f9e08fdce4d4836917170",
+      "length": 88526,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.call-timer",
       "name": "Call Timer",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Shows how long the current call has lasted in the voice panel.",
       "permissions": [
         "context-voice",
         "ui-mount",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.call-timer-0.1.0.oxidcord-plugin",
-      "sha256": "3eddb4041905b434f7d6e10249e5a574dc22ef4cf21533c3d117d5f6a2b4ab2d",
-      "length": 103035,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.call-timer-0.1.1.oxidcord-plugin",
+      "sha256": "66ab2cb574132727450068e1f9f3fc899b9498043593b34040d904a8f6de5fed",
+      "length": 103036,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.character-counter",
       "name": "Character Counter",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Adds a character counter to the chat input",
       "permissions": [
         "composer-watch",
         "ui-mount",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.character-counter-0.1.0.oxidcord-plugin",
-      "sha256": "897c2cc1f21d4e5af7c6b3ccd32c65090412d4b79b59144cc4c867779a837f59",
-      "length": 100865,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.character-counter-0.1.1.oxidcord-plugin",
+      "sha256": "a0606fd96f7e722bc4aa25cf53cc66b819dac0133ad50782d52ebaab9967508a",
+      "length": 100867,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.clear-urls",
       "name": "Clear URLs",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Automatically removes tracking elements from URLs you send.",
       "permissions": [
         "message-send",
         "net-fetch",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.clear-urls-0.1.0.oxidcord-plugin",
-      "sha256": "05e05e9d70a67b73df6264bb533579513b8975a6a02d63cf4ea380751e15ddd5",
-      "length": 177146,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.clear-urls-0.1.1.oxidcord-plugin",
+      "sha256": "b8a0c68d4705b2ff41368574ca5ba0aca97c897825d83515514494f2b308352e",
+      "length": 177144,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.code-highlight",
       "name": "Code Highlight",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Syntax highlighting for code blocks in 16 languages.",
       "permissions": [
         "message-intercept",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.code-highlight-0.1.0.oxidcord-plugin",
-      "sha256": "8cdefac83f63e30ea7828482b828a4e15320a59d47b8e436749c6787c4794f7e",
-      "length": 106346,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.code-highlight-0.1.1.oxidcord-plugin",
+      "sha256": "28838aca616cb684c01f8e6e7abe8db385c77d1528dd0be1488b0101231ad7cb",
+      "length": 106347,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.copy-emoji-markdown",
       "name": "Copy Emoji Markdown",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Allows you to copy emojis as formatted string.",
       "permissions": [
         "ui-mount",
         "actions-clipboard",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.copy-emoji-markdown-0.1.0.oxidcord-plugin",
-      "sha256": "51110221596b8ac01ef7a57d4c33555350889c936bb39f03e0e5dfefbf21ba5d",
-      "length": 100365,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.copy-emoji-markdown-0.1.1.oxidcord-plugin",
+      "sha256": "4c3cc29a43387d9dad95d17e09fc59580774311bdc0a06ac8944ca8c602f21c5",
+      "length": 100368,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.copy-file-contents",
       "name": "Copy File Contents",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Adds a button to text file attachments to copy their contents.",
       "permissions": [
         "ui-mount",
@@ -194,15 +194,15 @@
         "context-attachments",
         "actions-clipboard"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.copy-file-contents-0.1.0.oxidcord-plugin",
-      "sha256": "23f67756443a43c9ec924abb6ff7a43470f57a85f8b97fe24c504e0dc558c4c3",
-      "length": 102134,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.copy-file-contents-0.1.1.oxidcord-plugin",
+      "sha256": "5764ffe55e374897fbe49356a5a2680d4a5b5f8c3c1036d5672f5fc543ba637d",
+      "length": 102135,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.copy-sticker-links",
       "name": "Copy Sticker Links",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Adds the ability to copy and open sticker links.",
       "permissions": [
         "ui-mount",
@@ -210,29 +210,29 @@
         "actions-clipboard",
         "actions-open-url"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.copy-sticker-links-0.1.0.oxidcord-plugin",
-      "sha256": "86e7c50c066871775d6b85bc0bafae1eba51712fd3872255ad451d4d097bdc69",
-      "length": 99788,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.copy-sticker-links-0.1.1.oxidcord-plugin",
+      "sha256": "bfae0a830693c6cdd3c6c84508a3338c0c8b81d389cebaac53cccedb3bfa23c4",
+      "length": 99789,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.copy-user-urls",
       "name": "Copy User URLs",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Adds a 'Copy User URL' option to the user context menu.",
       "permissions": [
         "ui-mount",
         "actions-clipboard"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.copy-user-urls-0.1.0.oxidcord-plugin",
-      "sha256": "d32d40b785040a932d67e3a68318b77250e2952d892f77655ecb5c6e1117aaca",
-      "length": 96570,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.copy-user-urls-0.1.1.oxidcord-plugin",
+      "sha256": "2f1a8e79a14064d7ebfb52e84bf0164be2f86dd957f8dd1ff6635d8cba825313",
+      "length": 96569,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.custom-commands",
       "name": "Custom Commands",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Create custom slash commands / tags.",
       "permissions": [
         "ui-slots",
@@ -240,15 +240,15 @@
         "storage",
         "actions-send"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.custom-commands-0.1.0.oxidcord-plugin",
-      "sha256": "8a111a9f6e6fccf03a65eedff0a9d44bea97b1ca960eeccd9b6edea9b1510d02",
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.custom-commands-0.1.1.oxidcord-plugin",
+      "sha256": "44f7e25bb82ab25021c09a91c4593484e68c83784f214f1ca4cf51bf27369059",
       "length": 116348,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.custom-idle",
       "name": "Custom Idle",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Allows you to set the time before your status goes idle, or disable auto-idle.",
       "permissions": [
         "context-presence",
@@ -257,59 +257,59 @@
         "ui-mount",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.custom-idle-0.1.0.oxidcord-plugin",
-      "sha256": "a8763887afedc491741adc3848ef7d90cb52735c4a1f38eae576f427937a807e",
-      "length": 119225,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.custom-idle-0.1.1.oxidcord-plugin",
+      "sha256": "264690abaca01c307976bb0bb30fb9cdd0183de0c243784448241fed9234a427",
+      "length": 119226,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.dearrow",
       "name": "Dearrow",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Makes YouTube embed titles and thumbnails less sensationalist, powered by Dearrow",
       "permissions": [
         "message-intercept",
         "net-fetch",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.dearrow-0.1.0.oxidcord-plugin",
-      "sha256": "2f678c95d378d6b38ff38e79fd7816c848c063ef88a1dfeab21c268fade73985",
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.dearrow-0.1.1.oxidcord-plugin",
+      "sha256": "1a1b9f9fe1fce0755d48315e257aa46ffa87ea17ff41731af4c76ccc7a85fb3c",
       "length": 165407,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.decor",
       "name": "Decor",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Shows the custom avatar decorations people picked in Decor.",
       "permissions": [
         "user-display",
         "net-fetch",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.decor-0.1.0.oxidcord-plugin",
-      "sha256": "3eccfa270d0f63d667c2747e54e5244fb8b0a8d7f305f5f69e92a47058865108",
-      "length": 153549,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.decor-0.1.1.oxidcord-plugin",
+      "sha256": "2409af5c0a97c64d757aac3fbe4a98a48732ba329cac76e412b39402992d6a96",
+      "length": 153550,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.direct-file-download",
       "name": "Direct File Download",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Directly download files from Discord instead of opening them in the browser.",
       "permissions": [
         "ui-mount",
         "actions-save"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.direct-file-download-0.1.0.oxidcord-plugin",
-      "sha256": "5a1506f37d39c374e7f4c3e0e636e3310027157dc8154f6d182e1b8efc70cb63",
-      "length": 101878,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.direct-file-download-0.1.1.oxidcord-plugin",
+      "sha256": "9277dcb914830427e5193d511772d310cc37a0d2d74ede9a5a412debde404944",
+      "length": 101879,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.expression-cloner",
       "name": "Expression Cloner",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Clone emotes and stickers to your own server.",
       "permissions": [
         "ui-mount",
@@ -318,15 +318,15 @@
         "context-expressions",
         "actions-guild"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.expression-cloner-0.1.0.oxidcord-plugin",
-      "sha256": "bf1430fd6fa9e593a960f9e3b74030377ad288b34d4a3e53451af55314324325",
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.expression-cloner-0.1.1.oxidcord-plugin",
+      "sha256": "880f7f8a298a5140e2a70a77630caa391ea4652cb4abb14672f811ac7877e3bd",
       "length": 118484,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.fake-nitro",
       "name": "Fake Nitro",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Sends emoji you cannot use as image links and shows received emoji links inline.",
       "permissions": [
         "composer",
@@ -334,30 +334,30 @@
         "message-send",
         "message-intercept"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.fake-nitro-0.1.0.oxidcord-plugin",
-      "sha256": "84477c81ddf41b668150eb8bfceb670eef5c23b0996d0ce6a8b0f997e3831f18",
-      "length": 103223,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.fake-nitro-0.1.1.oxidcord-plugin",
+      "sha256": "a0716b8ca86fa5d20d4b599405cac8926edbaa3055a327ce7286744ea56fba05",
+      "length": 103224,
       "reviewed": true
     },
     {
       "id": "dev.oxidcord.fake-profile-themes",
       "name": "Fake Profile Themes",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Shows the profile colors people hide in their bio with invisible 3y3 encoding.",
       "permissions": [
         "ui-mount",
         "context-profiles",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.fake-profile-themes-0.1.0.oxidcord-plugin",
-      "sha256": "b18762df471c59394d64e20321a094ca76fff5465745db4e3c61950923790815",
-      "length": 102501,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.fake-profile-themes-0.1.1.oxidcord-plugin",
+      "sha256": "523ae411f277b0b0b5cad07c93d91477a9ec514a7f32f0de03dec65611d6d229",
+      "length": 102502,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.fav-emoji-first",
       "name": "Favorite Emoji First",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Puts the emoji you sent most recently first in the emoji autocomplete.",
       "permissions": [
         "ui-input",
@@ -365,145 +365,145 @@
         "message-send",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.fav-emoji-first-0.1.0.oxidcord-plugin",
-      "sha256": "7d27c6cc9a8292a83586c6c3e1c7b9da85c9a400a99d64fbaacf1c0159d31b77",
-      "length": 135610,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.fav-emoji-first-0.1.1.oxidcord-plugin",
+      "sha256": "29b4031953831fe236d75e92121e5389456fd66bd87240faf90ab81260a77726",
+      "length": 135615,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.fix-images-quality",
       "name": "Fix Images Quality",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Improves quality of images by loading them at their original resolution",
       "permissions": [
         "message-intercept",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.fix-images-quality-0.1.0.oxidcord-plugin",
-      "sha256": "72163cecf292cca2df9b0ce2f4503140e20dd7909774a50d7cf8637503fb53d1",
-      "length": 99056,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.fix-images-quality-0.1.1.oxidcord-plugin",
+      "sha256": "5fded5b800442477fc3e3330cb9949ac9236527019c44a8fb7300f1eb3eb3882",
+      "length": 99057,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.force-owner-crown",
       "name": "Force Owner Crown",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Crown badge next to the name of the server owner, even in large servers.",
       "permissions": [
         "user-display",
         "context-directory"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.force-owner-crown-0.1.0.oxidcord-plugin",
-      "sha256": "74c2b982e3dee9adeb8838364cedeb458a66dc509913bccfef5bedaf5df3fd91",
-      "length": 92636,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.force-owner-crown-0.1.1.oxidcord-plugin",
+      "sha256": "d27a33e53bf6c6a478be94a3e6e38b70b30adb357d640a71c68dc03855ef2ee2",
+      "length": 92639,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.hello-timestamps",
       "name": "Hello Timestamps",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Appends a relative send time under every message and adds a Copy ID button.",
       "permissions": [
         "message-render",
         "ui-slots",
         "actions-clipboard"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.hello-timestamps-0.1.0.oxidcord-plugin",
-      "sha256": "9232e1f89f395dd79f7c3a50da06e0a695a434a6811eecc9af38dd1f7ae76750",
-      "length": 46788,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.hello-timestamps-0.1.1.oxidcord-plugin",
+      "sha256": "c97393f2d54d6a09079d3847b426fe4f8316f4907150a7cdf44494c1e84c1175",
+      "length": 46792,
       "reviewed": true
     },
     {
       "id": "dev.oxidcord.hide-attachments",
       "name": "Hide Attachments",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Hide attachments and embeds for individual messages via hover button.",
       "permissions": [
         "ui-mount",
         "message-intercept",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.hide-attachments-0.1.0.oxidcord-plugin",
-      "sha256": "98a8197af1b977ac07d8ddf677607d2366cc17e8baae9df8de9a1075ea522e22",
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.hide-attachments-0.1.1.oxidcord-plugin",
+      "sha256": "52154c4763eda6347541a3b2e927b1b0afd65b6533ac4e1a9805fa880e006c90",
       "length": 105890,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.image-filename",
       "name": "Image Filename",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Shows the file name of image attachments as a tooltip.",
       "permissions": [
         "message-intercept",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.image-filename-0.1.0.oxidcord-plugin",
-      "sha256": "9284ca8a48fe5c7084be3c5155c811509d422b47d9458e5d6671464f53de1783",
-      "length": 90405,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.image-filename-0.1.1.oxidcord-plugin",
+      "sha256": "6bd000949bd63ce9d487c553cd4926cf5c86c5e99d75bd7595c15c9cdf353022",
+      "length": 90406,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.implicit-relationships",
       "name": "Implicit Relationships",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Implicit tab on the Friends page with people you share two or more servers with and no relationship.",
       "permissions": [
         "ui-mount",
         "context-relationships"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.implicit-relationships-0.1.0.oxidcord-plugin",
-      "sha256": "e27829c227fe2f90025e8818fce3b3520363f37433a10ff3f27780fe96141cc8",
-      "length": 108524,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.implicit-relationships-0.1.1.oxidcord-plugin",
+      "sha256": "c35a358b9e8a9c1d2073e0312c8fed1f25280d54b251673c37a7e408bda8d811",
+      "length": 108526,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.irc-colors",
       "name": "IRC Colors",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Makes username colors in chat unique, like in IRC clients.",
       "permissions": [
         "user-display",
         "storage",
         "context-roles"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.irc-colors-0.1.0.oxidcord-plugin",
-      "sha256": "6e980ffcbb0a7c060193e18cae9370b8fa3ebac150ac273a5b548e168b1ed271",
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.irc-colors-0.1.1.oxidcord-plugin",
+      "sha256": "eb680a850238f5cb6b86644de0b7ac2a74480821abf1c1731a593e8bfafffcd8",
       "length": 108392,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.jump-to-top",
       "name": "Jump To Top",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Adds a button to jump to the first message in a channel",
       "permissions": [
         "ui-mount",
         "actions-compose"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.jump-to-top-0.1.0.oxidcord-plugin",
-      "sha256": "f804b38ae31d541b2eade6437c525c96f1416e36c7a85b6a6b350e0698e9bee4",
-      "length": 98017,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.jump-to-top-0.1.1.oxidcord-plugin",
+      "sha256": "a5c58e8859d02d7a06b97eb266afb6ad69199c922864f9c648069c07040b9454",
+      "length": 98018,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.keep-current-channel",
       "name": "Keep Current Channel",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Navigate to the channel you were in before restart.",
       "permissions": [
         "context-basic",
         "storage",
         "actions-navigate"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.keep-current-channel-0.1.0.oxidcord-plugin",
-      "sha256": "f09692a016500d2fbe3918b994388a0e69fcd8507a3e83bcfc7391a8e7b05bc5",
-      "length": 45500,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.keep-current-channel-0.1.1.oxidcord-plugin",
+      "sha256": "407299e74af12b0233e57f27552f02c8de75436767ed92a2c2e29f9eb851ee8f",
+      "length": 45504,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.keyword-highlighter",
       "name": "Keyword Highlighter",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Bolds your keywords in messages, adds a keyword badge and notifies on a match.",
       "permissions": [
         "message-render",
@@ -511,42 +511,42 @@
         "context-basic",
         "actions-notify"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.keyword-highlighter-0.1.0.oxidcord-plugin",
-      "sha256": "7ee26019f5e2f58a4bc18cf0498447f534f3fabb28c158f1041379e98bd54845",
-      "length": 53743,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.keyword-highlighter-0.1.1.oxidcord-plugin",
+      "sha256": "1e3e078fbaf808a386115120ed336c076496c70466cab35944da564ed20a80fc",
+      "length": 53748,
       "reviewed": true
     },
     {
       "id": "dev.oxidcord.link-cleaner",
       "name": "Link Cleaner",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Strips tracking parameters from links before a message is sent.",
       "permissions": [
         "message-send"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.link-cleaner-0.1.0.oxidcord-plugin",
-      "sha256": "3e400b593c400a0b36f67d9e423dfdc29a6e5839bf2a1ba7cc05702b269f36d8",
-      "length": 47219,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.link-cleaner-0.1.1.oxidcord-plugin",
+      "sha256": "b5a84215664429e3734d8172ee73e46506b732817e84386a6fd6717a7f2b5bba",
+      "length": 47222,
       "reviewed": true
     },
     {
       "id": "dev.oxidcord.local-status-badge",
       "name": "Local Status Badge",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Status bar item with the current channel id and a badge that cycles through three colors.",
       "permissions": [
         "context-basic",
         "ui-slots"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.local-status-badge-0.1.0.oxidcord-plugin",
-      "sha256": "74aad2ad9fc7091c75febe6db8ac1bc38cc2c93928d7698575ebcae578f2e9b9",
-      "length": 45879,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.local-status-badge-0.1.1.oxidcord-plugin",
+      "sha256": "c03f0d74f625c7d7cc9f0ad9e05d9883e857037200daf4ba8facfdcba8cc86d1",
+      "length": 45883,
       "reviewed": true
     },
     {
       "id": "dev.oxidcord.member-count",
       "name": "Member Count",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Row above the member list with the online, total and voice counts, and the online and total counts in the server tooltip.",
       "permissions": [
         "ui-mount",
@@ -554,30 +554,30 @@
         "context-voice",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.member-count-0.1.0.oxidcord-plugin",
-      "sha256": "13ea6967405884a3645c09a3425a4ff25f5168dd4edb47aebfe44e91b113b616",
-      "length": 100846,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.member-count-0.1.1.oxidcord-plugin",
+      "sha256": "5c1f83855dc8cd5ba12785ddf12dcfbb1cad4ff2c0da68f8ab2b627af270bbc0",
+      "length": 100847,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.mention-avatars",
       "name": "Mention Avatars",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Shows user avatars inside mentions.",
       "permissions": [
         "message-intercept",
         "context-members",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.mention-avatars-0.1.0.oxidcord-plugin",
-      "sha256": "aa1670497f1d633c34aa7fa9eb76aa163a09137967ac5873fbcf820015b8d844",
-      "length": 96191,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.mention-avatars-0.1.1.oxidcord-plugin",
+      "sha256": "cf2a640c4bc7717bc444bf12a8b861a7830e38db3a2be5896ebe791c12431072",
+      "length": 96192,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.message-click-actions",
       "name": "Message Click Actions",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Double click to edit/reply, Ctrl+Alt click to delete",
       "permissions": [
         "ui-input",
@@ -586,29 +586,29 @@
         "actions-delete",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.message-click-actions-0.1.0.oxidcord-plugin",
-      "sha256": "18fec20ecbed3ea89500bba40e53a08b0f47667b395baefe7c8c41aea30efd59",
-      "length": 100407,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.message-click-actions-0.1.1.oxidcord-plugin",
+      "sha256": "862d489ea3b88fc93a3d0f8df4286bf46b134c0ce4a3143f87edd700e4d28690",
+      "length": 100408,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.message-latency",
       "name": "Message Latency",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Shows how long your own messages took to send when it was slow.",
       "permissions": [
         "message-intercept",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.message-latency-0.1.0.oxidcord-plugin",
-      "sha256": "4ca9bfa5c325088df53849526752e3c8884c366373be1abbebf4db43b6a50341",
-      "length": 107804,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.message-latency-0.1.1.oxidcord-plugin",
+      "sha256": "d8e7eb649287447d48aa27a2bf3da91c1f0886e68a9905916c7c85e9bee3d96a",
+      "length": 107805,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.message-link-embeds",
       "name": "Message Link Embeds",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Adds a preview to messages that link another message",
       "permissions": [
         "message-intercept",
@@ -618,9 +618,9 @@
         "actions-compose",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.message-link-embeds-0.1.0.oxidcord-plugin",
-      "sha256": "be85533986b60fa842024a170e5add08a588bbbec6926269af60bb8fc2b30969",
-      "length": 116804,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.message-link-embeds-0.1.1.oxidcord-plugin",
+      "sha256": "894add1d37ed0f889b8e54e6a76d8fda6437873b5faa487e6bce112be2d54ffe",
+      "length": 116805,
       "reviewed": false
     },
     {
@@ -642,7 +642,7 @@
     {
       "id": "dev.oxidcord.more-quick-reactions",
       "name": "More Quick Reactions",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Adds a row of your most used reactions to the message hover bar.",
       "permissions": [
         "ui-mount",
@@ -651,15 +651,15 @@
         "context-timeline",
         "context-basic"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.more-quick-reactions-0.1.0.oxidcord-plugin",
-      "sha256": "c4bbaea9121b1a3c8eb0ca6259ab86ef58e078435abf7662579a394c9a43a754",
-      "length": 134315,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.more-quick-reactions-0.1.1.oxidcord-plugin",
+      "sha256": "981883b2ed7901399864a431b73083ff62e231661c1b343a094d6b731e2d79fa",
+      "length": 134317,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.mutual-group-dms",
       "name": "Mutual Group DMs",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Shows mutual group dms in profiles.",
       "permissions": [
         "ui-mount",
@@ -667,30 +667,30 @@
         "context-private",
         "actions-navigate"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.mutual-group-dms-0.1.0.oxidcord-plugin",
-      "sha256": "25d5374ed27a0b39caa55a6543d0fe3d132ba40956a1c6d1565b1bc38b40ae74",
-      "length": 101559,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.mutual-group-dms-0.1.1.oxidcord-plugin",
+      "sha256": "937069fc3315202ecaedae6c09e90b6a6638c66579fc39eaf1e5e0b5a79983f2",
+      "length": 101560,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.new-guild-settings",
       "name": "New Guild Settings",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Applies your notification settings to servers when you join them.",
       "permissions": [
         "context-directory",
         "actions-settings",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.new-guild-settings-0.1.0.oxidcord-plugin",
-      "sha256": "949a6d927e33dcbf228c2c2876d3e38f8c53617fffc786ab671f45dabd48444f",
-      "length": 95668,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.new-guild-settings-0.1.1.oxidcord-plugin",
+      "sha256": "0e0d33e855931014bbfea32a4f7fe5c398e52618cb83a64e06f97fff13b5feef",
+      "length": 95671,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.no-blocked-messages",
       "name": "No Blocked Messages",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Hides messages from blocked users and from a list of user ids you keep.",
       "permissions": [
         "message-filter",
@@ -698,29 +698,29 @@
         "context-private",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.no-blocked-messages-0.1.0.oxidcord-plugin",
-      "sha256": "c247179435ea059474c53f1b97f41010ac15b01ddff9842c9d60f367a51b112b",
-      "length": 100470,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.no-blocked-messages-0.1.1.oxidcord-plugin",
+      "sha256": "dba7049446be7fce385782bd0c2629e591ee81143c6d92656a14e2a7f00376ac",
+      "length": 100471,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.no-mosaic",
       "name": "No Mosaic",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Stacks image and video attachments instead of the mosaic grid.",
       "permissions": [
         "message-intercept",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.no-mosaic-0.1.0.oxidcord-plugin",
-      "sha256": "817cccc94214d8ee6f2639eb18fc2ae278cd269354c207eae23844fd75027f42",
-      "length": 90944,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.no-mosaic-0.1.1.oxidcord-plugin",
+      "sha256": "53146b25b3169ba257c5544550d1e7375f166a69b098d38bfe101ccd7537a9fc",
+      "length": 90945,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.no-reply-mention",
       "name": "No Reply Mention",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Turns the reply ping off by default, with lists of exceptions.",
       "permissions": [
         "message-send",
@@ -728,72 +728,72 @@
         "context-roles",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.no-reply-mention-0.1.0.oxidcord-plugin",
-      "sha256": "21615ba4220dbb945607b1298b5273812fa88671e3881e4d98cf4dbfca72dd2b",
-      "length": 95191,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.no-reply-mention-0.1.1.oxidcord-plugin",
+      "sha256": "9c2e25bd88564c2385a39caaa738fa16241d731f496871a9fc84d61ba290c079",
+      "length": 95192,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.no-server-emojis",
       "name": "No Server Emojis",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Do not show server emojis in the autocomplete menu.",
       "permissions": [
         "ui-input",
         "context-basic",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.no-server-emojis-0.1.0.oxidcord-plugin",
-      "sha256": "369b966d2ca3741b2d8421639794403a86cab93504f614b9173f0d2bcf23523b",
-      "length": 90455,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.no-server-emojis-0.1.1.oxidcord-plugin",
+      "sha256": "1054b200ce4cdf392cd7e6051d3d4061be69ada4a7005c65969eecc9ae38ddc4",
+      "length": 90460,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.no-typing-animation",
       "name": "No Typing Animation",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Disables the CPU-intensive typing dots animation.",
       "permissions": [
         "actions-settings"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.no-typing-animation-0.1.0.oxidcord-plugin",
-      "sha256": "f5e74f56c65ccacdc4fe59d416919651d65b2c697aafe1c86662a3f37d23bfe3",
-      "length": 88754,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.no-typing-animation-0.1.1.oxidcord-plugin",
+      "sha256": "b4685fd6d84c59da9cefced901844ce5bca1763c80bc57282c5400c1e35b29cd",
+      "length": 88756,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.notes-panel",
       "name": "Notes Panel",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "A notes page in the server rail, a Save to notes message action and a status bar counter.",
       "permissions": [
         "ui-mount",
         "storage",
         "context-timeline"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.notes-panel-0.1.0.oxidcord-plugin",
-      "sha256": "6f376d998f84726deac0cd957a1aa4cf97653619755052edccea848facff4805",
-      "length": 118521,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.notes-panel-0.1.1.oxidcord-plugin",
+      "sha256": "78fe5e077cae471161fabaa0e2cb3529feedb50609f5f52726eb3fa94465c16e",
+      "length": 118520,
       "reviewed": true
     },
     {
       "id": "dev.oxidcord.notification-volume",
       "name": "Notification Volume",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Separate volume for the notification chime.",
       "permissions": [
         "actions-settings",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.notification-volume-0.1.0.oxidcord-plugin",
-      "sha256": "68591e0c4cc675ae499b75016afad6da1dd1e1e6f680f557c1042ea66e243a0b",
-      "length": 106614,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.notification-volume-0.1.1.oxidcord-plugin",
+      "sha256": "fc27715481f2409593381c23c349e9866a4c330471ba15264f6cdf9ad5a5534e",
+      "length": 106615,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.one-ping-per-dm",
       "name": "One Ping Per DM",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Only one audio ping per DM until read.",
       "permissions": [
         "notifications-filter",
@@ -801,43 +801,43 @@
         "context-private",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.one-ping-per-dm-0.1.0.oxidcord-plugin",
-      "sha256": "f1fe7f646794096fc62e552c5403d152a2186d5a9258b02ccbc84ac033dc2db7",
-      "length": 93548,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.one-ping-per-dm-0.1.1.oxidcord-plugin",
+      "sha256": "b3e500ddf33bc6b4dfebf3a3a372cd8b857c44610f77f594eeee53898cb1add8",
+      "length": 93549,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.open-in-app",
       "name": "Open In App",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Open links in their respective apps instead of your browser.",
       "permissions": [
         "actions-open-url",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.open-in-app-0.1.0.oxidcord-plugin",
-      "sha256": "ba6d083ca7f2e4d65a05af350bb3dd321c45d83b76ab519a96b2b0f30ecaa9a1",
-      "length": 90702,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.open-in-app-0.1.1.oxidcord-plugin",
+      "sha256": "ea5c5312034982fedcd318caebdb9e93079867ac3276974c1c001e3e4268a66b",
+      "length": 90703,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.override-forum-defaults",
       "name": "Override Forum Defaults",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Allows you to override default forum layout/sort order. you can still change it on a per-channel basis.",
       "permissions": [
         "actions-settings",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.override-forum-defaults-0.1.0.oxidcord-plugin",
-      "sha256": "187c27bb7d81b5efef6114ec434d4f8a42b415a22dbe015bd74fa55af0769783",
-      "length": 90743,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.override-forum-defaults-0.1.1.oxidcord-plugin",
+      "sha256": "f114e07eb640bc910fcf843cda6193961b611d545c47a9923a70a13bd9c328c7",
+      "length": 90744,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.permissions-viewer",
       "name": "Permissions Viewer",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "View the permissions a user or channel has, and the roles of a server.",
       "permissions": [
         "ui-mount",
@@ -846,30 +846,30 @@
         "context-basic",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.permissions-viewer-0.1.0.oxidcord-plugin",
-      "sha256": "664da886bafb4af59fe16abf85c8eebca887bb8774289f7a0a72b43fdc099bc8",
-      "length": 111011,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.permissions-viewer-0.1.1.oxidcord-plugin",
+      "sha256": "beeb0cf7fa94991583c29499b2132dfe113141e00756b7ee1655e8b95bc5a894",
+      "length": 111012,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.petpet",
       "name": "Petpet",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Adds /petpet to send a petting gif made from a user avatar.",
       "permissions": [
         "ui-slots",
         "context-attachments",
         "actions-upload"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.petpet-0.1.0.oxidcord-plugin",
-      "sha256": "323211565ab8912e6eb76e2b1d694be89f50f717ef4fc6b17442cc2a33ac09e6",
-      "length": 373535,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.petpet-0.1.1.oxidcord-plugin",
+      "sha256": "c42d99f8410e8548c9ef876ca9f53650a801a2478c95d2878e0f0dc0387a654f",
+      "length": 373536,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.pin-dms",
       "name": "Pin DMs",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Allows you to pin private channels to the top of your DM list. To pin/unpin or re-order pins, right click DMs.",
       "permissions": [
         "ui-mount",
@@ -879,71 +879,71 @@
         "actions-settings",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.pin-dms-0.1.0.oxidcord-plugin",
-      "sha256": "0f773cdb57aefcaf812765c8bc950ee09416d9920241ca306af3fa8d599d1b8d",
-      "length": 117362,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.pin-dms-0.1.1.oxidcord-plugin",
+      "sha256": "3d4948cdd6d87630c3e6ccdb64b442c9e963499f5e65a8772499b65ccdfef88c",
+      "length": 117364,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.plain-folder-icon",
       "name": "Plain Folder Icon",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Don't show the small guild icons in folders.",
       "permissions": [
         "actions-settings"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.plain-folder-icon-0.1.0.oxidcord-plugin",
-      "sha256": "6429616373cf37412b83725b2015aa55d141773d3ec5258aff83a1d01c5cabfa",
-      "length": 89075,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.plain-folder-icon-0.1.1.oxidcord-plugin",
+      "sha256": "1fad4741c6cb0dee7ffdc15174dcc4666a4d47f50deae9aafffe06d516b6fd75",
+      "length": 89076,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.platform-indicators",
       "name": "Platform Indicators",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Platform icon next to online users, colored by status.",
       "permissions": [
         "user-display",
         "context-presence",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.platform-indicators-0.1.0.oxidcord-plugin",
-      "sha256": "c3916bf1edfc8f0af5f49371d77008ec6610006d909c1dde0180cdc5ee672618",
-      "length": 103638,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.platform-indicators-0.1.1.oxidcord-plugin",
+      "sha256": "a24e366cb0706fe3d108492efa437417ea21f58693a7f472d63a6418ffff3310",
+      "length": 103640,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.preview-message",
       "name": "Preview Message",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Preview your message before sending it.",
       "permissions": [
         "ui-mount",
         "composer"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.preview-message-0.1.0.oxidcord-plugin",
-      "sha256": "8479083b1e99793d1c3f0521e2e1d1f787168b3acb60513e6e0a74b4ac4ce2eb",
-      "length": 102134,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.preview-message-0.1.1.oxidcord-plugin",
+      "sha256": "e22735301e0e5258eb9cf43a9ffd976bb4312d5296457a9cfc3884bdf01aaf74",
+      "length": 102135,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.quick-mention",
       "name": "Quick Mention",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Adds a quick mention button to the message actions bar.",
       "permissions": [
         "ui-mount",
         "composer"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.quick-mention-0.1.0.oxidcord-plugin",
-      "sha256": "287c91616d9dcc28a20e9e0edd017cde47c0edafc21d551f0ceab08cff78f397",
-      "length": 100126,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.quick-mention-0.1.1.oxidcord-plugin",
+      "sha256": "294a976a551b42dc9a147cedb732f00f703b0d2f58ac7c97e7027ad557cf7f70",
+      "length": 100125,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.quick-replies",
       "name": "Quick Replies",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Saved snippets you can send from a composer popover or with /snip <name>.",
       "permissions": [
         "ui-slots",
@@ -951,15 +951,15 @@
         "actions-send",
         "context-basic"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.quick-replies-0.1.0.oxidcord-plugin",
-      "sha256": "f0866dfe63f72b2f2f8d6d9011cb143d48f3333419ba87f1273d687e93518487",
-      "length": 54110,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.quick-replies-0.1.1.oxidcord-plugin",
+      "sha256": "a406b31a5f08d19488d1cab36c6f3b6a24f5b5cafdc39c5407978b09ce96c84e",
+      "length": 54113,
       "reviewed": true
     },
     {
       "id": "dev.oxidcord.quick-reply",
       "name": "Quick Reply",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Reply to (ctrl + up/down) and edit (ctrl + shift + up/down) messages via keybinds",
       "permissions": [
         "ui-keybinds",
@@ -969,15 +969,15 @@
         "actions-compose",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.quick-reply-0.1.0.oxidcord-plugin",
-      "sha256": "ff5d5c681ebc0e912aeb1d6cc3aeaab5a2092c593bc832a02417679500b6bc37",
-      "length": 101683,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.quick-reply-0.1.1.oxidcord-plugin",
+      "sha256": "d2271c62ddb3a0815c02b424a23255a1193332a68ddc6642671fe9aee74d8f8b",
+      "length": 101684,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.read-all-notifications",
       "name": "Read All Notifications",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Read all server notifications with a single button click.",
       "permissions": [
         "ui-mount",
@@ -985,15 +985,15 @@
         "context-read-state",
         "actions-ack"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.read-all-notifications-0.1.0.oxidcord-plugin",
-      "sha256": "36c624949a1af32e2d1101d220f91d9ddd0c09ebe4f2679f6e389fa61813c455",
-      "length": 100546,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.read-all-notifications-0.1.1.oxidcord-plugin",
+      "sha256": "27d2b10d0de13ad92ee7e40bbd8a7de06f57cd5c3541e8e0884e8025348e9a6c",
+      "length": 100547,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.relationship-notifier",
       "name": "Relationship Notifier",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Notifies you when a friend, group chat, or server removes you.",
       "permissions": [
         "context-relationships",
@@ -1003,88 +1003,88 @@
         "ui-mount",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.relationship-notifier-0.1.0.oxidcord-plugin",
-      "sha256": "9649b3ec73e6790e40907d513db6eb00fdeb2106573ec4d8a60a3712dcd606f0",
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.relationship-notifier-0.1.1.oxidcord-plugin",
+      "sha256": "22365144acec6cf2d56c3c5fef3af17d5587cc76bd5f37d7fc7d8f4066029d07",
       "length": 114005,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.replace-google-search",
       "name": "Replace Google Search",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Search selected text with the engine of your choice.",
       "permissions": [
         "ui-mount",
         "actions-open-url",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.replace-google-search-0.1.0.oxidcord-plugin",
-      "sha256": "2d2bcead07dcd26aafd5415e0dfd131382ee07f5d6dd66bfb286404173539d74",
-      "length": 106075,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.replace-google-search-0.1.1.oxidcord-plugin",
+      "sha256": "0614fd48f90062316a223cdd91c6fcf93b411a49cce3dd2581b37786bede46be",
+      "length": 106078,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.reply-timestamp",
       "name": "Reply Timestamp",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Shows a timestamp on replied-message previews",
       "permissions": [
         "message-intercept",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.reply-timestamp-0.1.0.oxidcord-plugin",
-      "sha256": "eb2891b2689faf5906c0bbb7995dfb02fbabb904039133d5f519c87402e656cc",
-      "length": 95350,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.reply-timestamp-0.1.1.oxidcord-plugin",
+      "sha256": "a961718645103b9c2d780485bebe345f47277ebf98d7ff2ee8af931370c61801",
+      "length": 95351,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.reveal-all-spoilers",
       "name": "Reveal All Spoilers",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Reveal all spoilers in a message by Ctrl-clicking a spoiler, or in the chat with Ctrl+Shift-click",
       "permissions": [
         "ui-input",
         "message-intercept",
         "context-timeline"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.reveal-all-spoilers-0.1.0.oxidcord-plugin",
-      "sha256": "bd5673034d8cb6eec4d11cec51a457cca923b8a12626157fbe64ff2ec53a9fae",
-      "length": 101187,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.reveal-all-spoilers-0.1.1.oxidcord-plugin",
+      "sha256": "4547a04befb6f7162cb2790c3ca5f9d1c1d6ab385657940af02c43170ebd28fe",
+      "length": 101189,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.reverse-image-search",
       "name": "Reverse Image Search",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Adds image search to image context menus.",
       "permissions": [
         "ui-mount",
         "actions-open-url"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.reverse-image-search-0.1.0.oxidcord-plugin",
-      "sha256": "9e0df73779ea0b2c8901e1a2fccf7f0e9fe5b399d6147637a14a0e5de7c17a5a",
-      "length": 100910,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.reverse-image-search-0.1.1.oxidcord-plugin",
+      "sha256": "206b8ba9421900dd452be273bdf0c4be16e2107b1770867289e5d249a9616643",
+      "length": 100911,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.review-db",
       "name": "Review DB",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Shows the reviews other people wrote about a user on their profile popout.",
       "permissions": [
         "ui-mount",
         "net-fetch",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.review-db-0.1.0.oxidcord-plugin",
-      "sha256": "d50d70038e3cf576025ed831968649e24ed880e9447d3b7b6e5939b457a522fc",
-      "length": 153166,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.review-db-0.1.1.oxidcord-plugin",
+      "sha256": "6f9ce7198cb0e818e9e3eb7ef61d1ede4e477f1fe8126f73f70bd01dbe47c243",
+      "length": 153165,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.role-color-everywhere",
       "name": "Role Color Everywhere",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Colors names and mentions with the top role color, and can tint the message stripe.",
       "permissions": [
         "user-display",
@@ -1092,28 +1092,28 @@
         "context-roles",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.role-color-everywhere-0.1.0.oxidcord-plugin",
-      "sha256": "e5326a11c86ef1ea445cb940af182fbe951a2ed8cdec36efd5b35e11a71789e7",
-      "length": 109793,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.role-color-everywhere-0.1.1.oxidcord-plugin",
+      "sha256": "ddc2d40286c3ff037a2b58708fc497e2e1b484175a9e018ef81e3cfac4a01b32",
+      "length": 109794,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.see-hidden-channels",
       "name": "See Hidden Channels",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Shows channels you cannot open in the channel list, dimmed with a lock.",
       "permissions": [
         "channels-hidden"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.see-hidden-channels-0.1.0.oxidcord-plugin",
-      "sha256": "55cb43de43c0497544435275bc40e2787d7d60fd0bb860b6451b160a5ee46011",
-      "length": 36131,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.see-hidden-channels-0.1.1.oxidcord-plugin",
+      "sha256": "348ccb21e7bb68f38e93cc8338294f06e5a635b4f3155238b5720eff789d0fdb",
+      "length": 36135,
       "reviewed": true
     },
     {
       "id": "dev.oxidcord.send-timestamps",
       "name": "Send Timestamps",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Send timestamps easily via chat box button and text shortcuts.",
       "permissions": [
         "ui-mount",
@@ -1121,29 +1121,29 @@
         "message-send",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.send-timestamps-0.1.0.oxidcord-plugin",
-      "sha256": "30ea35f2ce2e048857bdc853e5c1feb548191558244114ac0825ad26e447a44d",
-      "length": 105662,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.send-timestamps-0.1.1.oxidcord-plugin",
+      "sha256": "1f5fad41ad68ed4720ead8fc603209383bbf9c6eecaf52ba81d07a4f23565fe3",
+      "length": 105660,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.server-info",
       "name": "Server Info",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "View info about a server.",
       "permissions": [
         "ui-mount",
         "context-directory"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.server-info-0.1.0.oxidcord-plugin",
-      "sha256": "3edb46b571d32f8f5a3ee84ece5b7aa46fda8b18a16597966a54baa14d557889",
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.server-info-0.1.1.oxidcord-plugin",
+      "sha256": "f915dbaf531f09cc931e4ff8b368c503638962f73bb85265a4e2ca15d4021579",
       "length": 110690,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.server-list-indicators",
       "name": "Server List Indicators",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Adds the online friend count or the server count to the server list.",
       "permissions": [
         "ui-mount",
@@ -1152,28 +1152,28 @@
         "context-directory",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.server-list-indicators-0.1.0.oxidcord-plugin",
-      "sha256": "f4804175e1a8679794257ab042750089afece1c0434f1bbab2ebfe6ca96570ff",
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.server-list-indicators-0.1.1.oxidcord-plugin",
+      "sha256": "d1c0ab19d0ed915aac8909af4937d68da22f4d964fafa5d1de10b1395b88a80f",
       "length": 103015,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.show-all-message-buttons",
       "name": "Show All Message Buttons",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Always show all message buttons no matter if you are holding the shift key or not.",
       "permissions": [
         "actions-settings"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.show-all-message-buttons-0.1.0.oxidcord-plugin",
-      "sha256": "eb60b97e23c91c1c0c65631ffc658a1f0dcda877ad4c7c26ee13cedc6c51cf4a",
-      "length": 89128,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.show-all-message-buttons-0.1.1.oxidcord-plugin",
+      "sha256": "fb45418ba4007bfb2e6fa1743cf173f109f19dd639913a5b688daf5ceac00162",
+      "length": 89129,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.show-connections",
       "name": "Show Connections",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Show connected accounts in user popouts",
       "permissions": [
         "ui-mount",
@@ -1181,15 +1181,15 @@
         "actions-clipboard",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.show-connections-0.1.0.oxidcord-plugin",
-      "sha256": "3e25273d18928c09b40934237d05ebe463138f74a7df8dbbf6523eb3b514fe48",
-      "length": 121378,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.show-connections-0.1.1.oxidcord-plugin",
+      "sha256": "8efae4c818bdc0b0c23ce1d041d86354e7f285a13b3c33b86e65e9ad5d9877e0",
+      "length": 121379,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.show-me-your-name",
       "name": "Show Me Your Name",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Display usernames next to nicks, or no nicks at all.",
       "permissions": [
         "user-display",
@@ -1197,30 +1197,30 @@
         "context-relationships",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.show-me-your-name-0.1.0.oxidcord-plugin",
-      "sha256": "2b0f5caee103e01ce3ef9094e98699814ba2233c6298cc32c45d7f34bc3ab6e2",
-      "length": 107730,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.show-me-your-name-0.1.1.oxidcord-plugin",
+      "sha256": "cfeb81e701b257fc18792a54db92e5ca867c0b8989d8fc46dae8c7cce95dbcec",
+      "length": 107731,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.show-timeout-duration",
       "name": "Show Timeout Duration",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Clock badge with the time left on a timeout next to timed out members.",
       "permissions": [
         "user-display",
         "context-roles",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.show-timeout-duration-0.1.0.oxidcord-plugin",
-      "sha256": "3ce09fcb95c01f434fcc2f2e224264a5d83ed1e61d55a8c5c5e9a0ee537a19ef",
-      "length": 101724,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.show-timeout-duration-0.1.1.oxidcord-plugin",
+      "sha256": "25b3de35753bb0bbbf381c488c84faf234edaf4b2094aeeeac5bf504b3b87be0",
+      "length": 101727,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.silent-message-toggle",
       "name": "Silent Message Toggle",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Adds a button to the chat bar to toggle sending a silent message.",
       "permissions": [
         "message-send",
@@ -1228,87 +1228,87 @@
         "context-basic",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.silent-message-toggle-0.1.0.oxidcord-plugin",
-      "sha256": "5db7e07f4561438234ff9e4af676703c9ccf4c38e9564eb4fae3697f9ac55d98",
-      "length": 102953,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.silent-message-toggle-0.1.1.oxidcord-plugin",
+      "sha256": "fc3273dcbda6859ab52a9e392ad606d7251ca6d38c21a18186eadcf354064d8b",
+      "length": 102955,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.silent-type",
       "name": "Silent Type",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Hides that you are typing. Others never see the typing indicator for you.",
       "permissions": [
         "typing-hidden"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.silent-type-0.1.0.oxidcord-plugin",
-      "sha256": "dc18a9cb5d9fbfb940b4f673554a3b359f21110efd113acf7986ab9abdd49bfa",
-      "length": 36106,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.silent-type-0.1.1.oxidcord-plugin",
+      "sha256": "17f56dcd5e2eb586b2b4207b59edad03521a2e589d8584201ecd274d94476b9a",
+      "length": 36108,
       "reviewed": true
     },
     {
       "id": "dev.oxidcord.sort-friend-requests",
       "name": "Sort Friend Requests",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Requests by date tab on the Friends page with incoming and outgoing requests, newest first.",
       "permissions": [
         "ui-mount",
         "context-relationships",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.sort-friend-requests-0.1.0.oxidcord-plugin",
-      "sha256": "559f6bcacd4a152dd2ecc9a66d1aabe8d7484a71ad181dc8fcef3f165c055efa",
-      "length": 106282,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.sort-friend-requests-0.1.1.oxidcord-plugin",
+      "sha256": "57200f31048990dc62e91f94ba9ea7816c8524494b099c95da0128f5061121ce",
+      "length": 106283,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.spoiler-all",
       "name": "Spoiler All",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Hides every message behind a spoiler, switched by a button in the composer toolbar.",
       "permissions": [
         "message-render",
         "ui-slots",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.spoiler-all-0.1.0.oxidcord-plugin",
-      "sha256": "7a94eb7a0ee1d271e4345dfe8b8e1d08a3d85f01caeca8b124a394ef3e8585d1",
-      "length": 47148,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.spoiler-all-0.1.1.oxidcord-plugin",
+      "sha256": "34c189adb980f5ccae39c8f90f8290d33b82754dd2af1c7b3ffa53ae98831332",
+      "length": 47151,
       "reviewed": true
     },
     {
       "id": "dev.oxidcord.startup-timings",
       "name": "Startup Timings",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Lists the client startup phases on the plugin settings page.",
       "permissions": [
         "context-basic",
         "ui-mount"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.startup-timings-0.1.0.oxidcord-plugin",
-      "sha256": "72e133409ac4f744a79ec8edcf78d486393773f4cb4aaea66281217532816d5e",
-      "length": 114529,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.startup-timings-0.1.1.oxidcord-plugin",
+      "sha256": "ca30118ea24bb9528964b6886a0a3929d9ca494dfc53bd35fc966b356f41c037",
+      "length": 114530,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.sticker-paste",
       "name": "Sticker Paste",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Composer button that attaches a picked sticker to your draft instead of sending it at once.",
       "permissions": [
         "ui-mount",
         "context-expressions",
         "composer"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.sticker-paste-0.1.0.oxidcord-plugin",
-      "sha256": "a1ef94bf32d791455180810f41368d9c40ad965f311c38fac8ba6f11d51355c8",
-      "length": 104308,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.sticker-paste-0.1.1.oxidcord-plugin",
+      "sha256": "59958d96fe43e7c7fc40b393aa7b239efb552b90501701755352426cf48b719e",
+      "length": 104309,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.super-reaction-tweaks",
       "name": "Super Reaction Tweaks",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Super react from the reaction menu and make the reaction picker use super reactions by default.",
       "permissions": [
         "ui-mount",
@@ -1316,45 +1316,45 @@
         "actions-settings",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.super-reaction-tweaks-0.1.0.oxidcord-plugin",
-      "sha256": "a78a1c322920c84a170fed39e9564c8d5f7802a89b8080e2b763c00204793ac0",
-      "length": 99949,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.super-reaction-tweaks-0.1.1.oxidcord-plugin",
+      "sha256": "c8ead5439a18f9a57a972f5d34841cf5c48a690b91c58fafd44c7bc41457c9e3",
+      "length": 99950,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.text-replace",
       "name": "Text Replace",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Replace text in your messages with string and regex rules.",
       "permissions": [
         "message-send",
         "storage",
         "ui-mount"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.text-replace-0.1.0.oxidcord-plugin",
-      "sha256": "3fc38328775cb93522aaeef813e78bdafe4b7a27d3ab64b12866244896382cd3",
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.text-replace-0.1.1.oxidcord-plugin",
+      "sha256": "7ac529bc6c3203b7cc2fd6cd549322ed937d9682ae882041894c6b0a16a96d6a",
       "length": 193728,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.text-shortcuts",
       "name": "Text Shortcuts",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Expands :shrug: style emoticons and your own ;shortcuts in messages before they are sent.",
       "permissions": [
         "message-send",
         "storage",
         "ui-slots"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.text-shortcuts-0.1.0.oxidcord-plugin",
-      "sha256": "b917e1835dc8fd8b8dd97b5da01499707e1327caa030291f7957cd8828464519",
-      "length": 63211,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.text-shortcuts-0.1.1.oxidcord-plugin",
+      "sha256": "f849e451b8e62220fd1f48c1ad1502ec3e23ee811d777d3d5aa63471d1aa1337",
+      "length": 63215,
       "reviewed": true
     },
     {
       "id": "dev.oxidcord.toolbox",
       "name": "Toolbox",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Title bar button with the plugin settings, the client version and the list of enabled plugins.",
       "permissions": [
         "ui-mount",
@@ -1364,15 +1364,15 @@
         "actions-clipboard",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.toolbox-0.1.0.oxidcord-plugin",
-      "sha256": "c1fc76d1e7f4e65609f880dc21c2b4d4650d3de7427f723ab6e1fbdfed50facb",
-      "length": 114305,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.toolbox-0.1.1.oxidcord-plugin",
+      "sha256": "4112f7d620806635c1825ec54db1b12ad783c633434d0f81944a2e2851bbd6d8",
+      "length": 114307,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.translate",
       "name": "Translate",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Translate messages with Google Translate or DeepL.",
       "permissions": [
         "ui-mount",
@@ -1382,15 +1382,15 @@
         "composer",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.translate-0.1.0.oxidcord-plugin",
-      "sha256": "3145bb647c62eb9f771beff4e0e833d3a6c03ef808f056f611a80b40a50d3c4a",
-      "length": 168902,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.translate-0.1.1.oxidcord-plugin",
+      "sha256": "eb4b10065e223cb95e57abe3159cf4fb439eef784614da5cc7f9a8d3be9142fd",
+      "length": 168903,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.typing-indicator",
       "name": "Typing Indicator",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Badge on channels and DMs while someone is typing there.",
       "permissions": [
         "ui-input",
@@ -1402,44 +1402,44 @@
         "context-members",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.typing-indicator-0.1.0.oxidcord-plugin",
-      "sha256": "ebb964bb82ce58d3fdeacbd3da98605d004a4dffdd76cd6521567402f49c2d57",
-      "length": 106707,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.typing-indicator-0.1.1.oxidcord-plugin",
+      "sha256": "f96075869b37dbffb84c859c24b361a301c2f60c68ec6061a926c2283b0b579d",
+      "length": 106708,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.unindent",
       "name": "Unindent",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Trims leading indentation from codeblocks.",
       "permissions": [
         "message-send",
         "message-render"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.unindent-0.1.0.oxidcord-plugin",
-      "sha256": "59ad96d27afb745345caac4155ca3dd456bb569fec161805454a75572f0f507d",
-      "length": 49043,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.unindent-0.1.1.oxidcord-plugin",
+      "sha256": "a5f57d54e9c867d9ac1830f2f71949c9d18a5fa8dcb7cab14a567913ba6a15d3",
+      "length": 49046,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.user-notes",
       "name": "User Notes",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Private notes on people, shown as a badge next to their name.",
       "permissions": [
         "ui-slots",
         "storage",
         "user-display"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.user-notes-0.1.0.oxidcord-plugin",
-      "sha256": "dd78029e9ccf7d53d82d81c8595fc5b689df5243da70fe0673fdeff2d74aee6f",
-      "length": 52497,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.user-notes-0.1.1.oxidcord-plugin",
+      "sha256": "8ae80ddd348dc7f6a2058cca28c273c53f27e223493012132a183f55c2ade9c5",
+      "length": 52500,
       "reviewed": true
     },
     {
       "id": "dev.oxidcord.user-pronouns",
       "name": "User Pronouns",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Shows profile pronouns next to names.",
       "permissions": [
         "user-display",
@@ -1447,30 +1447,30 @@
         "context-basic",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.user-pronouns-0.1.0.oxidcord-plugin",
-      "sha256": "5f8d55f9160c55f1078170fbf3af4b7e74f91c3bfaa035bdef80f4c30665706b",
-      "length": 107979,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.user-pronouns-0.1.1.oxidcord-plugin",
+      "sha256": "194209ed118e01b429e9527bc5d354f17a3104e83c3ec50a66cce47312114a1f",
+      "length": 107980,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.user-voice-show",
       "name": "User Voice Show",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Speaker badge next to users in the voice call you are in.",
       "permissions": [
         "user-display",
         "context-voice",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.user-voice-show-0.1.0.oxidcord-plugin",
-      "sha256": "6baa8178018ac62f188b8cf5fd4be429b100f1b1f8858560a9b43410e296025f",
-      "length": 101740,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.user-voice-show-0.1.1.oxidcord-plugin",
+      "sha256": "10995aaab27d932ab924c76011ac9b5793f88466400f5581ec6d89e106ef93ed",
+      "length": 101743,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.usrbg",
       "name": "USRBG",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Displays user banners from USRBG, allowing anyone to get a banner without Nitro",
       "permissions": [
         "user-display",
@@ -1478,29 +1478,29 @@
         "context-profiles",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.usrbg-0.1.0.oxidcord-plugin",
-      "sha256": "794610041aa09b9e07c107f2a06c6b040d56481ab3f94fd4fa9c07cd81bc0e02",
-      "length": 144213,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.usrbg-0.1.1.oxidcord-plugin",
+      "sha256": "f3606a44f19fcfe4b04e113c659fec81f837fe34f00fe363f0c57c7e5763e692",
+      "length": 144214,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.valid-user",
       "name": "Valid User",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Loads the names of mentioned users the client does not know.",
       "permissions": [
         "message-intercept",
         "context-members"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.valid-user-0.1.0.oxidcord-plugin",
-      "sha256": "9ad9bfc56ffee71c0c210441615ba2f1f031e4406feb87f8b9a713f6de0f6886",
-      "length": 99986,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.valid-user-0.1.1.oxidcord-plugin",
+      "sha256": "f1c2b856b7844ee4aae45af6d0f9402894a8f6db7e2dcc1ad69d657b72466cd4",
+      "length": 99987,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.vc-double-click",
       "name": "Voice Chat Double Click",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Join voice chats via double click instead of single click.",
       "permissions": [
         "ui-input",
@@ -1509,15 +1509,15 @@
         "actions-voice",
         "actions-navigate"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.vc-double-click-0.1.0.oxidcord-plugin",
-      "sha256": "c6e75b055ccb05e1c05f0f5e59adce4fd1c72be51bf56fbaf507f7ec1d5be17e",
-      "length": 97986,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.vc-double-click-0.1.1.oxidcord-plugin",
+      "sha256": "304024d8baea8026c0c1b6db5da74d67e8a890eefca9c9e929a1779c9641801a",
+      "length": 97987,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.vc-narrator",
       "name": "Voice Chat Narrator",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Announces when users join, leave, or move voice channels via narrator.",
       "permissions": [
         "context-voice",
@@ -1526,15 +1526,15 @@
         "actions-speak",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.vc-narrator-0.1.0.oxidcord-plugin",
-      "sha256": "b8467d55d55487102cfb6020b002da8e40cc41b1e34d2b809ab90c7446a23f1a",
-      "length": 123461,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.vc-narrator-0.1.1.oxidcord-plugin",
+      "sha256": "54f0fa5af32de74f632c997305cf6cc38db0d9faa69e463df0f135b684fb0499",
+      "length": 123462,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.view-icons",
       "name": "View Icons",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Adds View avatar, banner and icon entries to the member and server context menus.",
       "permissions": [
         "ui-mount",
@@ -1542,15 +1542,15 @@
         "context-directory",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.view-icons-0.1.0.oxidcord-plugin",
-      "sha256": "e88e15a53fb7fa6fa180675def79201fccf5d39c5d9a992326bc72235800e880",
-      "length": 104638,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.view-icons-0.1.1.oxidcord-plugin",
+      "sha256": "69c68d112d56a78fc4471c2bfacf1fa2632a57a167e3dbc19fac8890c68e298f",
+      "length": 104639,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.view-raw",
       "name": "View Raw",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Shows the client data of a message, member or channel as JSON with copy buttons.",
       "permissions": [
         "ui-mount",
@@ -1560,30 +1560,30 @@
         "actions-clipboard",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.view-raw-0.1.0.oxidcord-plugin",
-      "sha256": "3b3e42309a6be2ea87395925e3b8fcbe912a9901ac5200c502bc7fed9954dfe3",
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.view-raw-0.1.1.oxidcord-plugin",
+      "sha256": "4733d945299ed0bdc9bf0803d45d31a48ba22ae6e55af7fe03931b1148c5fc53",
       "length": 125901,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.voice-download",
       "name": "Voice Download",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Adds a download button to voice messages and other audio attachments.",
       "permissions": [
         "ui-mount",
         "context-timeline",
         "actions-save"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.voice-download-0.1.0.oxidcord-plugin",
-      "sha256": "0f4e2d95d85e26d7ffbe26a02fd80352dba3f08aa712b372fac337394687fe47",
-      "length": 101988,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.voice-download-0.1.1.oxidcord-plugin",
+      "sha256": "155d91c04c26aa0da82e03750492d969311a33667b74daf44118f9624860e372",
+      "length": 101989,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.who-reacted",
       "name": "Who Reacted",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Shows who reacted to a message after a click on a toolbar button or the reaction menu.",
       "permissions": [
         "ui-mount",
@@ -1591,15 +1591,15 @@
         "message-intercept",
         "storage"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.who-reacted-0.1.0.oxidcord-plugin",
-      "sha256": "31c06b5041ff60f42832f44c09ec906836427277e0f2757fe2c92727506bced7",
-      "length": 112735,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.who-reacted-0.1.1.oxidcord-plugin",
+      "sha256": "e32c74c6ba6adcc2d53fc1de90126257a1d6cd5a4cd6a1b51aa31cf1f2cd32a1",
+      "length": 112737,
       "reviewed": false
     },
     {
       "id": "dev.oxidcord.word-mute",
       "name": "Word Mute",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Hides messages that contain words or phrases you muted, for spoilers and noise.",
       "permissions": [
         "message-filter",
@@ -1607,9 +1607,9 @@
         "ui-slots",
         "context-basic"
       ],
-      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.word-mute-0.1.0.oxidcord-plugin",
-      "sha256": "9385a765e5a3abd2653d3e0148d0e267815a41596a944b98ccab8321881722cf",
-      "length": 59624,
+      "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/packs/dev.oxidcord.word-mute-0.1.1.oxidcord-plugin",
+      "sha256": "a411ac33834ec7126aa053b5c102d43a1179cd42a1cef8a19bf460574873af8d",
+      "length": 59629,
       "reviewed": true
     }
   ]
