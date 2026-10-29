@@ -1,0 +1,17 @@
+id = "dev.oxidcord.notification-volume"
+name = "Notification Volume"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Save your ears and set a separate volume for notifications and in-app sounds."
+entry = "notification_volume.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "actions-settings"
+reason = "Sets the volume of the notification sound."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

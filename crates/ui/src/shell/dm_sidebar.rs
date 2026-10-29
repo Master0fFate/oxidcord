@@ -5,12 +5,13 @@ use gpui::{
 	ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div,
 	prelude::FluentBuilder as _,
 };
+use gpui_component::menu::ContextMenuExt as _;
 use gpui_component::scroll::ScrollableElement as _;
 use protocol::Snowflake;
 use state::{DmSectionView, PluginBadge, UserOverride};
 
-use super::plugins;
-use crate::components::{Avatar, IconButton, MentionBadge, SectionHeader};
+use super::plugins::{self, MenuTarget, PluginMenu as _};
+use crate::components::{Avatar, ContextMenuBuilder, IconButton, MentionBadge, SectionHeader};
 use crate::data::Data;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
@@ -227,7 +228,7 @@ impl DmSidebar {
 			_ => Vec::new(),
 		};
 		let channel_badges = plugins::channel_badges(id, &dm.badges, theme, cx);
-		div()
+		let row = div()
 			.id(("dm", id.get()))
 			.group(group.clone())
 			.flex()
@@ -310,8 +311,13 @@ impl DmSidebar {
 								cx.emit(DmSidebarEvent::CloseDm(id));
 							})),
 					),
-			)
-			.into_any_element()
+			);
+		let target = MenuTarget::channel(None, id);
+		if !plugins::has_plugin_items("channel-context-menu", &target, cx) {
+			return row.into_any_element();
+		}
+		let menu = ContextMenuBuilder::new().plugin_items("channel-context-menu", target, cx);
+		row.context_menu(menu.build()).into_any_element()
 	}
 }
 

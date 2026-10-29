@@ -1,0 +1,29 @@
+id = "dev.oxidcord.vc-narrator"
+name = "Voice Chat Narrator"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Announces when users join, leave, or move voice channels via narrator."
+entry = "vc_narrator.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "context-voice"
+reason = "Notices who joins and leaves your call and when you mute or deafen."
+
+[[permissions]]
+permission = "context-members"
+reason = "Looks up the names it says."
+
+[[permissions]]
+permission = "context-basic"
+reason = "Knows which user is you."
+
+[[permissions]]
+permission = "actions-speak"
+reason = "Says the announcements out loud."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

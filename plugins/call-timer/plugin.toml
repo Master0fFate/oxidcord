@@ -1,0 +1,21 @@
+id = "dev.oxidcord.call-timer"
+name = "Call Timer"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Adds a timer to vcs."
+entry = "call_timer.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "context-voice"
+reason = "Reads when the current call started and notices when you join one."
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Shows the elapsed time in the voice panel."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

@@ -1,0 +1,33 @@
+id = "dev.oxidcord.toolbox"
+name = "Toolbox"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Adds a button to the titlebar that houses quick actions."
+entry = "toolbox.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds the toolbox button to the title bar."
+
+[[permissions]]
+permission = "plugins-list"
+reason = "Lists the plugins that are turned on."
+
+[[permissions]]
+permission = "context-basic"
+reason = "Reads the client version."
+
+[[permissions]]
+permission = "actions-navigate"
+reason = "Opens the plugin settings."
+
+[[permissions]]
+permission = "actions-clipboard"
+reason = "Copies the client version."
+
+[[permissions]]
+permission = "storage"
+reason = "Reads the plugin settings."

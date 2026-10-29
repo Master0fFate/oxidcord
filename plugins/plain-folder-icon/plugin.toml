@@ -1,0 +1,13 @@
+id = "dev.oxidcord.plain-folder-icon"
+name = "Plain Folder Icon"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Don't show the small guild icons in folders."
+entry = "plain_folder_icon.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "actions-settings"
+reason = "Switches the server folders to the plain folder icon."

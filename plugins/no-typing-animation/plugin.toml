@@ -1,0 +1,13 @@
+id = "dev.oxidcord.no-typing-animation"
+name = "No Typing Animation"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Disables the CPU-intensive typing dots animation."
+entry = "no_typing_animation.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "actions-settings"
+reason = "Turns the typing dots animation off."

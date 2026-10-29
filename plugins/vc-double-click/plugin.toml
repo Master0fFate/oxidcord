@@ -1,0 +1,30 @@
+id = "dev.oxidcord.vc-double-click"
+name = "Voice Chat Double Click"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Join voice chats via double click instead of single click."
+entry = "vc_double_click.wasm"
+min_host = "0.4.3"
+hooks = ["channel-click"]
+
+[[permissions]]
+permission = "ui-input"
+reason = "Takes over plain clicks on channels in the channel list."
+
+[[permissions]]
+permission = "context-directory"
+reason = "Tells voice channels from other channels."
+
+[[permissions]]
+permission = "context-voice"
+reason = "Knows which voice channel you are in."
+
+[[permissions]]
+permission = "actions-voice"
+reason = "Joins the voice channel you double click."
+
+[[permissions]]
+permission = "actions-navigate"
+reason = "Opens the channels you click that are not voice channels."

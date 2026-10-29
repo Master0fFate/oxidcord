@@ -1,0 +1,33 @@
+id = "dev.oxidcord.pin-dms"
+name = "Pin DMs"
+version = "0.1.0"
+api = "^1.2"
+authors = ["fate"]
+license = "MIT OR Apache-2.0"
+description = "Allows you to pin private channels to the top of your DM list. To pin/unpin or re-order pins, right click DMs."
+entry = "pin_dms.wasm"
+min_host = "0.4.3"
+
+[[permissions]]
+permission = "ui-mount"
+reason = "Adds Pin DM to the DM menu and the Pinned DMs page to the settings."
+
+[[permissions]]
+permission = "context-directory"
+reason = "Lists your DMs and reads their latest message."
+
+[[permissions]]
+permission = "context-private"
+reason = "Works with direct messages and group chats."
+
+[[permissions]]
+permission = "context-timeline"
+reason = "Notices new messages in pinned DMs to keep them ordered by the latest message."
+
+[[permissions]]
+permission = "actions-settings"
+reason = "Puts the pinned DMs in sections at the top of the DM list."
+
+[[permissions]]
+permission = "storage"
+reason = "Keeps your categories and pinned DMs and reads the plugin settings."
