@@ -62,6 +62,7 @@ str_enum! {
 		Article = "article",
 		Link = "link",
 		PollResult = "poll_result",
+		Components = "components",
 	}
 }
 
@@ -205,6 +206,7 @@ pub struct Embed {
 	pub provider: Option<EmbedProvider>,
 	pub author: Option<EmbedAuthor>,
 	pub fields: LenientVec<EmbedField>,
+	pub components: LenientVec<Component>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]

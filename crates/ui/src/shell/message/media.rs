@@ -835,6 +835,7 @@ fn embed_card(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<An
 	match embed.kind {
 		Some(EmbedKind::Gifv) => return gifv(index, embed, env, cx),
 		Some(EmbedKind::Image) => return bare_media(index, embed, env, cx),
+		Some(EmbedKind::Components) => return None,
 		_ => {}
 	}
 	if let Some(video) = direct_video(embed)

@@ -10,8 +10,8 @@ use gpui_component::button::Button;
 use gpui_component::menu::DropdownMenu as _;
 use markdown::parse;
 use protocol::{
-	Attachment, ButtonStyle, Component, ComponentType, GalleryItem, Message, PartialEmoji, SelectOption,
-	SeparatorSpacing, Snowflake, UnfurledMedia,
+	Attachment, ButtonStyle, Component, ComponentType, Embed, EmbedKind, GalleryItem, Message, PartialEmoji,
+	SelectOption, SeparatorSpacing, Snowflake, UnfurledMedia,
 };
 use session::ComponentUse;
 
@@ -39,6 +39,14 @@ const OPTION_WIDTH: f32 = 360.;
 
 pub fn render(message: &Message, env: &BodyEnv, cx: &App) -> Vec<AnyElement> {
 	build(message, &message.components, true, env, cx)
+}
+
+pub fn render_embeds(message: &Message, embeds: &[Embed], env: &BodyEnv, cx: &App) -> Vec<AnyElement> {
+	embeds
+		.iter()
+		.filter(|embed| embed.kind == Some(EmbedKind::Components))
+		.flat_map(|embed| build(message, &embed.components, false, env, cx))
+		.collect()
 }
 
 pub fn render_forwarded(

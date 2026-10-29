@@ -500,9 +500,7 @@ impl<'a> Generator<'a, '_> {
 				let link = "https://e.buu.sh/VpgCHM5ZgJQefrnJs1xM7HwoxGPoCyG6u2Zikhud_UX504GfHs8RlLjK3OsYeVcTAQgB_WndkDZD9Gz8N2Dj6b_x9pKdw5yRqAaWM8Vg_Q_i";
 				message.content = link.to_owned();
 				let avatar = self.media("https://e.buu.sh/mock-avatar.png", 128, 128);
-				message.flags = MessageFlags::IS_COMPONENTS_V2;
-				message.application_id = Some(author.id);
-				message.components = serde_json::from_value(json!([{
+				let container = json!([{
 					"type": 17,
 					"accent_color": 0x800080,
 					"components": [
@@ -521,8 +519,12 @@ impl<'a> Generator<'a, '_> {
 							"components": [{ "type": 2, "style": 5, "label": "Open on X", "url": "https://x.com/Josh67Joshua" }]
 						}
 					]
-				}]))
-				.unwrap_or_default();
+				}]);
+				message.embeds = LenientVec::from(vec![Embed {
+					kind: Some(EmbedKind::Components),
+					components: serde_json::from_value(container).unwrap_or_default(),
+					..Embed::default()
+				}]);
 			}
 			Special::EmbedSpotify => {
 				let link = "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT";

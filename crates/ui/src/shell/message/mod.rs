@@ -797,6 +797,9 @@ fn forward_block(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 			env.prefs.link_previews,
 			cx,
 		));
+		if env.prefs.link_previews {
+			lines.extend(components::render_embeds(message, &source.embeds, &body_env, cx));
+		}
 	}
 	lines.extend(components::render_forwarded(
 		message,
@@ -1102,6 +1105,14 @@ fn content_column(
 			env.prefs.link_previews,
 			cx,
 		));
+		if env.prefs.link_previews {
+			out.extend(components::render_embeds(
+				message,
+				&media_message.embeds,
+				&body_env,
+				cx,
+			));
+		}
 	}
 	out.extend(components::render(media_message, &body_env, cx));
 	if let Some(effects) = effects {
