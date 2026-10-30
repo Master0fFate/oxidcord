@@ -500,7 +500,7 @@ impl ProfilesPage {
 				div()
 					.px(theme.space_16)
 					.mt(-(theme.avatar_lg / 2.))
-					.child(avatar_ring(cutout, theme.avatar_lg, theme.space_4).child(avatar_element)),
+					.child(avatar_ring(theme, cutout, theme.avatar_lg, theme.space_4).child(avatar_element)),
 			)
 			.child(
 				div()

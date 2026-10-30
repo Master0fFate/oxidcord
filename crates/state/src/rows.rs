@@ -1,6 +1,7 @@
 use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::{DateTime, Local, NaiveDate, TimeDelta, Utc};
 use protocol::{
@@ -107,12 +108,21 @@ fn activity_text(presence: &Presence) -> Option<String> {
 	Some(text)
 }
 
+static NAMES_MASKED: AtomicBool = AtomicBool::new(false);
+
+const MASKED_NAME: &str = "\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}";
+
+pub fn set_names_masked(masked: bool) -> bool {
+	NAMES_MASKED.swap(masked, Ordering::Relaxed) != masked
+}
+
 fn user_display(user: &User) -> String {
-	user.global_name
-		.as_deref()
-		.filter(|name| !name.is_empty())
-		.unwrap_or(&user.username)
-		.to_owned()
+	let custom = user.global_name.as_deref().filter(|name| !name.is_empty());
+	match custom {
+		Some(name) => name.to_owned(),
+		None if NAMES_MASKED.load(Ordering::Relaxed) => MASKED_NAME.to_owned(),
+		None => user.username.clone(),
+	}
 }
 
 impl State {

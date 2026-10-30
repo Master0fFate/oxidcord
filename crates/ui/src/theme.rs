@@ -1,6 +1,8 @@
+use std::borrow::Cow;
+use std::collections::HashSet;
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use gpui::{App, Global, Hsla, Rems, Rgba, SharedString, hsla, px, rems};
 use gpui_component::{Theme as ComponentTheme, ThemeColor, ThemeMode};
@@ -9,6 +11,9 @@ use serde_json::{Map, Value};
 
 pub const SYSTEM_THEME: &str = "system";
 const BASE_REM: f32 = 16.;
+const FONTS_FOLDER: &str = "fonts";
+const MAX_FONT_BYTES: u64 = 8 * 1024 * 1024;
+const MAX_FONT_FILES: usize = 8;
 
 pub fn rem(pixels: f32) -> Rems {
 	rems(pixels / BASE_REM)
@@ -46,9 +51,11 @@ macro_rules! tokens {
 			pub code_fonts: Vec<SharedString>,
 			pub ui_font: SharedString,
 			pub code_font: SharedString,
+			pub font_files: Vec<PathBuf>,
 			$(pub $color: Hsla,)+
 			$(pub $size: Rems,)+
 			pub ui_scale: f32,
+			pub roundness: f32,
 		}
 
 		impl Theme {
@@ -59,11 +66,13 @@ macro_rules! tokens {
 					name: "dark".into(),
 					ui_font: ui_fonts[0].clone(),
 					code_font: code_fonts[0].clone(),
+					font_files: Vec::new(),
 					ui_fonts,
 					code_fonts,
 					$($color: parse_color($default).expect("builtin color token"),)+
 					$($size: rem($value),)+
 					ui_scale: 1.,
+					roundness: 1.,
 				}
 			}
 
@@ -327,11 +336,14 @@ impl Theme {
 			Some(Value::String(name)) => Self::builtin(&name).ok_or(ThemeError::UnknownBase(name))?,
 			_ => Self::dark(),
 		};
+		let font_files = font_paths(path.as_ref(), tokens.remove("font_files"));
 		let name = path
 			.as_ref()
 			.file_stem()
 			.map(|stem| stem.to_string_lossy().into_owned());
-		Ok(base.with_file_tokens(name, tokens))
+		let mut theme = base.with_file_tokens(name, tokens);
+		theme.font_files = font_files;
+		Ok(theme)
 	}
 
 	pub fn builtin(name: &str) -> Option<Self> {
@@ -368,6 +380,7 @@ impl Theme {
 	}
 
 	pub fn install(mut self, cx: &mut App) {
+		load_font_files(&self.font_files, cx);
 		self.resolve_fonts(&cx.text_system().all_font_names());
 		self.scale_fonts(current_font_scale(cx));
 		self.ui_scale = current_ui_scale(cx);
@@ -420,6 +433,10 @@ impl Theme {
 		length.to_pixels(rem_pixels(self.ui_scale))
 	}
 
+	pub fn round(&self, extent: Rems) -> Rems {
+		extent * (self.roundness / 2.)
+	}
+
 	pub fn is_light(&self) -> bool {
 		self.background_primary.l > 0.5
 	}
@@ -453,9 +470,14 @@ impl Theme {
 	fn apply_file_token(&mut self, key: &str, value: &Value) -> bool {
 		match value {
 			Value::String(text) => parse_color(text).is_some_and(|color| self.set_color(key, color)),
-			Value::Number(number) => number
-				.as_f64()
-				.is_some_and(|size| self.set_size(key, size as f32)),
+			Value::Number(number) => number.as_f64().is_some_and(|value| {
+				if key == "roundness" {
+					self.roundness = (value as f32).clamp(0., 1.);
+					true
+				} else {
+					self.set_size(key, value as f32)
+				}
+			}),
 			Value::Array(items) => {
 				let families: Vec<SharedString> = items
 					.iter()
@@ -477,6 +499,50 @@ impl Theme {
 }
 
 impl Global for Theme {}
+
+struct LoadedFonts(HashSet<PathBuf>);
+
+impl Global for LoadedFonts {}
+
+fn font_paths(theme_file: &Path, declared: Option<Value>) -> Vec<PathBuf> {
+	let Some(Value::Array(items)) = declared else {
+		return Vec::new();
+	};
+	let folder = theme_file.with_file_name(FONTS_FOLDER);
+	items
+		.iter()
+		.filter_map(|item| item.get("file")?.as_str())
+		.filter(|file| Path::new(file).file_name().is_some_and(|name| name == *file))
+		.map(|file| folder.join(file))
+		.take(MAX_FONT_FILES)
+		.collect()
+}
+
+fn load_font_files(paths: &[PathBuf], cx: &mut App) {
+	let mut loaded = cx
+		.try_global::<LoadedFonts>()
+		.map_or_else(HashSet::new, |fonts| fonts.0.clone());
+	let fresh: Vec<&PathBuf> = paths.iter().filter(|path| !loaded.contains(*path)).collect();
+	let mut fonts = Vec::with_capacity(fresh.len());
+	for path in fresh {
+		let readable = fs::metadata(path).is_ok_and(|meta| meta.len() <= MAX_FONT_BYTES);
+		match fs::read(path).ok().filter(|_| readable) {
+			Some(bytes) => {
+				loaded.insert(path.clone());
+				fonts.push(Cow::Owned(bytes));
+			}
+			None => tracing::warn!(font = %path.display(), "could not read theme font"),
+		}
+	}
+	if fonts.is_empty() {
+		return;
+	}
+	if let Err(error) = cx.text_system().add_fonts(fonts) {
+		tracing::warn!(%error, "could not register theme fonts");
+		return;
+	}
+	cx.set_global(LoadedFonts(loaded));
+}
 
 struct FontScale(f32);
 

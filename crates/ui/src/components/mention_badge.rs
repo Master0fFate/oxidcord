@@ -41,7 +41,7 @@ impl RenderOnce for MentionBadge {
 			.min_w(rem(BADGE_HEIGHT))
 			.h(rem(BADGE_HEIGHT))
 			.px(rem(BADGE_PADDING))
-			.rounded_full()
+			.rounded(theme.round(rem(BADGE_HEIGHT)))
 			.bg(theme.mention_badge)
 			.text_color(theme.text_on_brand)
 			.text_size(rem(BADGE_TEXT))
@@ -55,7 +55,7 @@ impl RenderOnce for MentionBadge {
 				.flex()
 				.flex_none()
 				.p(rem(RING_WIDTH))
-				.rounded_full()
+				.rounded(theme.round(rem(BADGE_HEIGHT + RING_WIDTH * 2.)))
 				.bg(ring)
 				.child(badge),
 			None => badge,

@@ -5,7 +5,8 @@ First party themes. A theme is one `theme.json` of token overrides on top of a b
 | Theme | What it looks like |
 | --- | --- |
 | `midnight` | Deep blue dark theme with the violet accent |
-| `amoled-violet` | True black, violet accent, rounder corners |
+| `amoled-violet` | True black, violet accent, rounder corners, Montserrat |
+| `angelcore` | Near-black duotone, square corners, thin rules, mono type |
 
 ## Layout
 

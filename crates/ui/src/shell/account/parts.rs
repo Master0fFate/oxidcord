@@ -44,7 +44,12 @@ pub fn role_chip(role: &RoleChip, theme: &Theme) -> AnyElement {
 		.bg(with_alpha(theme.background_tertiary, 0.6))
 		.text_size(theme.font_tiny)
 		.font_weight(FontWeight::MEDIUM)
-		.child(div().size(theme.space_12).rounded_full().bg(dot))
+		.child(
+			div()
+				.size(theme.space_12)
+				.rounded(theme.round(theme.space_12))
+				.bg(dot),
+		)
 		.child(role.name.clone())
 		.into_any_element()
 }
@@ -196,10 +201,10 @@ pub fn stat_line(profile: &ProfileData, theme: &Theme, cx: &App) -> Option<AnyEl
 	)
 }
 
-pub fn avatar_ring(color: Hsla, inner: gpui::Rems, ring: gpui::Rems) -> gpui::Div {
+pub fn avatar_ring(theme: &Theme, color: Hsla, inner: gpui::Rems, ring: gpui::Rems) -> gpui::Div {
 	div()
 		.size(inner + ring * 2.)
-		.rounded_full()
+		.rounded(theme.round(inner + ring * 2.))
 		.bg(color)
 		.p(ring)
 		.flex_none()

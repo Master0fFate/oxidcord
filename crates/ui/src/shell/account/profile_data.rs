@@ -117,7 +117,19 @@ impl ProfileData {
 		let profile = state.profile(user_id);
 		let guild_state = guild.and_then(|id| state.guild(id));
 		let member = guild_state.and_then(|guild| guild.members.get(&user_id));
-		let member_avatar = member.and_then(|member| member.avatar.as_deref());
+		let guild_profile = profile
+			.and_then(|profile| profile.guild_profile.as_ref())
+			.filter(|found| Some(found.guild_id) == guild);
+		let loaded_member = profile
+			.and_then(|profile| profile.guild_member.as_ref())
+			.filter(|_| guild.is_some());
+		let member_avatar = member
+			.and_then(|member| member.avatar.as_deref())
+			.or_else(|| loaded_member.and_then(|member| member.avatar.as_deref()));
+		let member_banner = guild_profile
+			.and_then(|found| found.banner.as_deref())
+			.or_else(|| member.and_then(|member| member.banner.as_deref()))
+			.or_else(|| loaded_member.and_then(|member| member.banner.as_deref()));
 		let override_avatar = over.as_ref().and_then(|over| over.avatar.clone());
 		let avatar = match (override_avatar, guild, member_avatar) {
 			(Some(url), _, _) => url,
@@ -129,8 +141,9 @@ impl ProfileData {
 		let banner_hash = profile
 			.and_then(|profile| profile.banner.clone())
 			.or_else(|| user.banner.clone());
-		let accent = profile
-			.and_then(|profile| profile.accent_color)
+		let accent = guild_profile
+			.and_then(|found| found.accent_color)
+			.or_else(|| profile.and_then(|profile| profile.accent_color))
 			.or(user.accent_color)
 			.and_then(|color| u32::try_from(color).ok())
 			.map(role_color);
@@ -139,6 +152,7 @@ impl ProfileData {
 			_ => user.username.clone(),
 		};
 		let joined = member
+			.or(loaded_member)
 			.and_then(|member| member.joined_at)
 			.map(|time| time.date_naive());
 		let mutual_guilds = profile
@@ -177,17 +191,27 @@ impl ProfileData {
 			username: user.username.clone(),
 			handle: handle.into(),
 			avatar,
-			banner_url: over
-				.as_ref()
-				.and_then(|over| over.banner.clone())
-				.or_else(|| banner_hash.map(|hash| media::cdn::banner_url(user_id.get(), &hash, 600))),
+			banner_url: over.as_ref().and_then(|over| over.banner.clone()).or_else(|| {
+				match (guild, member_banner) {
+					(Some(guild), Some(hash)) => Some(media::cdn::guild_member_banner_url(
+						guild.get(),
+						user_id.get(),
+						hash,
+						600,
+					)),
+					_ => banner_hash.map(|hash| media::cdn::banner_url(user_id.get(), &hash, 600)),
+				}
+			}),
 			accent,
 			pronouns: over
 				.as_ref()
 				.and_then(|over| over.pronouns.clone())
+				.or_else(|| guild_profile.and_then(|found| found.pronouns.clone()))
 				.or_else(|| profile.and_then(|profile| profile.pronouns.clone()))
 				.map(Into::into),
-			bio: profile.and_then(|profile| profile.bio.clone()),
+			bio: guild_profile
+				.and_then(|found| found.bio.clone())
+				.or_else(|| profile.and_then(|profile| profile.bio.clone())),
 			badges: profile
 				.map(|profile| {
 					profile

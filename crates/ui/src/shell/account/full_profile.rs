@@ -338,7 +338,7 @@ impl AccountHub {
 					.px(theme.space_16)
 					.mt(-(theme.avatar_xl / 2.))
 					.child(
-						parts::avatar_ring(cutout, theme.avatar_xl, theme.space_8).child(
+						parts::avatar_ring(theme, cutout, theme.avatar_xl, theme.space_8).child(
 							Avatar::new(profile.name.clone())
 								.size(theme.avatar_xl)
 								.url(profile.avatar.clone())

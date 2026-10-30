@@ -22,7 +22,10 @@ use tokio::time::Instant;
 use super::outgoing::Outgoing;
 use super::{Core, Internal};
 use crate::broker::view_of;
-use crate::catalog::{download_plugin, download_theme, fetch_catalog, fetch_theme_catalog, write_theme};
+use crate::catalog::{
+	download_plugin, download_theme, download_theme_fonts, fetch_catalog, fetch_theme_catalog, write_theme,
+	write_theme_fonts,
+};
 use crate::command::Command;
 use crate::plugins::{PluginFlags, PluginHub};
 use crate::render::{RenderJob, RenderResult};
@@ -310,10 +313,14 @@ async fn install_theme_from_catalog(hub: Arc<PluginHub>, id: &str) -> Result<()>
 		.and_then(|catalog| catalog.themes.iter().find(|entry| entry.id == id).cloned())
 		.context("theme is not in the catalog")?;
 	let bytes = download_theme(&entry).await?;
+	let fonts = download_theme_fonts(&bytes).await?;
 	let themes_dir = hub.store.paths.themes_dir();
-	tokio::task::spawn_blocking(move || write_theme(&themes_dir, &entry, &bytes))
-		.await
-		.context("install task failed")?
+	tokio::task::spawn_blocking(move || {
+		write_theme_fonts(&themes_dir, &fonts)?;
+		write_theme(&themes_dir, &entry, &bytes)
+	})
+	.await
+	.context("install task failed")?
 }
 
 impl Core {

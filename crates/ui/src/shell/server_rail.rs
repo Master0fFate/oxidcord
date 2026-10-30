@@ -248,7 +248,7 @@ impl ServerRail {
 		};
 		let (from, to) = self.tiles.settle(target, state);
 		let seed = target.seed();
-		let radius = |round: bool| if round { TILE_RADIUS_ACTIVE } else { TILE_RADIUS };
+		let radius = |round: bool| theme.roundness * if round { TILE_RADIUS_ACTIVE } else { TILE_RADIUS };
 		let (from_radius, to_radius) = (radius(from.round), radius(to.round));
 		let animation_key = seed
 			.wrapping_mul(16)
@@ -318,7 +318,7 @@ impl ServerRail {
 							.items_center()
 							.justify_center()
 							.size(cell)
-							.rounded_full()
+							.rounded(theme.round(cell))
 							.overflow_hidden()
 							.bg(theme.background_primary)
 							.text_size(rem(9.))
@@ -486,7 +486,7 @@ impl ServerRail {
 					.top_0()
 					.left(inset)
 					.size(theme.server_icon)
-					.rounded(rem(TILE_RADIUS))
+					.rounded(rem(TILE_RADIUS * theme.roundness))
 					.border_2()
 					.border_color(transparent_black())
 					.drag_over::<DraggedGuild>(move |style, _, _, _| style.border_color(brand))
@@ -632,7 +632,7 @@ impl ServerRail {
 					.flex_col()
 					.gap(theme.space_8)
 					.w(theme.server_icon)
-					.rounded(rem(TILE_RADIUS))
+					.rounded(rem(TILE_RADIUS * theme.roundness))
 					.bg(tint)
 					.child(header)
 					.children(guilds),

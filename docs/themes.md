@@ -2,6 +2,24 @@
 
 A theme is one JSON file of overrides on top of a built-in theme. There is no code and nothing runs, so a theme cannot do anything except change how Oxidcord looks.
 
+## What a theme can change
+
+Themes are meant to restyle the whole client, not tint it. A theme owns every color, every size, the shape of the interface and its typography, and none of it needs code.
+
+| Part | How |
+| --- | --- |
+| Color | Every color token below, 45 of them, from surfaces to status dots |
+| Shape | `radius_sm` to `radius_xl` for buttons, inputs, menus, dialogs and cards. `roundness` for avatars, server icons, status dots and badges, from 1 (circles, the default) to 0 (squares) |
+| Density | Row heights, control heights, spacing scale, avatar and column sizes |
+| Type | `ui_fonts`, `code_fonts`, the `font_*` size scale, and your own font files through `font_files` |
+| Icons | Per-icon SVG replacement, see Icons below |
+
+A full redesign is mostly a matter of setting these together. `themes/angelcore` is a hard-edged monochrome theme with square avatars and mono type. `themes/amoled-violet` changes the accent, corners and font. Both use only this file format.
+
+Start a new design by deciding shape (`roundness` and the `radius_*` set), then the surface ladder, then the accent, then type and density. Keep the choices consistent: a theme reads as designed when radius, spacing and type all follow one idea.
+
+What a theme cannot do is move or remove parts of the layout, or run anything. If a design needs a token that does not exist, add it to the `tokens!` block in `crates/ui/src/theme.rs` and document it here.
+
 ## Quick start
 
 1. Open Settings, Themes, and use the folder button to open the themes directory.
@@ -25,8 +43,10 @@ The themes directory is `<data dir>/themes`, see the README for where that is on
 
 - `base` picks the theme to start from: `dark` (default), `light` or `amoled`. Every token you leave out keeps the value of the base.
 - Colors are `#rrggbb`, `#rrggbbaa`, `rgb(r, g, b)` or `rgba(r, g, b, a)` with `a` from 0 to 1.
+- `roundness` is a number from 0 to 1. At 1 avatars, server icons, status dots and badges are circles, at 0 they are squares, and values between give rounded squares.
 - Sizes are plain numbers in pixels at 100% interface scale. The interface zoom setting scales them.
 - `ui_fonts` and `code_fonts` are lists of font family names, tried in order.
+- `font_files` loads font files from `<themes dir>/fonts`. Each entry is `{ "file": "Name.ttf", "url": "https://...", "sha256": "..." }`, with a plain `.ttf` or `.otf` file name. Put the family name in `ui_fonts` or `code_fonts` to use it. Installing a theme from the catalog downloads each `url` into that folder and checks the sha256; for a theme you drop in by hand, copy the files there yourself. Files over 8 MB are ignored.
 - Unknown or malformed tokens are ignored and logged, they never stop the theme from loading. An unknown `base` does.
 
 ## Color tokens

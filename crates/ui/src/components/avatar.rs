@@ -97,9 +97,15 @@ impl RenderOnce for Avatar {
 				.get(url, SizeHint::square(pixels))
 				.map(|image| (url.clone(), image))
 		});
-		let circle = div().size(size).rounded_full().overflow_hidden().flex_none();
+		let corners = theme.round(size);
+		let circle = div().size(size).rounded(corners).overflow_hidden().flex_none();
 		let circle = match image {
-			Some(image) => circle.child(img(image).size_full().rounded_full().object_fit(ObjectFit::Cover)),
+			Some(image) => circle.child(
+				img(image)
+					.size_full()
+					.rounded(corners)
+					.object_fit(ObjectFit::Cover),
+			),
 			None => circle
 				.bg(background)
 				.flex()
@@ -138,7 +144,7 @@ impl RenderOnce for Avatar {
 						.right(-ring)
 						.bottom(-ring)
 						.size(outer)
-						.rounded_full()
+						.rounded(theme.round(outer))
 						.bg(cutout)
 						.flex()
 						.items_center()

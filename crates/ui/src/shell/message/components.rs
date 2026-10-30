@@ -522,7 +522,7 @@ impl Builder<'_> {
 							.items_center()
 							.justify_center()
 							.size(rem(40.))
-							.rounded_full()
+							.rounded(theme.round(rem(40.)))
 							.bg(with_alpha(theme.background_tertiary, 0.8))
 							.child(
 								Icon::new(IconKind::Play)

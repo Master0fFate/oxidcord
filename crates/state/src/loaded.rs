@@ -113,12 +113,22 @@ pub struct ConnectedAccount {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct GuildProfile {
+	pub guild_id: Snowflake,
+	pub bio: Option<String>,
+	pub banner: Option<String>,
+	pub accent_color: Option<i64>,
+	pub pronouns: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct UserProfile {
 	pub user: User,
 	pub bio: Option<String>,
 	pub banner: Option<String>,
 	pub accent_color: Option<i64>,
 	pub pronouns: Option<String>,
+	pub guild_profile: Option<GuildProfile>,
 	pub badges: Vec<ProfileBadge>,
 	pub mutual_guilds: Vec<Snowflake>,
 	pub mutual_friends: Vec<Snowflake>,
@@ -274,6 +284,7 @@ struct RawConnection {
 #[derive(Deserialize, Default)]
 #[serde(default)]
 struct RawMeta {
+	guild_id: Option<Snowflake>,
 	bio: Option<String>,
 	banner: Option<String>,
 	accent_color: Option<i64>,
@@ -285,6 +296,7 @@ struct RawMeta {
 struct RawProfile {
 	user: Value,
 	user_profile: Option<RawMeta>,
+	guild_member_profile: Option<RawMeta>,
 	badges: Option<LenientVec<RawBadge>>,
 	mutual_guilds: Option<LenientVec<RawMutualGuild>>,
 	mutual_friends: Option<LenientVec<User>>,
@@ -671,7 +683,17 @@ impl State {
 		let mutual_friends_count = parsed
 			.mutual_friends_count
 			.unwrap_or_else(|| u32::try_from(mutual_friends.len()).unwrap_or(u32::MAX));
+		let guild_profile = parsed.guild_member_profile.and_then(|meta| {
+			Some(GuildProfile {
+				guild_id: meta.guild_id?,
+				bio: meta.bio.filter(|bio| !bio.is_empty()),
+				banner: meta.banner,
+				accent_color: meta.accent_color,
+				pronouns: meta.pronouns.filter(|pronouns| !pronouns.is_empty()),
+			})
+		});
 		Some(UserProfile {
+			guild_profile,
 			bio: meta
 				.bio
 				.or_else(|| parsed.user.get("bio")?.as_str().map(str::to_owned))

@@ -3,11 +3,10 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gpui::{
-	Context, Entity, EventEmitter, FontWeight, IntoElement, ParentElement as _, Render, Styled as _,
-	Subscription, Task, Window, div, prelude::FluentBuilder as _,
+	Context, Entity, EventEmitter, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _,
+	Render, StatefulInteractiveElement as _, Styled as _, Subscription, Task, Window, div,
+	prelude::FluentBuilder as _,
 };
-use gpui_component::Sizable as _;
-use gpui_component::button::{Button, ButtonVariants as _};
 use plugin_host::ViewContext;
 use protocol::Snowflake;
 use session::Command;
@@ -15,7 +14,7 @@ use session::Command;
 use super::account::{self, ProfileData};
 use super::plugins::{self, LinkOrigin, MenuTarget, plugin_menu};
 use super::{SettingsBackend, links};
-use crate::components::{Avatar, Divider};
+use crate::components::{Avatar, Divider, tooltip};
 use crate::data::{Data, DataEvent};
 use crate::format;
 use crate::i18n::{ArgValue, Translate as _};
@@ -218,14 +217,22 @@ impl Render for ProfileCard {
 					.px(theme.space_16)
 					.mt(-(theme.avatar_lg / 2.))
 					.child(
-						account::avatar_ring(cutout, theme.avatar_lg, theme.space_4).child(
-							Avatar::new(profile.name.clone())
-								.size(theme.avatar_lg)
-								.url(profile.avatar.clone())
-								.status(profile.status)
-								.decoration(decoration)
-								.cutout(cutout),
-						),
+						account::avatar_ring(&theme, cutout, theme.avatar_lg, theme.space_4)
+							.id("profile-view-full")
+							.cursor_pointer()
+							.tooltip(tooltip(cx.t("profile-view-full")))
+							.on_click(cx.listener(move |_, _, _, cx| {
+								cx.emit(ProfileEvent::OpenFull { user, guild });
+								cx.emit(ProfileEvent::Close);
+							}))
+							.child(
+								Avatar::new(profile.name.clone())
+									.size(theme.avatar_lg)
+									.url(profile.avatar.clone())
+									.status(profile.status)
+									.decoration(decoration)
+									.cutout(cutout),
+							),
 					)
 					.child(div().pt(theme.avatar_lg / 2. + theme.space_8).child(badges)),
 			)
@@ -308,17 +315,7 @@ impl Render for ProfileCard {
 					})
 					.children(plugin_sections)
 					.children(stats)
-					.child(actions)
-					.child(
-						Button::new("profile-view-full")
-							.small()
-							.link()
-							.label(cx.t("profile-view-full"))
-							.on_click(cx.listener(move |_, _, _, cx| {
-								cx.emit(ProfileEvent::OpenFull { user, guild });
-								cx.emit(ProfileEvent::Close);
-							})),
-					),
+					.child(actions),
 			)
 			.into_any_element()
 	}

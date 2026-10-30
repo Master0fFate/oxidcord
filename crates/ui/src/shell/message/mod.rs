@@ -51,6 +51,7 @@ use crate::lookup::{Lookup, user_avatar};
 use crate::model::role_color;
 use crate::theme::{Theme, rem};
 
+pub const FLASH_DURATION: Duration = Duration::from_millis(1400);
 const SNIPPET_LENGTH: usize = 120;
 const AVATAR_SIZE: f32 = 40.;
 const SKELETON_ROWS: usize = 4;
@@ -248,6 +249,7 @@ pub struct RowEnv<'a> {
 	pub welcome: &'a Welcome,
 	pub access: MessageAccess,
 	pub selection: &'a HashSet<Snowflake>,
+	pub flash: Option<Snowflake>,
 	pub options: ClientOptions,
 }
 
@@ -286,6 +288,21 @@ fn mention_highlight(row: gpui::Stateful<gpui::Div>, theme: &Theme) -> gpui::Sta
 			.w(rem(2.))
 			.bg(theme.warning),
 	)
+}
+
+fn flash_overlay(id: u64, theme: &Theme) -> impl IntoElement {
+	let color = theme.brand;
+	div()
+		.absolute()
+		.top_0()
+		.bottom_0()
+		.left_0()
+		.right_0()
+		.with_animation(
+			("message-flash", id),
+			Animation::new(FLASH_DURATION).with_easing(|t| 1. - ((t * 2.).fract() * 2. - 1.).abs()),
+			move |overlay, delta| overlay.bg(crate::theme::with_alpha(color, 0.28 * delta)),
+		)
 }
 
 pub fn render_row(row: &MessageRow, env: &RowEnv, cx: &App) -> AnyElement {
@@ -335,7 +352,7 @@ fn welcome_header(welcome: &Welcome, theme: &Theme, cx: &App) -> AnyElement {
 				.items_center()
 				.justify_center()
 				.size(rem(68.))
-				.rounded_full()
+				.rounded(theme.round(rem(68.)))
 				.bg(theme.interactive_muted)
 				.child(Icon::new(icon).size(rem(42.)).color(theme.interactive_active)),
 		)
@@ -378,7 +395,7 @@ fn skeleton(theme: &Theme) -> AnyElement {
 					div()
 						.flex_none()
 						.size(rem(AVATAR_SIZE))
-						.rounded_full()
+						.rounded(theme.round(rem(AVATAR_SIZE)))
 						.bg(theme.interactive_muted),
 				)
 				.child(
@@ -1355,7 +1372,10 @@ fn message_row(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 		.when(highlighted(view, tint), |row| mention_highlight(row, theme))
 		.when_some(tint, |row, tint| row.bg(tint))
 		.when_some(accent, |row, accent| row.border_l_2().border_color(accent))
-		.when_some(tip, |row, tip| row.tooltip(tooltip(tip)));
+		.when_some(tip, |row, tip| row.tooltip(tooltip(tip)))
+		.when(env.flash == Some(message.id), |row| {
+			row.child(flash_overlay(id, theme))
+		});
 	if view.grouped_with_previous {
 		let row = container
 			.child(

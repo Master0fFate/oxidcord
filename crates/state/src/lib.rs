@@ -25,8 +25,9 @@ pub use expressions::{
 };
 pub use guild::GuildState;
 pub use loaded::{
-	AuditChange, AuditEntry, AuditLog, AuthSession, BanEntry, ConnectedAccount, INBOX_KEY, InviteInfo,
-	InvitePreview, Loaded, MessageCommand, ProfileBadge, USER_COMMANDS, UserProfile, audit_action_label,
+	AuditChange, AuditEntry, AuditLog, AuthSession, BanEntry, ConnectedAccount, GuildProfile, INBOX_KEY,
+	InviteInfo, InvitePreview, Loaded, MessageCommand, ProfileBadge, USER_COMMANDS, UserProfile,
+	audit_action_label,
 };
 pub use member_list::{MemberList, MemberSlot};
 pub use messages::{ChannelMessages, MESSAGE_CAP, PendingMessage, apply_update};
@@ -37,6 +38,7 @@ pub use plugin_shell::{
 	QueuedIntent, UiIntent,
 };
 pub use relationships::shared_members;
+pub use rows::set_names_masked;
 pub use settings::{GuildFolder, RailEntry, guild_folders_settings};
 pub use state::{Rejection, Selection, SessionInfo, SharedState, State, TYPING_TIMEOUT};
 pub use threads::ForumPost;

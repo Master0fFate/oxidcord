@@ -1557,6 +1557,12 @@ impl PresenceChanged for Changes {
 
 impl Render for Shell {
 	fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+		if state::set_names_masked(crate::data::streamer_mode(cx).hides_personal()) {
+			let timeline = self.timeline.clone();
+			window.defer(cx, move |window, cx| {
+				timeline.update(cx, |timeline, cx| timeline.rebuild(window, cx));
+			});
+		}
 		let theme = Theme::current(cx);
 		let width = window.viewport_size().width;
 		let rem_size = window.rem_size();

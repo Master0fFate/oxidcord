@@ -40,5 +40,12 @@
 	"radius_xl": 28,
 	"field_height": 38,
 	"control_height": 34,
-	"chip_height": 26
+	"chip_height": 26,
+	"ui_fonts": ["Montserrat", "gg sans", "Segoe UI", "sans-serif"],
+	"font_files": [
+		{ "file": "Montserrat-Regular.ttf", "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/themes/amoled-violet/fonts/Montserrat-Regular.ttf", "sha256": "3e8abe50c44c82e2242e97d1ec8c0d385c4890cdc50447bcdb8605c81a38cfb2" },
+		{ "file": "Montserrat-Medium.ttf", "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/themes/amoled-violet/fonts/Montserrat-Medium.ttf", "sha256": "dae47428bb041f9716604e0e07b5b0c8585b3bdd8183362f75c69fe7bb3cfaf4" },
+		{ "file": "Montserrat-SemiBold.ttf", "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/themes/amoled-violet/fonts/Montserrat-SemiBold.ttf", "sha256": "b4e1563393d73fdff491a869441245aef31add2ec03d9c97a6dae4de07c52fd0" },
+		{ "file": "Montserrat-Bold.ttf", "url": "https://raw.githubusercontent.com/Master0fFate/oxidcord/main/themes/amoled-violet/fonts/Montserrat-Bold.ttf", "sha256": "bc6e854971cea46b463be6f9eef4d9cd52f51cfc1fc0dd90c9d3e6483dc0ec61" }
+	]
 }

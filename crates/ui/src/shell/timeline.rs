@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use gpui::{
 	AppContext as _, ClickEvent, Context, Entity, EventEmitter, FontWeight, InteractiveElement as _,
 	IntoElement, ListOffset, ParentElement as _, Pixels, Point, Render, SharedString, Styled as _,
-	Subscription, Window, div, prelude::FluentBuilder as _, px,
+	Subscription, Task, Window, div, prelude::FluentBuilder as _, px,
 };
 use gpui_component::Sizable as _;
 use gpui_component::WindowExt as _;
@@ -23,8 +23,8 @@ use state::{Changes, MessageRow};
 use super::community::act;
 use super::inline_emoji::{self, EmojiTokens};
 use super::message::{
-	Dispatch, DocumentCache, Editing, ImageTarget, MessageAccess, Prefs, RowAction, RowEnv, Welcome,
-	render_row,
+	Dispatch, DocumentCache, Editing, FLASH_DURATION, ImageTarget, MessageAccess, Prefs, RowAction, RowEnv,
+	Welcome, render_row,
 };
 use super::moderation;
 use super::plugins::{self, LinkOrigin, PluginBridge};
@@ -39,6 +39,7 @@ const NEAR_TOP_ROWS: usize = 14;
 const SHORT_LIST_ROWS: usize = 14;
 const OLDER_RETRY: Duration = Duration::from_secs(3);
 const DOCUMENT_CACHE: usize = 256;
+const GROUP_LOOKBACK: usize = 6;
 
 pub enum TimelineEvent {
 	OpenLink(String, LinkOrigin),
@@ -72,6 +73,8 @@ pub struct Timeline {
 	requested_newer: Option<(Snowflake, Instant)>,
 	detached: bool,
 	pending_jump: Option<Snowflake>,
+	flash: Option<Snowflake>,
+	flash_reset: Option<Task<()>>,
 	scroll_anchor: Option<ListOffset>,
 	own_update: bool,
 	_subscriptions: Vec<Subscription>,
@@ -135,6 +138,8 @@ impl Timeline {
 			requested_newer: None,
 			detached: false,
 			pending_jump: None,
+			flash: None,
+			flash_reset: None,
 			scroll_anchor: None,
 			own_update: false,
 			_subscriptions: vec![observe, rescale],
@@ -194,6 +199,8 @@ impl Timeline {
 		self.requested_newer = None;
 		self.detached = false;
 		self.pending_jump = None;
+		self.flash = None;
+		self.flash_reset = None;
 		self.revealed.borrow_mut().clear();
 		self.poll_picks.borrow_mut().clear();
 		self.rows = Rc::new(Vec::new());
@@ -208,6 +215,11 @@ impl Timeline {
 		{
 			self.refresh(window, cx);
 		}
+	}
+
+	pub fn rebuild(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+		self.refresh(window, cx);
+		cx.notify();
 	}
 
 	fn refresh(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -389,9 +401,39 @@ impl Timeline {
 		let Some(index) = index else {
 			return false;
 		};
+		let head = self.group_head(index);
 		self.own_update = true;
-		self.scroll
-			.update(cx, |scroll, cx| scroll.scroll_to_item(index, cx))
+		let scrolled = self
+			.scroll
+			.update(cx, |scroll, cx| scroll.scroll_to_item(head, cx));
+		if scrolled {
+			self.flash_message(message_id, cx);
+		}
+		scrolled
+	}
+
+	fn group_head(&self, index: usize) -> usize {
+		let floor = index.saturating_sub(GROUP_LOOKBACK);
+		(floor..index)
+			.rev()
+			.take_while(
+				|ix| matches!(&self.rows[ix + 1], MessageRow::Message(view) if view.grouped_with_previous),
+			)
+			.last()
+			.unwrap_or(index)
+	}
+
+	fn flash_message(&mut self, message_id: Snowflake, cx: &mut Context<Self>) {
+		self.flash = Some(message_id);
+		self.flash_reset = Some(cx.spawn(async move |this, cx| {
+			cx.background_executor().timer(FLASH_DURATION).await;
+			this.update(cx, |this, cx| {
+				this.flash = None;
+				cx.notify();
+			})
+			.ok();
+		}));
+		cx.notify();
 	}
 
 	fn finish_jump(&mut self, cx: &mut Context<Self>) {
@@ -875,6 +917,7 @@ impl Render for Timeline {
 		let guild = self.guild;
 		let access = self.access(cx);
 		let selection = self.selection.clone();
+		let flash = self.flash;
 		let row_theme = theme.clone();
 		let jump_label = (!detached).then(|| cx.t("timeline-jump-latest"));
 		let scroller = ChatList::new("timeline", self.scroll.clone())
@@ -903,6 +946,7 @@ impl Render for Timeline {
 						welcome: &welcome,
 						access,
 						selection: &selection,
+						flash,
 						options: *state.client_options(),
 					};
 					render_row(row, &env, cx)

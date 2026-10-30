@@ -45,7 +45,12 @@ impl RenderOnce for StatusDot {
 		let color = status_color(theme, &self.status);
 		let cutout = self.cutout.unwrap_or(theme.background_secondary);
 		let size = self.size;
-		let dot = div().relative().flex_none().size(size).rounded_full().bg(color);
+		let dot = div()
+			.relative()
+			.flex_none()
+			.size(size)
+			.rounded(theme.round(size))
+			.bg(color);
 		match self.status {
 			Status::Online => dot,
 			Status::Idle => dot.child(
@@ -54,7 +59,7 @@ impl RenderOnce for StatusDot {
 					.size(size * 0.7)
 					.top(-size * 0.2)
 					.left(-size * 0.2)
-					.rounded_full()
+					.rounded(theme.round(size * 0.7))
 					.bg(cutout),
 			),
 			Status::Dnd => dot.flex().items_center().justify_center().child(
@@ -68,7 +73,7 @@ impl RenderOnce for StatusDot {
 				.flex()
 				.items_center()
 				.justify_center()
-				.child(div().size(size * 0.5).rounded_full().bg(cutout)),
+				.child(div().size(size * 0.5).rounded(theme.round(size * 0.5)).bg(cutout)),
 		}
 	}
 }

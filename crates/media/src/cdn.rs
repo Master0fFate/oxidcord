@@ -377,6 +377,14 @@ pub fn guild_member_avatar_url(guild_id: u64, user_id: u64, hash: &str, size: u3
 	)
 }
 
+pub fn guild_member_banner_url(guild_id: u64, user_id: u64, hash: &str, size: u32) -> String {
+	format!(
+		"{CDN}/guilds/{guild_id}/users/{user_id}/banners/{hash}.{}?size={}",
+		extension(hash),
+		clamp_size(size)
+	)
+}
+
 pub fn badge_icon_url(icon: &str) -> String {
 	format!("{CDN}/badge-icons/{icon}.png")
 }

@@ -10,6 +10,7 @@ use plugin_host::catalog::{
 	Catalog, CatalogEntry, ThemeCatalog, ThemeEntry, is_valid_theme_id, verify_catalog, verify_theme_catalog,
 };
 use reqwest::{Client, Response, redirect};
+use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
 
@@ -22,6 +23,10 @@ const MAX_SIGNATURE_BYTES: usize = 1024;
 const MAX_REDIRECTS: usize = 3;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 const SIGNATURE_SUFFIX: &str = ".sig";
+const MAX_FONT_BYTES: usize = 8 * 1024 * 1024;
+const MAX_FONT_FILES: usize = 8;
+const MAX_FONT_NAME_LEN: usize = 96;
+const FONTS_FOLDER: &str = "fonts";
 
 pub(crate) fn catalog_key() -> Option<VerifyingKey> {
 	let bytes: [u8; 32] = STANDARD.decode(CATALOG_PUBLIC_KEY).ok()?.try_into().ok()?;
@@ -151,5 +156,70 @@ pub(crate) async fn download_plugin(entry: &CatalogEntry, destination: &Path) ->
 		hex::encode(hasher.finalize()).eq_ignore_ascii_case(&entry.sha256),
 		"download does not match the catalog hash"
 	);
+	Ok(())
+}
+
+#[derive(Deserialize)]
+struct FontFile {
+	file: String,
+	url: String,
+	sha256: String,
+}
+
+fn is_valid_font_file(name: &str) -> bool {
+	let extension = Path::new(name)
+		.extension()
+		.and_then(|extension| extension.to_str());
+	name.len() <= MAX_FONT_NAME_LEN
+		&& matches!(extension, Some("ttf" | "otf"))
+		&& name
+			.bytes()
+			.all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+		&& !name.starts_with('.')
+}
+
+fn theme_font_files(theme: &[u8]) -> Vec<FontFile> {
+	let Ok(serde_json::Value::Object(mut tokens)) = serde_json::from_slice(theme) else {
+		return Vec::new();
+	};
+	let Some(serde_json::Value::Array(items)) = tokens.remove("font_files") else {
+		return Vec::new();
+	};
+	items
+		.into_iter()
+		.filter_map(|item| serde_json::from_value::<FontFile>(item).ok())
+		.filter(|font| is_valid_font_file(&font.file))
+		.take(MAX_FONT_FILES)
+		.collect()
+}
+
+pub(crate) async fn download_theme_fonts(theme: &[u8]) -> Result<Vec<(String, Vec<u8>)>> {
+	let fonts = theme_font_files(theme);
+	if fonts.is_empty() {
+		return Ok(Vec::new());
+	}
+	let client = client()?;
+	let mut downloaded = Vec::with_capacity(fonts.len());
+	for font in fonts {
+		let bytes = get_limited(&client, &font.url, MAX_FONT_BYTES).await?;
+		ensure!(
+			hex::encode(Sha256::digest(&bytes)).eq_ignore_ascii_case(&font.sha256),
+			"font {} does not match its hash",
+			font.file
+		);
+		downloaded.push((font.file, bytes));
+	}
+	Ok(downloaded)
+}
+
+pub(crate) fn write_theme_fonts(themes_dir: &Path, fonts: &[(String, Vec<u8>)]) -> Result<()> {
+	if fonts.is_empty() {
+		return Ok(());
+	}
+	let folder = themes_dir.join(FONTS_FOLDER);
+	std::fs::create_dir_all(&folder).context("could not create the fonts folder")?;
+	for (file, bytes) in fonts {
+		store::write_atomic(&folder.join(file), bytes, false).context("could not write the font")?;
+	}
 	Ok(())
 }
