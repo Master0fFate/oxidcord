@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use chrono::{DateTime, Local, Utc};
 use gpui::{
-	Animation, AnimationExt as _, AnyElement, App, ClickEvent, Entity, FontWeight, Hsla,
+	Animation, AnimationExt as _, AnyElement, App, ClickEvent, Entity, FontWeight, Global, Hsla,
 	InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Pixels, Point, SharedString,
 	StatefulInteractiveElement as _, Styled as _, Window, div, hsla, prelude::FluentBuilder as _,
 	pulsating_between,
@@ -137,6 +137,11 @@ fn full_time(time: DateTime<Utc>, h24: bool) -> String {
 
 pub type DocumentCache = RefCell<LruCache<u64, (Arc<Message>, Option<Arc<RenderedMessage>>, Rc<Document>)>>;
 pub type Dispatch = Rc<dyn Fn(RowAction, &mut Window, &mut App)>;
+
+#[derive(Default)]
+pub struct GifFavoriteOverrides(pub HashMap<String, bool>);
+
+impl Global for GifFavoriteOverrides {}
 
 #[derive(Clone)]
 pub struct ImageTarget {

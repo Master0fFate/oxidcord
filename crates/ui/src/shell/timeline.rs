@@ -23,8 +23,8 @@ use state::{Changes, MessageRow};
 use super::community::act;
 use super::inline_emoji::{self, EmojiTokens};
 use super::message::{
-	Dispatch, DocumentCache, Editing, FLASH_DURATION, ImageTarget, MessageAccess, Prefs, RowAction, RowEnv,
-	Welcome, render_row,
+	Dispatch, DocumentCache, Editing, FLASH_DURATION, GifFavoriteOverrides, ImageTarget, MessageAccess,
+	Prefs, RowAction, RowEnv, Welcome, render_row,
 };
 use super::moderation;
 use super::plugins::{self, LinkOrigin, PluginBridge};
@@ -220,6 +220,7 @@ impl Timeline {
 			self.refresh(window, cx);
 		}
 		if changes.loaded.contains(state::EXPRESSIONS_KEY) {
+			cx.default_global::<GifFavoriteOverrides>().0.clear();
 			cx.notify();
 		}
 	}
@@ -484,15 +485,26 @@ impl Timeline {
 			}
 			RowAction::OpenImage(target) => cx.emit(TimelineEvent::OpenImage(target)),
 			RowAction::ToggleGifFavorite(gif) => {
+				let favorited = cx
+					.try_global::<GifFavoriteOverrides>()
+					.and_then(|overrides| overrides.0.get(&gif.url).copied())
+					.unwrap_or_else(|| {
+						self.data
+							.read(cx)
+							.state()
+							.gif_favorites()
+							.is_some_and(|favorites| favorites.iter().any(|known| known.url == gif.url))
+					});
+				cx.default_global::<GifFavoriteOverrides>()
+					.0
+					.insert(gif.url.clone(), !favorited);
 				let data = self.data.read(cx);
-				let favorited = data
-					.state()
-					.gif_favorites()
-					.map(|favorites| favorites.iter().any(|known| known.url == gif.url));
-				match favorited {
-					Some(true) => data.send(Command::UnfavoriteGif { url: gif.url }),
-					_ => data.send(Command::FavoriteGif { gif }),
+				if favorited {
+					data.send(Command::UnfavoriteGif { url: gif.url });
+				} else {
+					data.send(Command::FavoriteGif { gif });
 				}
+				cx.notify();
 			}
 			RowAction::React {
 				channel_id,

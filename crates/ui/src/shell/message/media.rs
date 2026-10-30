@@ -23,7 +23,10 @@ use super::body::{BodyEnv, render_body};
 use super::player::{self, AudioSource, FileInfo, LoopSource, VideoSource, VoiceSource};
 use super::provider;
 use super::reaction_tip;
-use super::{ImageTarget, RowAction, point_link, point_media, with_attachment_menu, with_link_menu};
+use super::{
+	GifFavoriteOverrides, ImageTarget, RowAction, point_link, point_media, with_attachment_menu,
+	with_link_menu,
+};
 use crate::components::{IconButton, tooltip, unicode_emoji};
 use crate::format;
 use crate::i18n::{ArgValue, Translate as _};
@@ -50,7 +53,7 @@ const PLACEHOLDER_SIDE: u32 = 32;
 const REACTION_EMOJI: f32 = 16.;
 const ANIMATED_FLAG: u64 = 1 << 5;
 const EMBED_ITEM: u64 = 1 << 62;
-const GIF_STAR: f32 = 26.;
+const GIF_STAR: f32 = 32.;
 const SPOILER_FLAG: u64 = 1 << 3;
 const SPOILER_ITEM: usize = 1 << 40;
 const SPOILER_PREFIX: &str = "SPOILER_";
@@ -753,11 +756,15 @@ fn gifv(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<AnyEleme
 
 fn favorite_star(favorite: Gif, gif: AnyElement, index: usize, env: &BodyEnv, cx: &App) -> AnyElement {
 	let theme = env.theme;
-	let favorited = env
-		.lookup
-		.state
-		.gif_favorites()
-		.is_some_and(|favorites| favorites.iter().any(|known| known.url == favorite.url));
+	let favorited = cx
+		.try_global::<GifFavoriteOverrides>()
+		.and_then(|overrides| overrides.0.get(&favorite.url).copied())
+		.unwrap_or_else(|| {
+			env.lookup
+				.state
+				.gif_favorites()
+				.is_some_and(|favorites| favorites.iter().any(|known| known.url == favorite.url))
+		});
 	let group = SharedString::from(format!("gif-{}-{index}", env.message_id));
 	let dispatch = env.dispatch.clone();
 	div()
