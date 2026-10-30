@@ -80,15 +80,6 @@ pub enum Picture {
 	Animated(Arc<Clip>),
 }
 
-impl Picture {
-	fn frames(&self) -> impl Iterator<Item = &Arc<RenderImage>> {
-		match self {
-			Self::Still(image) => std::slice::from_ref(image).iter(),
-			Self::Animated(clip) => clip.frames.iter(),
-		}
-	}
-}
-
 impl From<Arc<RenderImage>> for Picture {
 	fn from(image: Arc<RenderImage>) -> Self {
 		Self::Still(image)
@@ -112,7 +103,6 @@ pub struct Images {
 	rendered: RefCell<LruCache<RenderedKey, Rendered>>,
 	retained: Cell<usize>,
 	placeholders: RefCell<LruCache<String, Arc<RenderImage>>>,
-	retired: RefCell<Vec<Arc<RenderImage>>>,
 	due: RefCell<HashMap<EntityId, Instant>>,
 	ticking: Cell<bool>,
 	origin: Instant,
@@ -183,7 +173,6 @@ impl Images {
 			rendered: RefCell::new(LruCache::new(capacity(RENDERED_CAPACITY))),
 			retained: Cell::new(0),
 			placeholders: RefCell::new(LruCache::new(capacity(PLACEHOLDER_CAPACITY))),
-			retired: RefCell::new(Vec::new()),
 			due: RefCell::new(HashMap::new()),
 			ticking: Cell::new(false),
 			origin: Instant::now(),
@@ -230,27 +219,14 @@ impl Images {
 		let mut retained = self.retained.get() + bytes;
 		if let Some((_, old)) = rendered.push(key, Rendered { picture, bytes }) {
 			retained = retained.saturating_sub(old.bytes);
-			self.retire(&old.picture);
 		}
 		while retained > RENDERED_BUDGET_BYTES && rendered.len() > 1 {
 			let Some((_, old)) = rendered.pop_lru() else {
 				break;
 			};
 			retained = retained.saturating_sub(old.bytes);
-			self.retire(&old.picture);
 		}
 		self.retained.set(retained);
-	}
-
-	fn retire(&self, picture: &Picture) {
-		self.retired.borrow_mut().extend(picture.frames().cloned());
-	}
-
-	pub fn release(cx: &mut App) {
-		let retired = cx.global::<Self>().retired.take();
-		for image in retired {
-			cx.drop_image(image, None);
-		}
 	}
 
 	fn frame(clip: &Clip, window: &Window, cx: &mut App) -> Arc<RenderImage> {
@@ -320,7 +296,6 @@ impl Images {
 		for view in views {
 			cx.notify(view);
 		}
-		Self::release(cx);
 	}
 
 	pub fn copy_image(&self, url: &str) {
@@ -378,9 +353,7 @@ impl Images {
 		}
 		let decoded = media::placeholder_from_discord(hash, width, height).ok()?;
 		let (image, _) = single(bgra(&decoded)?);
-		if let Some((_, evicted)) = placeholders.push(hash.to_owned(), image.clone()) {
-			self.retired.borrow_mut().push(evicted);
-		}
+		placeholders.push(hash.to_owned(), image.clone());
 		Some(image)
 	}
 

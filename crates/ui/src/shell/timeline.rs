@@ -905,7 +905,8 @@ impl Timeline {
 }
 
 impl Render for Timeline {
-	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+	fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+		Theme::ensure_code_shift(window, cx);
 		let theme = Theme::current(cx);
 		let data = self.data.clone();
 		let dispatch = self.dispatcher(cx);

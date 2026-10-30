@@ -244,7 +244,6 @@ fn pump(
 				if media {
 					data.publish(DataEvent::MediaReady, cx);
 				}
-				Images::release(cx);
 			});
 			if delivered.is_err() {
 				break;

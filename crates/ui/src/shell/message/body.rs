@@ -311,11 +311,16 @@ impl Inline {
 
 	fn text_element(self, env: &BodyEnv) -> AnyElement {
 		let code_font = env.theme.code_font.clone();
+		let starts_with_code = self.codes.first().is_some_and(|range| range.start == 0);
 		let text = SharedString::from(self.text);
 		let styled = StyledText::new(text.clone())
 			.with_highlights(self.runs)
 			.with_font_family_overrides(self.codes.into_iter().map(|range| (range, code_font.clone())));
-		let run = env.selectable(text, styled);
+		let mut run = env.selectable(text, styled);
+		if starts_with_code {
+			let size = env.text_size.unwrap_or(env.theme.font_md);
+			run = run.shifted(env.theme.pixels(size * env.theme.code_shift.unwrap_or(0.)));
+		}
 		if self.clicks.is_empty() {
 			return run.into_any_element();
 		}

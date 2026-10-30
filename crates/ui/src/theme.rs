@@ -4,7 +4,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use gpui::{App, Global, Hsla, Rems, Rgba, SharedString, hsla, px, rems};
+use gpui::{App, Global, Hsla, Rems, Rgba, SharedString, TextRun, Window, font, hsla, px, rems};
 use gpui_component::{Theme as ComponentTheme, ThemeColor, ThemeMode};
 use platform::system_theme::{self, SystemTheme};
 use serde_json::{Map, Value};
@@ -56,6 +56,7 @@ macro_rules! tokens {
 			$(pub $size: Rems,)+
 			pub ui_scale: f32,
 			pub roundness: f32,
+			pub code_shift: Option<f32>,
 		}
 
 		impl Theme {
@@ -73,6 +74,7 @@ macro_rules! tokens {
 					$($size: rem($value),)+
 					ui_scale: 1.,
 					roundness: 1.,
+					code_shift: None,
 				}
 			}
 
@@ -387,6 +389,30 @@ impl Theme {
 		apply_to_components(&self, cx);
 		cx.set_global(self);
 		cx.refresh_windows();
+	}
+
+	pub fn ensure_code_shift(window: &Window, cx: &mut App) {
+		let (body, code) = {
+			let theme = cx.global::<Self>();
+			if theme.code_shift.is_some() {
+				return;
+			}
+			(theme.ui_font.clone(), theme.code_font.clone())
+		};
+		let span = |family: SharedString| {
+			let run = TextRun {
+				len: 1,
+				font: font(family),
+				color: Hsla::default(),
+				background_color: None,
+				underline: None,
+				strikethrough: None,
+			};
+			let line = window.text_system().layout_line("x", px(1000.), &[run], None);
+			f32::from(line.ascent - line.descent) / 1000.
+		};
+		let shift = (span(body) - span(code)) / 2.;
+		cx.global_mut::<Self>().code_shift = Some(shift);
 	}
 
 	pub fn set_font_scale(scale: f32, cx: &mut App) {

@@ -5,7 +5,8 @@ use std::rc::Rc;
 use gpui::{
 	App, BorderStyle, Bounds, Corners, CursorStyle, DispatchPhase, Edges, Element, ElementId,
 	GlobalElementId, Hitbox, HitboxBehavior, Hsla, InspectorElementId, IntoElement, LayoutId, MouseDownEvent,
-	MouseUpEvent, PaintQuad, Pixels, Point, SharedString, StyledText, TextLayout, Window, transparent_black,
+	MouseUpEvent, PaintQuad, Pixels, Point, SharedString, StyledText, TextLayout, Window, point,
+	transparent_black,
 };
 use gpui_base::{TextSelection, TextSelectionHandle, TextSelectionRegistration, TextSelectionRun};
 
@@ -23,6 +24,7 @@ pub struct SelectableRun {
 	styled: StyledText,
 	order: u64,
 	selection: Hsla,
+	shift: Pixels,
 	clicks: Vec<Range<usize>>,
 	on_click: Option<ClickHandler>,
 }
@@ -35,8 +37,21 @@ impl SelectableRun {
 			styled,
 			order,
 			selection,
+			shift: Pixels::ZERO,
 			clicks: Vec::new(),
 			on_click: None,
+		}
+	}
+
+	pub fn shifted(mut self, shift: Pixels) -> Self {
+		self.shift = shift;
+		self
+	}
+
+	fn shifted_bounds(&self, bounds: Bounds<Pixels>) -> Bounds<Pixels> {
+		Bounds {
+			origin: bounds.origin + point(Pixels::ZERO, self.shift),
+			size: bounds.size,
 		}
 	}
 
@@ -151,6 +166,7 @@ impl Element for SelectableRun {
 		window: &mut Window,
 		cx: &mut App,
 	) -> Self::PrepaintState {
+		let bounds = self.shifted_bounds(bounds);
 		self.styled
 			.prepaint(global_id, inspector_id, bounds, &mut (), window, cx);
 		let hitbox = window.insert_hitbox(bounds, HitboxBehavior::Normal);
@@ -172,6 +188,7 @@ impl Element for SelectableRun {
 		window: &mut Window,
 		cx: &mut App,
 	) {
+		let bounds = self.shifted_bounds(bounds);
 		let layout = self.styled.layout().clone();
 		let projection = state.handle.update_runs(
 			&[TextSelectionRun::new(self.text.clone(), layout.clone(), bounds)
