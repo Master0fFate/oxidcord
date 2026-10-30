@@ -219,6 +219,9 @@ impl Timeline {
 		{
 			self.refresh(window, cx);
 		}
+		if changes.loaded.contains(state::EXPRESSIONS_KEY) {
+			cx.notify();
+		}
 	}
 
 	pub fn rebuild(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -480,6 +483,21 @@ impl Timeline {
 				cx.notify();
 			}
 			RowAction::OpenImage(target) => cx.emit(TimelineEvent::OpenImage(target)),
+			RowAction::ToggleGifFavorite(gif) => {
+				let data = self.data.read(cx);
+				let favorited = data
+					.state()
+					.gif_favorites()
+					.map(|favorites| favorites.iter().any(|known| known.url == gif.url));
+				match favorited {
+					Some(true) => data.send(Command::UnfavoriteGif { url: gif.url }),
+					Some(false) => data.send(Command::FavoriteGif { gif }),
+					None => {
+						data.send(Command::LoadGifFavorites);
+						data.send(Command::FavoriteGif { gif });
+					}
+				}
+			}
 			RowAction::React {
 				channel_id,
 				message_id,

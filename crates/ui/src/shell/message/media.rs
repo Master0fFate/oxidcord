@@ -15,7 +15,8 @@ use media::providers::{self, Candidate, Layout};
 use plugin_host::ViewContext;
 use plugin_host::api::model::{AttachmentLayout, AttachmentOverride, ClickTarget, EmojiRef};
 use protocol::{
-	Attachment, Embed, EmbedKind, EmbedMedia, Message, PartialEmoji, Poll, Reaction, Snowflake, StickerItem,
+	Attachment, Embed, EmbedKind, EmbedMedia, Gif, GifFormat, Message, PartialEmoji, Poll, Reaction,
+	Snowflake, StickerItem,
 };
 
 use super::body::{BodyEnv, render_body};
@@ -49,6 +50,7 @@ const PLACEHOLDER_SIDE: u32 = 32;
 const REACTION_EMOJI: f32 = 16.;
 const ANIMATED_FLAG: u64 = 1 << 5;
 const EMBED_ITEM: u64 = 1 << 62;
+const GIF_STAR: f32 = 26.;
 const SPOILER_FLAG: u64 = 1 << 3;
 const SPOILER_ITEM: usize = 1 << 40;
 const SPOILER_PREFIX: &str = "SPOILER_";
@@ -715,10 +717,22 @@ fn gifv(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<AnyEleme
 	let (native_width, native_height) = dimensions(sized.width, sized.height);
 	let (width, height) = fit(native_width, native_height, MAX_IMAGE_WIDTH, MAX_IMAGE_HEIGHT);
 	let link = embed.url.clone().or_else(|| video.url.clone())?;
+	let source = media_url(video)?.to_owned();
+	let favorite = Gif {
+		id: link.clone(),
+		title: embed.title.clone().unwrap_or_default(),
+		url: link.clone(),
+		src: source.clone(),
+		gif_src: String::new(),
+		width: native_width as u32,
+		height: native_height as u32,
+		preview: thumbnail.and_then(media_url).unwrap_or_default().to_owned(),
+		format: GifFormat::Mp4,
+	};
 	let gif = player::gif_loop(
 		LoopSource {
 			key: embed_key(env, index),
-			url: media_url(video)?.to_owned(),
+			url: source,
 			poster: thumbnail
 				.and_then(media_url)
 				.map(|url| proxied(url, width, height)),
@@ -731,7 +745,58 @@ fn gifv(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<AnyEleme
 		env,
 		cx,
 	);
-	Some(with_link_menu(&link, gif))
+	Some(with_link_menu(
+		&link,
+		favorite_star(favorite, gif, index, env, cx),
+	))
+}
+
+fn favorite_star(favorite: Gif, gif: AnyElement, index: usize, env: &BodyEnv, cx: &App) -> AnyElement {
+	let theme = env.theme;
+	let favorited = env
+		.lookup
+		.state
+		.gif_favorites()
+		.is_some_and(|favorites| favorites.iter().any(|known| known.url == favorite.url));
+	let group = SharedString::from(format!("gif-{}-{index}", env.message_id));
+	let dispatch = env.dispatch.clone();
+	div()
+		.relative()
+		.flex_none()
+		.group(group.clone())
+		.child(gif)
+		.child(
+			div()
+				.id(("gif-star", env.message_id ^ ((index as u64) << 48)))
+				.absolute()
+				.top(theme.space_8)
+				.left(theme.space_4)
+				.size(rem(GIF_STAR))
+				.rounded(theme.radius_sm)
+				.bg(with_alpha(theme.background_floating, 0.85))
+				.flex()
+				.items_center()
+				.justify_center()
+				.cursor_pointer()
+				.when(!favorited, |star| {
+					star.invisible().group_hover(group, |style| style.visible())
+				})
+				.tooltip(tooltip(cx.t(if favorited {
+					"picker-gif-unfavorite"
+				} else {
+					"picker-gif-favorite"
+				})))
+				.on_mouse_down(MouseButton::Left, move |_, window, cx| {
+					cx.stop_propagation();
+					dispatch(RowAction::ToggleGifFavorite(favorite.clone()), window, cx);
+				})
+				.child(Icon::new(IconKind::Star).size(rem(14.)).color(if favorited {
+					theme.warning
+				} else {
+					theme.interactive_normal
+				})),
+		)
+		.into_any_element()
 }
 
 fn embedded_video(

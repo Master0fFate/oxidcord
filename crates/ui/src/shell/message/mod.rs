@@ -28,7 +28,7 @@ use lru::LruCache;
 use markdown::Document;
 use plugin_host::ViewContext;
 use plugin_host::api::model::ClickTarget;
-use protocol::{Message, MessageType, Snowflake};
+use protocol::{Gif, Message, MessageType, Snowflake};
 use state::{ClientOptions, MessageRow, MessageView, RenderedMessage};
 
 pub use self::body::snippet;
@@ -179,6 +179,7 @@ pub enum RowAction {
 		at: Point<Pixels>,
 	},
 	JumpTo(Snowflake),
+	ToggleGifFavorite(Gif),
 	CreateThread(Snowflake),
 	OpenThread(Snowflake),
 	Pin {
