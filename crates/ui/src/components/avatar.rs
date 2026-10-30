@@ -93,7 +93,7 @@ impl RenderOnce for Avatar {
 			.and_then(|url| cx.global::<Images>().get_still(url, SizeHint::square(pixels)));
 		let ring_image = self.decoration.as_ref().and_then(|url| {
 			let pixels = (base * DECORATION_SCALE * 2.).round() as u32;
-			cx.global::<Images>().get(url, SizeHint::square(pixels))
+			cx.global::<Images>().get_still(url, SizeHint::square(pixels))
 		});
 		let corners = theme.round(size);
 		let circle = div().size(size).rounded(corners).overflow_hidden().flex_none();

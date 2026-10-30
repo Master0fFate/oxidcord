@@ -23,6 +23,7 @@ const LOOP_GRACE: Duration = Duration::from_millis(1500);
 const MEDIA_GRACE: Duration = Duration::from_secs(10);
 const SWEEP: Duration = Duration::from_millis(500);
 const FRAME_SWEEP: Duration = Duration::from_millis(100);
+const LOOP_FRAME_INTERVAL: Duration = Duration::from_millis(40);
 const SIZE_HINT: f32 = 2.;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -45,6 +46,7 @@ struct Slot {
 	view: Option<EntityId>,
 	epoch: u64,
 	seen_at: Instant,
+	shown_at: Instant,
 	bar: Option<Bounds<Pixels>>,
 	scrub: Option<f32>,
 }
@@ -70,6 +72,7 @@ pub struct Playback {
 	next_frame: Cell<u64>,
 	frame_data: PathBuf,
 	shell_hidden: Cell<bool>,
+	inactive: Cell<bool>,
 	dialog_open: Cell<bool>,
 }
 
@@ -124,6 +127,7 @@ impl Playback {
 			next_frame: Cell::new(0),
 			frame_data,
 			shell_hidden: Cell::new(false),
+			inactive: Cell::new(false),
 			dialog_open: Cell::new(false),
 		});
 		cx.spawn(async move |cx| {
@@ -202,6 +206,18 @@ impl Playback {
 				(false, None) => {}
 			}
 		}
+	}
+
+	pub fn set_window_active(&self, active: bool) {
+		self.inactive.set(!active);
+		if active {
+			for slot in self.slots.borrow().values() {
+				if slot.mode == Mode::Loop {
+					slot.player.play();
+				}
+			}
+		}
+		self.wake.notify_one();
 	}
 
 	pub fn set_shell_hidden(&self, hidden: bool) {
@@ -314,6 +330,7 @@ impl Playback {
 				view: None,
 				epoch: 0,
 				seen_at: Instant::now(),
+				shown_at: Instant::now(),
 				bar: None,
 				scrub: None,
 			},
@@ -516,6 +533,8 @@ impl Playback {
 		let mut retired = Vec::new();
 		let mut views: SmallVec<[EntityId; 4]> = SmallVec::new();
 		let epochs = self.epochs.borrow();
+		let now = Instant::now();
+		let inactive = self.inactive.get();
 		self.slots.borrow_mut().retain(|_, slot| {
 			if Self::stale(slot, &epochs) {
 				retired.extend(slot.image.take());
@@ -531,11 +550,18 @@ impl Playback {
 				slot.status = status;
 				changed = true;
 			}
+			let looping = slot.mode == Mode::Loop;
+			if inactive && looping && slot.status.state == State::Playing {
+				slot.player.pause();
+			}
+			let throttled = looping && now.duration_since(slot.shown_at) < LOOP_FRAME_INTERVAL;
 			if changed
+				&& !throttled
 				&& let Some(view) = slot.view
 				&& !views.contains(&view)
 			{
 				views.push(view);
+				slot.shown_at = now;
 			}
 			true
 		});

@@ -289,7 +289,9 @@ impl AppRoot {
 		let handle = AppHandle(cx.weak_entity());
 		cx.set_global(handle);
 		root._activation = Some(cx.observe_window_activation(window, |this, window, cx| {
-			if window.is_window_active() {
+			let active = window.is_window_active();
+			cx.global::<Playback>().set_window_active(active);
+			if active {
 				this.follow_system_theme(cx);
 				window.refresh();
 			}

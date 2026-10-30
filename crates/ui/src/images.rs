@@ -15,6 +15,7 @@ use url::Url;
 const RENDERED_CAPACITY: usize = 512;
 const RENDERED_BUDGET_BYTES: usize = 128 * 1024 * 1024;
 const PLACEHOLDER_CAPACITY: usize = 256;
+const FRAME_GRID_MS: u128 = 50;
 
 static UI_SCALE: AtomicU32 = AtomicU32::new(1.0f32.to_bits());
 
@@ -114,6 +115,7 @@ pub struct Images {
 	retired: RefCell<Vec<Arc<RenderImage>>>,
 	due: RefCell<HashMap<EntityId, Instant>>,
 	ticking: Cell<bool>,
+	origin: Instant,
 }
 
 impl Global for Images {}
@@ -184,6 +186,7 @@ impl Images {
 			retired: RefCell::new(Vec::new()),
 			due: RefCell::new(HashMap::new()),
 			ticking: Cell::new(false),
+			origin: Instant::now(),
 		}
 	}
 
@@ -264,9 +267,9 @@ impl Images {
 	}
 
 	fn schedule(view: EntityId, after: Duration, cx: &mut App) {
-		let at = Instant::now() + after;
 		let start = {
 			let images = cx.global::<Self>();
+			let at = images.grid_slot(Instant::now() + after);
 			images
 				.due
 				.borrow_mut()
@@ -278,6 +281,11 @@ impl Images {
 		if start {
 			Self::run_ticker(cx);
 		}
+	}
+
+	fn grid_slot(&self, at: Instant) -> Instant {
+		let ticks = at.duration_since(self.origin).as_millis().div_ceil(FRAME_GRID_MS);
+		self.origin + Duration::from_millis((ticks * FRAME_GRID_MS) as u64)
 	}
 
 	fn run_ticker(cx: &mut App) {
