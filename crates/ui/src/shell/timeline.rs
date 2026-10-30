@@ -33,6 +33,7 @@ use crate::data::Data;
 use crate::i18n::Translate as _;
 use crate::icons::IconKind;
 use crate::lookup::Lookup;
+use crate::playback::Playback;
 use crate::theme::{Theme, rem};
 
 const NEAR_TOP_ROWS: usize = 14;
@@ -189,6 +190,9 @@ impl Timeline {
 			self.welcome = Rc::new(Welcome { name, direct });
 			cx.notify();
 			return;
+		}
+		if let Some(playback) = cx.try_global::<Playback>() {
+			playback.stop_all();
 		}
 		self.guild = guild;
 		self.channel = channel;

@@ -207,7 +207,7 @@ impl AccountHub {
 							.items_center()
 							.justify_center()
 							.size(theme.avatar_md)
-							.rounded_full()
+							.rounded(theme.round(theme.avatar_md))
 							.overflow_hidden()
 							.bg(theme.background_tertiary)
 							.text_size(theme.font_sm)

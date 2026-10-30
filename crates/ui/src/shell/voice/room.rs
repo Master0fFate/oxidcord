@@ -11,7 +11,7 @@ use gpui::{
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::menu::DropdownMenu as _;
-use protocol::{ChannelType, Snowflake};
+use protocol::{ChannelType, Permissions, Snowflake};
 use session::Command;
 use state::{State, VideoKind, VoiceStatus};
 
@@ -69,6 +69,7 @@ struct Snapshot {
 	watching: Option<String>,
 	hand_raised: bool,
 	streams: HashMap<Snowflake, String>,
+	can_chat: bool,
 }
 
 enum TileSize {
@@ -98,6 +99,9 @@ fn snapshot(data: &Data) -> Option<Snapshot> {
 		hand_raised: participants.iter().any(|person| person.me && person.hand_raised),
 		participants,
 		streams: stream_keys(&state, channel),
+		can_chat: state
+			.my_permissions(channel)
+			.contains(Permissions::VIEW_CHANNEL | Permissions::READ_MESSAGE_HISTORY),
 	})
 }
 
@@ -188,6 +192,11 @@ impl VoiceRoom {
 			_subscriptions: vec![changes, local],
 			_frames: frames,
 		}
+	}
+
+	pub fn open_chat(&mut self, cx: &mut Context<Self>) {
+		self.chat_open = true;
+		cx.notify();
 	}
 
 	pub fn camera_when_connected(&mut self) {
@@ -857,22 +866,26 @@ impl Render for VoiceRoom {
 							.p(theme.space_16)
 							.child(measure)
 							.child(content)
-							.child(
-								div().absolute().top(theme.space_8).right(theme.space_8).child(
-									IconButton::new("voice-chat-toggle", IconKind::Chat)
-										.filled_hover()
-										.active(self.chat_open)
-										.tooltip(chat_label)
-										.on_click(cx.listener(|this, _, _, cx| {
-											this.chat_open = !this.chat_open;
-											cx.notify();
-										})),
-								),
-							),
+							.when(snapshot.can_chat, |stage| {
+								stage.child(
+									div().absolute().top(theme.space_8).right(theme.space_8).child(
+										IconButton::new("voice-chat-toggle", IconKind::Chat)
+											.filled_hover()
+											.active(self.chat_open)
+											.tooltip(chat_label)
+											.on_click(cx.listener(|this, _, _, cx| {
+												this.chat_open = !this.chat_open;
+												cx.notify();
+											})),
+									),
+								)
+							}),
 					)
 					.child(bar),
 			)
-			.when(self.chat_open, |room| room.child(self.chat_panel(&theme)))
+			.when(self.chat_open && snapshot.can_chat, |room| {
+				room.child(self.chat_panel(&theme))
+			})
 			.into_any_element()
 	}
 }

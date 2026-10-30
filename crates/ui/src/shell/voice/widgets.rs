@@ -35,7 +35,7 @@ pub fn speaking_avatar(participant: &Participant, size: Rems, theme: &Theme) -> 
 					.top(-theme.space_4)
 					.left(-theme.space_4)
 					.size(size + theme.space_4 * 2.)
-					.rounded_full()
+					.rounded(theme.round(size + theme.space_4 * 2.))
 					.border_2()
 					.border_color(theme.speaking_ring),
 			)

@@ -277,7 +277,7 @@ impl Render for GuildNotifications {
 							.items_center()
 							.justify_center()
 							.size(rem(20.))
-							.rounded_full()
+							.rounded(theme.round(rem(20.)))
 							.border_2()
 							.border_color(if active {
 								theme.brand

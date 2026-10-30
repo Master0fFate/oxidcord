@@ -148,7 +148,7 @@ impl Render for OverviewPage {
 		let tile = div()
 			.size(theme.portrait_lg * 2.)
 			.flex_none()
-			.rounded_full()
+			.rounded(theme.round(theme.portrait_lg * 2.))
 			.overflow_hidden()
 			.child(match (&self.icon, icon_url) {
 				(Some(picked), _) => img(picked.preview.clone())

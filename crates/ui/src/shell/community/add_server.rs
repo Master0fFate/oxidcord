@@ -259,7 +259,7 @@ impl AddServer {
 		let tile = div()
 			.flex_none()
 			.size(theme.portrait_lg * 2.)
-			.rounded_full()
+			.rounded(theme.round(theme.portrait_lg * 2.))
 			.overflow_hidden()
 			.child(match &self.icon {
 				Some(picked) => img(picked.preview.clone())

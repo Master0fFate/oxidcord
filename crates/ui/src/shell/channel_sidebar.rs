@@ -6,7 +6,7 @@ use gpui::{
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::menu::{ContextMenuExt as _, DropdownMenu as _};
 use gpui_component::scroll::ScrollableElement as _;
-use protocol::{ChannelType, Snowflake};
+use protocol::{ChannelType, Permissions, Snowflake};
 use session::Command;
 use state::{ChannelRow, ChannelTreeNode, PluginBadge};
 
@@ -27,6 +27,7 @@ const AVATAR_PIXELS: u32 = 48;
 
 pub enum SidebarEvent {
 	SelectChannel(Snowflake),
+	OpenVoiceChat(Snowflake),
 	VoiceUser { user: Snowflake, at: Point<Pixels> },
 }
 
@@ -40,6 +41,7 @@ struct ChannelItem {
 	joined: bool,
 	icon: IconKind,
 	voice_channel: bool,
+	can_chat: bool,
 	selectable: bool,
 	locked: bool,
 	unread: bool,
@@ -339,6 +341,24 @@ impl ChannelSidebar {
 		let hover_background = theme.modifier_hover;
 		let can_select = channel.selectable;
 		let voice_channel = channel.voice_channel;
+		let chat_group = group.clone();
+		let chat_button = channel.can_chat.then(|| {
+			div()
+				.flex_none()
+				.invisible()
+				.when(selected, |slot| slot.visible())
+				.group_hover(chat_group, |style| style.visible())
+				.child(
+					IconButton::new(("channel-chat", key), IconKind::Chat)
+						.icon_size(rem(16.))
+						.hit_size(rem(24.))
+						.tooltip(cx.t("channel-open-chat"))
+						.on_click(cx.listener(move |_, _, _, cx| {
+							cx.stop_propagation();
+							cx.emit(SidebarEvent::OpenVoiceChat(id));
+						})),
+				)
+		});
 		let row = div()
 			.id(("channel", key))
 			.group(group)
@@ -407,6 +427,7 @@ impl ChannelSidebar {
 					})
 					.child(channel.name.clone()),
 			)
+			.children(chat_button)
 			.children(plugins::channel_badges(id, &channel.badges, theme, cx))
 			.when(channel.mentions > 0, |row| {
 				row.child(MentionBadge::new(channel.mentions))
@@ -471,6 +492,10 @@ fn channel_item(row: &ChannelRow, guild: Snowflake, state: &state::State) -> Cha
 		joined: row.member,
 		icon: channel_icon(row.kind),
 		voice_channel,
+		can_chat: voice_channel
+			&& state
+				.my_permissions(row.id)
+				.contains(Permissions::VIEW_CHANNEL | Permissions::READ_MESSAGE_HISTORY),
 		selectable: selectable(row.kind, row.locked),
 		locked: row.locked,
 		unread: row.unread,

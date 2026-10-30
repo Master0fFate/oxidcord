@@ -95,18 +95,15 @@ const VOICE_ONLY: Permissions = Permissions::CONNECT
 	.union(Permissions::MANAGE_EVENTS)
 	.union(Permissions::REQUEST_TO_SPEAK);
 
+const THREAD_ONLY: Permissions = Permissions::SEND_MESSAGES_IN_THREADS
+	.union(Permissions::CREATE_PUBLIC_THREADS)
+	.union(Permissions::CREATE_PRIVATE_THREADS)
+	.union(Permissions::MANAGE_THREADS);
+
 fn applicable(kind: ChannelType) -> Permissions {
 	match kind {
 		ChannelType::GuildVoice | ChannelType::GuildStageVoice => {
-			GENERAL
-				| VOICE_ONLY | Permissions::SEND_MESSAGES
-				| Permissions::EMBED_LINKS
-				| Permissions::ATTACH_FILES
-				| Permissions::ADD_REACTIONS
-				| Permissions::READ_MESSAGE_HISTORY
-				| Permissions::USE_EXTERNAL_EMOJIS
-				| Permissions::MANAGE_MESSAGES
-				| Permissions::BYPASS_SLOWMODE
+			GENERAL | VOICE_ONLY | TEXT_ONLY.difference(THREAD_ONLY)
 		}
 		ChannelType::GuildCategory => GENERAL | TEXT_ONLY | VOICE_ONLY,
 		_ => GENERAL | TEXT_ONLY,

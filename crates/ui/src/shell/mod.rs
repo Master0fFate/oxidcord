@@ -318,6 +318,7 @@ impl Shell {
 			window,
 			|this, _, event: &SidebarEvent, _, cx| match event {
 				SidebarEvent::SelectChannel(id) => this.select(this.guild, *id, cx),
+				SidebarEvent::OpenVoiceChat(id) => this.open_voice_chat(*id, cx),
 				SidebarEvent::VoiceUser { user, at } => this.open_voice_menu(*user, *at, cx),
 			},
 		));
@@ -589,6 +590,11 @@ impl Shell {
 
 	fn send(&self, command: Command, cx: &gpui::App) {
 		self.data.read(cx).send(command);
+	}
+
+	fn open_voice_chat(&mut self, channel: Snowflake, cx: &mut Context<Self>) {
+		self.select(self.guild, channel, cx);
+		self.voice_room.update(cx, |room, cx| room.open_chat(cx));
 	}
 
 	fn select(&mut self, guild: Option<Snowflake>, channel: Snowflake, cx: &mut Context<Self>) {

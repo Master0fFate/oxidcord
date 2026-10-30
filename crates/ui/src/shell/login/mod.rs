@@ -165,7 +165,7 @@ impl LoginScreen {
 					.items_center()
 					.justify_center()
 					.size(theme.login_logo)
-					.rounded_full()
+					.rounded(theme.round(theme.login_logo))
 					.bg(theme.brand)
 					.child(
 						Icon::new(IconKind::Chat)

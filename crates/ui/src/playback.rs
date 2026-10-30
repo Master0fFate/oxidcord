@@ -414,6 +414,17 @@ impl Playback {
 		});
 	}
 
+	pub fn stop_all(&self) {
+		self.slots.borrow_mut().clear();
+		let mut frames = self.frames.borrow_mut();
+		if let Some(host) = self.host.borrow().as_ref() {
+			for slot in frames.values() {
+				host.close(slot.id);
+			}
+		}
+		frames.clear();
+	}
+
 	pub fn release(&self, key: MediaKey) {
 		self.with(key, |slot| {
 			let (Some(scrub), Some(duration)) = (slot.scrub.take(), slot.status.duration) else {

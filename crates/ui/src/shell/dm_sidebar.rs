@@ -211,7 +211,7 @@ impl DmSidebar {
 				.items_center()
 				.justify_center()
 				.size(rem(32.))
-				.rounded_full()
+				.rounded(theme.round(rem(32.)))
 				.bg(theme.brand)
 				.child(
 					Icon::new(IconKind::Group)

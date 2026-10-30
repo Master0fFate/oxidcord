@@ -619,6 +619,8 @@ impl Render for SettingsWindow {
 		let right = theme
 			.pixels(rem(CONTENT_WIDTH) + rem(140.))
 			.min(viewport - theme.pixels(rem(NAV_WIDTH + 40.)));
+		let gutter = ((viewport - theme.pixels(rem(NAV_WIDTH)) - right) / 2.).max(gpui::px(0.));
+		let right = right + gutter;
 		let left = viewport - right;
 		let content = self.content(&theme, cx);
 		let nav = self.nav(&theme, cx);
@@ -668,7 +670,7 @@ impl Render for SettingsWindow {
 						div()
 							.absolute()
 							.top(rem(60.))
-							.right(theme.space_16)
+							.right(theme.pixels(theme.space_16) + gutter)
 							.flex()
 							.flex_col()
 							.items_center()
@@ -680,7 +682,7 @@ impl Render for SettingsWindow {
 									.items_center()
 									.justify_center()
 									.size(rem(36.))
-									.rounded_full()
+									.rounded(theme.round(rem(36.)))
 									.border_2()
 									.border_color(theme.interactive_normal)
 									.cursor_pointer()

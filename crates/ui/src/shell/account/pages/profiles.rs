@@ -471,7 +471,7 @@ impl ProfilesPage {
 		let avatar_element: AnyElement = match picked_avatar {
 			Some(picked) => div()
 				.size(theme.avatar_lg)
-				.rounded_full()
+				.rounded(theme.round(theme.avatar_lg))
 				.overflow_hidden()
 				.child(
 					img(picked.preview.clone())

@@ -381,7 +381,7 @@ impl Render for ServerSettings {
 								.items_center()
 								.justify_center()
 								.size(rem(36.))
-								.rounded_full()
+								.rounded(theme.round(rem(36.)))
 								.border_2()
 								.border_color(theme.interactive_normal)
 								.cursor_pointer()

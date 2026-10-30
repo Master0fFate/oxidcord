@@ -819,3 +819,4 @@ menu-open-image-link = Open Image Link
 menu-open-link = Open Link
 menu-copy = Copy
 menu-apps = Apps
+channel-open-chat = Open Chat
