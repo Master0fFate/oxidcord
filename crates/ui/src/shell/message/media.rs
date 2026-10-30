@@ -27,7 +27,7 @@ use crate::components::{IconButton, tooltip, unicode_emoji};
 use crate::format;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
-use crate::images::{Images, frame_id};
+use crate::images::Images;
 use crate::model::role_color;
 use crate::playback::MediaKey;
 use crate::shell::plugins::{
@@ -94,13 +94,7 @@ pub(super) fn picture(
 	let hint = SizeHint::new((width * 2.) as u32, (height * 2.) as u32);
 	let shown = images
 		.get(url, hint)
-		.map(|image| {
-			img(image)
-				.id(frame_id(url))
-				.size_full()
-				.object_fit(fit_mode)
-				.into_any_element()
-		})
+		.map(|image| img(image).size_full().object_fit(fit_mode).into_any_element())
 		.or_else(|| {
 			let hash = placeholder?;
 			let image = images.placeholder(hash, PLACEHOLDER_SIDE, PLACEHOLDER_SIDE)?;
@@ -1149,7 +1143,7 @@ fn reaction_chip(
 			div()
 				.flex_none()
 				.size(rem(REACTION_EMOJI))
-				.children(image.map(|image| img(image).id(frame_id(&url)).size_full()))
+				.children(image.map(|image| img(image).size_full()))
 				.into_any_element()
 		}
 		None => unicode_emoji(

@@ -1,15 +1,15 @@
 use std::ops::Range;
 
 use gpui::{
-	AnyElement, App, Context, Entity, FontWeight, InteractiveElement as _, IntoElement as _,
-	ParentElement as _, SharedString, Styled as _, Window, div, img, prelude::FluentBuilder as _,
+	AnyElement, App, Context, Entity, FontWeight, IntoElement as _, ParentElement as _, SharedString,
+	Styled as _, Window, div, img, prelude::FluentBuilder as _,
 };
 use gpui_component::input::{InlineToken, InlineTokenContext, InputContent, TextareaState};
 use media::SizeHint;
 use protocol::Snowflake;
 
 use crate::data::Data;
-use crate::images::{Images, frame_id};
+use crate::images::Images;
 use crate::lookup::Lookup;
 use crate::theme::{Theme, with_alpha};
 
@@ -214,6 +214,6 @@ pub fn render(context: &InlineTokenContext, _: &mut Window, cx: &mut App) -> Any
 		.when(context.is_selected(), |cell| {
 			cell.bg(with_alpha(theme.brand, SELECTED_ALPHA))
 		})
-		.children(image.map(|image| img(image).id(frame_id(url)).size(side * 0.9)))
+		.children(image.map(|image| img(image).size(side * 0.9)))
 		.into_any_element()
 }

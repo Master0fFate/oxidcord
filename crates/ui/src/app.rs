@@ -244,6 +244,7 @@ fn pump(
 				if media {
 					data.publish(DataEvent::MediaReady, cx);
 				}
+				Images::release(cx);
 			});
 			if delivered.is_err() {
 				break;
@@ -290,6 +291,7 @@ impl AppRoot {
 		root._activation = Some(cx.observe_window_activation(window, |this, window, cx| {
 			if window.is_window_active() {
 				this.follow_system_theme(cx);
+				window.refresh();
 			}
 		}));
 		root._ticker = Some(cx.spawn(async move |this, cx| {

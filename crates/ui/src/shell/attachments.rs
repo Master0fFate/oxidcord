@@ -1,12 +1,11 @@
 use std::io::Cursor;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use bytes::Bytes;
 use gpui::{
 	AnyElement, App, AppContext as _, Bounds, Context, DragMoveEvent, Empty, Entity, EventEmitter,
 	FontWeight, InteractiveElement as _, IntoElement, MouseButton, ObjectFit, ParentElement as _, Pixels,
-	Point, Render, RenderImage, SharedString, StatefulInteractiveElement as _, Styled as _, StyledImage as _,
+	Point, Render, SharedString, StatefulInteractiveElement as _, Styled as _, StyledImage as _,
 	Subscription, Window, div, img, prelude::FluentBuilder as _,
 };
 use gpui_component::checkbox::Checkbox;
@@ -21,7 +20,7 @@ use crate::components::{IconButton, dialog_footer, field};
 use crate::format;
 use crate::i18n::Translate as _;
 use crate::icons::{Icon, IconKind};
-use crate::images::{frame_id, render_image};
+use crate::images::{Picture, render_image};
 use crate::theme::{Theme, rem, with_alpha};
 
 const SPOILER_PREFIX: &str = "SPOILER_";
@@ -41,7 +40,7 @@ const DESCRIPTION_LIMIT: usize = 1024;
 
 #[derive(Clone)]
 pub struct Preview {
-	pub image: Arc<RenderImage>,
+	pub image: Picture,
 	pub width: u32,
 	pub height: u32,
 	pub croppable: bool,
@@ -412,7 +411,6 @@ impl Render for FullView {
 	fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
 		div().flex().justify_center().child(
 			img(self.preview.image.clone())
-				.id(frame_id("attachment-full-view"))
 				.w(rem(self.width))
 				.h(rem(self.height))
 				.object_fit(ObjectFit::Contain),
@@ -641,11 +639,7 @@ impl ModifyAttachment {
 					.w(rem(width))
 					.h(rem(height))
 					.on_drag_move(cx.listener(Self::drag_crop))
-					.child(
-						img(preview.image.clone())
-							.id(frame_id("attachment-crop"))
-							.size_full(),
-					)
+					.child(img(preview.image.clone()).size_full())
 					.child(shade(0., 0., 1., crop.top))
 					.child(shade(0., crop.bottom, 1., 1. - crop.bottom))
 					.child(shade(0., crop.top, crop.left, crop.height()))
@@ -681,11 +675,7 @@ impl ModifyAttachment {
 					.h(rem(height))
 					.rounded(theme.radius_sm)
 					.overflow_hidden()
-					.child(
-						img(preview.image.clone())
-							.id(frame_id("attachment-edit-preview"))
-							.size_full(),
-					),
+					.child(img(preview.image.clone()).size_full()),
 			)
 			.into_any_element()
 	}

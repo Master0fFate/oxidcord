@@ -15,7 +15,7 @@ use super::{Dispatch, ImageTarget, MessageAccess, RowAction, RowEnv, media};
 use crate::components::{ContextMenuBuilder, unicode_emoji};
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::IconKind;
-use crate::images::{Images, frame_id};
+use crate::images::Images;
 use crate::shell::plugins::{MenuTarget, PluginMenu as _};
 use crate::theme::{Theme, rem};
 
@@ -615,9 +615,7 @@ impl QuickReaction {
 				let image = cx.global::<Images>().get(&url, ::media::SizeHint::square(pixels));
 				div()
 					.size(rem(QUICK_REACTION_EMOJI))
-					.when_some(image, |slot, image| {
-						slot.child(gpui::img(image).id(frame_id(&url)).size_full())
-					})
+					.when_some(image, |slot, image| slot.child(gpui::img(image).size_full()))
 					.into_any_element()
 			}
 			None => unicode_emoji(&self.glyph, rem(QUICK_REACTION_EMOJI), cx),

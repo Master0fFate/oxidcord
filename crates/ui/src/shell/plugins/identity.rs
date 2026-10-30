@@ -12,7 +12,7 @@ use super::bridge::PluginBridge;
 use super::icon::PluginIcon;
 use super::view::badge_element;
 use crate::components::tooltip;
-use crate::images::{Images, frame_id};
+use crate::images::Images;
 use crate::lookup::avatar_for;
 use crate::theme::{Theme, rem};
 
@@ -49,12 +49,7 @@ fn badge_face(badge: &PluginBadge, color: Hsla, theme: &Theme, cx: &App) -> AnyE
 		let image = cx.global::<Images>().get(url, SizeHint::square(BADGE_PIXELS));
 		return div()
 			.size(rem(BADGE_SIZE))
-			.children(image.map(|image| {
-				img(image)
-					.id(frame_id(url))
-					.size_full()
-					.object_fit(ObjectFit::Contain)
-			}))
+			.children(image.map(|image| img(image).size_full().object_fit(ObjectFit::Contain)))
 			.into_any_element();
 	}
 	if let Some(icon) = &badge.icon {

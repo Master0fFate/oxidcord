@@ -270,9 +270,10 @@ impl ServerRail {
 				.color(foreground)
 				.into_any_element(),
 			Face::Guild { icon, acronym } => {
-				let image = icon
-					.as_deref()
-					.and_then(|url| cx.global::<Images>().get(url, SizeHint::square(ICON_PIXELS)));
+				let image = icon.as_deref().and_then(|url| {
+					cx.global::<Images>()
+						.get_still(url, SizeHint::square(ICON_PIXELS))
+				});
 				match image {
 					Some(image) => img(image)
 						.size_full()
@@ -309,10 +310,10 @@ impl ServerRail {
 					.p(rem(5.))
 					.gap(rem(2.))
 					.children(letters.into_iter().map(|mini| {
-						let image = mini
-							.icon
-							.as_deref()
-							.and_then(|url| cx.global::<Images>().get(url, SizeHint::square(ICON_PIXELS)));
+						let image = mini.icon.as_deref().and_then(|url| {
+							cx.global::<Images>()
+								.get_still(url, SizeHint::square(ICON_PIXELS))
+						});
 						div()
 							.flex()
 							.items_center()

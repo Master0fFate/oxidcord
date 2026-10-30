@@ -29,7 +29,7 @@ use super::bridge::{PluginBridge, act, detail_of, flush_inputs, forget_input, no
 use super::icon::{self, PluginIcon};
 use crate::components::{Avatar, Divider, SectionHeader, tooltip};
 use crate::format;
-use crate::images::{Images, frame_id};
+use crate::images::{Images, Picture};
 use crate::lookup::avatar_for;
 use crate::shell::account::rich::markdown_text;
 use crate::shell::links;
@@ -974,7 +974,13 @@ impl RenderOnce for PluginImage {
 				(avatar_for(&data.state(), Snowflake(*user), width * 2), true)
 			}
 		};
-		let image = cx.global::<Images>().get(&url, SizeHint::new(width, height));
+		let images = cx.global::<Images>();
+		let hint = SizeHint::new(width, height);
+		let image = if round {
+			images.get_still(&url, hint).map(Picture::from)
+		} else {
+			images.get(&url, hint)
+		};
 		div()
 			.flex_none()
 			.w(rem(width as f32))
@@ -982,12 +988,7 @@ impl RenderOnce for PluginImage {
 			.overflow_hidden()
 			.when(round, |frame| frame.rounded_full())
 			.when(!round, |frame| frame.rounded(theme.radius_sm))
-			.children(image.map(|image| {
-				img(image)
-					.id(frame_id(&url))
-					.size_full()
-					.object_fit(ObjectFit::Contain)
-			}))
+			.children(image.map(|image| img(image).size_full().object_fit(ObjectFit::Contain)))
 			.into_any_element()
 	}
 }

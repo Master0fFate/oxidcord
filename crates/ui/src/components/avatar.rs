@@ -1,11 +1,11 @@
 use gpui::{
-	App, FontWeight, Hsla, InteractiveElement as _, IntoElement, ObjectFit, ParentElement as _, Rems,
-	RenderOnce, SharedString, Styled as _, StyledImage as _, Window, div, img, prelude::FluentBuilder as _,
+	App, FontWeight, Hsla, IntoElement, ObjectFit, ParentElement as _, Rems, RenderOnce, SharedString,
+	Styled as _, StyledImage as _, Window, div, img, prelude::FluentBuilder as _,
 };
 use media::SizeHint;
 
 use super::status_dot::StatusDot;
-use crate::images::{Images, frame_id};
+use crate::images::Images;
 use crate::model::Status;
 use crate::theme::{Theme, rem};
 
@@ -90,12 +90,10 @@ impl RenderOnce for Avatar {
 		let image = self
 			.url
 			.as_ref()
-			.and_then(|url| cx.global::<Images>().get(url, SizeHint::square(pixels)));
+			.and_then(|url| cx.global::<Images>().get_still(url, SizeHint::square(pixels)));
 		let ring_image = self.decoration.as_ref().and_then(|url| {
 			let pixels = (base * DECORATION_SCALE * 2.).round() as u32;
-			cx.global::<Images>()
-				.get(url, SizeHint::square(pixels))
-				.map(|image| (url.clone(), image))
+			cx.global::<Images>().get(url, SizeHint::square(pixels))
 		});
 		let corners = theme.round(size);
 		let circle = div().size(size).rounded(corners).overflow_hidden().flex_none();
@@ -121,7 +119,7 @@ impl RenderOnce for Avatar {
 			.flex_none()
 			.size(size)
 			.child(circle)
-			.when_some(ring_image, |avatar, (url, image)| {
+			.when_some(ring_image, |avatar, image| {
 				let overhang = size * ((DECORATION_SCALE - 1.) / 2.);
 				avatar.child(
 					div()
@@ -129,12 +127,7 @@ impl RenderOnce for Avatar {
 						.top(-overhang)
 						.left(-overhang)
 						.size(size * DECORATION_SCALE)
-						.child(
-							img(image)
-								.id(frame_id(&url))
-								.size_full()
-								.object_fit(ObjectFit::Contain),
-						),
+						.child(img(image).size_full().object_fit(ObjectFit::Contain)),
 				)
 			})
 			.when_some(self.status, |avatar, status| {

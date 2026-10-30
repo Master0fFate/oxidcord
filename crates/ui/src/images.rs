@@ -1,15 +1,15 @@
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use gpui::{ElementId, Global, RenderImage};
-use image::{Delay, Frame, RgbaImage};
+use gpui::{App, EntityId, Global, ImageSource, RenderImage, Window};
+use image::{Frame, RgbaImage};
 use lru::LruCache;
 use media::{Decoded, DecodedImage, MediaService, SizeHint};
-use smallvec::SmallVec;
 use url::Url;
 
 const RENDERED_CAPACITY: usize = 512;
@@ -47,8 +47,62 @@ struct RenderedKey {
 }
 
 struct Rendered {
-	image: Arc<RenderImage>,
+	picture: Picture,
 	bytes: usize,
+}
+
+pub struct Clip {
+	frames: Vec<Arc<RenderImage>>,
+	ends: Vec<Duration>,
+	total: Duration,
+	loops: Option<u32>,
+	started: Instant,
+}
+
+impl Clip {
+	fn at(&self, now: Instant) -> (Arc<RenderImage>, Option<Duration>) {
+		let elapsed = now.duration_since(self.started);
+		if let Some(loops) = self.loops
+			&& elapsed >= self.total * loops
+		{
+			return (self.frames[self.frames.len() - 1].clone(), None);
+		}
+		let phase = Duration::from_nanos((elapsed.as_nanos() % self.total.as_nanos()) as u64);
+		let index = self.ends.partition_point(|end| *end <= phase);
+		(self.frames[index].clone(), Some(self.ends[index] - phase))
+	}
+}
+
+#[derive(Clone)]
+pub enum Picture {
+	Still(Arc<RenderImage>),
+	Animated(Arc<Clip>),
+}
+
+impl Picture {
+	fn frames(&self) -> impl Iterator<Item = &Arc<RenderImage>> {
+		match self {
+			Self::Still(image) => std::slice::from_ref(image).iter(),
+			Self::Animated(clip) => clip.frames.iter(),
+		}
+	}
+}
+
+impl From<Arc<RenderImage>> for Picture {
+	fn from(image: Arc<RenderImage>) -> Self {
+		Self::Still(image)
+	}
+}
+
+impl From<Picture> for ImageSource {
+	fn from(picture: Picture) -> Self {
+		match picture {
+			Picture::Still(image) => Self::Render(image),
+			Picture::Animated(clip) => Self::Custom(Arc::new(move |window, cx| {
+				Some(Ok(Images::frame(&clip, window, cx)))
+			})),
+		}
+	}
 }
 
 pub struct Images {
@@ -57,6 +111,9 @@ pub struct Images {
 	rendered: RefCell<LruCache<RenderedKey, Rendered>>,
 	retained: Cell<usize>,
 	placeholders: RefCell<LruCache<String, Arc<RenderImage>>>,
+	retired: RefCell<Vec<Arc<RenderImage>>>,
+	due: RefCell<HashMap<EntityId, Instant>>,
+	ticking: Cell<bool>,
 }
 
 impl Global for Images {}
@@ -73,24 +130,47 @@ fn bgra(image: &DecodedImage) -> Option<RgbaImage> {
 	Some(buffer)
 }
 
-pub fn render_image(decoded: &Decoded, still: bool) -> Option<(Arc<RenderImage>, usize)> {
-	let frames: SmallVec<[Frame; 1]> = match decoded {
-		Decoded::Still(image) => smallvec::smallvec![Frame::new(bgra(image)?)],
-		Decoded::Animated(animation) => animation
-			.frames
-			.iter()
-			.take(if still { 1 } else { usize::MAX })
-			.filter_map(|frame| {
-				let delay = Delay::from_saturating_duration(Duration::from_millis(u64::from(frame.delay_ms)));
-				Some(Frame::from_parts(bgra(&frame.image)?, 0, 0, delay))
-			})
-			.collect(),
+fn single(buffer: RgbaImage) -> (Arc<RenderImage>, usize) {
+	let bytes = buffer.as_raw().len();
+	(
+		Arc::new(RenderImage::new(smallvec::smallvec![Frame::new(buffer)])),
+		bytes,
+	)
+}
+
+pub fn render_image(decoded: &Decoded, still: bool) -> Option<(Picture, usize)> {
+	let animation = match decoded {
+		Decoded::Still(image) => {
+			let (image, bytes) = single(bgra(image)?);
+			return Some((Picture::Still(image), bytes));
+		}
+		Decoded::Animated(animation) => animation,
 	};
-	let bytes = frames
-		.iter()
-		.map(|frame| frame.buffer().as_raw().len())
-		.sum::<usize>();
-	(!frames.is_empty()).then(|| (Arc::new(RenderImage::new(frames)), bytes))
+	let mut frames = Vec::with_capacity(animation.frames.len());
+	let mut ends = Vec::with_capacity(animation.frames.len());
+	let mut total = Duration::ZERO;
+	let mut bytes = 0;
+	for frame in animation.frames.iter().take(if still { 1 } else { usize::MAX }) {
+		let Some(buffer) = bgra(&frame.image) else {
+			continue;
+		};
+		let (image, size) = single(buffer);
+		bytes += size;
+		total += Duration::from_millis(u64::from(frame.delay_ms));
+		ends.push(total);
+		frames.push(image);
+	}
+	if frames.len() < 2 {
+		return frames.pop().map(|image| (Picture::Still(image), bytes));
+	}
+	let clip = Clip {
+		frames,
+		ends,
+		total,
+		loops: animation.loops,
+		started: Instant::now(),
+	};
+	Some((Picture::Animated(Arc::new(clip)), bytes))
 }
 
 impl Images {
@@ -101,18 +181,24 @@ impl Images {
 			rendered: RefCell::new(LruCache::new(capacity(RENDERED_CAPACITY))),
 			retained: Cell::new(0),
 			placeholders: RefCell::new(LruCache::new(capacity(PLACEHOLDER_CAPACITY))),
+			retired: RefCell::new(Vec::new()),
+			due: RefCell::new(HashMap::new()),
+			ticking: Cell::new(false),
 		}
 	}
 
-	pub fn get(&self, url: &str, hint: SizeHint) -> Option<Arc<RenderImage>> {
+	pub fn get(&self, url: &str, hint: SizeHint) -> Option<Picture> {
 		self.rendered_image(url, hint, false)
 	}
 
 	pub fn get_still(&self, url: &str, hint: SizeHint) -> Option<Arc<RenderImage>> {
-		self.rendered_image(url, hint, true)
+		match self.rendered_image(url, hint, true)? {
+			Picture::Still(image) => Some(image),
+			Picture::Animated(clip) => Some(clip.frames[0].clone()),
+		}
 	}
 
-	fn rendered_image(&self, url: &str, hint: SizeHint, still: bool) -> Option<Arc<RenderImage>> {
+	fn rendered_image(&self, url: &str, hint: SizeHint, still: bool) -> Option<Picture> {
 		let hint = scaled_hint(hint);
 		let url = self.resolve(url);
 		let key = RenderedKey { url, hint, still };
@@ -120,7 +206,7 @@ impl Images {
 			.rendered
 			.borrow_mut()
 			.get(&key)
-			.map(|entry| entry.image.clone());
+			.map(|entry| entry.picture.clone());
 		if cached.is_some() {
 			return cached;
 		}
@@ -131,25 +217,102 @@ impl Images {
 			self.media.request(&key.url, hint, still);
 			return None;
 		};
-		let (image, bytes) = render_image(&decoded, still)?;
-		self.store(key, image.clone(), bytes);
-		Some(image)
+		let (picture, bytes) = render_image(&decoded, still)?;
+		self.store(key, picture.clone(), bytes);
+		Some(picture)
 	}
 
-	fn store(&self, key: RenderedKey, image: Arc<RenderImage>, bytes: usize) {
+	fn store(&self, key: RenderedKey, picture: Picture, bytes: usize) {
 		let mut rendered = self.rendered.borrow_mut();
-		if let Some(old) = rendered.put(key, Rendered { image, bytes }) {
-			self.retained.set(self.retained.get().saturating_sub(old.bytes));
+		let mut retained = self.retained.get() + bytes;
+		if let Some((_, old)) = rendered.push(key, Rendered { picture, bytes }) {
+			retained = retained.saturating_sub(old.bytes);
+			self.retire(&old.picture);
 		}
-		self.retained.set(self.retained.get() + bytes);
-		let mut retained = self.retained.get();
 		while retained > RENDERED_BUDGET_BYTES && rendered.len() > 1 {
 			let Some((_, old)) = rendered.pop_lru() else {
 				break;
 			};
 			retained = retained.saturating_sub(old.bytes);
+			self.retire(&old.picture);
 		}
 		self.retained.set(retained);
+	}
+
+	fn retire(&self, picture: &Picture) {
+		self.retired.borrow_mut().extend(picture.frames().cloned());
+	}
+
+	pub fn release(cx: &mut App) {
+		let retired = cx.global::<Self>().retired.take();
+		for image in retired {
+			cx.drop_image(image, None);
+		}
+	}
+
+	fn frame(clip: &Clip, window: &Window, cx: &mut App) -> Arc<RenderImage> {
+		if cx.reduce_motion() {
+			return clip.frames[0].clone();
+		}
+		let (frame, next) = clip.at(Instant::now());
+		if let Some(next) = next
+			&& window.is_window_active()
+		{
+			Self::schedule(window.current_view(), next, cx);
+		}
+		frame
+	}
+
+	fn schedule(view: EntityId, after: Duration, cx: &mut App) {
+		let at = Instant::now() + after;
+		let start = {
+			let images = cx.global::<Self>();
+			images
+				.due
+				.borrow_mut()
+				.entry(view)
+				.and_modify(|due| *due = (*due).min(at))
+				.or_insert(at);
+			!images.ticking.replace(true)
+		};
+		if start {
+			Self::run_ticker(cx);
+		}
+	}
+
+	fn run_ticker(cx: &mut App) {
+		cx.spawn(async move |cx| {
+			while let Some(at) = cx.update(|cx| cx.global::<Self>().next_due()) {
+				cx.background_executor()
+					.timer(at.saturating_duration_since(Instant::now()))
+					.await;
+				cx.update(Self::tick);
+			}
+		})
+		.detach();
+	}
+
+	fn next_due(&self) -> Option<Instant> {
+		let next = self.due.borrow().values().min().copied();
+		if next.is_none() {
+			self.ticking.set(false);
+		}
+		next
+	}
+
+	fn tick(cx: &mut App) {
+		let now = Instant::now();
+		let views: Vec<EntityId> = cx
+			.global::<Self>()
+			.due
+			.borrow_mut()
+			.extract_if(|_, at| *at <= now)
+			.map(|(view, _)| view)
+			.collect();
+		for view in views {
+			cx.notify(view);
+		}
+		Self::release(cx);
 	}
 
 	pub fn copy_image(&self, url: &str) {
@@ -206,8 +369,10 @@ impl Images {
 			return Some(image.clone());
 		}
 		let decoded = media::placeholder_from_discord(hash, width, height).ok()?;
-		let (image, _) = render_image(&Decoded::Still(decoded), true)?;
-		placeholders.put(hash.to_owned(), image.clone());
+		let (image, _) = single(bgra(&decoded)?);
+		if let Some((_, evicted)) = placeholders.push(hash.to_owned(), image.clone()) {
+			self.retired.borrow_mut().push(evicted);
+		}
 		Some(image)
 	}
 
@@ -240,12 +405,6 @@ pub fn mock_url(origin: &Url, url: &str) -> String {
 		Some(file) => format!("{}media/{:016x}-{file}", origin, hasher.finish()),
 		None => format!("{}media/{:016x}.png", origin, hasher.finish()),
 	}
-}
-
-pub fn frame_id(url: &str) -> ElementId {
-	let mut hasher = DefaultHasher::new();
-	url.hash(&mut hasher);
-	ElementId::NamedInteger("frame".into(), hasher.finish())
 }
 
 pub fn from_rgba(mut buffer: RgbaImage) -> Arc<RenderImage> {

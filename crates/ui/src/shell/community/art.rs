@@ -1,12 +1,10 @@
-use std::sync::Arc;
-
 use gpui::{
-	AnyElement, App, InteractiveElement as _, IntoElement as _, ObjectFit, ParentElement as _, Rems,
-	RenderImage, Styled as _, StyledImage as _, div, img,
+	AnyElement, App, IntoElement as _, ObjectFit, ParentElement as _, Rems, Styled as _, StyledImage as _,
+	div, img,
 };
 use media::SizeHint;
 
-use crate::images::{Images, frame_id};
+use crate::images::{Images, Picture};
 use crate::theme::{Theme, rem_to_pixels};
 
 fn hint(width: Rems, height: Rems) -> SizeHint {
@@ -16,22 +14,23 @@ fn hint(width: Rems, height: Rems) -> SizeHint {
 	)
 }
 
-fn framed(image: Option<Arc<RenderImage>>, url: &str, fit: ObjectFit, cx: &App) -> AnyElement {
+fn framed(image: Option<Picture>, fit: ObjectFit, cx: &App) -> AnyElement {
 	div()
 		.size_full()
 		.bg(cx.global::<Theme>().background_secondary)
-		.children(image.map(|image| img(image).id(frame_id(url)).size_full().object_fit(fit)))
+		.children(image.map(|image| img(image).size_full().object_fit(fit)))
 		.into_any_element()
 }
 
 pub fn cover(url: &str, width: Rems, height: Rems, fit: ObjectFit, cx: &App) -> AnyElement {
-	framed(cx.global::<Images>().get(url, hint(width, height)), url, fit, cx)
+	framed(cx.global::<Images>().get(url, hint(width, height)), fit, cx)
 }
 
 pub fn cover_still(url: &str, width: Rems, height: Rems, fit: ObjectFit, cx: &App) -> AnyElement {
 	framed(
-		cx.global::<Images>().get_still(url, hint(width, height)),
-		url,
+		cx.global::<Images>()
+			.get_still(url, hint(width, height))
+			.map(Picture::from),
 		fit,
 		cx,
 	)
@@ -47,8 +46,10 @@ pub fn cover_animated(
 ) -> AnyElement {
 	let hint = hint(width, height);
 	let images = cx.global::<Images>();
-	let image = images.get(url, hint).or_else(|| images.get_still(still, hint));
-	framed(image, url, fit, cx)
+	let image = images
+		.get(url, hint)
+		.or_else(|| images.get_still(still, hint).map(Picture::from));
+	framed(image, fit, cx)
 }
 
 pub fn sticker_url(sticker: &protocol::Sticker) -> Option<String> {

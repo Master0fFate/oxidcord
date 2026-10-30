@@ -30,7 +30,7 @@ use crate::components::{Avatar, ContextMenuBuilder, Divider, IconButton, unicode
 use crate::data::{Data, DataEvent};
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
-use crate::images::{Images, frame_id};
+use crate::images::Images;
 use crate::lookup::{Lookup, avatar_for};
 use crate::theme::{Theme, rem, with_alpha};
 
@@ -917,12 +917,7 @@ impl Composer {
 				let image = cx.global::<Images>().get(url, SizeHint::square(EMOJI_PIXELS));
 				div()
 					.size(rem(24.))
-					.children(image.map(|image| {
-						img(image)
-							.id(frame_id(url))
-							.size_full()
-							.object_fit(ObjectFit::Contain)
-					}))
+					.children(image.map(|image| img(image).size_full().object_fit(ObjectFit::Contain)))
 					.into_any_element()
 			}
 			Visual::Channel(icon) => Icon::new(*icon)

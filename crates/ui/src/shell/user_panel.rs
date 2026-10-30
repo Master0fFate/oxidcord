@@ -15,7 +15,7 @@ use crate::components::{Avatar, IconButton, tooltip, unicode_emoji};
 use crate::data::{Data, streamer_mode};
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::IconKind;
-use crate::images::{Images, frame_id};
+use crate::images::Images;
 use crate::lookup::user_avatar;
 use crate::model::Status;
 use crate::theme::{Theme, rem};
@@ -51,9 +51,7 @@ impl StatusEmoji {
 				div()
 					.flex_none()
 					.size(rem(STATUS_EMOJI_SIZE))
-					.when_some(image, |slot, image| {
-						slot.child(img(image).id(frame_id(&url)).size_full())
-					})
+					.when_some(image, |slot, image| slot.child(img(image).size_full()))
 					.into_any_element()
 			}
 		}
