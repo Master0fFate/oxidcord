@@ -53,7 +53,7 @@ const PLACEHOLDER_SIDE: u32 = 32;
 const REACTION_EMOJI: f32 = 16.;
 const ANIMATED_FLAG: u64 = 1 << 5;
 const EMBED_ITEM: u64 = 1 << 62;
-const GIF_STAR: f32 = 32.;
+const GIF_STAR: f32 = 26.;
 const SPOILER_FLAG: u64 = 1 << 3;
 const SPOILER_ITEM: usize = 1 << 40;
 const SPOILER_PREFIX: &str = "SPOILER_";
@@ -776,10 +776,10 @@ fn favorite_star(favorite: Gif, gif: AnyElement, index: usize, env: &BodyEnv, cx
 			div()
 				.id(("gif-star", env.message_id ^ ((index as u64) << 48)))
 				.absolute()
-				.top(theme.space_8)
-				.left(theme.space_4)
+				.top(theme.space_4)
+				.right(theme.space_4)
 				.size(rem(GIF_STAR))
-				.rounded(theme.radius_sm)
+				.rounded_full()
 				.bg(with_alpha(theme.background_floating, 0.85))
 				.flex()
 				.items_center()
@@ -800,7 +800,7 @@ fn favorite_star(favorite: Gif, gif: AnyElement, index: usize, env: &BodyEnv, cx
 				.child(Icon::new(IconKind::Star).size(rem(14.)).color(if favorited {
 					theme.warning
 				} else {
-					theme.interactive_normal
+					theme.interactive_muted
 				})),
 		)
 		.into_any_element()
