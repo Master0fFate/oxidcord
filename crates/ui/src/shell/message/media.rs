@@ -750,11 +750,18 @@ fn gifv(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<AnyEleme
 	);
 	Some(with_link_menu(
 		&link,
-		favorite_star(favorite, gif, index, env, cx),
+		favorite_star(favorite, gif, width, index, env, cx),
 	))
 }
 
-fn favorite_star(favorite: Gif, gif: AnyElement, index: usize, env: &BodyEnv, cx: &App) -> AnyElement {
+fn favorite_star(
+	favorite: Gif,
+	gif: AnyElement,
+	width: f32,
+	index: usize,
+	env: &BodyEnv,
+	cx: &App,
+) -> AnyElement {
 	let theme = env.theme;
 	let favorited = cx
 		.try_global::<GifFavoriteOverrides>()
@@ -770,6 +777,8 @@ fn favorite_star(favorite: Gif, gif: AnyElement, index: usize, env: &BodyEnv, cx
 	div()
 		.relative()
 		.flex_none()
+		.w(rem(width))
+		.max_w_full()
 		.group(group.clone())
 		.child(gif)
 		.child(
