@@ -491,11 +491,7 @@ impl Timeline {
 					.map(|favorites| favorites.iter().any(|known| known.url == gif.url));
 				match favorited {
 					Some(true) => data.send(Command::UnfavoriteGif { url: gif.url }),
-					Some(false) => data.send(Command::FavoriteGif { gif }),
-					None => {
-						data.send(Command::LoadGifFavorites);
-						data.send(Command::FavoriteGif { gif });
-					}
+					_ => data.send(Command::FavoriteGif { gif }),
 				}
 			}
 			RowAction::React {

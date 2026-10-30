@@ -540,8 +540,10 @@ impl Playback {
 				retired.extend(slot.image.take());
 				return false;
 			}
+			let looping = slot.mode == Mode::Loop;
+			let throttled = looping && now.duration_since(slot.shown_at) < LOOP_FRAME_INTERVAL;
 			let mut changed = false;
-			if let Some(image) = slot.player.take_frame().and_then(render) {
+			if !throttled && let Some(image) = slot.player.take_frame().and_then(render) {
 				retired.extend(slot.image.replace(image));
 				changed = true;
 			}
@@ -550,13 +552,10 @@ impl Playback {
 				slot.status = status;
 				changed = true;
 			}
-			let looping = slot.mode == Mode::Loop;
 			if inactive && looping && slot.status.state == State::Playing {
 				slot.player.pause();
 			}
-			let throttled = looping && now.duration_since(slot.shown_at) < LOOP_FRAME_INTERVAL;
 			if changed
-				&& !throttled
 				&& let Some(view) = slot.view
 				&& !views.contains(&view)
 			{
