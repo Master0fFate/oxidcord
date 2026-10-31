@@ -40,9 +40,11 @@ jobs:
           OUT: ${{ runner.temp }}/codecs
         run: |
           case "${{ matrix.name }}" in
-            macos-*) brew install nasm yasm; bash packaging/codecs/build-macos.sh ;;
-            *) cargo xtask codecs --out "$OUT" ;;
+            macos-*) brew install nasm yasm; OUT=target/release/codecs bash packaging/codecs/build-macos.sh ;;
+            *) cargo xtask codecs ;;
           esac
+          mkdir -p "$OUT"
+          cp target/release/codecs/* "$OUT"
           ls -l "$OUT"
       - name: Check the pack decodes
         shell: bash
