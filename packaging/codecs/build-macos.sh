@@ -33,14 +33,17 @@ cd "$source"
 make -j"$(sysctl -n hw.ncpu)"
 make install
 
-for library in libavcodec libavutil libswresample; do
-	built="$(compgen -G "$prefix/lib/$library.*.dylib" | head -1)"
-	name="$(basename "$built")"
-	cp "$built" "$out/$name"
+for entry in libavcodec:62 libavutil:60 libswresample:6; do
+	library="${entry%%:*}"
+	major="${entry##*:}"
+	name="$library.$major.dylib"
+	cp "$prefix/lib/$name" "$out/$name"
 	install_name_tool -id "@loader_path/$name" "$out/$name"
-	otool -L "$out/$name" | awk 'NR > 1 { print $1 }' | grep "^$prefix/lib/" | while read -r dependency; do
+	dependencies="$(otool -L "$out/$name" | awk 'NR > 1 { print $1 }' | grep "^$prefix/lib/" || true)"
+	while read -r dependency; do
+		[ -n "$dependency" ] || continue
 		install_name_tool -change "$dependency" "@loader_path/$(basename "$dependency")" "$out/$name"
-	done
+	done <<< "$dependencies"
 done
 
 cp "$source/COPYING.LGPLv2.1" "$out/LICENSE-FFMPEG.txt"
