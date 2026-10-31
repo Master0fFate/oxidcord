@@ -9,6 +9,8 @@ work="${WORK:-$(mktemp -d)}"
 decoders="h264,hevc,vp8,vp9,av1,aac,mp3,vorbis,flac,alac"
 
 mkdir -p "$out" "$work"
+out="$(cd "$out" && pwd)"
+work="$(cd "$work" && pwd)"
 archive="$work/ffmpeg-$version.tar.xz"
 source="$work/ffmpeg-$version"
 prefix="$work/prefix"
