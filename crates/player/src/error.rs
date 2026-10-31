@@ -8,6 +8,8 @@ pub enum PlayerError {
 	Format(String),
 	#[error("unsupported codec: {0}")]
 	Unsupported(String),
+	#[error("no decoder for {0}")]
+	Decoder(String),
 	#[error("audio: {0}")]
 	Audio(String),
 	#[error("video: {0}")]

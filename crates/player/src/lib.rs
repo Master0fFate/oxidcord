@@ -63,6 +63,7 @@ pub(crate) enum Command {
 
 pub(crate) struct Shared {
 	status: Mutex<Status>,
+	failure: Mutex<Option<String>>,
 	frame: Mutex<Option<Frame>>,
 	closed: Arc<AtomicBool>,
 	volume: Arc<AtomicU32>,
@@ -109,6 +110,7 @@ impl Player {
 				buffering: true,
 			}),
 			frame: Mutex::new(None),
+			failure: Mutex::new(None),
 			closed: Arc::new(AtomicBool::new(false)),
 			volume: Arc::new(AtomicU32::new(options.volume.to_bits())),
 			wake,
@@ -153,6 +155,10 @@ impl Player {
 
 	pub fn status(&self) -> Status {
 		*self.shared.status.lock()
+	}
+
+	pub fn failure(&self) -> Option<String> {
+		self.shared.failure.lock().clone()
 	}
 
 	pub fn take_frame(&self) -> Option<Frame> {

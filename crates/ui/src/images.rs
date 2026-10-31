@@ -97,6 +97,16 @@ impl From<Picture> for ImageSource {
 	}
 }
 
+impl Picture {
+	pub fn size(&self) -> (f32, f32) {
+		let size = match self {
+			Picture::Still(image) => image.size(0),
+			Picture::Animated(clip) => clip.frames[0].size(0),
+		};
+		(size.width.0 as f32, size.height.0 as f32)
+	}
+}
+
 pub struct Images {
 	media: MediaService,
 	mock_origin: Option<Url>,

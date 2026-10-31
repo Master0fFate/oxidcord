@@ -206,6 +206,8 @@ media-pause = Pauziraj
 media-replay = Reproduciraj ponovno
 media-mute = Isključi zvuk
 media-unmute = Uključi zvuk
+media-fullscreen = Cijeli zaslon
+media-fullscreen-exit = Napusti cijeli zaslon
 media-unsupported = Ova se datoteka ne može reproducirati
 embed-open-browser = Otvori u pregledniku
 

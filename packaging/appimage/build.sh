@@ -25,6 +25,11 @@ linuxdeploy \
 	--icon-file "$work/$app_id.png" \
 	--icon-filename "$app_id"
 
+if [ -d "$root/target/release/codecs" ]; then
+	mkdir -p "$appdir/usr/bin/codecs"
+	cp "$root/target/release/codecs"/* "$appdir/usr/bin/codecs/"
+fi
+
 install -Dm644 "$root/packaging/linux/$app_id.metainfo.xml" \
 	"$appdir/usr/share/metainfo/$app_id.metainfo.xml"
 

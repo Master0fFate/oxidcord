@@ -66,12 +66,17 @@ pub struct Playback {
 	volume: Cell<f32>,
 	muted: Cell<bool>,
 	volume_bar: Cell<Option<Bounds<Pixels>>>,
+	volume_button_hover: Cell<bool>,
+	volume_slider_hover: Cell<bool>,
+	volume_dragging: Cell<bool>,
+	volume_drag_moved: Cell<bool>,
 	epochs: RefCell<HashMap<EntityId, u64>>,
 	frames: RefCell<HashMap<MediaKey, FrameSlot>>,
 	host: RefCell<Option<Host>>,
 	next_frame: Cell<u64>,
 	frame_data: PathBuf,
 	shell_hidden: Cell<bool>,
+	fullscreen: Cell<Option<MediaKey>>,
 	inactive: Cell<bool>,
 	dialog_open: Cell<bool>,
 }
@@ -121,12 +126,17 @@ impl Playback {
 			volume: Cell::new(1.),
 			muted: Cell::new(false),
 			volume_bar: Cell::new(None),
+			volume_button_hover: Cell::new(false),
+			volume_slider_hover: Cell::new(false),
+			volume_dragging: Cell::new(false),
+			volume_drag_moved: Cell::new(false),
 			epochs: RefCell::new(HashMap::new()),
 			frames: RefCell::new(HashMap::new()),
 			host: RefCell::new(None),
 			next_frame: Cell::new(0),
 			frame_data,
 			shell_hidden: Cell::new(false),
+			fullscreen: Cell::new(None),
 			inactive: Cell::new(false),
 			dialog_open: Cell::new(false),
 		});
@@ -383,6 +393,13 @@ impl Playback {
 		self.slots.borrow().get(&key).and_then(|slot| slot.scrub)
 	}
 
+	pub fn missing_decoder(&self, key: MediaKey) -> Option<String> {
+		self.slots
+			.borrow()
+			.get(&key)
+			.and_then(|slot| slot.player.failure())
+	}
+
 	pub fn volume(&self) -> (f32, bool) {
 		(self.volume.get(), self.muted.get())
 	}
@@ -410,13 +427,72 @@ impl Playback {
 		self.volume_bar.set(Some(bounds));
 	}
 
-	pub fn volume_at(&self, x: Pixels) {
+	pub fn volume_at_y(&self, y: Pixels) {
 		let Some(bar) = self.volume_bar.get() else {
 			return;
 		};
-		self.volume.set(fraction(bar, x));
+		let height = f32::from(bar.size.height);
+		if height <= 0. {
+			return;
+		}
+		let from_top = (f32::from(y - bar.origin.y) / height).clamp(0., 1.);
+		self.volume.set(1. - from_top);
 		self.muted.set(false);
 		self.apply_volume();
+	}
+
+	pub fn set_volume_button_hover(&self, hovered: bool) {
+		self.volume_button_hover.set(hovered);
+	}
+
+	pub fn set_volume_slider_hover(&self, hovered: bool) {
+		self.volume_slider_hover.set(hovered);
+	}
+
+	pub fn volume_slider_open(&self) -> bool {
+		self.volume_dragging.get() || self.volume_button_hover.get() || self.volume_slider_hover.get()
+	}
+
+	pub fn volume_dragging(&self) -> bool {
+		self.volume_dragging.get()
+	}
+
+	pub fn begin_volume_drag(&self) {
+		self.volume_dragging.set(true);
+		self.volume_drag_moved.set(false);
+	}
+
+	pub fn drag_volume_to(&self, y: Pixels) {
+		self.volume_drag_moved.set(true);
+		self.volume_at_y(y);
+	}
+
+	pub fn end_volume_drag(&self) {
+		self.volume_dragging.set(false);
+	}
+
+	pub fn fullscreen(&self) -> Option<MediaKey> {
+		self.fullscreen.get()
+	}
+
+	pub fn toggle_fullscreen(&self, key: MediaKey) {
+		if self.fullscreen.get() == Some(key) {
+			self.fullscreen.set(None);
+		} else {
+			self.fullscreen.set(Some(key));
+		}
+	}
+
+	pub fn resize(&self, key: MediaKey, max_size: (u32, u32)) {
+		self.with(key, |slot| slot.player.resize(max_size));
+	}
+
+	pub fn exit_fullscreen(&self) {
+		self.fullscreen.set(None);
+	}
+
+	pub fn volume_drag_moved(&self) -> bool {
+		self.volume_drag_moved.get()
 	}
 
 	pub fn set_bar(&self, key: MediaKey, bounds: Bounds<Pixels>) {

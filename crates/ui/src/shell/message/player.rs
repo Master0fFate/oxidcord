@@ -1,23 +1,29 @@
+use std::rc::Rc;
 use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use gpui::{
-	AnyElement, App, Bounds, ClickEvent, DispatchPhase, ElementId, FontWeight, Hsla, InteractiveElement as _,
-	IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ObjectFit, ParentElement as _,
-	Pixels, SharedString, StatefulInteractiveElement as _, Styled as _, Window, canvas, div, hsla,
-	prelude::FluentBuilder as _, relative,
+	Animation, AnimationExt as _, AnyElement, App, Bounds, ClickEvent, DispatchPhase, ElementId, FontWeight,
+	Hsla, InteractiveElement as _, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+	ObjectFit, ParentElement as _, Pixels, SharedString, StatefulInteractiveElement as _, Styled as _,
+	Window, canvas, div, ease_out_quint, hsla, prelude::FluentBuilder as _, px, relative,
 };
 use player::{State, Status};
 
-use super::RowAction;
 use super::body::BodyEnv;
 use super::media::picture;
+use super::{RowAction, VideoFullscreenTarget};
+use crate::components::IconButton;
 use crate::i18n::Translate as _;
 use crate::icons::{Icon, IconKind};
 use crate::playback::{MediaKey, Playback, hint_size};
 use crate::theme::{Theme, rem};
 
+type CloseFn = Rc<dyn Fn(&mut Window, &mut App)>;
+
+const VIEWPORT_SHARE: f32 = 0.88;
+const FALLBACK_SIDE: f32 = 600.;
 const CENTER_BUTTON: f32 = 48.;
 const CONTROL_ICON: f32 = 18.;
 const CONTROL_HIT: f32 = 28.;
@@ -25,7 +31,10 @@ const CONTROLS_HEIGHT: f32 = 40.;
 const HEADER_HEIGHT: f32 = 40.;
 const BAR_HEIGHT: f32 = 4.;
 const BAR_HIT: f32 = 16.;
-const VOLUME_WIDTH: f32 = 56.;
+const VOLUME_TRACK_WIDTH: f32 = 4.;
+const VOLUME_TRACK_HEIGHT: f32 = 56.;
+const VOLUME_CHIP_WIDTH: f32 = 16.;
+const VOLUME_CHIP_PAD: f32 = 8.;
 const AUDIO_WIDTH: f32 = 432.;
 const AUDIO_ICON: f32 = 32.;
 const VOICE_WIDTH: f32 = 300.;
@@ -147,6 +156,10 @@ fn play_label(status: Option<Status>, cx: &App) -> SharedString {
 }
 
 fn control(id: ElementId, icon: IconKind, color: Hsla) -> gpui::Stateful<gpui::Div> {
+	control_sized(id, icon, CONTROL_ICON, color)
+}
+
+fn control_sized(id: ElementId, icon: IconKind, icon_size: f32, color: Hsla) -> gpui::Stateful<gpui::Div> {
 	div()
 		.id(id)
 		.flex()
@@ -157,7 +170,7 @@ fn control(id: ElementId, icon: IconKind, color: Hsla) -> gpui::Stateful<gpui::D
 		.rounded_full()
 		.cursor_pointer()
 		.hover(|style| style.bg(white(0.12)))
-		.child(Icon::new(icon).size(rem(CONTROL_ICON)).color(color))
+		.child(Icon::new(icon).size(rem(icon_size)).color(color))
 }
 
 fn center_button(id: ElementId, icon: IconKind, theme: &Theme) -> gpui::Stateful<gpui::Div> {
@@ -252,86 +265,135 @@ fn scrub_surface(key: MediaKey) -> impl IntoElement {
 	.size_full()
 }
 
-fn volume_control(key: MediaKey, color: Hsla, track: Hsla, theme: &Theme, cx: &App) -> AnyElement {
+fn volume_surface() -> impl IntoElement {
+	canvas(
+		|bounds: Bounds<Pixels>, _, cx| {
+			let playback = cx.global::<Playback>();
+			playback.set_volume_bar(bounds);
+			playback.volume_dragging()
+		},
+		|_, dragging: bool, window, _| {
+			if !dragging {
+				return;
+			}
+			window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
+				if phase == DispatchPhase::Bubble && event.dragging() {
+					cx.global::<Playback>().drag_volume_to(event.position.y);
+					window.refresh();
+				}
+			});
+			window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
+				if phase == DispatchPhase::Bubble && event.button == MouseButton::Left {
+					cx.global::<Playback>().end_volume_drag();
+					window.refresh();
+				}
+			});
+		},
+	)
+	.absolute()
+	.inset_0()
+}
+
+fn volume_control(
+	key: MediaKey,
+	color: Hsla,
+	track: Hsla,
+	backdrop: Hsla,
+	theme: &Theme,
+	cx: &App,
+) -> AnyElement {
 	let (volume, muted) = cx.global::<Playback>().volume();
 	let silent = muted || volume <= 0.;
 	let level = if silent { 0. } else { volume };
-	let hover_group = group_name("media-volume", key);
+	let open = cx.global::<Playback>().volume_slider_open();
 	let label = cx.t(if silent { "media-unmute" } else { "media-mute" });
-	div()
+	let chip_height = VOLUME_TRACK_HEIGHT + 2. * VOLUME_CHIP_PAD;
+	let button = control(
+		element_id("media-mute", key),
+		if silent {
+			IconKind::VolumeOff
+		} else {
+			IconKind::Volume
+		},
+		color,
+	)
+	.tooltip(crate::components::tooltip(label))
+	.on_mouse_down(MouseButton::Left, |_, _, cx| {
+		cx.stop_propagation();
+		cx.global::<Playback>().begin_volume_drag();
+	})
+	.on_click(|_, window, cx| {
+		cx.stop_propagation();
+		let playback = cx.global::<Playback>();
+		if !playback.volume_drag_moved() {
+			playback.toggle_mute();
+		}
+		window.refresh();
+	})
+	.on_hover(|hovered: &bool, window, cx| {
+		cx.global::<Playback>().set_volume_button_hover(*hovered);
+		window.refresh();
+	});
+	let slider = div()
+		.id(element_id("media-volume-slider", key))
+		.absolute()
+		.bottom(rem(CONTROL_HIT))
+		.left_0()
+		.w(rem(CONTROL_HIT))
+		.h(rem(chip_height))
 		.flex()
-		.flex_none()
-		.items_center()
-		.group(hover_group.clone())
+		.justify_center()
+		.cursor_pointer()
+		.on_click(|_, _, cx| cx.stop_propagation())
+		.on_hover(|hovered: &bool, window, cx| {
+			cx.global::<Playback>().set_volume_slider_hover(*hovered);
+			window.refresh();
+		})
+		.on_mouse_down(MouseButton::Left, |event: &MouseDownEvent, window, cx| {
+			cx.stop_propagation();
+			cx.global::<Playback>().begin_volume_drag();
+			cx.global::<Playback>().volume_at_y(event.position.y);
+			window.refresh();
+		})
+		.with_animation(
+			element_id("media-volume-spawn", key),
+			Animation::new(Duration::from_millis(140)).with_easing(ease_out_quint()),
+			|slider, delta| slider.opacity(delta).bottom(rem(CONTROL_HIT - 8. * (1. - delta))),
+		)
 		.child(
 			div()
-				.id(element_id("media-volume-slider", key))
-				.flex()
-				.items_center()
-				.w(rem(0.))
-				.h(rem(BAR_HIT))
-				.overflow_hidden()
-				.cursor_pointer()
-				.group_hover(hover_group, |style| style.w(rem(VOLUME_WIDTH)))
-				.on_click(|_, _, cx| cx.stop_propagation())
-				.on_mouse_down(MouseButton::Left, |event: &MouseDownEvent, window, cx| {
-					cx.stop_propagation();
-					cx.global::<Playback>().volume_at(event.position.x);
-					window.refresh();
-				})
-				.on_mouse_move(|event: &MouseMoveEvent, window, cx| {
-					if event.dragging() {
-						cx.global::<Playback>().volume_at(event.position.x);
-						window.refresh();
-					}
-				})
+				.relative()
+				.w(rem(VOLUME_CHIP_WIDTH))
+				.h_full()
+				.rounded(theme.radius_md)
+				.bg(backdrop)
 				.child(
 					div()
-						.relative()
-						.mx(rem(6.))
-						.flex_1()
-						.h(rem(BAR_HEIGHT))
+						.absolute()
+						.left(rem((VOLUME_CHIP_WIDTH - VOLUME_TRACK_WIDTH) / 2.))
+						.top(rem(VOLUME_CHIP_PAD))
+						.bottom(rem(VOLUME_CHIP_PAD))
+						.w(rem(VOLUME_TRACK_WIDTH))
 						.rounded_full()
 						.bg(track)
 						.child(
 							div()
 								.absolute()
 								.left_0()
-								.top_0()
+								.right_0()
 								.bottom_0()
-								.w(relative(level))
+								.h(relative(level))
 								.rounded_full()
 								.bg(theme.brand),
 						)
-						.child(
-							canvas(
-								|bounds: Bounds<Pixels>, _, cx| {
-									cx.global::<Playback>().set_volume_bar(bounds)
-								},
-								|_, (), _, _| {},
-							)
-							.absolute()
-							.size_full(),
-						),
+						.child(volume_surface()),
 				),
-		)
-		.child(
-			control(
-				element_id("media-mute", key),
-				if silent {
-					IconKind::VolumeOff
-				} else {
-					IconKind::Volume
-				},
-				color,
-			)
-			.tooltip(crate::components::tooltip(label))
-			.on_click(|_, window, cx| {
-				cx.stop_propagation();
-				cx.global::<Playback>().toggle_mute();
-				window.refresh();
-			}),
-		)
+		);
+	div()
+		.relative()
+		.flex_none()
+		.child(button)
+		.when(open, |wrapper| wrapper.child(slider))
 		.into_any_element()
 }
 
@@ -402,6 +464,10 @@ pub fn video(source: VideoSource, env: &BodyEnv, cx: &App) -> AnyElement {
 		None | Some(State::Ended) => Some(play_icon(status)),
 		_ => None,
 	};
+	let file_name = source.file.as_ref().map_or_else(String::new, |f| f.name.clone());
+	let video_url = source.url.clone();
+	let video_width = source.width;
+	let video_height = source.height;
 	div()
 		.id(element_id("media-video", key))
 		.group(group.clone())
@@ -443,7 +509,15 @@ pub fn video(source: VideoSource, env: &BodyEnv, cx: &App) -> AnyElement {
 					),
 			)
 		})
-		.when(failed, |frame| frame.child(failure(env, cx)))
+		.when(failed, |frame| {
+			frame.child(failure(
+				key,
+				playback.missing_decoder(key),
+				source.file.as_ref().map(|file| file.download.clone()),
+				env,
+				cx,
+			))
+		})
 		.when_some(source.file, |frame, file| {
 			frame.child(header(key, file, group.clone(), env))
 		})
@@ -471,9 +545,129 @@ pub fn video(source: VideoSource, env: &BodyEnv, cx: &App) -> AnyElement {
 					)
 					.child(time_label(status, scrub, white(1.), theme))
 					.child(seek_bar(key, status, scrub, white(0.3), theme.brand))
-					.child(volume_control(key, white(1.), white(0.3), theme, cx)),
+					.child(volume_control(key, white(1.), white(0.3), black(0.6), theme, cx))
+					.child({
+						let dispatch = env.dispatch.clone();
+						let target = VideoFullscreenTarget {
+							key,
+							url: video_url.clone(),
+							name: file_name.clone(),
+							width: video_width,
+							height: video_height,
+						};
+						control_sized(
+							element_id("media-fullscreen", key),
+							IconKind::Expand,
+							14.,
+							white(1.),
+						)
+						.tooltip(crate::components::tooltip(cx.t("media-fullscreen")))
+						.on_click(move |_, window, cx| {
+							dispatch(RowAction::OpenVideoFullscreen(target.clone()), window, cx);
+						})
+					}),
 			)
 		})
+		.into_any_element()
+}
+
+pub fn video_modal(
+	target: &VideoFullscreenTarget,
+	window: &Window,
+	theme: &Theme,
+	cx: &App,
+	close: CloseFn,
+) -> AnyElement {
+	let key = target.key;
+	let playback = cx.global::<Playback>();
+	let status = playback.status(key);
+	let scrub = playback.scrub(key);
+	let max_size = hint_size(target.width, target.height);
+	let viewport = window.viewport_size();
+	let max_width = f32::from(viewport.width) * VIEWPORT_SHARE;
+	let max_height = f32::from(viewport.height) * VIEWPORT_SHARE;
+	let (native_width, native_height) = if target.width > 0. && target.height > 0. {
+		(target.width, target.height)
+	} else {
+		(FALLBACK_SIDE, FALLBACK_SIDE)
+	};
+	let scale = (max_width / native_width).min(max_height / native_height);
+	let (width, height) = ((native_width * scale).round(), (native_height * scale).round());
+	let backdrop_close = close.clone();
+	let button_close = close;
+	div()
+		.id("video-fullscreen")
+		.absolute()
+		.inset_0()
+		.flex()
+		.flex_col()
+		.items_center()
+		.justify_center()
+		.gap(theme.space_12)
+		.bg(theme.overlay)
+		.occlude()
+		.on_click(move |_, window, cx| backdrop_close(window, cx))
+		.child(
+			div()
+				.absolute()
+				.top(theme.space_16)
+				.right(theme.space_16)
+				.flex()
+				.gap(theme.space_8)
+				.on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+				.child(
+					IconButton::new("video-fullscreen-close", IconKind::Close)
+						.filled_hover()
+						.hit_size(rem(36.))
+						.icon_size(rem(22.))
+						.color(theme.interactive_active)
+						.tooltip(cx.t("lightbox-close"))
+						.on_click(move |_, window, cx| button_close(window, cx)),
+				),
+		)
+		.child(
+			div()
+				.w(px(width))
+				.h(px(height))
+				.rounded(theme.radius_md)
+				.overflow_hidden()
+				.bg(black(1.))
+				.relative()
+				.on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+				.child(surface(key, px(0.)))
+				.child(
+					div()
+						.absolute()
+						.left_0()
+						.right_0()
+						.bottom_0()
+						.h(rem(CONTROLS_HEIGHT))
+						.flex()
+						.items_center()
+						.gap(theme.space_8)
+						.px(theme.space_8)
+						.bg(black(0.6))
+						.child(
+							control(
+								element_id("media-modal-toggle", key),
+								play_icon(status),
+								white(1.),
+							)
+							.tooltip(crate::components::tooltip(play_label(status, cx)))
+							.on_click(toggler(key, target.url.clone(), max_size)),
+						)
+						.child(time_label(status, scrub, white(1.), theme))
+						.child(seek_bar(key, status, scrub, white(0.3), theme.brand))
+						.child(volume_control(key, white(1.), white(0.3), black(0.6), theme, cx)),
+				),
+		)
+		.child(
+			div()
+				.text_size(theme.font_sm)
+				.font_weight(FontWeight::MEDIUM)
+				.text_color(theme.interactive_active)
+				.child(target.name.clone()),
+		)
 		.into_any_element()
 }
 
@@ -526,8 +720,19 @@ fn header(key: MediaKey, file: FileInfo, group: SharedString, env: &BodyEnv) -> 
 		.into_any_element()
 }
 
-fn failure(env: &BodyEnv, cx: &App) -> AnyElement {
+fn failure(
+	key: MediaKey,
+	codec: Option<String>,
+	download: Option<String>,
+	env: &BodyEnv,
+	cx: &App,
+) -> AnyElement {
 	let theme = env.theme;
+	let dispatch = env.dispatch.clone();
+	let label = match codec {
+		Some(codec) => cx.t_args("media-missing-codec", &[("codec", codec.to_uppercase().into())]),
+		None => cx.t("media-unsupported"),
+	};
 	div()
 		.absolute()
 		.inset_0()
@@ -542,9 +747,36 @@ fn failure(env: &BodyEnv, cx: &App) -> AnyElement {
 			div()
 				.text_size(theme.font_sm)
 				.font_weight(FontWeight::SEMIBOLD)
+				.text_center()
 				.text_color(white(0.9))
-				.child(cx.t("media-unsupported")),
+				.child(label),
 		)
+		.when_some(download, |frame, url| {
+			frame.child(
+				div()
+					.id(element_id("media-fallback-download", key))
+					.flex()
+					.items_center()
+					.gap(theme.space_4)
+					.px(theme.space_8)
+					.py(theme.space_4)
+					.rounded_full()
+					.cursor_pointer()
+					.bg(white(0.16))
+					.hover(|style| style.bg(white(0.26)))
+					.on_click(move |_, window, cx| {
+						cx.stop_propagation();
+						dispatch(RowAction::Download(url.clone()), window, cx);
+					})
+					.child(Icon::new(IconKind::Download).size(rem(13.)).color(white(1.)))
+					.child(
+						div()
+							.text_size(theme.font_sm)
+							.text_color(white(1.))
+							.child(cx.t("media-download-file")),
+					),
+			)
+		})
 		.into_any_element()
 }
 
@@ -673,7 +905,12 @@ pub fn audio(source: AudioSource, env: &BodyEnv, cx: &App) -> AnyElement {
 						.size(rem(16.))
 						.color(theme.text_muted),
 				)
-				.child(cx.t("media-unsupported"))
+				.child(match playback.missing_decoder(key) {
+					Some(codec) => {
+						cx.t_args("media-missing-codec", &[("codec", codec.to_uppercase().into())])
+					}
+					None => cx.t("media-unsupported"),
+				})
 				.into_any_element()
 		} else {
 			div()
@@ -695,6 +932,7 @@ pub fn audio(source: AudioSource, env: &BodyEnv, cx: &App) -> AnyElement {
 					key,
 					icon_color,
 					theme.interactive_muted,
+					theme.background_floating,
 					theme,
 					cx,
 				))

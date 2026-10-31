@@ -120,6 +120,10 @@ impl Bitstream {
 		})
 	}
 
+	pub fn parameter_sets(&self) -> &[u8] {
+		&self.parameter_sets
+	}
+
 	pub fn is_random_access_unit(&self, packet: &[u8]) -> bool {
 		self.units(packet)
 			.any(|unit| self.is_random_access(self.unit_type(unit)))

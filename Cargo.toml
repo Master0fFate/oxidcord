@@ -146,3 +146,4 @@ gpui-pre = { git = "https://github.com/longbridge/gpui-fast", rev = "124f79b0f14
 gpui-pre-platform = { git = "https://github.com/longbridge/gpui-fast", rev = "124f79b0f14c688ae87877e370c015a9dc9d7ce5" }
 gpui-pre-macros = { git = "https://github.com/longbridge/gpui-fast", rev = "124f79b0f14c688ae87877e370c015a9dc9d7ce5" }
 gpui-pre-sum-tree = { git = "https://github.com/longbridge/gpui-fast", rev = "124f79b0f14c688ae87877e370c015a9dc9d7ce5" }
+symphonia-format-isomp4 = { path = "vendor/symphonia-format-isomp4" }

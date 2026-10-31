@@ -24,7 +24,7 @@ use super::community::act;
 use super::inline_emoji::{self, EmojiTokens};
 use super::message::{
 	Dispatch, DocumentCache, Editing, FLASH_DURATION, GifFavoriteOverrides, ImageTarget, MessageAccess,
-	Prefs, RowAction, RowEnv, Welcome, render_row,
+	Prefs, RowAction, RowEnv, VideoFullscreenTarget, Welcome, render_row,
 };
 use super::moderation;
 use super::plugins::{self, LinkOrigin, PluginBridge};
@@ -45,6 +45,7 @@ const GROUP_LOOKBACK: usize = 6;
 pub enum TimelineEvent {
 	OpenLink(String, LinkOrigin),
 	OpenImage(ImageTarget),
+	OpenVideoFullscreen(VideoFullscreenTarget),
 	Reply(Snowflake),
 	OpenEmoji {
 		message_id: Snowflake,
@@ -484,6 +485,7 @@ impl Timeline {
 				cx.notify();
 			}
 			RowAction::OpenImage(target) => cx.emit(TimelineEvent::OpenImage(target)),
+			RowAction::OpenVideoFullscreen(target) => cx.emit(TimelineEvent::OpenVideoFullscreen(target)),
 			RowAction::ToggleGifFavorite(gif) => {
 				let favorited = cx
 					.try_global::<GifFavoriteOverrides>()

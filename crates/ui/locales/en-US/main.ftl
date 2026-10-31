@@ -203,7 +203,11 @@ media-pause = Pause
 media-replay = Replay
 media-mute = Mute
 media-unmute = Unmute
+media-fullscreen = Fullscreen
+media-fullscreen-exit = Exit fullscreen
 media-unsupported = Can't play this file
+media-missing-codec = No { $codec } decoder
+media-download-file = Download file
 embed-open-browser = Open in browser
 
 poll-votes = { $count ->

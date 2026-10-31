@@ -41,6 +41,9 @@ jobs:
           targets: x86_64-pc-windows-msvc
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release --locked -p oxidcord --target x86_64-pc-windows-msvc
+      - name: Codec pack
+        shell: pwsh
+        run: cargo xtask codecs --out "target\x86_64-pc-windows-msvc\release\codecs"
       - name: Install NSIS
         shell: pwsh
         run: |
@@ -50,11 +53,13 @@ jobs:
         shell: pwsh
         run: |
           $binary = "$PWD\target\x86_64-pc-windows-msvc\release\oxidcord.exe"
+          $codecs = "$PWD\target\x86_64-pc-windows-msvc\release\codecs"
           New-Item -ItemType Directory -Force dist, stage | Out-Null
           $core = $env:VERSION.Split('-')[0].Split('+')[0]
-          makensis /V2 "/DVERSION=$env:VERSION" "/DVERSION_QUAD=$core.0" "/DBINARY=$binary" "/DOUTFILE=$PWD\dist\oxidcord-$env:VERSION-windows-x86_64-installer.exe" packaging\windows\installer.nsi
+          makensis /V2 "/DVERSION=$env:VERSION" "/DVERSION_QUAD=$core.0" "/DBINARY=$binary" "/DCODECS=$codecs" "/DOUTFILE=$PWD\dist\oxidcord-$env:VERSION-windows-x86_64-installer.exe" packaging\windows\installer.nsi
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Copy-Item $binary stage\oxidcord.exe
+          Copy-Item -Recurse $codecs stage\codecs
           Copy-Item LICENSE-MIT, LICENSE-APACHE stage\
           Compress-Archive -Path stage\* -DestinationPath "dist\oxidcord-$env:VERSION-windows-x86_64-portable.zip"
       - uses: actions/upload-artifact@v4
@@ -89,6 +94,12 @@ jobs:
           targets: ${{ matrix.rust_target }}
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release --locked -p oxidcord --target ${{ matrix.rust_target }}
+      - name: Build codec pack
+        env:
+          OUT: ${{ runner.temp }}/codecs
+        run: |
+          brew install nasm yasm
+          bash packaging/codecs/build-macos.sh
       - name: Import signing certificate
         if: env.MACOS_CERTIFICATE != ''
         run: |
@@ -103,6 +114,8 @@ jobs:
           security list-keychains -d user -s "$keychain" login.keychain-db
           rm "$RUNNER_TEMP/certificate.p12"
       - name: Package
+        env:
+          CODECS: ${{ runner.temp }}/codecs
         run: BINARY="target/${{ matrix.rust_target }}/release/oxidcord" bash packaging/macos/bundle.sh
       - uses: actions/upload-artifact@v4
         with:
@@ -130,6 +143,8 @@ jobs:
           sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libxcb1-dev libx11-dev libfontconfig1-dev libdbus-1-dev libwebkit2gtk-4.1-dev libgtk-3-dev cmake pkg-config rpm
       - run: cargo install --locked cargo-deb cargo-generate-rpm
       - run: cargo build --release --locked -p oxidcord
+      - name: Codec pack
+        run: cargo xtask codecs --out target/release/codecs
       - name: Packaging tools
         run: |
           : "${LINUXDEPLOY_SHA256:?set the LINUXDEPLOY_SHA256 repository variable}"

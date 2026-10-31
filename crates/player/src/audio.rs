@@ -1,11 +1,14 @@
 use symphonia::core::codecs::CodecParameters;
-use symphonia::core::codecs::audio::well_known::CODEC_ID_OPUS;
+use symphonia::core::codecs::audio::well_known::{
+	CODEC_ID_AAC, CODEC_ID_ALAC, CODEC_ID_FLAC, CODEC_ID_MP3, CODEC_ID_OPUS, CODEC_ID_VORBIS,
+};
 use symphonia::core::codecs::audio::{AudioCodecParameters, AudioDecoder, AudioDecoderOptions};
 use symphonia::core::packet::Packet;
 use symphonia::default::get_codecs;
 
 use crate::error::{PlayerError, Result};
 use crate::output::OUTPUT_CHANNELS;
+use crate::video::FfAudioDecoder;
 
 const OPUS_RATE: u32 = 48_000;
 const OPUS_MAX_FRAMES: usize = 5760;
@@ -20,6 +23,7 @@ enum Decoder {
 		pre_skip: usize,
 		skip: usize,
 	},
+	Pack(FfAudioDecoder),
 }
 
 pub struct AudioTrack {
@@ -37,13 +41,44 @@ impl AudioTrack {
 		if params.codec == CODEC_ID_OPUS {
 			return Self::opus(params);
 		}
-		let decoder = get_codecs().make_audio_decoder(params, &AudioDecoderOptions::default())?;
 		let rate = params
 			.sample_rate
 			.ok_or_else(|| PlayerError::Format("audio track has no sample rate".to_owned()))?;
+		let decoder = match get_codecs().make_audio_decoder(params, &AudioDecoderOptions::default()) {
+			Ok(decoder) => decoder,
+			Err(error) => {
+				tracing::debug!(%error, "symphonia audio decoder unavailable");
+				return Self::pack(params, rate);
+			}
+		};
 		Ok(Self {
 			decoder: Decoder::Generic(decoder),
 			rate,
+			decoded: Vec::new(),
+			stereo: Vec::new(),
+		})
+	}
+
+	fn pack(params: &AudioCodecParameters, rate: u32) -> Result<Self> {
+		let name = match params.codec {
+			CODEC_ID_AAC => c"aac",
+			CODEC_ID_MP3 => c"mp3",
+			CODEC_ID_VORBIS => c"vorbis",
+			CODEC_ID_FLAC => c"flac",
+			CODEC_ID_ALAC => c"alac",
+			other => return Err(PlayerError::Unsupported(format!("audio codec {other}"))),
+		};
+		let channels = params
+			.channels
+			.as_ref()
+			.map_or(OUTPUT_CHANNELS, |channels| channels.count());
+		Ok(Self {
+			decoder: Decoder::Pack(FfAudioDecoder::open(
+				name,
+				channels,
+				params.extra_data.as_deref(),
+			)?),
+			rate: aac_output_rate(params).unwrap_or(rate),
 			decoded: Vec::new(),
 			stereo: Vec::new(),
 		})
@@ -86,6 +121,7 @@ impl AudioTrack {
 	pub fn reset(&mut self, from_start: bool) {
 		match &mut self.decoder {
 			Decoder::Generic(decoder) => decoder.reset(),
+			Decoder::Pack(decoder) => decoder.reset(),
 			Decoder::Opus {
 				decoder,
 				pre_skip,
@@ -125,6 +161,13 @@ impl AudioTrack {
 				);
 				return Ok(&self.stereo);
 			}
+			Decoder::Pack(decoder) => {
+				self.decoded.clear();
+				decoder.decode(&packet.data, &mut self.decoded)?;
+				self.stereo.clear();
+				stereo_into(&self.decoded, decoder.channels(), &mut self.stereo);
+				return Ok(&self.stereo);
+			}
 		};
 		self.stereo.clear();
 		stereo_into(&self.decoded[skip..], channels.max(1), &mut self.stereo);
@@ -143,4 +186,54 @@ fn stereo_into(interleaved: &[f32], channels: usize, out: &mut Vec<f32>) {
 				.flat_map(|frame| [frame[0], frame[1]]),
 		),
 	}
+}
+
+const AAC_SAMPLE_RATES: [u32; 13] = [
+	96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350,
+];
+const AAC_EXPLICIT_RATE: u32 = 0x0f;
+const AAC_SBR: u32 = 5;
+const AAC_PS: u32 = 29;
+const AAC_EXTENDED_TYPE: u32 = 31;
+
+struct Bits<'a> {
+	data: &'a [u8],
+	at: usize,
+}
+
+impl Bits<'_> {
+	fn read(&mut self, count: usize) -> Option<u32> {
+		let mut value = 0u32;
+		for _ in 0..count {
+			let byte = *self.data.get(self.at / 8)?;
+			value = (value << 1) | u32::from((byte >> (7 - self.at % 8)) & 1);
+			self.at += 1;
+		}
+		Some(value)
+	}
+
+	fn sample_rate(&mut self) -> Option<u32> {
+		match self.read(4)? {
+			AAC_EXPLICIT_RATE => self.read(24),
+			index => AAC_SAMPLE_RATES.get(index as usize).copied(),
+		}
+	}
+}
+
+fn aac_output_rate(params: &AudioCodecParameters) -> Option<u32> {
+	if params.codec != CODEC_ID_AAC {
+		return None;
+	}
+	let mut bits = Bits {
+		data: params.extra_data.as_deref()?,
+		at: 0,
+	};
+	let kind = bits.read(5)?;
+	let kind = if kind == AAC_EXTENDED_TYPE {
+		bits.read(6)? + 32
+	} else {
+		kind
+	};
+	let rate = bits.sample_rate()?;
+	(kind == AAC_SBR || kind == AAC_PS).then_some(rate)
 }
