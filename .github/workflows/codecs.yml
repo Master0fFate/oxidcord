@@ -43,7 +43,8 @@ jobs:
             macos-*) brew install nasm yasm; OUT=target/release/codecs bash packaging/codecs/build-macos.sh ;;
             *) cargo xtask codecs ;;
           esac
-          mkdir -p "$OUT"
+          mkdir -p target/release/codecs target/debug/codecs "$OUT"
+          cp target/release/codecs/* target/debug/codecs/
           cp target/release/codecs/* "$OUT"
           ls -l "$OUT"
       - name: Check the pack decodes
