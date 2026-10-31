@@ -48,7 +48,16 @@ jobs:
           ls -l "$OUT"
       - name: Check the pack decodes
         shell: bash
-        run: cargo xtask headless-run --mock
+        env:
+          RUST_LOG: player=debug
+        run: |
+          if [ "$(uname -s)" = Darwin ]; then
+            for library in target/release/codecs/*.dylib; do
+              echo "== $library"
+              otool -L "$library"
+            done
+          fi
+          cargo xtask headless-run --mock
       - uses: actions/upload-artifact@v4
         with:
           name: codecs-${{ matrix.name }}
