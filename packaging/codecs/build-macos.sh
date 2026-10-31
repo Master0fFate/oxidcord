@@ -46,6 +46,7 @@ for entry in libavcodec:62 libavutil:60 libswresample:6; do
 		[ -n "$dependency" ] || continue
 		install_name_tool -change "$dependency" "@loader_path/$(basename "$dependency")" "$out/$name"
 	done <<< "$dependencies"
+	codesign --force --sign - "$out/$name"
 done
 
 cp "$source/COPYING.LGPLv2.1" "$out/LICENSE-FFMPEG.txt"
