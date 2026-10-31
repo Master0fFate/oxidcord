@@ -139,8 +139,11 @@ fn open_set(names: &[String; 3], dir: Option<&Path>) -> Option<Vec<Library>> {
 		}
 		match unsafe { Library::new(&target) } {
 			Ok(library) => libraries.push(library),
-			Err(_) if index == 1 => {}
-			Err(_) => return None,
+			Err(error) if index == 1 => {}
+			Err(error) => {
+				tracing::debug!(%error, path = %target.display(), "codec pack library did not load");
+				return None;
+			}
 		}
 	}
 	Some(libraries)
