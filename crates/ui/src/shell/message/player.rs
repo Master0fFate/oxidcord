@@ -28,6 +28,7 @@ const CENTER_BUTTON: f32 = 48.;
 const CONTROL_ICON: f32 = 18.;
 const CONTROL_HIT: f32 = 28.;
 const CONTROLS_HEIGHT: f32 = 40.;
+const NARROW_CONTROLS: f32 = 320.;
 const HEADER_HEIGHT: f32 = 40.;
 const BAR_HEIGHT: f32 = 4.;
 const BAR_HIT: f32 = 16.;
@@ -398,6 +399,16 @@ fn volume_control(
 		.into_any_element()
 }
 
+fn time_wrapper(narrow: bool, group: SharedString, label: AnyElement) -> AnyElement {
+	div()
+		.flex_none()
+		.when(narrow, |wrapper| {
+			wrapper.invisible().group_hover(group, |style| style.visible())
+		})
+		.child(label)
+		.into_any_element()
+}
+
 fn time_label(status: Option<Status>, scrub: Option<f32>, color: Hsla, theme: &Theme) -> AnyElement {
 	let position = shown_position(status, scrub);
 	let text = match status.and_then(|status| status.duration) {
@@ -461,6 +472,7 @@ pub fn video(source: VideoSource, env: &BodyEnv, cx: &App) -> AnyElement {
 	let radius = theme.pixels(theme.radius_md);
 	let group = group_name("media-video", key);
 	let controls_pinned = matches!(state, Some(State::Paused | State::Ended)) || scrub.is_some();
+	let narrow_controls = source.width < NARROW_CONTROLS;
 	let center = match state {
 		None | Some(State::Ended) => Some(play_icon(status)),
 		_ => None,
@@ -544,7 +556,11 @@ pub fn video(source: VideoSource, env: &BodyEnv, cx: &App) -> AnyElement {
 							.tooltip(crate::components::tooltip(play_label(status, cx)))
 							.on_click(toggler(key, source.url.clone(), max_size)),
 					)
-					.child(time_label(status, scrub, white(1.), theme))
+					.child(time_wrapper(
+						narrow_controls,
+						group.clone(),
+						time_label(status, scrub, white(1.), theme),
+					))
 					.child(seek_bar(key, status, scrub, white(0.3), theme.brand))
 					.child(volume_control(key, white(1.), white(0.3), black(0.6), theme, cx))
 					.child({
