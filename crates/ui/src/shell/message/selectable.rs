@@ -12,10 +12,18 @@ use gpui_base::{TextSelection, TextSelectionHandle, TextSelectionRegistration, T
 
 type ClickHandler = Rc<dyn Fn(usize, &mut Window, &mut App)>;
 
+const DRAG_SLOP: f32 = 4.;
+
+#[derive(Clone, Copy)]
+struct Press {
+	target: usize,
+	at: Point<Pixels>,
+}
+
 #[derive(Clone)]
 pub struct RunState {
 	handle: TextSelectionHandle,
-	pressed: Rc<Cell<Option<usize>>>,
+	pressed: Rc<Cell<Option<Press>>>,
 }
 
 pub struct SelectableRun {
@@ -220,8 +228,12 @@ impl Element for SelectableRun {
 		window.on_mouse_event(move |event: &MouseDownEvent, phase, window, _| {
 			if phase == DispatchPhase::Bubble && down_hitbox.is_hovered(window) {
 				let index = down_layout.index_for_position(event.position).ok();
-				pressed
-					.set(index.and_then(|index| down_clicks.iter().position(|range| range.contains(&index))));
+				let target =
+					index.and_then(|index| down_clicks.iter().position(|range| range.contains(&index)));
+				pressed.set(target.map(|target| Press {
+					target,
+					at: event.position,
+				}));
 			}
 		});
 		let pressed = state.pressed.clone();
@@ -230,16 +242,19 @@ impl Element for SelectableRun {
 			if phase != DispatchPhase::Bubble {
 				return;
 			}
-			let Some(target) = pressed.take() else {
+			let Some(press) = pressed.take() else {
 				return;
 			};
-			let released = up_hitbox.is_hovered(window)
+			let travelled = f32::from(event.position.x - press.at.x).powi(2)
+				+ f32::from(event.position.y - press.at.y).powi(2);
+			let released = travelled <= DRAG_SLOP * DRAG_SLOP
+				&& up_hitbox.is_hovered(window)
 				&& layout
 					.index_for_position(event.position)
 					.ok()
-					.is_some_and(|index| clicks[target].contains(&index));
+					.is_some_and(|index| clicks[press.target].contains(&index));
 			if released && !TextSelection::has_selection(window, cx) {
-				on_click(target, window, cx);
+				on_click(press.target, window, cx);
 			}
 		});
 	}
