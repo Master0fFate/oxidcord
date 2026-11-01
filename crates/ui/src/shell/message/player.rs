@@ -32,6 +32,8 @@ const NARROW_CONTROLS: f32 = 320.;
 const HEADER_HEIGHT: f32 = 40.;
 const BAR_HEIGHT: f32 = 4.;
 const BAR_HIT: f32 = 16.;
+const BUBBLE_LIFT: f32 =
+	VOLUME_LIFT + (CONTROLS_HEIGHT - CONTROL_HIT) / 2. - (CONTROLS_HEIGHT - BAR_HIT) / 2.;
 const VOLUME_TRACK_WIDTH: f32 = 4.;
 const VOLUME_TRACK_HEIGHT: f32 = 56.;
 const VOLUME_LIFT: f32 = CONTROLS_HEIGHT;
@@ -200,10 +202,17 @@ fn seek_bar(
 	scrub: Option<f32>,
 	track: Hsla,
 	fill: Hsla,
+	theme: &Theme,
+	cx: &App,
 ) -> AnyElement {
 	let filled = share(status, scrub);
+	let bubble = cx
+		.global::<Playback>()
+		.hover(key)
+		.zip(status.and_then(|status| status.duration));
 	div()
 		.id(element_id("media-seek", key))
+		.relative()
 		.flex()
 		.flex_1()
 		.min_w(rem(40.))
@@ -215,6 +224,16 @@ fn seek_bar(
 			cx.stop_propagation();
 			cx.global::<Playback>().scrub_at(key, event.position.x);
 			window.refresh();
+		})
+		.on_mouse_move(move |event: &MouseMoveEvent, window, cx| {
+			cx.global::<Playback>().hover_at(key, event.position.x);
+			window.refresh();
+		})
+		.on_hover(move |hovered: &bool, window, cx| {
+			if !*hovered {
+				cx.global::<Playback>().clear_hover(key);
+				window.refresh();
+			}
 		})
 		.child(
 			div()
@@ -235,6 +254,29 @@ fn seek_bar(
 				)
 				.child(scrub_surface(key)),
 		)
+		.when_some(bubble, |bar, (share, duration)| {
+			bar.child(
+				div()
+					.absolute()
+					.left(relative(share))
+					.bottom(rem(BUBBLE_LIFT))
+					.flex()
+					.justify_center()
+					.w(rem(0.))
+					.child(
+						div()
+							.flex_none()
+							.px(theme.space_8)
+							.py(theme.space_2)
+							.rounded_full()
+							.bg(black(0.9))
+							.text_size(theme.font_tiny)
+							.font_weight(FontWeight::BOLD)
+							.text_color(white(1.))
+							.child(clock(duration.mul_f32(share))),
+					),
+			)
+		})
 		.into_any_element()
 }
 
@@ -549,7 +591,7 @@ pub fn video(source: VideoSource, env: &BodyEnv, cx: &App) -> AnyElement {
 					.when(!narrow_controls, |bar| {
 						bar.child(time_label(status, scrub, white(1.), theme))
 					})
-					.child(seek_bar(key, status, scrub, white(0.3), theme.brand))
+					.child(seek_bar(key, status, scrub, white(0.3), theme.brand, theme, cx))
 					.child(volume_control(key, white(1.), white(0.3), black(0.6), theme, cx))
 					.child({
 						let dispatch = env.dispatch.clone();
@@ -665,7 +707,7 @@ pub fn video_modal(
 						.when(!narrow_controls, |bar| {
 							bar.child(time_label(status, scrub, white(1.), theme))
 						})
-						.child(seek_bar(key, status, scrub, white(0.3), theme.brand))
+						.child(seek_bar(key, status, scrub, white(0.3), theme.brand, theme, cx))
 						.child(volume_control(key, white(1.), white(0.3), black(0.6), theme, cx)),
 				),
 		)
@@ -935,7 +977,15 @@ pub fn audio(source: AudioSource, env: &BodyEnv, cx: &App) -> AnyElement {
 					.on_click(toggler(key, source.url, (0, 0))),
 				)
 				.child(time_label(status, scrub, theme.text_muted, theme))
-				.child(seek_bar(key, status, scrub, theme.interactive_muted, theme.brand))
+				.child(seek_bar(
+					key,
+					status,
+					scrub,
+					theme.interactive_muted,
+					theme.brand,
+					theme,
+					cx,
+				))
 				.child(volume_control(
 					key,
 					icon_color,

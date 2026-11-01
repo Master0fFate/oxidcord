@@ -49,6 +49,7 @@ struct Slot {
 	shown_at: Instant,
 	bar: Option<Bounds<Pixels>>,
 	scrub: Option<f32>,
+	hover: Option<f32>,
 }
 
 struct FrameSlot {
@@ -343,6 +344,7 @@ impl Playback {
 				shown_at: Instant::now(),
 				bar: None,
 				scrub: None,
+				hover: None,
 			},
 		);
 		self.wake.notify_one();
@@ -505,6 +507,22 @@ impl Playback {
 				slot.scrub = Some(fraction(bar, x));
 			}
 		});
+	}
+
+	pub fn hover(&self, key: MediaKey) -> Option<f32> {
+		self.slots.borrow().get(&key).and_then(|slot| slot.hover)
+	}
+
+	pub fn hover_at(&self, key: MediaKey, x: Pixels) {
+		self.with(key, |slot| {
+			if let Some(bar) = slot.bar {
+				slot.hover = Some(fraction(bar, x));
+			}
+		});
+	}
+
+	pub fn clear_hover(&self, key: MediaKey) {
+		self.with(key, |slot| slot.hover = None);
 	}
 
 	pub fn stop_all(&self) {
