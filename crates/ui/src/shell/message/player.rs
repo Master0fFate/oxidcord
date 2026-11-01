@@ -33,6 +33,7 @@ const BAR_HEIGHT: f32 = 4.;
 const BAR_HIT: f32 = 16.;
 const VOLUME_TRACK_WIDTH: f32 = 4.;
 const VOLUME_TRACK_HEIGHT: f32 = 56.;
+const VOLUME_LIFT: f32 = CONTROLS_HEIGHT + 8.;
 const VOLUME_CHIP_WIDTH: f32 = 16.;
 const VOLUME_CHIP_PAD: f32 = 8.;
 const AUDIO_WIDTH: f32 = 432.;
@@ -337,7 +338,7 @@ fn volume_control(
 	let slider = div()
 		.id(element_id("media-volume-slider", key))
 		.absolute()
-		.bottom(rem(CONTROL_HIT))
+		.bottom(rem(VOLUME_LIFT))
 		.left_0()
 		.w(rem(CONTROL_HIT))
 		.h(rem(chip_height))
@@ -358,7 +359,7 @@ fn volume_control(
 		.with_animation(
 			element_id("media-volume-spawn", key),
 			Animation::new(Duration::from_millis(140)).with_easing(ease_out_quint()),
-			|slider, delta| slider.opacity(delta).bottom(rem(CONTROL_HIT - 8. * (1. - delta))),
+			|slider, delta| slider.opacity(delta).bottom(rem(VOLUME_LIFT - 8. * (1. - delta))),
 		)
 		.child(
 			div()

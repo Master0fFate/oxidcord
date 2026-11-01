@@ -78,7 +78,7 @@ impl AudioTrack {
 				channels,
 				params.extra_data.as_deref(),
 			)?),
-			rate: aac_output_rate(params).unwrap_or(rate),
+			rate,
 			decoded: Vec::new(),
 			stereo: Vec::new(),
 		})
@@ -186,54 +186,4 @@ fn stereo_into(interleaved: &[f32], channels: usize, out: &mut Vec<f32>) {
 				.flat_map(|frame| [frame[0], frame[1]]),
 		),
 	}
-}
-
-const AAC_SAMPLE_RATES: [u32; 13] = [
-	96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350,
-];
-const AAC_EXPLICIT_RATE: u32 = 0x0f;
-const AAC_SBR: u32 = 5;
-const AAC_PS: u32 = 29;
-const AAC_EXTENDED_TYPE: u32 = 31;
-
-struct Bits<'a> {
-	data: &'a [u8],
-	at: usize,
-}
-
-impl Bits<'_> {
-	fn read(&mut self, count: usize) -> Option<u32> {
-		let mut value = 0u32;
-		for _ in 0..count {
-			let byte = *self.data.get(self.at / 8)?;
-			value = (value << 1) | u32::from((byte >> (7 - self.at % 8)) & 1);
-			self.at += 1;
-		}
-		Some(value)
-	}
-
-	fn sample_rate(&mut self) -> Option<u32> {
-		match self.read(4)? {
-			AAC_EXPLICIT_RATE => self.read(24),
-			index => AAC_SAMPLE_RATES.get(index as usize).copied(),
-		}
-	}
-}
-
-fn aac_output_rate(params: &AudioCodecParameters) -> Option<u32> {
-	if params.codec != CODEC_ID_AAC {
-		return None;
-	}
-	let mut bits = Bits {
-		data: params.extra_data.as_deref()?,
-		at: 0,
-	};
-	let kind = bits.read(5)?;
-	let kind = if kind == AAC_EXTENDED_TYPE {
-		bits.read(6)? + 32
-	} else {
-		kind
-	};
-	let rate = bits.sample_rate()?;
-	(kind == AAC_SBR || kind == AAC_PS).then_some(rate)
 }
