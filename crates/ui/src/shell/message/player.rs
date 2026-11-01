@@ -399,16 +399,6 @@ fn volume_control(
 		.into_any_element()
 }
 
-fn time_wrapper(narrow: bool, group: SharedString, label: AnyElement) -> AnyElement {
-	div()
-		.flex_none()
-		.when(narrow, |wrapper| {
-			wrapper.invisible().group_hover(group, |style| style.visible())
-		})
-		.child(label)
-		.into_any_element()
-}
-
 fn time_label(status: Option<Status>, scrub: Option<f32>, color: Hsla, theme: &Theme) -> AnyElement {
 	let position = shown_position(status, scrub);
 	let text = match status.and_then(|status| status.duration) {
@@ -556,11 +546,9 @@ pub fn video(source: VideoSource, env: &BodyEnv, cx: &App) -> AnyElement {
 							.tooltip(crate::components::tooltip(play_label(status, cx)))
 							.on_click(toggler(key, source.url.clone(), max_size)),
 					)
-					.child(time_wrapper(
-						narrow_controls,
-						group.clone(),
-						time_label(status, scrub, white(1.), theme),
-					))
+					.when(!narrow_controls, |bar| {
+						bar.child(time_label(status, scrub, white(1.), theme))
+					})
 					.child(seek_bar(key, status, scrub, white(0.3), theme.brand))
 					.child(volume_control(key, white(1.), white(0.3), black(0.6), theme, cx))
 					.child({
@@ -610,6 +598,7 @@ pub fn video_modal(
 	};
 	let scale = (max_width / native_width).min(max_height / native_height);
 	let (width, height) = ((native_width * scale).round(), (native_height * scale).round());
+	let narrow_controls = width < NARROW_CONTROLS;
 	let backdrop_close = close.clone();
 	let button_close = close;
 	div()
@@ -673,7 +662,9 @@ pub fn video_modal(
 							.tooltip(crate::components::tooltip(play_label(status, cx)))
 							.on_click(toggler(key, target.url.clone(), max_size)),
 						)
-						.child(time_label(status, scrub, white(1.), theme))
+						.when(!narrow_controls, |bar| {
+							bar.child(time_label(status, scrub, white(1.), theme))
+						})
 						.child(seek_bar(key, status, scrub, white(0.3), theme.brand))
 						.child(volume_control(key, white(1.), white(0.3), black(0.6), theme, cx)),
 				),
