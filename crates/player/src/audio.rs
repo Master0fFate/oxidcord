@@ -1,11 +1,14 @@
 use symphonia::core::codecs::CodecParameters;
-use symphonia::core::codecs::audio::well_known::CODEC_ID_OPUS;
+use symphonia::core::codecs::audio::well_known::{
+	CODEC_ID_AAC, CODEC_ID_ALAC, CODEC_ID_FLAC, CODEC_ID_MP3, CODEC_ID_OPUS, CODEC_ID_VORBIS,
+};
 use symphonia::core::codecs::audio::{AudioCodecParameters, AudioDecoder, AudioDecoderOptions};
 use symphonia::core::packet::Packet;
 use symphonia::default::get_codecs;
 
 use crate::error::{PlayerError, Result};
 use crate::output::OUTPUT_CHANNELS;
+use crate::video::FfAudioDecoder;
 
 const OPUS_RATE: u32 = 48_000;
 const OPUS_MAX_FRAMES: usize = 5760;
@@ -20,6 +23,7 @@ enum Decoder {
 		pre_skip: usize,
 		skip: usize,
 	},
+	Pack(FfAudioDecoder),
 }
 
 pub struct AudioTrack {
@@ -37,12 +41,43 @@ impl AudioTrack {
 		if params.codec == CODEC_ID_OPUS {
 			return Self::opus(params);
 		}
-		let decoder = get_codecs().make_audio_decoder(params, &AudioDecoderOptions::default())?;
 		let rate = params
 			.sample_rate
 			.ok_or_else(|| PlayerError::Format("audio track has no sample rate".to_owned()))?;
+		let decoder = match get_codecs().make_audio_decoder(params, &AudioDecoderOptions::default()) {
+			Ok(decoder) => decoder,
+			Err(error) => {
+				tracing::debug!(%error, "symphonia audio decoder unavailable");
+				return Self::pack(params, rate);
+			}
+		};
 		Ok(Self {
 			decoder: Decoder::Generic(decoder),
+			rate,
+			decoded: Vec::new(),
+			stereo: Vec::new(),
+		})
+	}
+
+	fn pack(params: &AudioCodecParameters, rate: u32) -> Result<Self> {
+		let name = match params.codec {
+			CODEC_ID_AAC => c"aac",
+			CODEC_ID_MP3 => c"mp3",
+			CODEC_ID_VORBIS => c"vorbis",
+			CODEC_ID_FLAC => c"flac",
+			CODEC_ID_ALAC => c"alac",
+			other => return Err(PlayerError::Unsupported(format!("audio codec {other}"))),
+		};
+		let channels = params
+			.channels
+			.as_ref()
+			.map_or(OUTPUT_CHANNELS, |channels| channels.count());
+		Ok(Self {
+			decoder: Decoder::Pack(FfAudioDecoder::open(
+				name,
+				channels,
+				params.extra_data.as_deref(),
+			)?),
 			rate,
 			decoded: Vec::new(),
 			stereo: Vec::new(),
@@ -86,6 +121,7 @@ impl AudioTrack {
 	pub fn reset(&mut self, from_start: bool) {
 		match &mut self.decoder {
 			Decoder::Generic(decoder) => decoder.reset(),
+			Decoder::Pack(decoder) => decoder.reset(),
 			Decoder::Opus {
 				decoder,
 				pre_skip,
@@ -123,6 +159,13 @@ impl AudioTrack {
 					*channels,
 					&mut self.stereo,
 				);
+				return Ok(&self.stereo);
+			}
+			Decoder::Pack(decoder) => {
+				self.decoded.clear();
+				decoder.decode(&packet.data, &mut self.decoded)?;
+				self.stereo.clear();
+				stereo_into(&self.decoded, decoder.channels(), &mut self.stereo);
 				return Ok(&self.stereo);
 			}
 		};

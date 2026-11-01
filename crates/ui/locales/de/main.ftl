@@ -202,6 +202,8 @@ media-pause = Pause
 media-replay = Erneut abspielen
 media-mute = Stumm
 media-unmute = Ton an
+media-fullscreen = Vollbild
+media-fullscreen-exit = Vollbild beenden
 media-unsupported = Diese Datei kann nicht abgespielt werden
 embed-open-browser = Im Browser öffnen
 

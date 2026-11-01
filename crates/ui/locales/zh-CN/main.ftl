@@ -187,6 +187,8 @@ media-pause = 暂停
 media-replay = 重新播放
 media-mute = 静音
 media-unmute = 取消静音
+media-fullscreen = 全屏
+media-fullscreen-exit = 退出全屏
 media-unsupported = 无法播放此文件
 embed-open-browser = 在浏览器中打开
 

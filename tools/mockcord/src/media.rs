@@ -12,8 +12,13 @@ const HEIGHT: u32 = 300;
 const GRID_STEP: u32 = 50;
 const GRID_LIFT: u8 = 28;
 
-const ASSETS: [(&str, &str, &[u8]); 6] = [
+const ASSETS: [(&str, &str, &[u8]); 7] = [
 	("clip.mp4", "video/mp4", include_bytes!("../assets/clip.mp4")),
+	(
+		"clip-hevc.mp4",
+		"video/mp4",
+		include_bytes!("../assets/clip-hevc.mp4"),
+	),
 	("clip.webm", "video/webm", include_bytes!("../assets/clip.webm")),
 	("gifv.mp4", "video/mp4", include_bytes!("../assets/gifv.mp4")),
 	("loop.gif", "image/gif", include_bytes!("../assets/loop.gif")),

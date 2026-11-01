@@ -207,6 +207,8 @@ media-pause = Pozastavit
 media-replay = Přehrát znovu
 media-mute = Ztlumit
 media-unmute = Zapnout zvuk
+media-fullscreen = Celá obrazovka
+media-fullscreen-exit = Ukončit celou obrazovku
 media-unsupported = Tento soubor nejde přehrát
 embed-open-browser = Otevřít v prohlížeči
 

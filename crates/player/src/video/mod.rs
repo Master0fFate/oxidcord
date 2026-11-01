@@ -22,6 +22,7 @@ use symphonia::core::codecs::video::{VideoCodecParameters, VideoExtraDataId};
 
 use self::bitstream::Bitstream;
 pub use self::convert::Picture;
+pub use self::ffmpeg::FfAudioDecoder;
 pub use self::ffmpeg::available as codec_pack_available;
 use crate::error::{PlayerError, Result};
 
@@ -42,13 +43,23 @@ enum Codec {
 }
 
 impl Codec {
+	fn name(self) -> &'static str {
+		match self {
+			Self::Avc => "h264",
+			Self::Hevc => "hevc",
+			Self::Vp8 => "vp8",
+			Self::Vp9 => "vp9",
+			Self::Av1 => "av1",
+		}
+	}
+
 	fn pack_decoders(self) -> &'static [&'static CStr] {
 		match self {
 			Self::Avc => &[c"h264"],
 			Self::Hevc => &[c"hevc"],
 			Self::Vp8 => &[c"vp8"],
 			Self::Vp9 => &[c"vp9"],
-			Self::Av1 => &[c"libdav1d", c"libaom-av1"],
+			Self::Av1 => &[c"libdav1d", c"libaom-av1", c"av1"],
 		}
 	}
 }
@@ -115,8 +126,9 @@ impl VideoTrack {
 				.unwrap_or_default(),
 			_ => Vec::new(),
 		};
+		let sequence = bitstream.as_ref().map(Bitstream::parameter_sets);
 		Ok(Self {
-			backend: Self::backend(codec, size)?,
+			backend: Self::backend(codec, size, sequence)?,
 			codec,
 			bitstream,
 			header_due: !header.is_empty(),
@@ -141,18 +153,19 @@ impl VideoTrack {
 		}
 	}
 
-	fn backend(codec: Codec, size: Option<(u32, u32)>) -> Result<Backend> {
+	fn backend(codec: Codec, size: Option<(u32, u32)>, sequence: Option<&[u8]>) -> Result<Backend> {
 		match ffmpeg::FfDecoder::open(codec.pack_decoders()) {
 			Ok(decoder) => Ok(Backend::Pack(decoder)),
 			Err(error) => {
 				tracing::debug!(%error, "codec pack decoder unavailable");
-				Self::platform_backend(codec, size)
+				Self::platform_backend(codec, size, sequence)
+					.map_err(|_| PlayerError::Decoder(codec.name().to_owned()))
 			}
 		}
 	}
 
 	#[cfg(windows)]
-	fn platform_backend(codec: Codec, size: Option<(u32, u32)>) -> Result<Backend> {
+	fn platform_backend(codec: Codec, size: Option<(u32, u32)>, sequence: Option<&[u8]>) -> Result<Backend> {
 		use windows::Win32::Media::MediaFoundation::{
 			MFVideoFormat_AV1, MFVideoFormat_H264, MFVideoFormat_HEVC, MFVideoFormat_VP80, MFVideoFormat_VP90,
 		};
@@ -163,21 +176,24 @@ impl VideoTrack {
 			Codec::Vp9 => MFVideoFormat_VP90,
 			Codec::Av1 => MFVideoFormat_AV1,
 		};
-		match mf::MfDecoder::open(subtype, size) {
+		match mf::MfDecoder::open(subtype, size, sequence) {
 			Ok(decoder) => Ok(Backend::Native(decoder)),
 			Err(error) if codec == Codec::Avc => {
 				tracing::debug!(%error, "media foundation decoder unavailable");
 				Ok(Backend::Software(soft::SoftDecoder::new()?))
 			}
-			Err(error) => Err(error),
+			Err(error) => {
+				tracing::debug!(%error, codec = codec.name(), "media foundation decoder unavailable");
+				Err(error)
+			}
 		}
 	}
 
 	#[cfg(not(windows))]
-	fn platform_backend(codec: Codec, _: Option<(u32, u32)>) -> Result<Backend> {
+	fn platform_backend(codec: Codec, _: Option<(u32, u32)>, _: Option<&[u8]>) -> Result<Backend> {
 		match codec {
 			Codec::Avc => Ok(Backend::Software(soft::SoftDecoder::new()?)),
-			_ => Err(PlayerError::Unsupported("video codec".to_owned())),
+			_ => Err(PlayerError::Decoder(codec.name().to_owned())),
 		}
 	}
 

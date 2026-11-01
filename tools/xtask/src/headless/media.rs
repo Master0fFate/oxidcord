@@ -279,17 +279,28 @@ impl Harness {
 
 		let codec_pack = player::codec_pack_available();
 		let mut jobs = vec![
-			(attachment_url(&video)?, true, true),
-			(mock_media(&origin, &gifv_url)?, true, false),
-			(attachment_url(&song)?, false, true),
-			(attachment_url(&voice)?, false, false),
+			(attachment_url(&video)?, true, true, true),
+			(mock_media(&origin, &gifv_url)?, true, false, false),
+			(attachment_url(&song)?, false, true, true),
+			(attachment_url(&voice)?, false, false, true),
 		];
 		if codec_pack {
-			jobs.push((attachment_url(&webm)?, true, false));
+			jobs.push((attachment_url(&webm)?, true, false, false));
+			jobs.push((
+				mock_media(
+					&origin,
+					"https://cdn.discordapp.com/attachments/0/0/clip-hevc.mp4",
+				)?,
+				true,
+				false,
+				true,
+			));
 		}
 		let played = tokio::task::spawn_blocking(move || {
 			jobs.into_iter()
-				.map(|(url, is_video, seek)| play(&fetcher, url, seek).map(|played| (is_video, played)))
+				.map(|(url, is_video, seek, wants_audio)| {
+					play(&fetcher, url, seek).map(|played| (is_video, wants_audio, played))
+				})
 				.collect::<Result<Vec<_>>>()
 		})
 		.await
@@ -300,11 +311,17 @@ impl Harness {
 			gif_frames,
 			codec_pack,
 		};
-		for (is_video, played) in played {
+		for (is_video, wants_audio, played) in played {
 			ensure!(
 				played.timed_while_playing,
 				"a file played without a known duration, so its seek bar cannot move"
 			);
+			if wants_audio {
+				ensure!(
+					played.status.audio,
+					"a file with an audio track played without audio"
+				);
+			}
 			if is_video {
 				ensure!(
 					played.frames > 1 && played.status.video.is_some(),

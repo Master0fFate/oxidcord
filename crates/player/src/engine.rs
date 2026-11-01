@@ -53,6 +53,9 @@ pub(crate) fn run(
 		&& !shared.closed()
 	{
 		tracing::debug!(url = media::redact_url(&url), %error, "media playback failed");
+		if let PlayerError::Decoder(codec) = &error {
+			*shared.failure.lock() = Some(codec.clone());
+		}
 		shared.update(|status| {
 			status.state = State::Failed;
 			status.buffering = false;
@@ -203,6 +206,13 @@ fn is_known_video(params: &CodecParameters) -> bool {
 	)
 }
 
+fn video_codec_name(params: &CodecParameters) -> String {
+	match params {
+		CodecParameters::Video(video) => format!("video codec {}", video.codec),
+		_ => "video codec".to_owned(),
+	}
+}
+
 impl<'a> Engine<'a> {
 	fn open(
 		shared: &'a Shared,
@@ -218,16 +228,25 @@ impl<'a> Engine<'a> {
 		if let Some(extension) = extension(url) {
 			hint.with_extension(extension);
 		}
-		let format = open_format(source.reopen(), &hint)?;
-		let video = match format
-			.default_track(TrackType::Video)
-			.filter(|track| track.codec_params.as_ref().is_some_and(is_known_video))
-		{
-			Some(track) => Some(VideoLane {
-				id: track.id,
-				time_base: track.time_base,
-				track: VideoTrack::open(track.codec_params.as_ref().expect("checked above"))?,
-			}),
+		let format = open_format(source.reopen(), &hint).map_err(|error| {
+			tracing::debug!(url = media::redact_url(url), %error, "media container rejected");
+			error
+		})?;
+		let video = match format.default_track(TrackType::Video) {
+			Some(track) => {
+				let params = track
+					.codec_params
+					.as_ref()
+					.ok_or_else(|| PlayerError::Unsupported("video track without parameters".to_owned()))?;
+				if !is_known_video(params) {
+					return Err(PlayerError::Unsupported(video_codec_name(params)));
+				}
+				Some(VideoLane {
+					id: track.id,
+					time_base: track.time_base,
+					track: VideoTrack::open(params)?,
+				})
+			}
 			None => None,
 		};
 		let audio =

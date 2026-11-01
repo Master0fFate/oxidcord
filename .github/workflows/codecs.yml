@@ -1,0 +1,66 @@
+name: Codec pack
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "packaging/codecs/**"
+      - ".github/workflows/codecs.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  pack:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            name: windows-x64
+          - runner: ubuntu-22.04
+            name: linux-x64
+          - runner: macos-latest
+            name: macos-aarch64
+          - runner: macos-15-intel
+            name: macos-x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libxkbcommon-dev libwayland-dev libxcb1-dev libx11-dev libfontconfig1-dev libdbus-1-dev libwebkit2gtk-4.1-dev libgtk-3-dev cmake pkg-config
+      - name: Build pack
+        shell: bash
+        env:
+          OUT: ${{ runner.temp }}/codecs
+        run: |
+          case "${{ matrix.name }}" in
+            macos-*) brew install nasm yasm; OUT=target/release/codecs bash packaging/codecs/build-macos.sh ;;
+            *) cargo xtask codecs ;;
+          esac
+          mkdir -p target/release/codecs target/debug/codecs "$OUT"
+          cp target/release/codecs/* target/debug/codecs/
+          cp target/release/codecs/* "$OUT"
+          ls -l "$OUT"
+      - name: Check the pack decodes
+        shell: bash
+        env:
+          RUST_LOG: player=debug
+        run: |
+          if [ "$(uname -s)" = Darwin ]; then
+            for library in target/release/codecs/*.dylib; do
+              echo "== $library"
+              otool -L "$library"
+            done
+          fi
+          cargo xtask headless-run --mock
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codecs-${{ matrix.name }}
+          path: ${{ runner.temp }}/codecs/*
+          if-no-files-found: error

@@ -18,6 +18,11 @@ app="$work/Oxidcord.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$out_dir"
 
 cp "$binary" "$app/Contents/MacOS/oxidcord"
+
+if [ -n "${CODECS:-}" ] && [ -d "$CODECS" ]; then
+	mkdir -p "$app/Contents/MacOS/codecs"
+	cp "$CODECS"/* "$app/Contents/MacOS/codecs/"
+fi
 sed "s/@VERSION@/$version/g" "$root/packaging/macos/Info.plist" > "$app/Contents/Info.plist"
 
 iconset="$work/icon.iconset"
@@ -29,6 +34,11 @@ done
 iconutil -c icns "$iconset" -o "$app/Contents/Resources/icon.icns"
 
 if [ -n "${MACOS_SIGN_IDENTITY:-}" ]; then
+	if [ -d "$app/Contents/MacOS/codecs" ]; then
+		for library in "$app/Contents/MacOS/codecs"/*.dylib; do
+			codesign --force --options runtime --timestamp --sign "$MACOS_SIGN_IDENTITY" "$library"
+		done
+	fi
 	codesign --force --options runtime --timestamp \
 		--entitlements "$root/packaging/macos/entitlements.plist" \
 		--sign "$MACOS_SIGN_IDENTITY" "$app"

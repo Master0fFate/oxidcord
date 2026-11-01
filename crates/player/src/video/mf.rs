@@ -3,10 +3,10 @@ use std::time::Duration;
 use voice::video::mf;
 use windows::Win32::Media::MediaFoundation::{
 	IMFMediaType, IMFSample, IMFTransform, MF_E_NOTACCEPTING, MF_LOW_LATENCY, MF_MT_DEFAULT_STRIDE,
-	MF_MT_FRAME_SIZE, MF_MT_INTERLACE_MODE, MF_MT_MAJOR_TYPE, MF_MT_MINIMUM_DISPLAY_APERTURE, MF_MT_SUBTYPE,
-	MFMediaType_Video, MFT_CATEGORY_VIDEO_DECODER, MFT_ENUM_FLAG_SORTANDFILTER, MFT_ENUM_FLAG_SYNCMFT,
-	MFT_MESSAGE_COMMAND_DRAIN, MFT_MESSAGE_COMMAND_FLUSH, MFT_MESSAGE_NOTIFY_BEGIN_STREAMING,
-	MFT_MESSAGE_NOTIFY_END_OF_STREAM, MFT_MESSAGE_NOTIFY_START_OF_STREAM,
+	MF_MT_FRAME_SIZE, MF_MT_INTERLACE_MODE, MF_MT_MAJOR_TYPE, MF_MT_MINIMUM_DISPLAY_APERTURE,
+	MF_MT_MPEG_SEQUENCE_HEADER, MF_MT_SUBTYPE, MFMediaType_Video, MFT_CATEGORY_VIDEO_DECODER,
+	MFT_ENUM_FLAG_SORTANDFILTER, MFT_ENUM_FLAG_SYNCMFT, MFT_MESSAGE_COMMAND_DRAIN, MFT_MESSAGE_COMMAND_FLUSH,
+	MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, MFT_MESSAGE_NOTIFY_END_OF_STREAM, MFT_MESSAGE_NOTIFY_START_OF_STREAM,
 	MFT_OUTPUT_STREAM_CAN_PROVIDE_SAMPLES, MFT_OUTPUT_STREAM_PROVIDES_SAMPLES, MFT_REGISTER_TYPE_INFO,
 	MFVideoFormat_NV12, MFVideoInterlace_Progressive,
 };
@@ -34,7 +34,7 @@ pub struct MfDecoder {
 unsafe impl Send for MfDecoder {}
 
 impl MfDecoder {
-	pub fn open(subtype: GUID, size: Option<(u32, u32)>) -> Result<Self> {
+	pub fn open(subtype: GUID, size: Option<(u32, u32)>, sequence: Option<&[u8]>) -> Result<Self> {
 		mf::prepare().map_err(|error| PlayerError::Video(error.to_string()))?;
 		let input = MFT_REGISTER_TYPE_INFO {
 			guidMajorType: MFMediaType_Video,
@@ -52,15 +52,27 @@ impl MfDecoder {
 					continue;
 				}
 			};
-			match Self::configure(transform, subtype, size) {
+			match Self::configure(transform.clone(), subtype, size, sequence) {
 				Ok(decoder) => return Ok(decoder),
-				Err(error) => last = error,
+				Err(error) => {
+					last = error;
+					if sequence.is_some()
+						&& let Ok(decoder) = Self::configure(transform, subtype, size, None)
+					{
+						return Ok(decoder);
+					}
+				}
 			}
 		}
 		Err(last)
 	}
 
-	fn configure(transform: IMFTransform, subtype: GUID, size: Option<(u32, u32)>) -> Result<Self> {
+	fn configure(
+		transform: IMFTransform,
+		subtype: GUID,
+		size: Option<(u32, u32)>,
+		sequence: Option<&[u8]>,
+	) -> Result<Self> {
 		unsafe {
 			if let Ok(attributes) = transform.GetAttributes() {
 				let _ = attributes.SetUINT32(&MF_LOW_LATENCY, 1);
@@ -75,6 +87,11 @@ impl MfDecoder {
 				.map_err(failure)?;
 			if let Some((width, height)) = size {
 				mf::set_size(&input.clone().into(), &MF_MT_FRAME_SIZE, width, height).map_err(failure)?;
+			}
+			if let Some(sequence) = sequence.filter(|sequence| !sequence.is_empty()) {
+				input
+					.SetBlob(&MF_MT_MPEG_SEQUENCE_HEADER, sequence)
+					.map_err(failure)?;
 			}
 			transform.SetInputType(0, &input, 0).map_err(failure)?;
 		}

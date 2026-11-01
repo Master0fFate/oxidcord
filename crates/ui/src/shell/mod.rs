@@ -58,7 +58,7 @@ use self::dm_sidebar::{DmSidebar, DmSidebarEvent};
 use self::friends::{FriendsEvent, HomePage, HomePages};
 use self::history::{History, Place};
 use self::member_list::{MemberList, MemberListEvent};
-use self::message::{ImageTarget, snippet};
+use self::message::{ImageTarget, VideoFullscreenTarget, snippet};
 use self::pickers::PickerTab;
 use self::plugins::{DebugPanel, PluginUi, PluginUiEvent, RightPanel as PluginRightPanel, SidebarPanel};
 use self::profile::{ProfileCard, ProfileEvent};
@@ -110,6 +110,7 @@ enum RightPanel {
 
 enum Overlay {
 	Lightbox(ImageTarget),
+	VideoFullscreen(VideoFullscreenTarget),
 	Profile {
 		card: Entity<ProfileCard>,
 		at: Point<Pixels>,
@@ -429,6 +430,10 @@ impl Shell {
 				match event {
 					CommunityEvent::OpenImage(target) => {
 						this.overlay = Some(Overlay::Lightbox(target.clone()));
+						cx.notify();
+					}
+					CommunityEvent::OpenVideoFullscreen(target) => {
+						this.overlay = Some(Overlay::VideoFullscreen(target.clone()));
 						cx.notify();
 					}
 					CommunityEvent::OpenProfile { user, at } => {
@@ -1134,6 +1139,10 @@ impl Shell {
 				self.overlay = Some(Overlay::Lightbox(target.clone()));
 				cx.notify();
 			}
+			TimelineEvent::OpenVideoFullscreen(target) => {
+				self.overlay = Some(Overlay::VideoFullscreen(target.clone()));
+				cx.notify();
+			}
 			TimelineEvent::Reply(message) => {
 				let ping = plugins::client_options(cx).reply_ping_default.unwrap_or(true);
 				self.start_reply(*message, ping, window, cx)
@@ -1518,6 +1527,13 @@ impl Shell {
 					weak.update(cx, |this, cx| this.close_overlay(window, cx)).ok();
 				});
 				lightbox::lightbox(target, &self.backend, window, theme, cx, close)
+			}
+			Overlay::VideoFullscreen(target) => {
+				let weak = cx.weak_entity();
+				let close = Rc::new(move |window: &mut Window, cx: &mut gpui::App| {
+					weak.update(cx, |this, cx| this.close_overlay(window, cx)).ok();
+				});
+				message::player::video_modal(target, window, theme, cx, close)
 			}
 			Overlay::Profile { card, at, anchor } => {
 				floating(card.clone().into_any_element(), *at, *anchor, cx)

@@ -28,7 +28,7 @@ use store::Settings;
 
 use super::composer::{Composer, ComposerEvent};
 use super::links;
-use super::message::{ImageTarget, ReactionRequests};
+use super::message::{ImageTarget, ReactionRequests, VideoFullscreenTarget};
 use super::pickers::{Picker, PickerEvent, PickerTab, SkinTone};
 use super::plugins::LinkOrigin;
 use super::server_settings::{Page, ServerSettings, ServerSettingsEvent};
@@ -76,6 +76,7 @@ pub fn developer_mode(cx: &gpui::App) -> bool {
 
 pub enum CommunityEvent {
 	OpenImage(ImageTarget),
+	OpenVideoFullscreen(VideoFullscreenTarget),
 	OpenProfile { user: Snowflake, at: Point<Pixels> },
 	Jump { channel: Snowflake, message: Snowflake },
 	SearchIn(Snowflake),
@@ -684,6 +685,9 @@ impl Community {
 		match event {
 			TimelineEvent::OpenLink(url, origin) => links::open_link(url, *origin, &self.backend, window, cx),
 			TimelineEvent::OpenImage(target) => cx.emit(CommunityEvent::OpenImage(target.clone())),
+			TimelineEvent::OpenVideoFullscreen(target) => {
+				cx.emit(CommunityEvent::OpenVideoFullscreen(target.clone()))
+			}
 			TimelineEvent::OpenProfile { user, at } => {
 				cx.emit(CommunityEvent::OpenProfile { user: *user, at: *at })
 			}

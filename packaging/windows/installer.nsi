@@ -18,6 +18,9 @@ RequestExecutionLevel user
 !ifndef OUTFILE
 	!define OUTFILE "oxidcord-setup.exe"
 !endif
+!ifndef CODECS
+	!define CODECS "..\..\target\release\codecs"
+!endif
 
 !define APP_NAME "Oxidcord"
 !define APP_ID "dev.oxidcord.Oxidcord"
@@ -76,6 +79,9 @@ Section "Install"
 	SetOutPath "$INSTDIR"
 	Call WaitForUnlock
 	File "${BINARY}"
+	SetOutPath "$INSTDIR\codecs"
+	File /r "${CODECS}\*.*"
+	SetOutPath "$INSTDIR"
 	File "..\..\LICENSE-MIT"
 	File "..\..\LICENSE-APACHE"
 	WriteUninstaller "$INSTDIR\uninstall.exe"
@@ -112,6 +118,11 @@ SectionEnd
 Section "Uninstall"
 	SetShellVarContext current
 	Delete "$INSTDIR\${APP_EXE}"
+	Delete "$INSTDIR\codecs\avcodec-*.dll"
+	Delete "$INSTDIR\codecs\avutil-*.dll"
+	Delete "$INSTDIR\codecs\swresample-*.dll"
+	Delete "$INSTDIR\codecs\LICENSE-FFMPEG.txt"
+	RMDir "$INSTDIR\codecs"
 	Delete "$INSTDIR\LICENSE-MIT"
 	Delete "$INSTDIR\LICENSE-APACHE"
 	Delete "$INSTDIR\uninstall.exe"

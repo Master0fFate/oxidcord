@@ -392,9 +392,9 @@ fn image_source(attachment: &Attachment) -> String {
 
 fn attachment_source(attachment: &Attachment) -> String {
 	attachment
-		.proxy_url
+		.url
 		.clone()
-		.or_else(|| attachment.url.clone())
+		.or_else(|| attachment.proxy_url.clone())
 		.unwrap_or_default()
 }
 
@@ -577,19 +577,25 @@ pub fn stickers(items: &[StickerItem], env: &BodyEnv, cx: &App) -> Vec<AnyElemen
 		.filter_map(|sticker| {
 			let format = media::cdn::StickerFormat::from(i64::from(sticker.format_type?));
 			let url = sticker_url(sticker.id.get(), format)?;
-			let shown = div()
-				.mt(env.theme.space_4)
-				.size(rem(STICKER_SIZE))
-				.child(picture(
-					&url,
-					None,
-					STICKER_SIZE,
-					STICKER_SIZE,
-					ObjectFit::Contain,
-					env.theme,
-					cx,
-				))
-				.into_any_element();
+			let loaded = cx
+				.global::<Images>()
+				.get(&url, SizeHint::square((STICKER_SIZE * 2.) as u32));
+			let (width, height) = loaded
+				.as_ref()
+				.map(|picture| picture.size())
+				.map(|(width, height)| fit(width, height, STICKER_SIZE, STICKER_SIZE))
+				.unwrap_or((STICKER_SIZE, STICKER_SIZE));
+			let shown =
+				div()
+					.mt(env.theme.space_4)
+					.w(rem(width))
+					.h(rem(height))
+					.rounded(env.theme.radius_md)
+					.overflow_hidden()
+					.child(div().size_full().bg(env.theme.background_secondary).children(
+						loaded.map(|picture| img(picture).size_full().object_fit(ObjectFit::Contain)),
+					))
+					.into_any_element();
 			Some(plugin_menu(
 				("sticker-menu", sticker.id.get() ^ env.message_id),
 				shown,

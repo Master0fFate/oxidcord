@@ -2,7 +2,7 @@ mod body;
 mod components;
 mod media;
 mod menu;
-mod player;
+pub mod player;
 mod provider;
 mod reaction_tip;
 mod selectable;
@@ -49,6 +49,7 @@ use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
 use crate::lookup::{Lookup, user_avatar};
 use crate::model::role_color;
+use crate::playback::MediaKey;
 use crate::theme::{Theme, rem};
 
 pub const FLASH_DURATION: Duration = Duration::from_millis(1400);
@@ -151,6 +152,15 @@ pub struct ImageTarget {
 	pub height: u32,
 }
 
+#[derive(Clone, Debug)]
+pub struct VideoFullscreenTarget {
+	pub key: MediaKey,
+	pub url: String,
+	pub name: String,
+	pub width: f32,
+	pub height: f32,
+}
+
 #[derive(Clone)]
 pub enum RowAction {
 	OpenLink(String),
@@ -161,6 +171,7 @@ pub enum RowAction {
 	Download(String),
 	ToggleSpoiler(u64, usize),
 	OpenImage(ImageTarget),
+	OpenVideoFullscreen(VideoFullscreenTarget),
 	React {
 		channel_id: Snowflake,
 		message_id: Snowflake,

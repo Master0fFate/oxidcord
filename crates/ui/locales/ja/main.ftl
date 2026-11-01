@@ -187,6 +187,8 @@ media-pause = 一時停止
 media-replay = もう一度再生
 media-mute = ミュート
 media-unmute = ミュート解除
+media-fullscreen = フルスクリーン
+media-fullscreen-exit = フルスクリーンを終了
 media-unsupported = このファイルは再生できません
 embed-open-browser = ブラウザで開く
 

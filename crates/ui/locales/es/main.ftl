@@ -202,6 +202,8 @@ media-pause = Pausar
 media-replay = Volver a reproducir
 media-mute = Silenciar
 media-unmute = Activar sonido
+media-fullscreen = Pantalla completa
+media-fullscreen-exit = Salir de pantalla completa
 media-unsupported = No se puede reproducir este archivo
 embed-open-browser = Abrir en el navegador
 
