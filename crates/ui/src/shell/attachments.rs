@@ -303,6 +303,7 @@ pub fn card(
 		.bg(theme.background_floating)
 		.occlude()
 		.opacity(0.)
+		.hover(|style| style.opacity(1.))
 		.group_hover(group.clone(), |style| style.opacity(1.))
 		.child(toolbar_button(
 			("attachment-spoiler", id),

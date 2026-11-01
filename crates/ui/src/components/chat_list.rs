@@ -1,9 +1,10 @@
 use std::ops::Range;
+use std::rc::Rc;
 
 use gpui::{
 	AnyElement, App, Context, ElementId, Entity, FollowMode, InteractiveElement as _, IntoElement,
-	ListAlignment, ListOffset, ListState, ParentElement as _, SharedString, Styled as _, Window, div, list,
-	prelude::FluentBuilder as _, px,
+	ListAlignment, ListOffset, ListState, ParentElement as _, Pixels, SharedString, Styled as _, Window, div,
+	list, prelude::FluentBuilder as _, px,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::scroll::ScrollableElement as _;
@@ -13,6 +14,8 @@ use crate::icons::IconKind;
 use crate::theme::Theme;
 
 const OVERDRAW: gpui::Pixels = px(400.);
+
+type JumpHandler = dyn Fn(&mut Window, &mut App);
 
 pub struct ChatListState {
 	list: ListState,
@@ -76,12 +79,16 @@ impl ChatListState {
 	}
 
 	pub fn scroll_to_item(&mut self, index: usize, cx: &mut Context<Self>) -> bool {
+		self.scroll_to(index, px(0.), cx)
+	}
+
+	pub fn scroll_to(&mut self, index: usize, offset: Pixels, cx: &mut Context<Self>) -> bool {
 		if index >= self.list.item_count() {
 			return false;
 		}
 		self.list.scroll_to(ListOffset {
 			item_ix: index,
-			offset_in_item: px(0.),
+			offset_in_item: offset,
 		});
 		cx.notify();
 		true
@@ -98,6 +105,7 @@ pub struct ChatList {
 	id: ElementId,
 	state: Entity<ChatListState>,
 	jump_label: Option<SharedString>,
+	jump: Option<Rc<JumpHandler>>,
 }
 
 impl ChatList {
@@ -106,11 +114,17 @@ impl ChatList {
 			id: id.into(),
 			state,
 			jump_label: None,
+			jump: None,
 		}
 	}
 
 	pub fn jump_button(mut self, label: Option<SharedString>) -> Self {
 		self.jump_label = label;
+		self
+	}
+
+	pub fn on_jump(mut self, jump: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+		self.jump = Some(Rc::new(jump));
 		self
 	}
 
@@ -123,7 +137,7 @@ impl ChatList {
 		let state = self.state.read(cx);
 		let list_state = state.list.clone();
 		let show_jump = self.jump_label.is_some() && state.is_scrolled_up();
-		let jump_state = self.state.clone();
+		let jump = self.jump_label.filter(|_| show_jump).zip(self.jump);
 		let rows = list(list_state.clone(), move |index, window, cx| {
 			div()
 				.w_full()
@@ -149,7 +163,7 @@ impl ChatList {
 					.child(rows)
 					.vertical_scrollbar(&list_state),
 			)
-			.when_some(self.jump_label.filter(|_| show_jump), |this, label| {
+			.when_some(jump, |this, (label, jump)| {
 				this.child(
 					div()
 						.absolute()
@@ -165,9 +179,7 @@ impl ChatList {
 								.icon(Icon::default().path(IconKind::ArrowDown.path()))
 								.label(label)
 								.rounded(theme.pixels(theme.radius_md))
-								.on_click(move |_, _, cx| {
-									jump_state.update(cx, |state, cx| state.scroll_to_end(cx));
-								}),
+								.on_click(move |_, window, cx| jump(window, cx)),
 						),
 				)
 			})

@@ -245,6 +245,7 @@ impl Timeline {
 		};
 		let flipped = self.detached != detached;
 		self.detached = detached;
+		let anchor = self.top_message(cx);
 		let old = &self.rows;
 		let prefix = old.iter().zip(&rows).take_while(|(a, b)| same_row(a, b)).count();
 		let tail = old.len().min(rows.len()) - prefix;
@@ -263,6 +264,7 @@ impl Timeline {
 			self.drive(cx, |scroll, cx| {
 				scroll.splice(removed, added, cx);
 			});
+			self.restore_top(anchor, cx);
 		}
 		self.finish_jump(cx);
 		self.acknowledge(channel, window, cx);
@@ -322,8 +324,50 @@ impl Timeline {
 			return;
 		};
 		self.drive(cx, |scroll, cx| scroll.scroll_to_end(cx));
-		self.requested_newer = None;
-		self.load_newer(channel, cx);
+		if !self.detached {
+			return;
+		}
+		let newest = self
+			.data
+			.read(cx)
+			.state()
+			.messages(channel)
+			.and_then(|cache| cache.newest_id());
+		self.requested_newer = newest.map(|newest| (newest, Instant::now()));
+		self.data
+			.read(cx)
+			.send(Command::LoadLatest { channel_id: channel });
+	}
+
+	fn top_message(&self, cx: &Context<Self>) -> Option<(Snowflake, Pixels)> {
+		if self.pending_jump.is_some() {
+			return None;
+		}
+		let scroll = self.scroll.read(cx);
+		if scroll.is_following_tail() {
+			return None;
+		}
+		let top = scroll.logical_scroll_top();
+		match self.rows.get(top.item_ix) {
+			Some(MessageRow::Message(view)) => Some((view.message.id, top.offset_in_item)),
+			_ => None,
+		}
+	}
+
+	fn restore_top(&mut self, top: Option<(Snowflake, Pixels)>, cx: &mut Context<Self>) {
+		let Some((message, offset)) = top else {
+			return;
+		};
+		let Some(index) = self.row_index(message) else {
+			return;
+		};
+		let current = self.scroll.read(cx).logical_scroll_top();
+		if current.item_ix == index && current.offset_in_item == offset {
+			return;
+		}
+		self.drive(cx, |scroll, cx| {
+			scroll.scroll_to(index, offset, cx);
+		});
 	}
 
 	fn drive(
@@ -953,8 +997,14 @@ impl Render for Timeline {
 		let flash = self.flash;
 		let row_theme = theme.clone();
 		let jump_label = (!detached).then(|| cx.t("timeline-jump-latest"));
+		let jump_target = cx.weak_entity();
 		let scroller = ChatList::new("timeline", self.scroll.clone())
 			.jump_button(jump_label)
+			.on_jump(move |_, cx| {
+				jump_target
+					.update(cx, |timeline, cx| timeline.jump_to_present(cx))
+					.ok();
+			})
 			.render(
 				move |index, _, cx| {
 					let Some(row) = rows.get(index) else {

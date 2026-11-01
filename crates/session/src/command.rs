@@ -101,6 +101,9 @@ pub enum Command {
 		channel_id: Snowflake,
 		message_id: Snowflake,
 	},
+	LoadLatest {
+		channel_id: Snowflake,
+	},
 	SendMessage {
 		channel_id: Snowflake,
 		content: String,

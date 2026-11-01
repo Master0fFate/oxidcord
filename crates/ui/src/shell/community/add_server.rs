@@ -43,8 +43,25 @@ pub struct AddServer {
 impl EventEmitter<Close> for AddServer {}
 
 pub fn open(window: &mut Window, cx: &mut App) {
+	present(None, window, cx);
+}
+
+pub fn open_with(code: &str, window: &mut Window, cx: &mut App) {
+	present(Some(code), window, cx);
+}
+
+fn present(code: Option<&str>, window: &mut Window, cx: &mut App) {
 	let data = super::data_handle(cx);
 	let view = cx.new(|cx| AddServer::new(data, window, cx));
+	if let Some(code) = code {
+		view.update(cx, |add, cx| {
+			add.code
+				.update(cx, |input, cx| input.set_value(code.to_owned(), window, cx));
+			add.data.read(cx).send(Command::ResolveInvite {
+				code: code.to_owned(),
+			});
+		});
+	}
 	let focus = view.read(cx).code.read(cx).focus_handle(cx);
 	let title = cx.t("add-server-title");
 	let width = cx.global::<Theme>().modal_width_sm;

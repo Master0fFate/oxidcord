@@ -5,8 +5,11 @@ use gpui_component::WindowExt as _;
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::dialog::DialogFooter;
 use plugin_host::api::model::LinkVerdict;
+use protocol::Snowflake;
+use session::Command;
 use url::Url;
 
+use super::community::{CommunityHandle, add_server};
 use super::plugins::LinkOrigin;
 use super::{SettingsBackend, plugins};
 use crate::i18n::{ArgValue, Translate as _};
@@ -27,8 +30,112 @@ const ALLOWED_HOSTS: [&str; 12] = [
 	"twitch.tv",
 ];
 
+const DISCORD_HOSTS: [&str; 2] = ["discord.com", "discordapp.com"];
+const INVITE_LENGTH: std::ops::RangeInclusive<usize> = 2..=32;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DiscordLink {
+	Invite(String),
+	Channel {
+		guild: Option<Snowflake>,
+		channel: Snowflake,
+		message: Option<Snowflake>,
+	},
+}
+
 fn matches_domain(host: &str, domain: &str) -> bool {
 	host == domain || host.strip_suffix(domain).is_some_and(|rest| rest.ends_with('.'))
+}
+
+fn invite_code(code: &str) -> Option<String> {
+	let valid = INVITE_LENGTH.contains(&code.len())
+		&& code
+			.chars()
+			.all(|character| character.is_ascii_alphanumeric() || character == '-' || character == '_');
+	valid.then(|| code.to_owned())
+}
+
+fn snowflake(text: &str) -> Option<Snowflake> {
+	text.parse::<u64>().ok().filter(|id| *id != 0).map(Snowflake)
+}
+
+fn path_segments(parsed: &Url) -> Vec<&str> {
+	parsed
+		.path_segments()
+		.map(|segments| segments.filter(|part| !part.is_empty()).collect())
+		.unwrap_or_default()
+}
+
+pub fn discord_link(url: &str) -> Option<DiscordLink> {
+	let parsed = Url::parse(url).ok()?;
+	if !matches!(parsed.scheme(), "http" | "https") {
+		return None;
+	}
+	let host = parsed.host_str()?.to_ascii_lowercase();
+	let parts = path_segments(&parsed);
+	if matches_domain(&host, "discord.gg") {
+		return invite_code(parts.first()?).map(DiscordLink::Invite);
+	}
+	if !DISCORD_HOSTS.iter().any(|domain| matches_domain(&host, domain)) {
+		return None;
+	}
+	match parts.as_slice() {
+		["invite", code, ..] => invite_code(code).map(DiscordLink::Invite),
+		["channels", guild, channel, rest @ ..] => {
+			let channel = snowflake(channel)?;
+			let guild = match *guild {
+				"@me" => None,
+				id => Some(snowflake(id)?),
+			};
+			let message = rest.first().and_then(|id| snowflake(id));
+			Some(DiscordLink::Channel {
+				guild,
+				channel,
+				message,
+			})
+		}
+		_ => None,
+	}
+}
+
+fn open_internal(url: &str, window: &mut Window, cx: &mut App) -> bool {
+	let Some(link) = discord_link(url) else {
+		return false;
+	};
+	let Some(handle) = cx.try_global::<CommunityHandle>().cloned() else {
+		return false;
+	};
+	let data = handle.data.clone();
+	match link {
+		DiscordLink::Invite(code) => add_server::open_with(&code, window, cx),
+		DiscordLink::Channel {
+			guild,
+			channel,
+			message,
+		} => {
+			let known = {
+				let data = data.read(cx);
+				let state = data.state();
+				state.channel(channel).is_some()
+			};
+			if !known {
+				return false;
+			}
+			let guild = guild.or_else(|| data.read(cx).state().channel_guild(channel));
+			let command = match message {
+				Some(message_id) => Command::JumpToMessage {
+					channel_id: channel,
+					message_id,
+				},
+				None => Command::SelectChannel {
+					guild_id: guild,
+					channel_id: channel,
+				},
+			};
+			data.read(cx).send(command);
+		}
+	}
+	true
 }
 
 fn trusted(host: &str, extra: &[String]) -> bool {
@@ -52,6 +159,9 @@ pub fn open_link(
 	window: &mut Window,
 	cx: &mut App,
 ) {
+	if open_internal(url, window, cx) {
+		return;
+	}
 	if !plugins::link_hook_declared(cx) {
 		open_checked(url, backend, window, cx);
 		return;

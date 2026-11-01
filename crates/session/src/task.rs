@@ -86,6 +86,7 @@ pub(crate) type SharedSearch = Arc<Mutex<Option<Arc<SearchResults>>>>;
 pub(crate) enum Page {
 	Older,
 	Newer,
+	Latest,
 }
 
 pub(crate) enum Internal {
@@ -552,6 +553,7 @@ impl Core {
 				self.remember_account();
 				self.subscribe_selected();
 				self.resend_voice_state();
+				self.catch_up();
 				self.persist.submit(Job::Ready(ready));
 			}
 			GatewayEvent::ReadySupplemental(supplemental) => {
@@ -560,6 +562,7 @@ impl Core {
 			GatewayEvent::Resumed => {
 				self.apply_dispatch(&DispatchEvent::Resumed);
 				self.resend_voice_state();
+				self.catch_up();
 			}
 			GatewayEvent::Dispatch { event, .. } => self.on_dispatch(event),
 			GatewayEvent::Disconnected {
@@ -797,6 +800,7 @@ impl Core {
 				LoadDirection::Around,
 				page_query(None, None, Some(message_id)),
 			),
+			Command::LoadLatest { channel_id } => self.load_latest(channel_id),
 			Command::SendMessage {
 				channel_id,
 				content,
@@ -1129,6 +1133,30 @@ impl Core {
 			LoadDirection::History,
 			page_query(before, None, None),
 		);
+	}
+
+	fn load_latest(&mut self, channel_id: Snowflake) {
+		self.load_page(
+			channel_id,
+			Some(Page::Latest),
+			LoadDirection::Around,
+			page_query(None, None, None),
+		);
+	}
+
+	fn catch_up(&mut self) {
+		let channel = {
+			let state = self.state.read();
+			state.selected().and_then(|selected| {
+				state
+					.messages(selected.channel_id)
+					.is_some_and(|cache| !cache.ordered.is_empty())
+					.then_some(selected.channel_id)
+			})
+		};
+		if let Some(channel_id) = channel {
+			self.load_latest(channel_id);
+		}
 	}
 
 	fn load_newer(&mut self, channel_id: Snowflake) {
