@@ -40,7 +40,8 @@ priority = "optional"
 depends = "$auto"
 assets = [
 	["target/release/oxidcord", "usr/bin/oxidcord", "755"],
-	["target/release/codecs/*", "usr/bin/codecs", "755"],
+	["target/release/codecs/*.so*", "usr/bin/codecs/", "644"],
+	["target/release/codecs/LICENSE-FFMPEG.txt", "usr/share/doc/oxidcord/", "644"],
 	["../../packaging/linux/oxidcord.desktop", "usr/share/applications/dev.oxidcord.Oxidcord.desktop", "644"],
 	["../../packaging/linux/dev.oxidcord.Oxidcord.metainfo.xml", "usr/share/metainfo/dev.oxidcord.Oxidcord.metainfo.xml", "644"],
 	["../../assets/icon.png", "usr/share/icons/hicolor/256x256/apps/dev.oxidcord.Oxidcord.png", "644"],
