@@ -15,7 +15,7 @@ archive="$work/ffmpeg-$version.tar.xz"
 source="$work/ffmpeg-$version"
 prefix="$work/prefix"
 
-curl -fsSL "https://ffmpeg.org/releases/ffmpeg-$version.tar.xz" -o "$archive"
+curl -fsSL --retry 8 --retry-all-errors --retry-delay 2 "https://ffmpeg.org/releases/ffmpeg-$version.tar.xz" -o "$archive"
 echo "$sha256  $archive" | shasum -a 256 --check
 
 tar xf "$archive" -C "$work"
