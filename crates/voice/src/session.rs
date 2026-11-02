@@ -53,6 +53,8 @@ const MAX_BACKOFF_SHIFT: u32 = 3;
 const WEB_ORIGIN: &str = "https://discord.com";
 const NORMAL_CLOSE_REASON: &str = "";
 const MAX_BACKLOG_FRAMES: usize = 64;
+const MIN_HEARTBEAT_MS: f64 = 100.0;
+const MAX_HEARTBEAT_MS: f64 = 300_000.0;
 const BINARY_HEADER_BYTES: usize = 3;
 const OPUS_PAYLOAD_TYPE: u8 = 120;
 const CODEC_PRIORITY: u32 = 1000;
@@ -350,7 +352,7 @@ impl Link {
 	}
 
 	fn start_heartbeat(&mut self, interval_ms: f64) {
-		let period = Duration::from_millis(interval_ms.max(1.0) as u64);
+		let period = Duration::from_millis(interval_ms.clamp(MIN_HEARTBEAT_MS, MAX_HEARTBEAT_MS) as u64);
 		let first = tokio::time::Instant::now() + period.mul_f32(rand::random::<f32>());
 		let mut timer = interval_at(first, period);
 		timer.set_missed_tick_behavior(MissedTickBehavior::Delay);
