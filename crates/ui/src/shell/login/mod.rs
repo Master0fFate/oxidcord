@@ -107,16 +107,7 @@ impl LoginScreen {
 		if !self.acknowledged || matches!(self.phase, Phase::Checking) {
 			return;
 		}
-		let typed = self.input.read(cx).value().trim().to_owned();
-		let token = if typed.is_empty() {
-			platform::clipboard::read_text()
-				.ok()
-				.flatten()
-				.map(|text| text.trim().to_owned())
-				.unwrap_or_default()
-		} else {
-			typed
-		};
+		let token = self.input.read(cx).value().trim().to_owned();
 		if token.is_empty() {
 			self.phase = Phase::Failed("login-empty");
 			cx.notify();
