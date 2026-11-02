@@ -6,11 +6,12 @@ use rand::Rng;
 use rand::rngs::StdRng;
 
 use super::messages::{self, ChannelSpec};
-use super::{Builder, CURRENT_USER_ID, corpus};
+use super::{Builder, CURRENT_USER_ID, SECOND_USER_ID, corpus};
 use crate::ids::EntityIds;
 
 pub struct People {
 	pub current: User,
+	pub second: User,
 	pub pool: Vec<User>,
 }
 
@@ -32,8 +33,20 @@ pub fn generate(rng: &mut StdRng, ids: &mut EntityIds, size: usize) -> People {
 		locale: Some("en-US".to_owned()),
 		..User::default()
 	};
+	let second = User {
+		id: Snowflake(SECOND_USER_ID),
+		username: "alto".to_owned(),
+		global_name: Some("Alto".to_owned()),
+		avatar: Some(corpus::hex_hash(rng)),
+		email: Some("alto@mock.invalid".to_owned()),
+		..current.clone()
+	};
 	let pool = (0..size).map(|index| pool_user(rng, ids, index)).collect();
-	People { current, pool }
+	People {
+		current,
+		second,
+		pool,
+	}
 }
 
 fn pool_user(rng: &mut StdRng, ids: &mut EntityIds, index: usize) -> User {

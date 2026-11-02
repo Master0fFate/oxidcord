@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use protocol::{ChannelType, Snowflake, Token};
+use store::Database;
 
 use super::{Core, Internal};
 
@@ -31,6 +32,37 @@ impl Core {
 				tracing::warn!(%error, "account was not saved");
 			}
 		});
+	}
+
+	pub(super) async fn open_current_cache(&mut self) -> Option<Arc<Database>> {
+		let user_id = self.store.accounts.current()?;
+		let store = self.store.clone();
+		let opened = tokio::task::spawn_blocking(move || store.open_account_cache(user_id)).await;
+		match opened {
+			Ok(Ok(db)) => {
+				let db = Arc::new(db);
+				self.persist.attach(user_id, Arc::clone(&db));
+				Some(db)
+			}
+			Ok(Err(error)) => {
+				tracing::warn!(%error, "could not open the account cache");
+				None
+			}
+			Err(_) => None,
+		}
+	}
+
+	pub(super) fn attach_cache(&mut self, user_id: Snowflake) {
+		if self.persist.owner() == Some(user_id) {
+			return;
+		}
+		match self.store.open_account_cache(user_id) {
+			Ok(db) => self.persist.attach(user_id, Arc::new(db)),
+			Err(error) => {
+				tracing::warn!(%error, "could not open the account cache");
+				self.persist.detach();
+			}
+		}
 	}
 
 	pub(super) fn forget_account(&self) {

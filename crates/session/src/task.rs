@@ -303,7 +303,7 @@ fn ack_day() -> i64 {
 
 impl Core {
 	pub(crate) fn new(parts: CoreParts) -> Self {
-		let persist = Persistor::spawn(parts.store.clone(), &parts.runtime);
+		let persist = Persistor::spawn(&parts.runtime);
 		let plugin_lanes = plugin_link::PluginLanes::spawn(&parts.runtime);
 		let render_worker = RenderWorker::spawn(
 			Arc::clone(&parts.hub.manager),
@@ -417,23 +417,15 @@ impl Core {
 	}
 
 	async fn restore(&mut self) {
-		let store = self.store.clone();
-		let cached = tokio::task::spawn_blocking(move || {
-			(persist::load_ready(&store), persist::load_read_states(&store))
-		})
-		.await;
+		let Some(db) = self.open_current_cache().await else {
+			return;
+		};
+		let cached =
+			tokio::task::spawn_blocking(move || (persist::load_ready(&db), persist::load_read_states(&db)))
+				.await;
 		let Ok((Some(mut ready), read_states)) = cached else {
 			return;
 		};
-		if self
-			.store
-			.accounts
-			.current()
-			.is_some_and(|current| current != ready.user.id)
-		{
-			persist::clear_cache(&self.store);
-			return;
-		}
 		ready.session_id.clear();
 		ready.resume_gateway_url = None;
 		self.apply(Event::Ready(&ready));
@@ -454,7 +446,10 @@ impl Core {
 	}
 
 	fn restore_selection(&mut self) {
-		let Some(saved) = persist::load_value::<SavedSelection>(&self.store, persist::LAST_SELECTION_KEY)
+		let Some(saved) = self
+			.persist
+			.database()
+			.and_then(|db| persist::load_value::<SavedSelection>(&db, persist::LAST_SELECTION_KEY))
 		else {
 			return;
 		};
@@ -562,6 +557,7 @@ impl Core {
 			GatewayEvent::TokenRefreshed(token) => self.refresh_token(token),
 			GatewayEvent::Ready(ready) => {
 				self.marks.record("ready");
+				self.attach_cache(ready.user.id);
 				self.apply(Event::Ready(&ready));
 				self.activity.set_user(Some(ready.user.clone()));
 				self.activity.refresh_connections();
@@ -1074,7 +1070,7 @@ impl Core {
 			Command::Logout => {
 				self.store.tokens.clear();
 				self.forget_account();
-				persist::clear_cache(&self.store);
+				self.persist.wipe();
 				self.rest.clear_token();
 				return false;
 			}
@@ -1143,12 +1139,15 @@ impl Core {
 
 	fn load_initial(&self, channel_id: Snowflake) {
 		let rest = self.rest.clone();
-		let store = self.store.clone();
+		let db = self.persist.database();
 		let internal = self.internal.clone();
 		self.runtime.spawn(async move {
-			let cached = tokio::task::spawn_blocking(move || persist::load_messages(&store, channel_id))
-				.await
-				.unwrap_or_default();
+			let cached = match db {
+				Some(db) => tokio::task::spawn_blocking(move || persist::load_messages(&db, channel_id))
+					.await
+					.unwrap_or_default(),
+				None => Vec::new(),
+			};
 			let had_cache = !cached.is_empty();
 			if had_cache {
 				let _ = internal.send(Internal::Messages {
@@ -1180,10 +1179,12 @@ impl Core {
 	}
 
 	fn load_draft(&self, channel_id: Snowflake) {
-		let store = self.store.clone();
+		let Some(db) = self.persist.database() else {
+			return;
+		};
 		let internal = self.internal.clone();
 		self.runtime.spawn(async move {
-			let draft = tokio::task::spawn_blocking(move || persist::load_draft(&store, channel_id))
+			let draft = tokio::task::spawn_blocking(move || persist::load_draft(&db, channel_id))
 				.await
 				.ok()
 				.flatten();

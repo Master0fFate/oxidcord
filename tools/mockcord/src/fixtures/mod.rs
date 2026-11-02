@@ -24,6 +24,7 @@ use crate::ids::EntityIds;
 use crate::json::mentions_user;
 
 pub const CURRENT_USER_ID: u64 = 100;
+pub const SECOND_USER_ID: u64 = 101;
 const MIN_POOL_SIZE: usize = 40;
 const READ_CUTOFF_PERCENT: usize = 85;
 const SETTINGS_VERSION: i64 = 1;
@@ -41,6 +42,7 @@ struct Builder {
 pub struct Fixtures {
 	pub anchor: DateTime<Utc>,
 	pub current_user: User,
+	pub second_user: User,
 	pub users: BTreeMap<u64, User>,
 	pub guilds: Vec<GuildFixture>,
 	pub channels: BTreeMap<u64, Channel>,
@@ -94,6 +96,7 @@ impl Fixtures {
 		Fixtures {
 			anchor,
 			current_user: builder.people.current,
+			second_user: builder.people.second,
 			users,
 			guilds,
 			channels: builder.channels,

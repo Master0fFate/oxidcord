@@ -2,7 +2,8 @@ use rusqlite::Connection;
 
 use crate::error::{Result, StoreError};
 
-const MIGRATIONS: &[&str] = &["
+const MIGRATIONS: &[&str] = &[
+	"
 	CREATE TABLE kv (
 		key TEXT PRIMARY KEY,
 		value BLOB NOT NULL,
@@ -49,7 +50,18 @@ const MIGRATIONS: &[&str] = &["
 		bytes INTEGER NOT NULL,
 		last_used INTEGER NOT NULL
 	);
-	"];
+	",
+	"
+	DELETE FROM guilds;
+	DELETE FROM channels;
+	DELETE FROM users;
+	DELETE FROM messages;
+	DELETE FROM read_state;
+	DELETE FROM drafts;
+	DELETE FROM kv WHERE key IN ('session.ready', 'navigation.last_selection')
+		OR key LIKE 'expressions.recent.%';
+	",
+];
 
 pub fn apply(conn: &mut Connection) -> Result<()> {
 	let current: u32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
@@ -65,6 +77,9 @@ pub fn apply(conn: &mut Connection) -> Result<()> {
 		tx.execute_batch(sql)?;
 		tx.pragma_update(None, "user_version", index as u32 + 1)?;
 		tx.commit()?;
+	}
+	if current > 0 && current < supported {
+		conn.execute_batch("VACUUM")?;
 	}
 	Ok(())
 }

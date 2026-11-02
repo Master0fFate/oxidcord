@@ -189,6 +189,9 @@ fn main() -> anyhow::Result<()> {
 		None
 	};
 	let endpoints = endpoints(mock.as_ref(), &store, cli.login)?;
+	if let Some(server) = &mock {
+		add_second_mock_account(&store, server);
+	}
 	if !cli.mock {
 		refresh_client_identity(&runtime, &store);
 	}
@@ -232,6 +235,18 @@ fn acquire_instance(relaunched: bool) -> Result<Guard, AlreadyRunning> {
 		}
 	}
 	single_instance::acquire(ui::APP_ID)
+}
+
+fn add_second_mock_account(store: &Store, server: &Server) {
+	let user = &server.fixtures().second_user;
+	if let Err(error) = store.accounts.save(
+		user.id,
+		&user.username,
+		user.avatar.as_deref(),
+		server.second_token(),
+	) {
+		tracing::warn!(%error, "could not add the second mock account");
+	}
 }
 
 fn endpoints(mock: Option<&Server>, store: &Store, show_login: bool) -> anyhow::Result<Endpoints> {

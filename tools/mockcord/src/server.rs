@@ -84,6 +84,10 @@ impl Server {
 		&self.shared.config.token
 	}
 
+	pub fn second_token(&self) -> &str {
+		&self.shared.config.second_token
+	}
+
 	pub fn fixtures(&self) -> &Fixtures {
 		&self.shared.fixtures
 	}

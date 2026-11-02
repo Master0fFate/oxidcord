@@ -227,12 +227,14 @@ impl Core {
 	}
 
 	pub(super) async fn restore_recents(&mut self) {
-		let store = self.store.clone();
+		let Some(db) = self.persist.database() else {
+			return;
+		};
 		let loading = tokio::task::spawn_blocking(move || {
 			(
-				persist::load_recent::<EmojiRef>(&store, persist::RECENT_EMOJI_KEY),
-				persist::load_recent::<Gif>(&store, persist::RECENT_GIFS_KEY),
-				persist::load_recent::<Sticker>(&store, persist::RECENT_STICKERS_KEY),
+				persist::load_recent::<EmojiRef>(&db, persist::RECENT_EMOJI_KEY),
+				persist::load_recent::<Gif>(&db, persist::RECENT_GIFS_KEY),
+				persist::load_recent::<Sticker>(&db, persist::RECENT_STICKERS_KEY),
 			)
 		});
 		let Ok(Ok((emoji, gifs, stickers))) = tokio::time::timeout(RECENT_LOAD_TIMEOUT, loading).await else {

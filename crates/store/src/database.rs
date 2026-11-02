@@ -10,6 +10,8 @@ use crate::seal::{Sealer, is_sealed};
 
 const CANARY_KEY: &str = "seal-check";
 const CANARY_VALUE: &[u8] = b"oxidcord";
+const COMPACT_SQL: &str = "PRAGMA wal_checkpoint(TRUNCATE); VACUUM";
+const ACCOUNT_TABLES: [&str; 6] = ["guilds", "channels", "users", "messages", "read_state", "drafts"];
 const SEALED_COLUMNS: [(&str, &str, &str); 6] = [
 	("kv", "value", "key"),
 	("guilds", "json", "id"),
@@ -158,6 +160,18 @@ impl Database {
 			}
 		}
 		tx.commit()?;
+		Ok(())
+	}
+
+	pub fn wipe(&self) -> Result<()> {
+		let mut conn = self.conn.lock();
+		let tx = conn.transaction()?;
+		for table in ACCOUNT_TABLES {
+			tx.execute(&format!("DELETE FROM {table}"), [])?;
+		}
+		tx.execute("DELETE FROM kv WHERE key != ?1", [CANARY_KEY])?;
+		tx.commit()?;
+		conn.execute_batch(COMPACT_SQL)?;
 		Ok(())
 	}
 
@@ -392,7 +406,7 @@ fn prepare_sealed_columns(conn: &mut Connection, sealer: &Sealer) -> Result<()> 
 		params![CANARY_KEY, sealer.seal(CANARY_VALUE)?, now_millis()],
 	)?;
 	tx.commit()?;
-	conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM")?;
+	conn.execute_batch(COMPACT_SQL)?;
 	Ok(())
 }
 

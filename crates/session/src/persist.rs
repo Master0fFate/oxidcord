@@ -4,7 +4,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use protocol::{Channel, LenientVec, Message, Ready, Snowflake};
 use serde::de::DeserializeOwned;
-use store::{ReadState, Store, Table};
+use store::{Database, ReadState, Table};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -26,6 +26,7 @@ pub(crate) enum Job {
 		messages: Vec<Arc<Message>>,
 	},
 	DeleteMessages(Vec<Snowflake>),
+	Wipe,
 	ReadState(ReadState),
 	Draft {
 		channel_id: Snowflake,
@@ -37,22 +38,65 @@ pub(crate) enum Job {
 	},
 }
 
+struct Queued {
+	db: Arc<Database>,
+	job: Job,
+}
+
+struct AccountCache {
+	user_id: Snowflake,
+	db: Arc<Database>,
+}
+
 pub(crate) struct Persistor {
-	queue: mpsc::Sender<Job>,
+	queue: mpsc::Sender<Queued>,
 	task: JoinHandle<()>,
+	cache: Option<AccountCache>,
 }
 
 impl Persistor {
-	pub(crate) fn spawn(store: Arc<Store>, runtime: &Handle) -> Self {
+	pub(crate) fn spawn(runtime: &Handle) -> Self {
 		let (queue, jobs) = mpsc::channel(QUEUE_CAPACITY);
-		let task = runtime.spawn(write_loop(store, jobs));
-		Self { queue, task }
+		let task = runtime.spawn(write_loop(jobs));
+		Self {
+			queue,
+			task,
+			cache: None,
+		}
+	}
+
+	pub(crate) fn attach(&mut self, user_id: Snowflake, db: Arc<Database>) {
+		self.cache = Some(AccountCache { user_id, db });
+	}
+
+	pub(crate) fn detach(&mut self) {
+		self.cache = None;
+	}
+
+	pub(crate) fn owner(&self) -> Option<Snowflake> {
+		self.cache.as_ref().map(|cache| cache.user_id)
+	}
+
+	pub(crate) fn database(&self) -> Option<Arc<Database>> {
+		self.cache.as_ref().map(|cache| Arc::clone(&cache.db))
 	}
 
 	pub(crate) fn submit(&self, job: Job) {
-		if self.queue.try_send(job).is_err() {
+		let Some(cache) = &self.cache else {
+			return;
+		};
+		let queued = Queued {
+			db: Arc::clone(&cache.db),
+			job,
+		};
+		if self.queue.try_send(queued).is_err() {
 			tracing::warn!("cache write queue is full, dropping a write");
 		}
+	}
+
+	pub(crate) fn wipe(&mut self) {
+		self.submit(Job::Wipe);
+		self.detach();
 	}
 
 	pub(crate) async fn close(self) {
@@ -61,14 +105,13 @@ impl Persistor {
 	}
 }
 
-async fn write_loop(store: Arc<Store>, mut jobs: mpsc::Receiver<Job>) {
+async fn write_loop(mut jobs: mpsc::Receiver<Queued>) {
 	let mut batch = Vec::new();
 	while jobs.recv_many(&mut batch, BATCH_LIMIT).await > 0 {
 		let pending = mem::take(&mut batch);
-		let store = store.clone();
 		let written = tokio::task::spawn_blocking(move || {
-			for job in pending {
-				if let Err(error) = write(&store, job) {
+			for Queued { db, job } in pending {
+				if let Err(error) = write(&db, job) {
 					tracing::warn!(%error, "cache write failed");
 				}
 			}
@@ -80,38 +123,38 @@ async fn write_loop(store: Arc<Store>, mut jobs: mpsc::Receiver<Job>) {
 	}
 }
 
-fn write(store: &Store, job: Job) -> Result<()> {
+fn write(db: &Database, job: Job) -> Result<()> {
 	match job {
-		Job::Ready(ready) => write_ready(store, &ready),
-		Job::PrivateChannels(channels) => write_private_channels(store, channels),
+		Job::Ready(ready) => write_ready(db, &ready),
+		Job::PrivateChannels(channels) => write_private_channels(db, channels),
 		Job::Messages { channel_id, messages } => {
 			let encoded = messages
 				.iter()
 				.map(|message| Ok((message.id.get(), serde_json::to_vec(&**message)?)))
 				.collect::<Result<Vec<_>>>()?;
 			let rows: Vec<(u64, &[u8])> = encoded.iter().map(|(id, json)| (*id, json.as_slice())).collect();
-			Ok(store.db.put_messages_batch(channel_id.get(), &rows)?)
+			Ok(db.put_messages_batch(channel_id.get(), &rows)?)
 		}
 		Job::DeleteMessages(ids) => {
 			for id in ids {
-				store.db.delete_message(id.get())?;
+				db.delete_message(id.get())?;
 			}
 			Ok(())
 		}
-		Job::ReadState(state) => Ok(store.db.set_read_state(&state)?),
-		Job::Recent { key, json } => Ok(store.db.kv_set(key, &json)?),
+		Job::Wipe => Ok(db.wipe()?),
+		Job::ReadState(state) => Ok(db.set_read_state(&state)?),
+		Job::Recent { key, json } => Ok(db.kv_set(key, &json)?),
 		Job::Draft { channel_id, content } => {
 			if content.is_empty() {
-				Ok(store.db.clear_draft(channel_id.get())?)
+				Ok(db.clear_draft(channel_id.get())?)
 			} else {
-				Ok(store.db.set_draft(channel_id.get(), &content)?)
+				Ok(db.set_draft(channel_id.get(), &content)?)
 			}
 		}
 	}
 }
 
-fn write_ready(store: &Store, ready: &Ready) -> Result<()> {
-	let db = &store.db;
+fn write_ready(db: &Database, ready: &Ready) -> Result<()> {
 	for guild in ready.guilds.iter() {
 		db.put_json(Table::Guilds, guild.id.get(), None, &serde_json::to_vec(guild)?)?;
 		for channel in guild.channels.iter().chain(guild.threads.iter()) {
@@ -136,8 +179,8 @@ fn write_ready(store: &Store, ready: &Ready) -> Result<()> {
 	Ok(())
 }
 
-fn put_private_channel(store: &Store, channel: &Channel) -> Result<()> {
-	Ok(store.db.put_json(
+fn put_private_channel(db: &Database, channel: &Channel) -> Result<()> {
+	Ok(db.put_json(
 		Table::Channels,
 		channel.id.get(),
 		None,
@@ -145,17 +188,17 @@ fn put_private_channel(store: &Store, channel: &Channel) -> Result<()> {
 	)?)
 }
 
-fn write_private_channels(store: &Store, channels: Vec<Channel>) -> Result<()> {
-	let Some(mut ready) = load_ready(store) else {
+fn write_private_channels(db: &Database, channels: Vec<Channel>) -> Result<()> {
+	let Some(mut ready) = load_ready(db) else {
 		return Ok(());
 	};
 	for channel in channels {
-		put_private_channel(store, &channel)?;
+		put_private_channel(db, &channel)?;
 		if !ready.private_channels.iter().any(|known| known.id == channel.id) {
 			ready.private_channels.push(channel);
 		}
 	}
-	store.db.kv_set(READY_KEY, &serde_json::to_vec(&ready)?)?;
+	db.kv_set(READY_KEY, &serde_json::to_vec(&ready)?)?;
 	Ok(())
 }
 
@@ -170,15 +213,8 @@ pub(crate) fn stored_read_state(read_state: &protocol::ReadState) -> ReadState {
 	}
 }
 
-pub(crate) fn clear_cache(store: &Store) {
-	if let Err(error) = store.db.kv_set(READY_KEY, &[]) {
-		tracing::warn!(%error, "could not clear the cached session snapshot");
-	}
-}
-
-pub(crate) fn load_ready(store: &Store) -> Option<Ready> {
-	let bytes = store
-		.db
+pub(crate) fn load_ready(db: &Database) -> Option<Ready> {
+	let bytes = db
 		.kv_get(READY_KEY)
 		.ok()
 		.flatten()
@@ -195,16 +231,15 @@ pub(crate) fn load_ready(store: &Store) -> Option<Ready> {
 	}
 }
 
-pub(crate) fn load_read_states(store: &Store) -> Vec<ReadState> {
-	store.db.all_read_state().unwrap_or_else(|error| {
+pub(crate) fn load_read_states(db: &Database) -> Vec<ReadState> {
+	db.all_read_state().unwrap_or_else(|error| {
 		tracing::warn!(%error, "could not read cached read state");
 		Vec::new()
 	})
 }
 
-pub(crate) fn load_messages(store: &Store, channel_id: Snowflake) -> Vec<Message> {
-	let rows = store
-		.db
+pub(crate) fn load_messages(db: &Database, channel_id: Snowflake) -> Vec<Message> {
+	let rows = db
 		.recent_messages(channel_id.get(), CACHED_MESSAGES)
 		.unwrap_or_else(|error| {
 			tracing::warn!(%error, "could not read cached messages");
@@ -215,19 +250,17 @@ pub(crate) fn load_messages(store: &Store, channel_id: Snowflake) -> Vec<Message
 		.collect()
 }
 
-pub(crate) fn load_draft(store: &Store, channel_id: Snowflake) -> Option<String> {
-	store.db.get_draft(channel_id.get()).ok().flatten()
+pub(crate) fn load_draft(db: &Database, channel_id: Snowflake) -> Option<String> {
+	db.get_draft(channel_id.get()).ok().flatten()
 }
 
-pub(crate) fn load_value<T: DeserializeOwned>(store: &Store, key: &str) -> Option<T> {
-	let bytes = store.db.kv_get(key).ok().flatten()?;
+pub(crate) fn load_value<T: DeserializeOwned>(db: &Database, key: &str) -> Option<T> {
+	let bytes = db.kv_get(key).ok().flatten()?;
 	serde_json::from_slice(&bytes).ok()
 }
 
-pub(crate) fn load_recent<T: DeserializeOwned>(store: &Store, key: &str) -> Vec<T> {
-	store
-		.db
-		.kv_get(key)
+pub(crate) fn load_recent<T: DeserializeOwned>(db: &Database, key: &str) -> Vec<T> {
+	db.kv_get(key)
 		.ok()
 		.flatten()
 		.and_then(|bytes| serde_json::from_slice::<LenientVec<T>>(&bytes).ok())

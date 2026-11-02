@@ -251,6 +251,16 @@ impl Shared {
 		}
 	}
 
+	pub fn account_for_token(&self, token: &str) -> Option<User> {
+		if self.config.accepts(token) {
+			Some(self.store.lock().current_user.clone())
+		} else if token == self.config.second_token {
+			Some(self.fixtures.second_user.clone())
+		} else {
+			None
+		}
+	}
+
 	pub fn touch_bucket(&self, key: &str) -> RateLimitSnapshot {
 		let now = Instant::now();
 		let mut windows = self.windows.lock();

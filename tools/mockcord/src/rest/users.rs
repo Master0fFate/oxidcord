@@ -3,6 +3,8 @@ use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
+use axum::http::HeaderMap;
+use axum::http::header::AUTHORIZATION;
 use protocol::{Channel, ChannelType, LenientVec, Snowflake, User};
 use serde_json::{Value, json};
 
@@ -16,8 +18,13 @@ pub async fn gateway_url(State(shared): State<Arc<Shared>>) -> Json<Value> {
 	Json(json!({ "url": shared.urls.gateway }))
 }
 
-pub async fn me(State(shared): State<Arc<Shared>>) -> Json<Value> {
-	Json(to_json(&shared.store.lock().current_user))
+pub async fn me(State(shared): State<Arc<Shared>>, headers: HeaderMap) -> ApiResult {
+	headers
+		.get(AUTHORIZATION)
+		.and_then(|value| value.to_str().ok())
+		.and_then(|token| shared.account_for_token(token))
+		.map(|user| Json(to_json(&user)))
+		.ok_or_else(ApiError::unauthorized)
 }
 
 pub async fn my_mentions() -> Json<Value> {

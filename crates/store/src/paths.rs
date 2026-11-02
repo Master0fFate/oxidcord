@@ -3,6 +3,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use directories::ProjectDirs;
+use protocol::Snowflake;
 
 use crate::error::Result;
 
@@ -62,6 +63,10 @@ impl Paths {
 
 	pub fn database_path(&self) -> PathBuf {
 		self.data.join("oxidcord.db")
+	}
+
+	pub fn account_database_path(&self, user_id: Snowflake) -> PathBuf {
+		self.cache.join(format!("account-{user_id}.db"))
 	}
 
 	pub fn settings_path(&self) -> PathBuf {

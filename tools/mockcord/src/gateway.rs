@@ -10,7 +10,7 @@ use axum::response::Response;
 use flate2::Compression;
 use flate2::write::ZlibEncoder;
 use protocol::gateway::capability::AUTH_TOKEN_REFRESH;
-use protocol::{GatewayPayload, Opcode};
+use protocol::{GatewayPayload, Opcode, User};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
@@ -202,17 +202,17 @@ impl Connection {
 		}
 	}
 
-	fn token_accepted(&self, data: &Value) -> bool {
+	fn account_for_token(&self, data: &Value) -> Option<User> {
 		data["token"]
 			.as_str()
-			.is_some_and(|token| self.shared.config.accepts(token))
+			.and_then(|token| self.shared.account_for_token(token))
 	}
 
 	async fn identify(&mut self, data: &Value) -> bool {
-		if !self.token_accepted(data) {
+		let Some(user) = self.account_for_token(data) else {
 			self.close(CLOSE_AUTH_FAILED, "Authentication failed.").await;
 			return false;
-		}
+		};
 		if self.session.is_some() {
 			self.close(CLOSE_ALREADY_AUTHENTICATED, "Already authenticated.")
 				.await;
@@ -224,7 +224,7 @@ impl Connection {
 			tx: self.tx.clone(),
 		});
 		let capabilities = data["capabilities"].as_u64().unwrap_or_default();
-		let (mut ready, supplemental) = ready::build(&self.shared, &session_id, capabilities);
+		let (mut ready, supplemental) = ready::build(&self.shared, &session_id, &user, capabilities);
 		if capabilities & AUTH_TOKEN_REFRESH != 0 {
 			ready["auth_token"] = json!(self.shared.config.rotated_token());
 		}
@@ -235,7 +235,7 @@ impl Connection {
 	}
 
 	async fn resume(&mut self, data: &Value) -> bool {
-		if !self.token_accepted(data) {
+		if self.account_for_token(data).is_none() {
 			self.close(CLOSE_AUTH_FAILED, "Authentication failed.").await;
 			return false;
 		}

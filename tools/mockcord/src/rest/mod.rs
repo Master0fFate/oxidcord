@@ -260,7 +260,7 @@ async fn guard(State(shared): State<Arc<Shared>>, request: Request, next: Next) 
 			.headers()
 			.get(AUTHORIZATION)
 			.and_then(|value| value.to_str().ok())
-			.is_some_and(|value| shared.config.accepts(value));
+			.is_some_and(|value| shared.account_for_token(value).is_some());
 	let snapshot = shared.touch_bucket(&key);
 	let limited = authorized && shared.config.chaos && chaos_rate_limited();
 	let mut response = if !authorized {

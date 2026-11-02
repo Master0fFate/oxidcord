@@ -78,6 +78,7 @@ impl Core {
 		}
 		tracing::warn!("discord rejected the session token");
 		self.store.tokens.clear();
+		self.persist.wipe();
 		self.rest.clear_token();
 		self.apply_local(LocalEvent::SignedOut);
 	}

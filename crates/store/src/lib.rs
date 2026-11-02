@@ -11,6 +11,8 @@ mod settings;
 mod token;
 
 use parking_lot::RwLock;
+use protocol::Snowflake;
+use zeroize::Zeroizing;
 
 pub use accounts::{Account, AccountStore};
 pub use atomic::write_atomic;
@@ -33,6 +35,7 @@ pub struct Store {
 	pub db: Database,
 	pub tokens: TokenStore,
 	pub accounts: AccountStore,
+	cache_key: Zeroizing<[u8; 32]>,
 }
 
 impl Store {
@@ -52,7 +55,12 @@ impl Store {
 			db,
 			tokens,
 			accounts,
+			cache_key,
 		})
+	}
+
+	pub fn open_account_cache(&self, user_id: Snowflake) -> Result<Database> {
+		Database::open(&self.paths.account_database_path(user_id), &self.cache_key)
 	}
 
 	pub fn update_settings(&self, apply: impl FnOnce(&mut Settings)) -> Result<()> {

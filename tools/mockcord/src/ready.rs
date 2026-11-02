@@ -167,7 +167,7 @@ fn legacy_user_settings(fixtures: &Fixtures, store: &Store) -> Value {
 	})
 }
 
-pub fn build(shared: &Shared, session_id: &str, capabilities: u64) -> (Value, Value) {
+pub fn build(shared: &Shared, session_id: &str, user: &User, capabilities: u64) -> (Value, Value) {
 	let fixtures = &shared.fixtures;
 	let store = shared.store.lock();
 	let guilds: Vec<Value> = live_guilds(fixtures, &store)
@@ -190,7 +190,7 @@ pub fn build(shared: &Shared, session_id: &str, capabilities: u64) -> (Value, Va
 	};
 	let mut ready = json!({
 		"v": API_VERSION,
-		"user": store.current_user,
+		"user": user,
 		"guilds": guilds,
 		"private_channels": private_channels,
 		"relationships": store.relationships.values().collect::<Vec<_>>(),

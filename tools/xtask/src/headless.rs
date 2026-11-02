@@ -617,21 +617,22 @@ async fn scenario(
 	);
 
 	harness.stop().await?;
-	verify_cache(&store, channel_id)?;
+	verify_cache(&store, server.fixtures().current_user.id, channel_id)?;
 	cached_start(&store, guild_id, channel_id, counts.guilds).await
 }
 
-fn verify_cache(store: &Store, channel_id: Snowflake) -> Result<()> {
+fn verify_cache(store: &Store, user_id: Snowflake, channel_id: Snowflake) -> Result<()> {
+	let cache = store.open_account_cache(user_id)?;
 	ensure!(
-		store.db.get_draft(channel_id.get())?.as_deref() == Some(DRAFT_TEXT),
+		cache.get_draft(channel_id.get())?.as_deref() == Some(DRAFT_TEXT),
 		"draft was not persisted"
 	);
 	ensure!(
-		!store.db.recent_messages(channel_id.get(), 1)?.is_empty(),
+		!cache.recent_messages(channel_id.get(), 1)?.is_empty(),
 		"messages were not persisted"
 	);
 	ensure!(
-		store.db.get_read_state(channel_id.get())?.is_some(),
+		cache.get_read_state(channel_id.get())?.is_some(),
 		"read state was not persisted"
 	);
 	Ok(())
