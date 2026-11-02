@@ -6,16 +6,20 @@ use gpui::{
 	ParentElement as _, Render, SharedString, Styled as _, Window, deferred, div, ease_out_quint,
 	prelude::FluentBuilder as _, px,
 };
+use gpui_component::Icon as ComponentIcon;
 use gpui_component::Sizable as _;
+use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::input::{Input, InputEvent, InputState};
+use gpui_component::menu::DropdownMenu as _;
 
 use plugin_host::ViewContext;
 use protocol::Snowflake;
 
+use super::community::notify::{self, Scope};
 use super::search_hints::{DateLabels, Leading, complete, pending, suggestions, with_filter};
 use super::search_panel::Filter;
 use super::transition::Pairs;
-use crate::components::{Avatar, Divider, IconButton, StatusDot};
+use crate::components::{Avatar, ContextMenuBuilder, Divider, IconButton, StatusDot};
 use crate::i18n::Translate as _;
 use crate::icons::{Icon, IconKind};
 use crate::model::Status;
@@ -60,6 +64,7 @@ pub struct TopBar {
 	title: TopBarTitle,
 	plugin_context: ViewContext,
 	members_visible: bool,
+	notifications: Option<(Snowflake, Snowflake)>,
 	notifications_muted: bool,
 	search: Entity<InputState>,
 	search_focused: bool,
@@ -104,6 +109,7 @@ impl TopBar {
 			title,
 			plugin_context: ViewContext::default(),
 			members_visible: true,
+			notifications: None,
 			notifications_muted: false,
 			search,
 			search_focused: false,
@@ -158,6 +164,47 @@ impl TopBar {
 			self.plugin_context = context;
 			cx.notify();
 		}
+	}
+
+	pub fn set_notifications(
+		&mut self,
+		target: Option<(Snowflake, Snowflake)>,
+		muted: bool,
+		cx: &mut Context<Self>,
+	) {
+		if self.notifications != target || self.notifications_muted != muted {
+			self.notifications = target;
+			self.notifications_muted = muted;
+			cx.notify();
+		}
+	}
+
+	fn notifications_button(
+		&self,
+		guild: Snowflake,
+		channel: Snowflake,
+		cx: &mut Context<Self>,
+	) -> impl IntoElement {
+		let scope = Scope::Channel {
+			guild: Some(guild),
+			channel,
+		};
+		let muted = self.notifications_muted;
+		let icon = if muted { IconKind::BellOff } else { IconKind::Bell };
+		let menu = ContextMenuBuilder::new().lazy(move |cx| {
+			notify::level_items(
+				notify::mute_items(ContextMenuBuilder::new(), scope, muted, cx),
+				scope,
+				cx,
+			)
+		});
+		Button::new("top-notifications")
+			.ghost()
+			.w(rem(28.))
+			.h(rem(28.))
+			.tooltip(cx.t("top-bar-notifications"))
+			.icon(ComponentIcon::default().path(icon.path()))
+			.dropdown_menu(menu.build())
 	}
 
 	pub fn set_members_visible(&mut self, visible: bool, cx: &mut Context<Self>) {
@@ -575,11 +622,6 @@ impl Render for TopBar {
 					.gap(theme.space_8)
 					.children(items)
 			});
-		let notifications = if self.notifications_muted {
-			IconKind::BellOff
-		} else {
-			IconKind::Bell
-		};
 		let popover = self.popover(&theme, window, cx);
 		let search_box = div()
 			.relative()
@@ -652,16 +694,11 @@ impl Render for TopBar {
 								),
 						)
 					})
-					.when(!direct, |bar| {
-						bar.child(
-							IconButton::new("top-notifications", notifications)
-								.tooltip(cx.t("top-bar-notifications"))
-								.on_click(cx.listener(|this, _, _, cx| {
-									this.notifications_muted = !this.notifications_muted;
-									cx.notify();
-								})),
-						)
-					})
+					.children(
+						self.notifications
+							.filter(|_| !direct)
+							.map(|(guild, channel)| self.notifications_button(guild, channel, cx)),
+					)
 					.child(
 						IconButton::new("top-pinned", IconKind::Pin)
 							.tooltip(cx.t("top-bar-pinned"))

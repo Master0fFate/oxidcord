@@ -187,6 +187,16 @@ impl State {
 			.is_some_and(|member| mute_active(member.muted, member.mute_config.as_ref(), Utc::now()))
 	}
 
+	pub fn channel_is_muted(&self, channel_id: Snowflake) -> bool {
+		self.channel(channel_id).is_some_and(|channel| {
+			channel_muted(
+				self.guild_settings(self.channel_guild(channel_id)),
+				channel,
+				Utc::now(),
+			)
+		})
+	}
+
 	pub fn notification_level(
 		&self,
 		guild_id: Option<Snowflake>,

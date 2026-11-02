@@ -829,6 +829,7 @@ impl Shell {
 			bar.set_title(title, cx);
 			bar.set_plugin_context(context, cx);
 		});
+		self.sync_notifications(cx);
 		self.community
 			.update(cx, |community, cx| community.show_main(guild, channel, cx));
 		self.timeline.update(cx, |timeline, cx| {
@@ -843,6 +844,13 @@ impl Shell {
 		}
 		self.set_typing(cx);
 		cx.notify();
+	}
+
+	fn sync_notifications(&mut self, cx: &mut Context<Self>) {
+		let target = self.guild.zip(self.channel);
+		let muted = target.is_some_and(|(_, channel)| self.data.read(cx).state().channel_is_muted(channel));
+		self.top_bar
+			.update(cx, |bar, cx| bar.set_notifications(target, muted, cx));
 	}
 
 	fn set_typing(&mut self, cx: &mut Context<Self>) {
@@ -873,6 +881,9 @@ impl Shell {
 			self.rail.update(cx, |rail, cx| rail.refresh(cx));
 		}
 		self.home_pages.on_changes(changes, cx);
+		if changes.guild_list {
+			self.sync_notifications(cx);
+		}
 		if changes.private_channels || changes.relationships || changes.presence_any() {
 			self.groups.refresh(cx);
 			self.sync_group_header(cx);
