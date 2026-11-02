@@ -10,6 +10,8 @@ pub enum GatewayError {
 	InsecureUrl,
 	#[error("incoming gateway data exceeded the size cap")]
 	OverSized,
+	#[error("gateway ready payload could not be decoded")]
+	UndecodableReady,
 	#[error("gateway zlib stream is corrupt")]
 	Decompress,
 	#[error("failed to encode an outgoing frame: {0}")]

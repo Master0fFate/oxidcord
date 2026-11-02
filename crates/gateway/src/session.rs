@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use futures_util::{FutureExt, SinkExt, StreamExt};
+use protocol::Token;
 use protocol::gateway::{DispatchEvent, GatewayPayload, Hello, Opcode};
 use serde_json::value::RawValue;
 use tokio::sync::{Notify, mpsc, watch};
@@ -17,10 +18,12 @@ use crate::config::GatewayConfig;
 use crate::error::{FATAL_CLOSE_CODES, GatewayError};
 use crate::event::GatewayEvent;
 use crate::frames;
-use crate::limiter::RateLimiter;
+use crate::limiter::SendWindow;
 use crate::transport::{self, Socket, ZlibStream};
 
-const SEND_PERMITS: u32 = 120;
+const SEND_PERMITS: usize = 120;
+const SEND_RESERVE: usize = 10;
+const MAX_READY_FAILURES: u32 = 3;
 const SEND_WINDOW: Duration = Duration::from_secs(60);
 const BACKOFF_CAP_SECS: f64 = 60.0;
 const MIN_HEARTBEAT: Duration = Duration::from_millis(100);
@@ -72,15 +75,12 @@ impl Ended {
 
 struct Outbox {
 	commands: mpsc::Receiver<String>,
-	limiter: RateLimiter,
 }
 
 impl Outbox {
-	async fn next(&mut self) -> Option<String> {
-		self.limiter.ready().await;
-		let frame = self.commands.recv().await?;
-		self.limiter.take();
-		Some(frame)
+	async fn next(&mut self, window: &mut SendWindow) -> Option<String> {
+		window.room(SEND_RESERVE).await;
+		self.commands.recv().await
 	}
 
 	fn discard_queued(&mut self) {
@@ -96,6 +96,7 @@ struct Connection {
 	heartbeat_sent: Instant,
 	ready: bool,
 	identify_at: Option<Instant>,
+	sent: SendWindow,
 }
 
 impl Connection {
@@ -108,6 +109,7 @@ impl Connection {
 			heartbeat_sent: Instant::now(),
 			ready: false,
 			identify_at: None,
+			sent: SendWindow::new(SEND_PERMITS, SEND_WINDOW),
 		}
 	}
 }
@@ -123,6 +125,7 @@ pub(crate) struct Session {
 	resume_url: Option<String>,
 	seq: Option<u64>,
 	failures: u32,
+	ready_failures: u32,
 }
 
 impl Session {
@@ -137,10 +140,7 @@ impl Session {
 		Self {
 			config,
 			events,
-			outbox: Outbox {
-				commands,
-				limiter: RateLimiter::new(SEND_PERMITS, SEND_WINDOW),
-			},
+			outbox: Outbox { commands },
 			reconnect,
 			shutdown,
 			latency,
@@ -148,6 +148,7 @@ impl Session {
 			resume_url: None,
 			seq: None,
 			failures: 0,
+			ready_failures: 0,
 		}
 	}
 
@@ -212,7 +213,6 @@ impl Session {
 			Ok(socket) => socket,
 			Err(error) => return Ok(Ended::lost(error.to_string())),
 		};
-		self.outbox.discard_queued();
 		self.reconnect.notified().now_or_never();
 		self.drive(Connection::new(socket)).await
 	}
@@ -231,7 +231,7 @@ impl Session {
 				message = connection.socket.next() => self.on_socket(&mut connection, message).await?,
 				_ = next_tick(&mut connection.heartbeat) => self.on_heartbeat_due(&mut connection).await,
 				_ = until(connection.identify_at) => self.on_identify_due(&mut connection).await,
-				frame = self.outbox.next(), if connection.ready => match frame {
+				frame = self.outbox.next(&mut connection.sent), if connection.ready => match frame {
 					Some(frame) => self.transmit(&mut connection, frame).await,
 					None => return Err(Shutdown),
 				},
@@ -319,10 +319,7 @@ impl Session {
 		let opcode = payload.opcode();
 		debug!(?opcode, "gateway opcode");
 		match opcode {
-			Opcode::Dispatch => {
-				self.on_dispatch(connection, payload).await?;
-				Ok(None)
-			}
+			Opcode::Dispatch => self.on_dispatch(connection, payload).await,
 			Opcode::Heartbeat => Ok(self.send_heartbeat(connection).await),
 			Opcode::Reconnect => Ok(Some(
 				self.hangup(connection, LIBRARY_CLOSE, "reconnect requested", false)
@@ -340,6 +337,7 @@ impl Session {
 					));
 				}
 				self.clear_session();
+				connection.ready = false;
 				connection.identify_at = Some(Instant::now() + identify_delay());
 				Ok(None)
 			}
@@ -436,9 +434,9 @@ impl Session {
 		&mut self,
 		connection: &mut Connection,
 		payload: GatewayPayload,
-	) -> Result<(), Shutdown> {
+	) -> Result<Option<Ended>, Shutdown> {
 		let Some(name) = payload.t.as_deref() else {
-			return Ok(());
+			return Ok(None);
 		};
 		if let Some(seq) = payload.s {
 			self.seq = Some(seq);
@@ -448,16 +446,16 @@ impl Session {
 			Ok(event) => event,
 			Err(error) => {
 				warn!(event = name, category = ?error.category(), "gateway dispatch decode failed");
-				return self
-					.emit(GatewayEvent::DecodeFailure {
-						event: name.to_owned(),
-					})
-					.await;
+				self.emit(GatewayEvent::DecodeFailure {
+					event: name.to_owned(),
+				})
+				.await?;
+				return Ok(self.on_undecodable(connection, name).await);
 			}
 		};
 		debug!(event = name, "gateway dispatch");
 		let event = match event {
-			DispatchEvent::Ready(ready) => {
+			DispatchEvent::Ready(mut ready) => {
 				self.session_id = Some(ready.session_id.clone()).filter(|id| !id.is_empty());
 				self.resume_url = ready
 					.resume_gateway_url
@@ -465,6 +463,12 @@ impl Session {
 					.filter(|url| transport::endpoint(url).is_ok());
 				connection.ready = true;
 				self.failures = 0;
+				self.ready_failures = 0;
+				self.outbox.discard_queued();
+				if let Some(token) = ready.auth_token.take().filter(|token| !token.as_str().is_empty()) {
+					self.config.token = Token::new(token.as_str());
+					self.emit(GatewayEvent::TokenRefreshed(token)).await?;
+				}
 				GatewayEvent::Ready(ready)
 			}
 			DispatchEvent::ReadySupplemental(supplemental) => GatewayEvent::ReadySupplemental(supplemental),
@@ -478,12 +482,35 @@ impl Session {
 				event,
 			},
 		};
-		self.emit(event).await
+		self.emit(event).await?;
+		Ok(None)
+	}
+
+	async fn on_undecodable(&mut self, connection: &mut Connection, name: &str) -> Option<Ended> {
+		if name != "READY" {
+			return None;
+		}
+		self.ready_failures += 1;
+		if self.ready_failures >= MAX_READY_FAILURES {
+			transport::hangup(&mut connection.socket, LIBRARY_CLOSE, "undecodable ready").await;
+			return Some(Ended::fatal(
+				Some(LIBRARY_CLOSE),
+				"undecodable ready",
+				GatewayError::UndecodableReady,
+			));
+		}
+		Some(
+			self.hangup(connection, LIBRARY_CLOSE, "undecodable ready", true)
+				.await,
+		)
 	}
 
 	async fn transmit(&mut self, connection: &mut Connection, frame: String) -> Option<Ended> {
 		match connection.socket.send(Message::text(frame)).await {
-			Ok(()) => None,
+			Ok(()) => {
+				connection.sent.record();
+				None
+			}
 			Err(error) => Some(Ended::lost(transport::read_error(error).to_string())),
 		}
 	}

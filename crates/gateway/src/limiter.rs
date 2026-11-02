@@ -1,44 +1,46 @@
+use std::collections::VecDeque;
 use std::time::Duration;
 
-use tokio::time::{Instant, sleep};
+use tokio::time::{Instant, sleep_until};
 
-pub(crate) struct RateLimiter {
-	capacity: f64,
-	per_second: f64,
-	tokens: f64,
-	updated: Instant,
+pub(crate) struct SendWindow {
+	permits: usize,
+	window: Duration,
+	sent: VecDeque<Instant>,
 }
 
-impl RateLimiter {
-	pub fn new(permits: u32, window: Duration) -> Self {
-		let capacity = f64::from(permits);
+impl SendWindow {
+	pub fn new(permits: usize, window: Duration) -> Self {
 		Self {
-			capacity,
-			per_second: capacity / window.as_secs_f64(),
-			tokens: capacity,
-			updated: Instant::now(),
+			permits,
+			window,
+			sent: VecDeque::with_capacity(permits),
 		}
 	}
 
-	pub async fn ready(&mut self) {
+	pub async fn room(&mut self, reserved: usize) {
+		let limit = self.permits.saturating_sub(reserved).max(1);
 		loop {
-			self.refill();
-			if self.tokens >= 1.0 {
+			self.expire();
+			if self.sent.len() < limit {
 				return;
 			}
-			sleep(Duration::from_secs_f64((1.0 - self.tokens) / self.per_second)).await;
+			sleep_until(self.sent[self.sent.len() - limit] + self.window).await;
 		}
 	}
 
-	pub fn take(&mut self) {
-		self.refill();
-		self.tokens -= 1.0;
+	pub fn record(&mut self) {
+		self.sent.push_back(Instant::now());
 	}
 
-	fn refill(&mut self) {
+	fn expire(&mut self) {
 		let now = Instant::now();
-		let earned = now.duration_since(self.updated).as_secs_f64() * self.per_second;
-		self.tokens = (self.tokens + earned).min(self.capacity);
-		self.updated = now;
+		while self
+			.sent
+			.front()
+			.is_some_and(|sent| now.duration_since(*sent) >= self.window)
+		{
+			self.sent.pop_front();
+		}
 	}
 }

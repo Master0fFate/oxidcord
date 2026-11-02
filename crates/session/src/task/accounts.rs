@@ -1,8 +1,17 @@
-use protocol::{ChannelType, Snowflake};
+use std::sync::Arc;
+
+use protocol::{ChannelType, Snowflake, Token};
 
 use super::{Core, Internal};
 
 impl Core {
+	pub(super) fn refresh_token(&mut self, token: Token) {
+		self.rest.set_token(Token::new(token.as_str()));
+		self.token = Arc::new(token);
+		self.account_saved = false;
+		self.remember_account();
+	}
+
 	pub(super) fn remember_account(&mut self) {
 		if self.account_saved {
 			return;

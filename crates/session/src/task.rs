@@ -532,6 +532,7 @@ impl Core {
 				self.apply_local(LocalEvent::ConnectionChanged { connected: false });
 			}
 			GatewayEvent::Hello { .. } => self.marks.record("gateway-connected"),
+			GatewayEvent::TokenRefreshed(token) => self.refresh_token(token),
 			GatewayEvent::Ready(ready) => {
 				self.marks.record("ready");
 				self.apply(Event::Ready(&ready));
@@ -562,6 +563,8 @@ impl Core {
 			}
 			GatewayEvent::Resumed => {
 				self.apply_dispatch(&DispatchEvent::Resumed);
+				self.publish_presence();
+				self.subscribe_selected();
 				self.resend_voice_state();
 				self.catch_up();
 			}
