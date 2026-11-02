@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use protocol::{Channel, ChannelType, Presence, RelationshipKind, Snowflake, User};
+use rand::Rng;
 use serde_json::{Value, json};
 
 use crate::fixtures::{Fixtures, GuildFixture};
@@ -11,6 +12,7 @@ const API_VERSION: i64 = 10;
 const CONTAINER_VERSION: i64 = 1;
 const MOCK_FOLDER_ID: i64 = 1_001;
 const MOCK_FOLDER_COLOR: i64 = 0x6666ff;
+const CHAOS_MALFORMED_READY_ODDS: f64 = 0.2;
 
 pub fn is_thread(kind: ChannelType) -> bool {
 	matches!(
@@ -138,7 +140,7 @@ pub fn build(shared: &Shared, session_id: &str) -> (Value, Value) {
 		.iter()
 		.filter_map(|id| store.channels.get(id))
 		.collect();
-	let ready = json!({
+	let mut ready = json!({
 		"v": API_VERSION,
 		"user": store.current_user,
 		"guilds": guilds,
@@ -176,6 +178,10 @@ pub fn build(shared: &Shared, session_id: &str) -> (Value, Value) {
 			}],
 		},
 	});
+	if shared.config.chaos && rand::rng().random_bool(CHAOS_MALFORMED_READY_ODDS) {
+		ready["v"] = json!("10");
+		ready["sessions"] = json!({ "malformed": true });
+	}
 	let supplemental = json!({
 		"merged_presences": {
 			"guilds": live_guilds(fixtures, &store)

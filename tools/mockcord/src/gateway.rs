@@ -1,6 +1,7 @@
+use std::collections::VecDeque;
 use std::io::Write;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use axum::body::Bytes;
 use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
@@ -8,6 +9,7 @@ use axum::extract::{Query, State};
 use axum::response::Response;
 use flate2::Compression;
 use flate2::write::ZlibEncoder;
+use protocol::gateway::capability::AUTH_TOKEN_REFRESH;
 use protocol::{GatewayPayload, Opcode};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -26,8 +28,11 @@ const CLOSE_AUTH_FAILED: u16 = 4004;
 const CLOSE_DECODE_ERROR: u16 = 4002;
 const CLOSE_NOT_AUTHENTICATED: u16 = 4003;
 const CLOSE_ALREADY_AUTHENTICATED: u16 = 4005;
+const CLOSE_RATE_LIMITED: u16 = 4008;
 const CLOSE_TIMED_OUT: u16 = 4009;
 const CLOSE_GOING_AWAY: u16 = 1001;
+const FRAME_LIMIT: usize = 120;
+const FRAME_WINDOW: Duration = Duration::from_secs(60);
 
 #[derive(Deserialize)]
 pub struct GatewayQuery {
@@ -51,6 +56,7 @@ struct Connection {
 	tx: UnboundedSender<Outgoing>,
 	rx: UnboundedReceiver<Outgoing>,
 	session: Option<String>,
+	received: VecDeque<Instant>,
 }
 
 impl Connection {
@@ -65,7 +71,21 @@ impl Connection {
 			tx,
 			rx,
 			session: None,
+			received: VecDeque::with_capacity(FRAME_LIMIT + 1),
 		}
+	}
+
+	fn over_frame_limit(&mut self) -> bool {
+		let now = Instant::now();
+		while self
+			.received
+			.front()
+			.is_some_and(|at| now.duration_since(*at) >= FRAME_WINDOW)
+		{
+			self.received.pop_front();
+		}
+		self.received.push_back(now);
+		self.received.len() > FRAME_LIMIT
 	}
 
 	async fn run(mut self) {
@@ -153,6 +173,10 @@ impl Connection {
 	}
 
 	async fn handle_payload(&mut self, text: &str) -> bool {
+		if self.over_frame_limit() {
+			self.close(CLOSE_RATE_LIMITED, "Rate limited.").await;
+			return false;
+		}
 		let Ok(payload) = serde_json::from_str::<GatewayPayload>(text) else {
 			self.close(CLOSE_DECODE_ERROR, "Decode error").await;
 			return false;
@@ -178,8 +202,14 @@ impl Connection {
 		}
 	}
 
+	fn token_accepted(&self, data: &Value) -> bool {
+		data["token"]
+			.as_str()
+			.is_some_and(|token| self.shared.config.accepts(token))
+	}
+
 	async fn identify(&mut self, data: &Value) -> bool {
-		if data["token"].as_str() != Some(self.shared.config.token.as_str()) {
+		if !self.token_accepted(data) {
 			self.close(CLOSE_AUTH_FAILED, "Authentication failed.").await;
 			return false;
 		}
@@ -193,7 +223,13 @@ impl Connection {
 			id: self.link_id,
 			tx: self.tx.clone(),
 		});
-		let (ready, supplemental) = ready::build(&self.shared, &session_id);
+		let (mut ready, supplemental) = ready::build(&self.shared, &session_id);
+		if data["capabilities"]
+			.as_u64()
+			.is_some_and(|bits| bits & AUTH_TOKEN_REFRESH != 0)
+		{
+			ready["auth_token"] = json!(self.shared.config.rotated_token());
+		}
 		hub.dispatch_to(&session_id, "READY", &ready);
 		hub.dispatch_to(&session_id, "READY_SUPPLEMENTAL", &supplemental);
 		self.session = Some(session_id);
@@ -201,7 +237,7 @@ impl Connection {
 	}
 
 	async fn resume(&mut self, data: &Value) -> bool {
-		if data["token"].as_str() != Some(self.shared.config.token.as_str()) {
+		if !self.token_accepted(data) {
 			self.close(CLOSE_AUTH_FAILED, "Authentication failed.").await;
 			return false;
 		}

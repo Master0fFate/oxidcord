@@ -1,3 +1,5 @@
+const ROTATED_SUFFIX: &str = "-rotated";
+
 #[derive(Debug, Clone)]
 pub struct MockConfig {
 	pub port: Option<u16>,
@@ -10,6 +12,16 @@ pub struct MockConfig {
 	pub heartbeat_interval_ms: u64,
 	pub chaos: bool,
 	pub live_traffic: bool,
+}
+
+impl MockConfig {
+	pub fn rotated_token(&self) -> String {
+		format!("{}{ROTATED_SUFFIX}", self.token)
+	}
+
+	pub fn accepts(&self, token: &str) -> bool {
+		token == self.token || token.strip_prefix(self.token.as_str()) == Some(ROTATED_SUFFIX)
+	}
 }
 
 impl Default for MockConfig {
