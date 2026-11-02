@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use parking_lot::Mutex;
@@ -210,6 +211,7 @@ pub struct Shared {
 	pub voice_signals: broadcast::Sender<Signal>,
 	pub voice_join: Mutex<Option<VoiceJoin>>,
 	windows: Mutex<HashMap<String, Window>>,
+	indexed: AtomicBool,
 }
 
 impl Shared {
@@ -231,7 +233,12 @@ impl Shared {
 			voice_signals,
 			voice_join: Mutex::new(None),
 			windows: Mutex::new(HashMap::new()),
+			indexed: AtomicBool::new(false),
 		}
+	}
+
+	pub fn index_pending(&self) -> bool {
+		self.config.chaos && !self.indexed.swap(true, Ordering::Relaxed)
 	}
 
 	pub fn touch_bucket(&self, key: &str) -> RateLimitSnapshot {

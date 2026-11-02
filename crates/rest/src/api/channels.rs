@@ -13,8 +13,8 @@ const PUBLIC_THREAD: i64 = 11;
 #[derive(Debug, Clone, Default)]
 pub struct SearchQuery {
 	pub content: Option<String>,
-	pub author_id: Option<Snowflake>,
-	pub mentions: Option<Snowflake>,
+	pub author_ids: Vec<Snowflake>,
+	pub mentions: Vec<Snowflake>,
 	pub has: Vec<String>,
 	pub before: Option<Snowflake>,
 	pub after: Option<Snowflake>,
@@ -54,12 +54,13 @@ fn search_pairs(query: SearchQuery, channel_id: Option<Snowflake>) -> Vec<(&'sta
 	if let Some(content) = query.content {
 		pairs.push(("content", content));
 	}
-	if let Some(author_id) = query.author_id {
-		pairs.push(("author_id", author_id.to_string()));
-	}
-	if let Some(mentions) = query.mentions {
-		pairs.push(("mentions", mentions.to_string()));
-	}
+	pairs.extend(
+		query
+			.author_ids
+			.into_iter()
+			.map(|id| ("author_id", id.to_string())),
+	);
+	pairs.extend(query.mentions.into_iter().map(|id| ("mentions", id.to_string())));
 	pairs.extend(query.has.into_iter().map(|has| ("has", has)));
 	if let Some(before) = query.before {
 		pairs.push(("max_id", before.to_string()));
@@ -263,7 +264,7 @@ impl RestClient {
 			(None, Some(channel_id)) => (format!("/channels/{channel_id}/messages/search"), None),
 			(None, None) => return Err(RestError::InvalidRequest),
 		};
-		self.send(Request::get(path).query(&search_pairs(query, channel_filter)))
+		self.send_indexed(Request::get(path).query(&search_pairs(query, channel_filter)))
 			.await
 	}
 

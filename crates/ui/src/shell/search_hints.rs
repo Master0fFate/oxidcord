@@ -3,7 +3,7 @@ use gpui::SharedString;
 use protocol::{ChannelType, Snowflake};
 use state::State;
 
-use super::search_panel::{AUTHOR_TYPES, Filter, HAS_VALUES};
+use super::search_panel::{AUTHOR_TYPES, Filter, HAS_VALUES, tokens};
 use crate::icons::{IconKind, channel_icon};
 use crate::lookup::avatar_for;
 
@@ -28,20 +28,26 @@ pub struct Pending<'a> {
 }
 
 pub fn pending(text: &str) -> Option<Pending<'_>> {
-	if text.ends_with(char::is_whitespace) {
+	let (start, token) = tokens(text).pop()?;
+	if start + token.len() != text.len() {
 		return None;
 	}
-	let start = text.rfind(char::is_whitespace).map_or(0, |at| at + 1);
-	let (key, partial) = text[start..].split_once(':')?;
+	let (key, partial) = token.split_once(':')?;
 	Some(Pending {
 		filter: Filter::named(key)?,
-		partial,
+		partial: partial.trim_matches('"'),
 		start,
 	})
 }
 
 pub fn complete(text: &str, pending: &Pending, value: &str) -> String {
-	format!("{}{}:{value} ", &text[..pending.start], pending.filter.key())
+	let prefix = &text[..pending.start];
+	let key = pending.filter.key();
+	if value.contains(char::is_whitespace) {
+		format!("{prefix}{key}:\"{value}\" ")
+	} else {
+		format!("{prefix}{key}:{value} ")
+	}
 }
 
 pub fn with_filter(text: &str, filter: Filter) -> String {

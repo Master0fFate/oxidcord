@@ -255,6 +255,11 @@ search-results = { $count ->
    *[other] { $count } Results
 }
 search-close = Close results
+search-indexing = Indexing...
+search-unknown-user = Unknown user
+search-previous = Previous page
+search-next = Next page
+search-page = { $page } / { $pages }
 
 lightbox-loading = Loading image...
 lightbox-open = Open original

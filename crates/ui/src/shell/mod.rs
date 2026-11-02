@@ -1110,18 +1110,8 @@ impl Shell {
 		self.plugin_ui.update(cx, |ui, cx| ui.close_right(cx));
 		self.panel = RightPanel::Search;
 		let (guild, channel) = (self.guild, self.channel);
-		let channel_id = if guild.is_none() { channel } else { None };
-		let query = self
-			.search_panel
+		self.search_panel
 			.update(cx, |panel, cx| panel.begin(&query, guild, channel, cx));
-		self.send(
-			Command::Search {
-				guild_id: guild,
-				channel_id,
-				query,
-			},
-			cx,
-		);
 		cx.notify();
 	}
 

@@ -1,5 +1,5 @@
 use std::cmp::Reverse;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::ops::Bound::{Excluded, Unbounded};
 use std::sync::Arc;
 
@@ -7,6 +7,7 @@ use axum::Json;
 use axum::extract::{FromRequest, Multipart, Path, Query, Request, State};
 use axum::http::StatusCode;
 use axum::http::header::CONTENT_TYPE;
+use axum::response::{IntoResponse, Response};
 use protocol::{ChannelType, EditMessage, Snowflake};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -275,14 +276,36 @@ pub async fn ack(
 	Ok(Json(json!({ "token": null })))
 }
 
-pub fn search_in(store: &Store, channel_ids: &[u64], params: &HashMap<String, String>) -> Value {
-	let content = params.get("content").map(|content| content.to_lowercase());
-	let author = params
-		.get("author_id")
-		.and_then(|author| author.parse::<u64>().ok());
-	let only_channel = params
-		.get("channel_id")
-		.and_then(|channel| channel.parse::<u64>().ok());
+fn param<'a>(params: &'a [(String, String)], name: &str) -> Option<&'a str> {
+	params
+		.iter()
+		.find(|(key, _)| key == name)
+		.map(|(_, value)| value.as_str())
+}
+
+pub fn index_pending(shared: &Shared) -> Option<Response> {
+	shared.index_pending().then(|| {
+		(
+			StatusCode::ACCEPTED,
+			Json(json!({
+				"message": "Index not yet available. Try again later",
+				"code": 110000,
+				"retry_after": 1.0,
+				"documents_indexed": 0,
+			})),
+		)
+			.into_response()
+	})
+}
+
+pub fn search_in(store: &Store, channel_ids: &[u64], params: &[(String, String)]) -> Value {
+	let content = param(params, "content").map(str::to_lowercase);
+	let authors: Vec<u64> = params
+		.iter()
+		.filter(|(key, _)| key == "author_id")
+		.filter_map(|(_, author)| author.parse().ok())
+		.collect();
+	let only_channel = param(params, "channel_id").and_then(|channel| channel.parse::<u64>().ok());
 	let mut hits: Vec<&Value> = channel_ids
 		.iter()
 		.filter(|id| only_channel.is_none_or(|only| only == **id))
@@ -293,17 +316,16 @@ pub fn search_in(store: &Store, channel_ids: &[u64], params: &HashMap<String, St
 				message["content"]
 					.as_str()
 					.is_some_and(|text| text.to_lowercase().contains(needle.as_str()))
-			}) && author.is_none_or(|author| parse_id(&message["author"]["id"]) == Some(author))
+			}) && (authors.is_empty()
+				|| parse_id(&message["author"]["id"]).is_some_and(|author| authors.contains(&author)))
 		})
 		.collect();
 	hits.sort_by_key(|message| Reverse(message_id(message)));
 	let total = hits.len();
-	let offset = params
-		.get("offset")
+	let offset = param(params, "offset")
 		.and_then(|offset| offset.parse().ok())
 		.unwrap_or(0);
-	let limit = params
-		.get("limit")
+	let limit = param(params, "limit")
 		.and_then(|limit| limit.parse().ok())
 		.unwrap_or(DEFAULT_SEARCH_PAGE_SIZE)
 		.clamp(1, DEFAULT_SEARCH_PAGE_SIZE);
@@ -323,11 +345,14 @@ pub fn search_in(store: &Store, channel_ids: &[u64], params: &HashMap<String, St
 pub async fn search_messages(
 	State(shared): State<Arc<Shared>>,
 	Path(id): Path<u64>,
-	Query(params): Query<HashMap<String, String>>,
-) -> ApiResult {
+	Query(params): Query<Vec<(String, String)>>,
+) -> Result<Response, ApiError> {
+	require_channel(&shared.store.lock(), id)?;
+	if let Some(pending) = index_pending(&shared) {
+		return Ok(pending);
+	}
 	let store = shared.store.lock();
-	require_channel(&store, id)?;
-	Ok(Json(search_in(&store, &[id], &params)))
+	Ok(Json(search_in(&store, &[id], &params)).into_response())
 }
 
 fn thread_request(body: &Value, starter: Option<Draft>) -> Result<ThreadRequest, ApiError> {

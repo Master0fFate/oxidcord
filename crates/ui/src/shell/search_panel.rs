@@ -1,4 +1,4 @@
-use chrono::{NaiveDate, NaiveTime};
+use chrono::{Local, NaiveDate, NaiveTime};
 use gpui::{
 	Context, Entity, EventEmitter, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _,
 	Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div,
@@ -7,6 +7,7 @@ use gpui::{
 use gpui_component::scroll::ScrollableElement as _;
 use protocol::Snowflake;
 use rest::api::SearchQuery;
+use session::Command;
 use state::State;
 
 use super::message::snippet;
@@ -19,6 +20,8 @@ use crate::lookup::user_avatar;
 use crate::theme::{Theme, rem};
 
 const SNIPPET_LENGTH: usize = 220;
+const PAGE_SIZE: u32 = 25;
+const MAX_OFFSET: u32 = 9975;
 const DISCORD_EPOCH_MS: i64 = 1_420_070_400_000;
 const SNOWFLAKE_TIME_SHIFT: u32 = 22;
 pub const HAS_VALUES: [&str; 9] = [
@@ -81,11 +84,42 @@ impl Filter {
 struct Chip {
 	filter: Filter,
 	value: String,
+	unknown: bool,
+}
+
+struct Scope {
+	guild_id: Option<Snowflake>,
+	channel_id: Option<Snowflake>,
+	query: SearchQuery,
+}
+
+pub fn tokens(text: &str) -> Vec<(usize, &str)> {
+	let mut tokens = Vec::new();
+	let mut start = None;
+	let mut quoted = false;
+	for (at, character) in text.char_indices() {
+		quoted ^= character == '"';
+		if character.is_whitespace() && !quoted {
+			if let Some(begin) = start.take() {
+				tokens.push((begin, &text[begin..at]));
+			}
+		} else if start.is_none() {
+			start = Some(at);
+		}
+	}
+	if let Some(begin) = start {
+		tokens.push((begin, &text[begin..]));
+	}
+	tokens
 }
 
 fn snowflake_at(date: NaiveDate, end_of_day: bool) -> Option<Snowflake> {
 	let day = if end_of_day { date.succ_opt()? } else { date };
-	let millis = day.and_time(NaiveTime::MIN).and_utc().timestamp_millis() - DISCORD_EPOCH_MS;
+	let start = day
+		.and_time(NaiveTime::MIN)
+		.and_local_timezone(Local)
+		.earliest()?;
+	let millis = start.timestamp_millis() - DISCORD_EPOCH_MS;
 	u64::try_from(millis)
 		.ok()
 		.map(|millis| Snowflake::from(millis << SNOWFLAKE_TIME_SHIFT))
@@ -173,17 +207,18 @@ fn parse_query(
 	let mut query = SearchQuery::default();
 	let mut chips = Vec::new();
 	let mut content: Vec<&str> = Vec::new();
-	for token in text.split_whitespace() {
+	for (_, token) in tokens(text) {
 		let applied = token.split_once(':').and_then(|(key, value)| {
 			let filter = Filter::named(key)?;
+			let value = value.trim_matches('"');
 			(!value.is_empty()).then_some((filter, value))
 		});
 		let accepted = applied.is_some_and(|(filter, value)| match filter {
 			Filter::From => resolve_user(state, guild, channel, value)
-				.map(|id| query.author_id = Some(id))
+				.map(|id| query.author_ids.push(id))
 				.is_some(),
 			Filter::Mentions => resolve_user(state, guild, channel, value)
-				.map(|id| query.mentions = Some(id))
+				.map(|id| query.mentions.push(id))
 				.is_some(),
 			Filter::Has => {
 				let lowered = value.to_lowercase();
@@ -226,6 +261,12 @@ fn parse_query(
 			Some((filter, value)) if accepted => chips.push(Chip {
 				filter,
 				value: value.to_owned(),
+				unknown: false,
+			}),
+			Some((filter @ (Filter::From | Filter::Mentions), value)) => chips.push(Chip {
+				filter,
+				value: value.to_owned(),
+				unknown: true,
 			}),
 			_ => content.push(token),
 		}
@@ -252,6 +293,10 @@ pub struct SearchPanel {
 	hits: Vec<Hit>,
 	total: u64,
 	searching: bool,
+	indexing: bool,
+	unknown: bool,
+	scope: Option<Scope>,
+	offset: u32,
 }
 
 impl EventEmitter<SearchEvent> for SearchPanel {}
@@ -264,6 +309,10 @@ impl SearchPanel {
 			hits: Vec::new(),
 			total: 0,
 			searching: false,
+			indexing: false,
+			unknown: false,
+			scope: None,
+			offset: 0,
 		}
 	}
 
@@ -273,14 +322,50 @@ impl SearchPanel {
 		guild: Option<Snowflake>,
 		channel: Option<Snowflake>,
 		cx: &mut Context<Self>,
-	) -> SearchQuery {
+	) {
 		let (query, chips) = parse_query(text, &self.data.read(cx).state(), guild, channel);
+		self.unknown = chips.iter().any(|chip| chip.unknown);
 		self.chips = chips;
-		self.searching = true;
 		self.hits.clear();
 		self.total = 0;
+		self.offset = 0;
+		self.indexing = false;
+		self.searching = false;
+		self.scope = (!self.unknown).then_some(Scope {
+			guild_id: guild,
+			channel_id: if guild.is_none() { channel } else { None },
+			query,
+		});
+		self.fetch(cx);
 		cx.notify();
-		query
+	}
+
+	fn fetch(&mut self, cx: &mut Context<Self>) {
+		let Some(scope) = &self.scope else {
+			return;
+		};
+		let query = SearchQuery {
+			offset: Some(self.offset).filter(|offset| *offset > 0),
+			..scope.query.clone()
+		};
+		self.data.read(cx).send(Command::Search {
+			guild_id: scope.guild_id,
+			channel_id: scope.channel_id,
+			query,
+		});
+		self.searching = true;
+		self.indexing = false;
+	}
+
+	fn go_to(&mut self, offset: u32, cx: &mut Context<Self>) {
+		self.offset = offset;
+		self.fetch(cx);
+		cx.notify();
+	}
+
+	fn last_offset(&self) -> u32 {
+		let pages = u32::try_from(self.total.div_ceil(u64::from(PAGE_SIZE))).unwrap_or(u32::MAX);
+		(pages.saturating_sub(1) * PAGE_SIZE).min(MAX_OFFSET)
 	}
 
 	pub fn refresh(&mut self, cx: &mut Context<Self>) {
@@ -290,6 +375,7 @@ impl SearchPanel {
 		};
 		let state = data.state();
 		self.total = results.total;
+		self.indexing = results.indexing;
 		self.hits = results
 			.messages
 			.iter()
@@ -326,6 +412,10 @@ impl Render for SearchPanel {
 		let theme = Theme::current(cx);
 		let title = if self.searching {
 			cx.t("search-searching")
+		} else if self.indexing {
+			cx.t("search-indexing")
+		} else if self.unknown {
+			cx.t("search-unknown-user")
 		} else {
 			cx.t_args(
 				"search-results",
@@ -432,7 +522,7 @@ impl Render for SearchPanel {
 						.children(self.chips.iter().map(|chip| {
 							badge(
 								format!("{}: {}", chip.filter.key(), chip.value),
-								theme.brand,
+								if chip.unknown { theme.danger } else { theme.brand },
 								&theme,
 							)
 						})),
@@ -449,5 +539,57 @@ impl Render for SearchPanel {
 					.flex_1()
 					.min_h_0(),
 			)
+			.when(self.total > u64::from(PAGE_SIZE), |panel| {
+				panel.child(self.pager(&theme, cx))
+			})
+	}
+}
+
+impl SearchPanel {
+	fn pager(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
+		let offset = self.offset;
+		let last = self.last_offset();
+		let slot = || div().flex_none().size(rem(28.));
+		div()
+			.flex()
+			.flex_none()
+			.items_center()
+			.justify_between()
+			.h(theme.top_bar_height)
+			.px(theme.space_16)
+			.border_t_1()
+			.border_color(theme.divider)
+			.child(if offset > 0 {
+				IconButton::new("search-prev", IconKind::ChevronLeft)
+					.tooltip(cx.t("search-previous"))
+					.on_click(
+						cx.listener(move |this, _, _, cx| this.go_to(offset.saturating_sub(PAGE_SIZE), cx)),
+					)
+					.into_any_element()
+			} else {
+				slot().into_any_element()
+			})
+			.child(
+				div()
+					.text_size(theme.font_sm)
+					.text_color(theme.text_muted)
+					.child(cx.t_args(
+						"search-page",
+						&[
+							("page", ArgValue::from((offset / PAGE_SIZE + 1) as usize)),
+							("pages", ArgValue::from((last / PAGE_SIZE + 1) as usize)),
+						],
+					)),
+			)
+			.child(if offset < last {
+				IconButton::new("search-next", IconKind::ChevronRight)
+					.tooltip(cx.t("search-next"))
+					.on_click(
+						cx.listener(move |this, _, _, cx| this.go_to((offset + PAGE_SIZE).min(last), cx)),
+					)
+					.into_any_element()
+			} else {
+				slot().into_any_element()
+			})
 	}
 }
