@@ -18,7 +18,7 @@ const SHOWN: usize = 10;
 const TIP_WIDTH: f32 = 220.;
 
 #[derive(Default, Clone)]
-pub struct ReactionRequests(pub Rc<RefCell<HashSet<(Snowflake, String)>>>);
+pub struct ReactionRequests(pub Rc<RefCell<HashSet<(Snowflake, String, bool)>>>);
 
 impl Global for ReactionRequests {}
 
@@ -27,6 +27,7 @@ pub struct ReactionTip {
 	guild: Option<Snowflake>,
 	message: Snowflake,
 	key: String,
+	burst: bool,
 	label: SharedString,
 	count: i64,
 	_subscription: Subscription,
@@ -35,21 +36,23 @@ pub struct ReactionTip {
 pub fn build(
 	channel: Snowflake,
 	message: Snowflake,
-	guild: Option<Snowflake>,
 	key: String,
+	burst: bool,
 	label: SharedString,
 	count: i64,
 	cx: &mut App,
 ) -> AnyView {
 	let data = data_handle(cx);
+	let guild = data.read(cx).state().channel_guild(channel);
 	let requested = cx
 		.try_global::<ReactionRequests>()
-		.is_some_and(|requests| requests.0.borrow_mut().insert((message, key.clone())));
+		.is_some_and(|requests| requests.0.borrow_mut().insert((message, key.clone(), burst)));
 	if requested {
 		data.read(cx).send(Command::LoadReactionUsers {
 			channel_id: channel,
 			message_id: message,
 			emoji: key.clone(),
+			burst,
 		});
 	}
 	cx.new(|cx| {
@@ -65,6 +68,7 @@ pub fn build(
 			guild,
 			message,
 			key,
+			burst,
 			label,
 			count,
 			_subscription: subscription,
@@ -79,13 +83,15 @@ impl Render for ReactionTip {
 		let names: Option<Vec<String>> = {
 			let data = self.data.read(cx);
 			let state = data.state();
-			state.reaction_users(self.message, &self.key).map(|users| {
-				users
-					.iter()
-					.take(SHOWN)
-					.map(|user| state.display_name(self.guild, user.id))
-					.collect()
-			})
+			state
+				.reaction_users(self.message, &self.key, self.burst)
+				.map(|users| {
+					users
+						.iter()
+						.take(SHOWN)
+						.map(|user| state.display_name(self.guild, user.id))
+						.collect()
+				})
 		};
 		let remaining = names
 			.as_ref()

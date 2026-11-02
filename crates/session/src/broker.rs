@@ -886,7 +886,7 @@ impl HostBroker for SessionBroker {
 			return Some(Vec::new());
 		}
 		state
-			.reaction_users(Snowflake(message.id), &reaction_key(emoji))
+			.reaction_users(Snowflake(message.id), &reaction_key(emoji), false)
 			.map(|users| users.iter().take(limit as usize).map(user_view).collect())
 	}
 
@@ -1152,6 +1152,7 @@ impl HostBroker for SessionBroker {
 			channel_id: Snowflake(message.channel_id),
 			message_id: Snowflake(message.id),
 			emoji: reaction_key(emoji),
+			burst: false,
 		})
 	}
 

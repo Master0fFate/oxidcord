@@ -19,9 +19,9 @@ impl State {
 		}
 		warn_dropped("guild", ready.guilds.dropped());
 		warn_dropped("private_channel", ready.private_channels.dropped());
-		for (index, guild) in ready.guilds.iter().enumerate() {
+		for (source, guild) in ready.guilds.iter_with_source() {
 			self.ingest_guild(guild);
-			if let Some(members) = ready.merged_members.get(index) {
+			if let Some(members) = ready.merged_members.get(source) {
 				self.ingest_members(guild.id, members);
 			}
 		}
@@ -54,7 +54,7 @@ impl State {
 
 	pub(crate) fn apply_supplemental(&mut self, supplemental: &ReadySupplemental) -> Changes {
 		let mut changes = Changes::default();
-		for (index, guild) in supplemental.guilds.iter().enumerate() {
+		for (source, guild) in supplemental.guilds.iter_with_source() {
 			let guild_id = guild.id;
 			if let Some(state) = self.guilds.get_mut(&guild_id) {
 				state.voice_states = guild
@@ -73,17 +73,21 @@ impl State {
 					.collect();
 				changes.voice.insert(guild_id);
 			}
-			if let Some(members) = supplemental.merged_members.get(index) {
+			if let Some(members) = supplemental.merged_members.get(source) {
 				self.ingest_members(guild_id, members);
 				changes.members.insert(guild_id);
 			}
-			if let Some(presences) = supplemental.merged_presences.guilds.get(index) {
+			if let Some(presences) = supplemental.merged_presences.guilds.get(source) {
 				for presence in presences.iter() {
 					if let Some(user_id) = self.apply_presence(presence) {
 						changes.presence.insert(user_id);
 					}
 				}
 			}
+		}
+		for channel in supplemental.lazy_private_channels.iter() {
+			self.store_private_channel(channel);
+			changes.private_channels = true;
 		}
 		for presence in supplemental.merged_presences.friends.iter() {
 			if let Some(user_id) = self.apply_presence(presence) {

@@ -33,7 +33,6 @@ const CLOSE_TIMED_OUT: u16 = 4009;
 const CLOSE_GOING_AWAY: u16 = 1001;
 const FRAME_LIMIT: usize = 120;
 const FRAME_WINDOW: Duration = Duration::from_secs(60);
-const USER_SETTINGS_PROTO_CAPABILITY: u64 = 512;
 
 #[derive(Deserialize)]
 pub struct GatewayQuery {
@@ -224,14 +223,9 @@ impl Connection {
 			id: self.link_id,
 			tx: self.tx.clone(),
 		});
-		let with_proto = data["capabilities"]
-			.as_u64()
-			.is_some_and(|capabilities| capabilities & USER_SETTINGS_PROTO_CAPABILITY != 0);
-		let (mut ready, supplemental) = ready::build(&self.shared, &session_id, with_proto);
-		if data["capabilities"]
-			.as_u64()
-			.is_some_and(|bits| bits & AUTH_TOKEN_REFRESH != 0)
-		{
+		let capabilities = data["capabilities"].as_u64().unwrap_or_default();
+		let (mut ready, supplemental) = ready::build(&self.shared, &session_id, capabilities);
+		if capabilities & AUTH_TOKEN_REFRESH != 0 {
 			ready["auth_token"] = json!(self.shared.config.rotated_token());
 		}
 		hub.dispatch_to(&session_id, "READY", &ready);

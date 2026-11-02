@@ -2,8 +2,8 @@ use std::collections::{BTreeSet, HashMap};
 
 use chrono::{DateTime, Duration, Utc};
 use protocol::{
-	Channel, ChannelType, Emoji, LenientVec, Member, PermissionOverwrite, PermissionOverwriteKind,
-	Permissions, Relationship, RelationshipKind, Role, Snowflake, UserGuildSettings,
+	Channel, ChannelType, Emoji, LenientVec, Member, MessageType, PermissionOverwrite,
+	PermissionOverwriteKind, Permissions, Relationship, RelationshipKind, Role, Snowflake, UserGuildSettings,
 };
 use serde_json::{Value, json};
 
@@ -11,7 +11,7 @@ use crate::error::ApiError;
 use crate::fixtures::{CURRENT_USER_ID, Fixtures, GuildFixture};
 use crate::ids::snowflake_at;
 use crate::json::{parse_id, to_json};
-use crate::ops::now_iso;
+use crate::ops::{Draft, now_iso};
 use crate::ready::is_thread;
 use crate::state::{Shared, Store};
 
@@ -957,12 +957,29 @@ impl Shared {
 		recipients.retain(|recipient| recipient.id.0 != user_id);
 		if add {
 			channel.recipient_ids.push(Snowflake(user_id));
-			recipients.push(user);
+			recipients.push(user.clone());
 		}
 		channel.recipients = LenientVec::from(recipients);
-		let value = to_json(&*channel);
+		let current_user = store.current_user.clone();
 		drop(store);
-		self.hub.broadcast("CHANNEL_UPDATE", &value);
+		self.hub.broadcast(
+			if add {
+				"CHANNEL_RECIPIENT_ADD"
+			} else {
+				"CHANNEL_RECIPIENT_REMOVE"
+			},
+			&json!({ "channel_id": channel_id.to_string(), "user": to_json(&user) }),
+		);
+		let notice = Draft {
+			kind: Some(if add {
+				MessageType::RecipientAdd
+			} else {
+				MessageType::RecipientRemove
+			}),
+			content: format!("<@{user_id}>"),
+			..Draft::default()
+		};
+		self.post_message(channel_id, &current_user, notice)?;
 		Ok(())
 	}
 
@@ -1149,18 +1166,20 @@ impl Shared {
 		message_id: u64,
 		emoji: &str,
 		limit: usize,
+		burst: bool,
 	) -> Result<Value, ApiError> {
 		let store = self.store.lock();
 		let message = store
 			.message(channel_id, message_id)
 			.ok_or_else(ApiError::unknown_message)?;
 		let name = emoji.rsplit_once(':').map_or(emoji, |(name, _)| name);
+		let side = if burst { "burst" } else { "normal" };
 		let count = message["reactions"]
 			.as_array()
 			.into_iter()
 			.flatten()
 			.find(|reaction| reaction["emoji"]["name"].as_str() == Some(name))
-			.and_then(|reaction| reaction["count"].as_u64())
+			.and_then(|reaction| reaction["count_details"][side].as_u64())
 			.ok_or_else(ApiError::unknown_message)? as usize;
 		let users: Vec<Value> = self
 			.fixtures

@@ -73,6 +73,7 @@ pub enum Loaded {
 	ReactionUsers {
 		message_id: Snowflake,
 		emoji: String,
+		burst: bool,
 		users: Vec<User>,
 	},
 	GifTrending(GifTrending),
@@ -254,7 +255,7 @@ pub(crate) struct Lazy {
 	pub(crate) audit_logs: HashMap<Snowflake, AuditLog>,
 	pub(crate) bans: HashMap<Snowflake, Vec<BanEntry>>,
 	pub(crate) auth_sessions: Option<Vec<AuthSession>>,
-	pub(crate) reaction_users: HashMap<(Snowflake, String), Vec<User>>,
+	pub(crate) reaction_users: HashMap<(Snowflake, String, bool), Vec<User>>,
 	pub(crate) expressions: Expressions,
 	pub(crate) command_indexes: HashMap<Snowflake, CommandIndex>,
 }
@@ -611,6 +612,7 @@ impl State {
 			Loaded::ReactionUsers {
 				message_id,
 				emoji,
+				burst,
 				users,
 			} => {
 				for user in users {
@@ -618,7 +620,7 @@ impl State {
 				}
 				self.lazy
 					.reaction_users
-					.insert((*message_id, emoji.clone()), users.clone());
+					.insert((*message_id, emoji.clone(), *burst), users.clone());
 				changes.loaded.insert(*message_id);
 			}
 			Loaded::GifTrending(trending) => {
@@ -892,10 +894,10 @@ impl State {
 		self.lazy.bans.get(&guild_id).map_or(&[][..], Vec::as_slice)
 	}
 
-	pub fn reaction_users(&self, message_id: Snowflake, emoji: &str) -> Option<&[User]> {
+	pub fn reaction_users(&self, message_id: Snowflake, emoji: &str, burst: bool) -> Option<&[User]> {
 		self.lazy
 			.reaction_users
-			.get(&(message_id, emoji.to_owned()))
+			.get(&(message_id, emoji.to_owned(), burst))
 			.map(Vec::as_slice)
 	}
 }

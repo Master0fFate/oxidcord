@@ -37,7 +37,7 @@ use crate::playback::MediaKey;
 use crate::shell::plugins::{
 	INLINE, MenuTarget, PatchEffects, contextual_inline, message_click_at, plugin_menu, watching_messages,
 };
-use crate::theme::{Theme, rem, with_alpha};
+use crate::theme::{Theme, parse_color, rem, with_alpha};
 
 const MAX_IMAGE_WIDTH: f32 = 550.;
 const MAX_IMAGE_HEIGHT: f32 = 350.;
@@ -1218,10 +1218,25 @@ fn reaction_chip(
 	index: usize,
 	message: &Message,
 	reaction: &Reaction,
+	burst: bool,
 	env: &BodyEnv,
 	cx: &App,
 ) -> AnyElement {
 	let theme = env.theme;
+	let (count, me) = if burst {
+		(reaction.burst_count(), reaction.me_burst)
+	} else {
+		(reaction.normal_count(), reaction.me)
+	};
+	let accent = if burst {
+		reaction
+			.burst_colors
+			.first()
+			.and_then(|color| parse_color(color))
+			.unwrap_or(theme.brand)
+	} else {
+		theme.brand
+	};
 	let glyph = match reaction.emoji.id {
 		Some(id) => {
 			let pixels = (REACTION_EMOJI * 2.) as u32;
@@ -1240,11 +1255,10 @@ fn reaction_chip(
 		),
 	};
 	let key = emoji_key(&reaction.emoji);
-	let add = !reaction.me;
+	let add = !me;
 	let message_id = message.id;
 	let channel_id = message.channel_id;
 	let dispatch = env.dispatch.clone();
-	let me = reaction.me;
 	let tip_key = key.clone();
 	let tip_label: SharedString = reaction
 		.emoji
@@ -1259,9 +1273,11 @@ fn reaction_chip(
 		})
 		.unwrap_or_default()
 		.into();
-	let (guild_id, count) = (message.guild_id, reaction.count);
 	let chip = div()
-		.id(SharedString::from(format!("reaction-{}-{index}", message.id)))
+		.id(SharedString::from(format!(
+			"reaction-{}-{index}-{}",
+			message.id, burst as u8
+		)))
 		.flex()
 		.items_center()
 		.gap(rem(6.))
@@ -1273,8 +1289,8 @@ fn reaction_chip(
 		.text_size(theme.font_sm)
 		.font_weight(FontWeight::SEMIBOLD)
 		.when(me, |chip| {
-			chip.border_color(theme.brand)
-				.bg(with_alpha(theme.brand, 0.24))
+			chip.border_color(accent)
+				.bg(with_alpha(accent, 0.24))
 				.text_color(theme.mention_text)
 		})
 		.when(!me, |chip| {
@@ -1283,6 +1299,7 @@ fn reaction_chip(
 				.text_color(theme.interactive_normal)
 				.hover(|style| style.border_color(theme.interactive_muted))
 		})
+		.when(burst && !me, |chip| chip.border_color(with_alpha(accent, 0.6)))
 		.on_click(move |_, window, cx| {
 			dispatch(
 				RowAction::React {
@@ -1290,6 +1307,7 @@ fn reaction_chip(
 					message_id,
 					emoji: key.clone(),
 					add,
+					burst: Some(burst),
 				},
 				window,
 				cx,
@@ -1299,15 +1317,18 @@ fn reaction_chip(
 			reaction_tip::build(
 				channel_id,
 				message_id,
-				guild_id,
 				tip_key.clone(),
+				burst,
 				tip_label.clone(),
 				count,
 				cx,
 			)
 		})
 		.child(glyph)
-		.child(reaction.count.to_string())
+		.when(burst, |chip| {
+			chip.child(Icon::new(IconKind::Sparkles).size(rem(12.)).color(accent))
+		})
+		.child(count.to_string())
 		.into_any_element();
 	let emoji = EmojiRef {
 		id: reaction.emoji.id.map(Snowflake::get),
@@ -1315,7 +1336,7 @@ fn reaction_chip(
 		animated: reaction.emoji.animated,
 	};
 	plugin_menu(
-		SharedString::from(format!("reaction-menu-{}-{index}", message.id)),
+		SharedString::from(format!("reaction-menu-{}-{index}-{}", message.id, burst as u8)),
 		chip,
 		"reaction-context-menu",
 		MenuTarget::message(message, env.lookup.guild, env.lookup.state.current_user_id()).reaction(emoji),
@@ -1338,7 +1359,13 @@ pub fn reactions(message: &Message, env: &BodyEnv, cx: &App) -> Option<AnyElemen
 					.reactions
 					.iter()
 					.enumerate()
-					.map(|(index, reaction)| reaction_chip(index, message, reaction, env, cx)),
+					.flat_map(|(index, reaction)| {
+						let has_burst = reaction.burst_count() > 0;
+						let normal = (reaction.normal_count() > 0 || !has_burst)
+							.then(|| reaction_chip(index, message, reaction, false, env, cx));
+						let burst = has_burst.then(|| reaction_chip(index, message, reaction, true, env, cx));
+						normal.into_iter().chain(burst)
+					}),
 			)
 			.into_any_element(),
 	)

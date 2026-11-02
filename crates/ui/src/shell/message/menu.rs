@@ -454,6 +454,7 @@ impl MenuSource {
 									message_id,
 									emoji: emoji.clone(),
 									add,
+									burst: None,
 								},
 								window,
 								cx,

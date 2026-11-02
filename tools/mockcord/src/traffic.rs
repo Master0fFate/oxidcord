@@ -25,6 +25,9 @@ const RECENT_CAPACITY: usize = 6;
 const EDIT_EVERY: u64 = 3;
 const DELETE_EVERY: u64 = 4;
 const THREAD_MENTION_EVERY: u64 = 5;
+const STORM_EVERY: u64 = 5;
+const STORM_USERS: std::ops::RangeInclusive<usize> = 3..=5;
+const STORM_EMOJI: [&str; 4] = ["🔥", "🎉", "👍", "😂"];
 const STATUSES: [StatusKind; 4] = [
 	StatusKind::Online,
 	StatusKind::Idle,
@@ -187,6 +190,32 @@ async fn message_loop(shared: Arc<Shared>) {
 		if round.is_multiple_of(DELETE_EVERY) {
 			delete_oldest(&shared, &mut recent);
 		}
+		if round.is_multiple_of(STORM_EVERY) {
+			react_in_bulk(&shared, &recent);
+		}
+	}
+}
+
+fn react_in_bulk(shared: &Shared, recent: &VecDeque<Posted>) {
+	let Some(posted) = recent.back() else {
+		return;
+	};
+	let mut rng = live_rng();
+	let size = rng.random_range(STORM_USERS);
+	let user_ids: Vec<u64> = shared
+		.fixtures
+		.users
+		.keys()
+		.copied()
+		.filter(|&id| id != CURRENT_USER_ID)
+		.take(size)
+		.collect();
+	let emoji = *pick(&mut rng, &STORM_EMOJI);
+	if shared
+		.reaction_storm(posted.channel_id, posted.id, emoji, &user_ids)
+		.is_ok()
+	{
+		tracing::info!(channel_id = posted.channel_id, "live reaction storm");
 	}
 }
 

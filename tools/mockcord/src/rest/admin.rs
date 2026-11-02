@@ -396,7 +396,10 @@ pub async fn reactions(
 		.get("limit")
 		.and_then(|limit| limit.parse().ok())
 		.unwrap_or(DEFAULT_REACTION_LIMIT);
-	shared.reaction_users(id, message_id, &emoji, limit).map(Json)
+	let burst = super::channels::is_burst(params.get("type"));
+	shared
+		.reaction_users(id, message_id, &emoji, limit, burst)
+		.map(Json)
 }
 
 pub fn profile_extras(shared: &Shared, user_id: u64, guild_id: Option<u64>) -> Value {

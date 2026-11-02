@@ -2,8 +2,9 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use protocol::{
-	Channel, ChannelLastMessage, DispatchEvent, GuildMemberListUpdate, GuildMembersChunk, GuildRoleChange,
-	Member, MemberListGroup, Message, MessageAck, MessageUpdate, PassiveUpdate, Presence, Snowflake,
+	Channel, ChannelLastMessage, ChannelRecipientChange, DispatchEvent, GuildMemberListUpdate,
+	GuildMembersChunk, GuildRoleChange, Member, MemberListGroup, Message, MessageAck, MessageUpdate,
+	PassiveUpdate, Presence, Snowflake,
 	ThreadDelete, ThreadListSync, TypingStart, UnavailableGuild, UserGuildSettings, VoiceState,
 };
 use serde::Deserialize;
@@ -13,7 +14,7 @@ use serde_json::value::RawValue;
 use crate::changes::Changes;
 use crate::guild::{is_thread, stripped_member};
 use crate::member_list::MemberSlot;
-use crate::messages::{add_reaction, apply_update, remove_emoji, remove_reaction};
+use crate::messages::{ReactionChange, add_reaction, apply_update, remove_emoji, remove_reaction};
 use crate::state::{State, intern_user};
 
 #[derive(Deserialize, Default)]
@@ -40,15 +41,41 @@ impl State {
 			DispatchEvent::MessageDelete(delete) => self.messages_delete(delete.channel_id, &[delete.id]),
 			DispatchEvent::MessageDeleteBulk(delete) => self.messages_delete(delete.channel_id, &delete.ids),
 			DispatchEvent::MessageReactionAdd(add) => {
-				let mine = Some(add.user_id) == self.current_user_id();
+				let change = ReactionChange {
+					emoji: &add.emoji,
+					mine: Some(add.user_id) == self.current_user_id(),
+					burst: add.is_burst(),
+					burst_colors: &add.burst_colors,
+				};
 				self.edit_message(add.channel_id, add.message_id, |message| {
-					add_reaction(message, &add.emoji, mine)
+					add_reaction(message, &change)
+				})
+			}
+			DispatchEvent::MessageReactionAddMany(many) => {
+				let current = self.current_user_id();
+				self.edit_message(many.channel_id, many.message_id, |message| {
+					for reaction in many.reactions.iter() {
+						for &user_id in &reaction.users {
+							let change = ReactionChange {
+								emoji: &reaction.emoji,
+								mine: Some(user_id) == current,
+								burst: reaction.burst == Some(true),
+								burst_colors: &[],
+							};
+							add_reaction(message, &change);
+						}
+					}
 				})
 			}
 			DispatchEvent::MessageReactionRemove(remove) => {
-				let mine = Some(remove.user_id) == self.current_user_id();
+				let change = ReactionChange {
+					emoji: &remove.emoji,
+					mine: Some(remove.user_id) == self.current_user_id(),
+					burst: remove.is_burst(),
+					burst_colors: &[],
+				};
 				self.edit_message(remove.channel_id, remove.message_id, |message| {
-					remove_reaction(message, &remove.emoji, mine)
+					remove_reaction(message, &change)
 				})
 			}
 			DispatchEvent::MessageReactionRemoveAll(remove) => {
@@ -71,6 +98,8 @@ impl State {
 				self.channels_last_message(update.guild_id, &update.channel_unread_updates)
 			}
 			DispatchEvent::PassiveUpdateV2(update) => self.passive_update(update),
+			DispatchEvent::ChannelRecipientAdd(change) => self.recipient_added(change),
+			DispatchEvent::ChannelRecipientRemove(change) => self.recipient_removed(change),
 			DispatchEvent::ThreadDelete(delete) => self.thread_delete(delete),
 			DispatchEvent::ThreadListSync(sync) => self.thread_list_sync(sync),
 			DispatchEvent::ThreadMemberUpdate(member) => {
@@ -435,6 +464,28 @@ impl State {
 				changes.voice.insert(guild_id);
 				changes.channel_lists.insert(guild_id);
 			}
+	fn recipient_added(&mut self, change: &ChannelRecipientChange) -> Changes {
+		intern_user(&mut self.users, &change.user);
+		let mut changes = Changes::default();
+		if let Some(channel) = self.private_channels.get_mut(&change.channel_id) {
+			if !channel.recipient_ids.contains(&change.user.id) {
+				channel.recipient_ids.push(change.user.id);
+			}
+			changes.private_channels = true;
+		}
+		changes
+	}
+
+	fn recipient_removed(&mut self, change: &ChannelRecipientChange) -> Changes {
+		if Some(change.user.id) == self.current_user_id() {
+			let mut changes = self.remove_channel(change.channel_id);
+			changes.private_channels = true;
+			return changes;
+		}
+		let mut changes = Changes::default();
+		if let Some(channel) = self.private_channels.get_mut(&change.channel_id) {
+			channel.recipient_ids.retain(|&id| id != change.user.id);
+			changes.private_channels = true;
 		}
 		changes
 	}

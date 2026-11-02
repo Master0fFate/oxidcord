@@ -333,13 +333,15 @@ impl Core {
 				channel_id,
 				message_id,
 				emoji,
+				burst,
 			} => self.spawn_load("reactions", move |rest| async move {
 				let users = rest
-					.reactions(channel_id, message_id, &emoji, REACTION_PAGE)
+					.reactions(channel_id, message_id, &emoji, REACTION_PAGE, burst)
 					.await?;
 				Ok(Loaded::ReactionUsers {
 					message_id,
 					emoji,
+					burst,
 					users: users.into_vec(),
 				})
 			}),

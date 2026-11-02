@@ -142,6 +142,10 @@ pub fn router(shared: Arc<Shared>) -> Router {
 			"/channels/{id}/messages/{mid}/reactions/{emoji}/@me",
 			put(channels::add_reaction).delete(channels::remove_reaction),
 		)
+		.route(
+			"/channels/{id}/messages/{mid}/reactions/{emoji}/{kind}/@me",
+			delete(channels::remove_typed_reaction),
+		)
 		.route("/channels/{id}/messages/{mid}/ack", post(channels::ack))
 		.route(
 			"/channels/{id}/messages/{mid}/threads",

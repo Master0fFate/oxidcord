@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
 
-use protocol::{Message, MessageUpdate, Nonce, PartialEmoji, Reaction, Snowflake};
+use protocol::{Message, MessageUpdate, Nonce, PartialEmoji, Reaction, ReactionCountDetails, Snowflake};
 
 use crate::event::LoadDirection;
 use crate::views::RenderedMessage;
@@ -348,40 +348,91 @@ pub fn apply_update(message: &mut Message, update: &MessageUpdate) {
 	if let Some(poll) = &update.poll {
 		message.poll = Some(poll.clone());
 	}
+	if let Some(application) = &update.application {
+		message.application = Some(application.clone());
+	}
+	if update.application_id.is_some() {
+		message.application_id = update.application_id;
+	}
+	if let Some(snapshots) = &update.message_snapshots {
+		message.message_snapshots = snapshots.clone();
+	}
+	if let Some(metadata) = &update.interaction_metadata {
+		message.interaction_metadata.clone_from(metadata);
+	}
+	if let Some(thread) = &update.thread {
+		message.thread = Some(thread.clone());
+	}
+	if update.position.is_some() {
+		message.position = update.position;
+	}
+	if let Some(call) = &update.call {
+		message.call = Some(call.clone());
+	}
 }
 
 fn same_emoji(a: &PartialEmoji, b: &PartialEmoji) -> bool {
 	a.id == b.id && (a.id.is_some() || a.name == b.name)
 }
 
-pub fn add_reaction(message: &mut Message, emoji: &PartialEmoji, mine: bool) {
-	match message
+fn adjust_count(reaction: &mut Reaction, burst: bool, delta: i64) {
+	let details = reaction.count_details.get_or_insert(ReactionCountDetails {
+		burst: 0,
+		normal: reaction.count,
+	});
+	let side = if burst {
+		&mut details.burst
+	} else {
+		&mut details.normal
+	};
+	*side = (*side + delta).max(0);
+	reaction.count = details.burst + details.normal;
+}
+
+pub struct ReactionChange<'a> {
+	pub emoji: &'a PartialEmoji,
+	pub mine: bool,
+	pub burst: bool,
+	pub burst_colors: &'a [String],
+}
+
+pub fn add_reaction(message: &mut Message, change: &ReactionChange) {
+	let position = message
 		.reactions
-		.iter_mut()
-		.find(|reaction| same_emoji(&reaction.emoji, emoji))
-	{
-		Some(reaction) => {
-			reaction.count += 1;
-			reaction.me |= mine;
+		.iter()
+		.position(|reaction| same_emoji(&reaction.emoji, change.emoji))
+		.unwrap_or_else(|| {
+			message.reactions.push(Reaction {
+				emoji: change.emoji.clone(),
+				..Reaction::default()
+			});
+			message.reactions.len() - 1
+		});
+	let reaction = &mut message.reactions[position];
+	adjust_count(reaction, change.burst, 1);
+	if change.burst {
+		reaction.me_burst |= change.mine;
+		if reaction.burst_colors.is_empty() {
+			reaction.burst_colors = change.burst_colors.to_vec();
 		}
-		None => message.reactions.push(Reaction {
-			count: 1,
-			me: mine,
-			emoji: emoji.clone(),
-			..Reaction::default()
-		}),
+	} else {
+		reaction.me |= change.mine;
 	}
 }
 
-pub fn remove_reaction(message: &mut Message, emoji: &PartialEmoji, mine: bool) {
+pub fn remove_reaction(message: &mut Message, change: &ReactionChange) {
 	if let Some(reaction) = message
 		.reactions
 		.iter_mut()
-		.find(|reaction| same_emoji(&reaction.emoji, emoji))
+		.find(|reaction| same_emoji(&reaction.emoji, change.emoji))
 	{
-		reaction.count -= 1;
-		if mine {
-			reaction.me = false;
+		adjust_count(reaction, change.burst, -1);
+		if change.mine {
+			if change.burst {
+				reaction.me_burst = false;
+			} else {
+				reaction.me = false;
+			}
 		}
 	}
 	message.reactions.retain(|reaction| reaction.count > 0);

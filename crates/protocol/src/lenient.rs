@@ -10,12 +10,30 @@ use serde_json::value::RawValue;
 #[derive(Debug, Clone, PartialEq)]
 pub struct LenientVec<T> {
 	items: Vec<T>,
-	dropped: usize,
+	dropped_at: Vec<usize>,
 }
 
 impl<T> LenientVec<T> {
 	pub fn dropped(&self) -> usize {
-		self.dropped
+		self.dropped_at.len()
+	}
+
+	pub fn source_index(&self, position: usize) -> usize {
+		let mut index = position;
+		for &dropped in &self.dropped_at {
+			if dropped > index {
+				break;
+			}
+			index += 1;
+		}
+		index
+	}
+
+	pub fn iter_with_source(&self) -> impl Iterator<Item = (usize, &T)> {
+		self.items
+			.iter()
+			.enumerate()
+			.map(|(position, item)| (self.source_index(position), item))
 	}
 
 	pub fn into_vec(self) -> Vec<T> {
@@ -27,14 +45,17 @@ impl<T> Default for LenientVec<T> {
 	fn default() -> Self {
 		Self {
 			items: Vec::new(),
-			dropped: 0,
+			dropped_at: Vec::new(),
 		}
 	}
 }
 
 impl<T> From<Vec<T>> for LenientVec<T> {
 	fn from(items: Vec<T>) -> Self {
-		Self { items, dropped: 0 }
+		Self {
+			items,
+			dropped_at: Vec::new(),
+		}
 	}
 }
 
@@ -82,14 +103,16 @@ where
 	T: DeserializeOwned,
 {
 	let mut items = Vec::with_capacity(seq.size_hint().unwrap_or(0).min(4096));
-	let mut dropped = 0;
+	let mut dropped_at = Vec::new();
+	let mut index = 0;
 	while let Some(raw) = seq.next_element::<Box<RawValue>>()? {
 		match serde_json::from_str::<T>(raw.get()) {
 			Ok(item) => items.push(item),
-			Err(_) => dropped += 1,
+			Err(_) => dropped_at.push(index),
 		}
+		index += 1;
 	}
-	Ok(LenientVec { items, dropped })
+	Ok(LenientVec { items, dropped_at })
 }
 
 struct LenientVecVisitor<T>(PhantomData<T>);

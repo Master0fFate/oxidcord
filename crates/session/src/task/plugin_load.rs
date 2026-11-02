@@ -95,7 +95,7 @@ impl Core {
 			} => {
 				self.runtime.spawn(async move {
 					match rest
-						.reactions(channel_id, message_id, &emoji, REACTION_PAGE)
+						.reactions(channel_id, message_id, &emoji, REACTION_PAGE, false)
 						.await
 					{
 						Ok(users) => apply_then_answer(
@@ -103,6 +103,7 @@ impl Core {
 							Loaded::ReactionUsers {
 								message_id,
 								emoji: emoji.clone(),
+								burst: false,
 								users: users.into_vec(),
 							},
 							PluginAnswer::Reactions {
@@ -187,7 +188,7 @@ impl Core {
 				reply,
 			} => {
 				let users = state
-					.reaction_users(message_id, &emoji)
+					.reaction_users(message_id, &emoji, false)
 					.map(|users| users.iter().map(user_view).collect())
 					.unwrap_or_default();
 				reply.send(Ok(users));

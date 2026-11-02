@@ -12,7 +12,7 @@ use crate::error::DecodeError;
 use crate::guild::{Guild, UnavailableGuild};
 use crate::lenient::{LenientVec, int_enum, or_default, timestamp};
 use crate::member::Member;
-use crate::message::{Message, MessageUpdate};
+use crate::message::{BURST_REACTION, Message, MessageUpdate};
 use crate::presence::Presence;
 use crate::role::Role;
 use crate::settings::{
@@ -355,6 +355,7 @@ pub struct ReadySupplemental {
 	pub merged_presences: MergedPresences,
 	pub merged_members: Vec<LenientVec<Member>>,
 	pub guilds: LenientVec<SupplementalGuild>,
+	pub lazy_private_channels: LenientVec<Channel>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -384,8 +385,26 @@ pub struct MessageReactionAdd {
 	pub emoji: PartialEmoji,
 	pub message_author_id: Option<Snowflake>,
 	pub burst: Option<bool>,
+	pub burst_colors: Vec<String>,
 	#[serde(rename = "type")]
 	pub kind: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DebouncedReaction {
+	pub emoji: PartialEmoji,
+	pub users: Vec<Snowflake>,
+	pub burst: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MessageReactionAddMany {
+	pub channel_id: Snowflake,
+	pub message_id: Snowflake,
+	pub guild_id: Option<Snowflake>,
+	pub reactions: LenientVec<DebouncedReaction>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -399,6 +418,18 @@ pub struct MessageReactionRemove {
 	pub burst: Option<bool>,
 	#[serde(rename = "type")]
 	pub kind: Option<i64>,
+}
+
+impl MessageReactionAdd {
+	pub fn is_burst(&self) -> bool {
+		self.burst == Some(true) || self.kind == Some(BURST_REACTION)
+	}
+}
+
+impl MessageReactionRemove {
+	pub fn is_burst(&self) -> bool {
+		self.burst == Some(true) || self.kind == Some(BURST_REACTION)
+	}
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -416,6 +447,14 @@ pub struct MessageReactionRemoveEmoji {
 	pub message_id: Snowflake,
 	pub guild_id: Option<Snowflake>,
 	pub emoji: PartialEmoji,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ChannelRecipientChange {
+	pub channel_id: Snowflake,
+	pub user: User,
+	pub nick: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -622,6 +661,7 @@ pub enum DispatchEvent {
 	MessageDelete(MessageDelete),
 	MessageDeleteBulk(MessageDeleteBulk),
 	MessageReactionAdd(Box<MessageReactionAdd>),
+	MessageReactionAddMany(Box<MessageReactionAddMany>),
 	MessageReactionRemove(MessageReactionRemove),
 	MessageReactionRemoveAll(MessageReactionRemoveAll),
 	MessageReactionRemoveEmoji(MessageReactionRemoveEmoji),
@@ -632,6 +672,8 @@ pub enum DispatchEvent {
 	ChannelPinsUpdate(ChannelPinsUpdate),
 	ChannelUnreadUpdate(ChannelUnreadUpdate),
 	PassiveUpdateV2(Box<PassiveUpdate>),
+	ChannelRecipientAdd(Box<ChannelRecipientChange>),
+	ChannelRecipientRemove(Box<ChannelRecipientChange>),
 	ThreadCreate(Box<Channel>),
 	ThreadUpdate(Box<Channel>),
 	ThreadDelete(ThreadDelete),
@@ -695,6 +737,7 @@ impl DispatchEvent {
 			"MESSAGE_DELETE" => Self::MessageDelete(decode(name, data)?),
 			"MESSAGE_DELETE_BULK" => Self::MessageDeleteBulk(decode(name, data)?),
 			"MESSAGE_REACTION_ADD" => Self::MessageReactionAdd(decode(name, data)?),
+			"MESSAGE_REACTION_ADD_MANY" => Self::MessageReactionAddMany(decode(name, data)?),
 			"MESSAGE_REACTION_REMOVE" => Self::MessageReactionRemove(decode(name, data)?),
 			"MESSAGE_REACTION_REMOVE_ALL" => Self::MessageReactionRemoveAll(decode(name, data)?),
 			"MESSAGE_REACTION_REMOVE_EMOJI" => Self::MessageReactionRemoveEmoji(decode(name, data)?),
@@ -705,6 +748,8 @@ impl DispatchEvent {
 			"CHANNEL_PINS_UPDATE" => Self::ChannelPinsUpdate(decode(name, data)?),
 			"CHANNEL_UNREAD_UPDATE" => Self::ChannelUnreadUpdate(decode(name, data)?),
 			"PASSIVE_UPDATE_V2" => Self::PassiveUpdateV2(decode(name, data)?),
+			"CHANNEL_RECIPIENT_ADD" => Self::ChannelRecipientAdd(decode(name, data)?),
+			"CHANNEL_RECIPIENT_REMOVE" => Self::ChannelRecipientRemove(decode(name, data)?),
 			"THREAD_CREATE" => Self::ThreadCreate(decode(name, data)?),
 			"THREAD_UPDATE" => Self::ThreadUpdate(decode(name, data)?),
 			"THREAD_DELETE" => Self::ThreadDelete(decode(name, data)?),

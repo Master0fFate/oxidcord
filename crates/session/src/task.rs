@@ -585,6 +585,11 @@ impl Core {
 			}
 			GatewayEvent::ReadySupplemental(supplemental) => {
 				self.apply(Event::ReadySupplemental(&supplemental));
+				if !supplemental.lazy_private_channels.is_empty() {
+					self.persist.submit(Job::PrivateChannels(
+						supplemental.lazy_private_channels.into_vec(),
+					));
+				}
 			}
 			GatewayEvent::Resumed => {
 				self.apply_dispatch(&DispatchEvent::Resumed);
@@ -645,6 +650,9 @@ impl Core {
 			DispatchEvent::MessageUpdate(update) => self.persist_cached_message(update.channel_id, update.id),
 			DispatchEvent::MessageReactionAdd(reaction) => {
 				self.persist_cached_message(reaction.channel_id, reaction.message_id);
+			}
+			DispatchEvent::MessageReactionAddMany(many) => {
+				self.persist_cached_message(many.channel_id, many.message_id);
 			}
 			DispatchEvent::MessageReactionRemove(reaction) => {
 				self.persist_cached_message(reaction.channel_id, reaction.message_id);
@@ -931,8 +939,10 @@ impl Core {
 				channel_id,
 				message_id,
 				emoji,
+				burst,
 			} => self.spawn_action("remove reaction", move |rest| async move {
-				rest.remove_own_reaction(channel_id, message_id, &emoji).await
+				rest.remove_own_reaction(channel_id, message_id, &emoji, burst)
+					.await
 			}),
 			Command::Typing { channel_id } => self.typing(channel_id),
 			Command::AckChannel {

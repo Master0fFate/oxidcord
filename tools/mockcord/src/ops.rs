@@ -13,6 +13,8 @@ use crate::forward::snapshot_of;
 use crate::json::{author_id, parse_id, to_json};
 use crate::state::{Shared, Store};
 
+const BURST_COLOR: &str = "#ff73fa";
+
 pub struct UploadedFile {
 	pub filename: String,
 	pub content_type: Option<String>,
@@ -377,46 +379,42 @@ impl Shared {
 		Ok(())
 	}
 
-	pub fn set_reaction(&self, channel_id: u64, id: u64, emoji: &str, add: bool) -> Result<(), ApiError> {
-		let (name, emoji_id) = match emoji.rsplit_once(':') {
-			Some((name, emoji_id)) if emoji_id.parse::<u64>().is_ok() => (name, Some(emoji_id)),
-			_ => (emoji, None),
-		};
+	pub fn set_reaction(
+		&self,
+		channel_id: u64,
+		id: u64,
+		emoji: &str,
+		add: bool,
+		burst: bool,
+	) -> Result<(), ApiError> {
+		let (name, emoji_id) = split_emoji(emoji);
 		let mut store = self.store.lock();
 		let guild_id = Self::guild_of(&store, channel_id)?;
 		if add && self.reactions_denied(&store, channel_id) {
 			return Err(ApiError::missing_permissions());
 		}
-		let message = store
-			.message_mut(channel_id, id)
-			.ok_or_else(ApiError::unknown_message)?;
-		let reactions = message
-			.as_object_mut()
-			.map(|fields| fields.entry("reactions").or_insert_with(|| json!([])))
-			.and_then(Value::as_array_mut)
-			.ok_or_else(ApiError::unknown_message)?;
+		let reactions = Self::reactions_of(&mut store, channel_id, id)?;
+		let own_key = if burst { "me_burst" } else { "me" };
 		let position = reactions
 			.iter()
 			.position(|reaction| reaction_matches(reaction, name, emoji_id));
 		match (position, add) {
 			(Some(index), true) => {
-				if reactions[index]["me"].as_bool() != Some(true) {
-					reactions[index]["me"] = json!(true);
-					adjust_count(&mut reactions[index], 1);
+				if reactions[index][own_key].as_bool() != Some(true) {
+					reactions[index][own_key] = json!(true);
+					adjust_count(&mut reactions[index], burst, 1);
 				}
 			}
-			(None, true) => reactions.push(json!({
-				"count": 1,
-				"count_details": { "burst": 0, "normal": 1 },
-				"me": true,
-				"me_burst": false,
-				"emoji": { "id": emoji_id, "name": name, "animated": false },
-				"burst_colors": [],
-			})),
+			(None, true) => {
+				let mut reaction = blank_reaction(name, emoji_id);
+				reaction[own_key] = json!(true);
+				adjust_count(&mut reaction, burst, 1);
+				reactions.push(reaction);
+			}
 			(Some(index), false) => {
-				if reactions[index]["me"].as_bool() == Some(true) {
-					reactions[index]["me"] = json!(false);
-					adjust_count(&mut reactions[index], -1);
+				if reactions[index][own_key].as_bool() == Some(true) {
+					reactions[index][own_key] = json!(false);
+					adjust_count(&mut reactions[index], burst, -1);
 				}
 				if reactions[index]["count"].as_i64().unwrap_or(0) <= 0 {
 					reactions.remove(index);
@@ -429,9 +427,12 @@ impl Shared {
 			"channel_id": channel_id.to_string(),
 			"message_id": id.to_string(),
 			"emoji": { "id": emoji_id, "name": name, "animated": false },
-			"burst": false,
-			"type": 0,
+			"burst": burst,
+			"type": i64::from(burst),
 		});
+		if burst && add {
+			data["burst_colors"] = json!([BURST_COLOR]);
+		}
 		if let Some(guild_id) = guild_id {
 			data["guild_id"] = json!(guild_id.to_string());
 			if add {
@@ -448,6 +449,52 @@ impl Shared {
 			&data,
 		);
 		Ok(())
+	}
+
+	pub fn reaction_storm(
+		&self,
+		channel_id: u64,
+		id: u64,
+		emoji: &str,
+		user_ids: &[u64],
+	) -> Result<(), ApiError> {
+		let (name, emoji_id) = split_emoji(emoji);
+		let mut store = self.store.lock();
+		let guild_id = Self::guild_of(&store, channel_id)?;
+		let reactions = Self::reactions_of(&mut store, channel_id, id)?;
+		let index = reactions
+			.iter()
+			.position(|reaction| reaction_matches(reaction, name, emoji_id))
+			.unwrap_or_else(|| {
+				reactions.push(blank_reaction(name, emoji_id));
+				reactions.len() - 1
+			});
+		for _ in user_ids {
+			adjust_count(&mut reactions[index], false, 1);
+		}
+		let mut data = json!({
+			"channel_id": channel_id.to_string(),
+			"message_id": id.to_string(),
+			"reactions": [{
+				"emoji": { "id": emoji_id, "name": name, "animated": false },
+				"users": user_ids.iter().map(u64::to_string).collect::<Vec<_>>(),
+			}],
+		});
+		if let Some(guild_id) = guild_id {
+			data["guild_id"] = json!(guild_id.to_string());
+		}
+		drop(store);
+		self.hub.broadcast("MESSAGE_REACTION_ADD_MANY", &data);
+		Ok(())
+	}
+
+	fn reactions_of(store: &mut Store, channel_id: u64, id: u64) -> Result<&mut Vec<Value>, ApiError> {
+		store
+			.message_mut(channel_id, id)
+			.and_then(Value::as_object_mut)
+			.map(|fields| fields.entry("reactions").or_insert_with(|| json!([])))
+			.and_then(Value::as_array_mut)
+			.ok_or_else(ApiError::unknown_message)
 	}
 
 	pub fn typing(&self, channel_id: u64, user_id: u64) -> Result<(), ApiError> {
@@ -508,10 +555,30 @@ fn reaction_matches(reaction: &Value, name: &str, emoji_id: Option<&str>) -> boo
 	}
 }
 
-fn adjust_count(reaction: &mut Value, delta: i64) {
-	let count = reaction["count"].as_i64().unwrap_or(0) + delta;
-	reaction["count"] = json!(count);
-	reaction["count_details"]["normal"] = json!(count);
+fn split_emoji(emoji: &str) -> (&str, Option<&str>) {
+	match emoji.rsplit_once(':') {
+		Some((name, emoji_id)) if emoji_id.parse::<u64>().is_ok() => (name, Some(emoji_id)),
+		_ => (emoji, None),
+	}
+}
+
+fn blank_reaction(name: &str, emoji_id: Option<&str>) -> Value {
+	json!({
+		"count": 0,
+		"count_details": { "burst": 0, "normal": 0 },
+		"me": false,
+		"me_burst": false,
+		"emoji": { "id": emoji_id, "name": name, "animated": false },
+		"burst_colors": [BURST_COLOR],
+	})
+}
+
+fn adjust_count(reaction: &mut Value, burst: bool, delta: i64) {
+	let side = if burst { "burst" } else { "normal" };
+	let details = &mut reaction["count_details"];
+	details[side] = json!(details[side].as_i64().unwrap_or(0) + delta);
+	let total = details["burst"].as_i64().unwrap_or(0) + details["normal"].as_i64().unwrap_or(0);
+	reaction["count"] = json!(total);
 }
 
 fn uploaded_attachment(

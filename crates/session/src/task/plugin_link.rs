@@ -561,6 +561,29 @@ impl Core {
 				user_id: add.user_id.get(),
 				emoji: emoji_text(&add.emoji),
 			})],
+			DispatchEvent::MessageReactionAddMany(many) => {
+				let guild_id = many
+					.guild_id
+					.or_else(|| state.channel_guild(many.channel_id))
+					.map(Snowflake::get);
+				many.reactions
+					.iter()
+					.flat_map(|reaction| {
+						let emoji = emoji_text(&reaction.emoji);
+						reaction.users.iter().map(move |user| {
+							PluginEvent::ReactionAdded(ReactionEvent {
+								message: MessageRef {
+									id: many.message_id.get(),
+									channel_id: many.channel_id.get(),
+									guild_id,
+								},
+								user_id: user.get(),
+								emoji: emoji.clone(),
+							})
+						})
+					})
+					.collect()
+			}
 			DispatchEvent::TypingStart(typing) => vec![PluginEvent::Typing(TypingEvent {
 				channel_id: typing.channel_id.get(),
 				user_id: typing.user_id.get(),

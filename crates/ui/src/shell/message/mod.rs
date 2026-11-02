@@ -177,6 +177,7 @@ pub enum RowAction {
 		message_id: Snowflake,
 		emoji: String,
 		add: bool,
+		burst: Option<bool>,
 	},
 	Reply(Snowflake),
 	StartEdit(Snowflake),

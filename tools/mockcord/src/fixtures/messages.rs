@@ -603,6 +603,7 @@ impl<'a> Generator<'a, '_> {
 					reaction("🔥", 4, false),
 					reaction("😂", 1, false),
 					reaction("🎉", 3, true),
+					super_reaction("🚀", 2, 3),
 				];
 				if let Some(emoji) = spec.emojis.first() {
 					reactions.push(Reaction {
@@ -974,6 +975,21 @@ fn reaction(name: &str, count: i64, me: bool) -> Reaction {
 			animated: false,
 		},
 		burst_colors: Vec::new(),
+	}
+}
+
+fn super_reaction(name: &str, normal: i64, burst: i64) -> Reaction {
+	Reaction {
+		count: normal + burst,
+		count_details: Some(ReactionCountDetails { burst, normal }),
+		me: false,
+		me_burst: true,
+		emoji: PartialEmoji {
+			id: None,
+			name: Some(name.to_owned()),
+			animated: false,
+		},
+		burst_colors: vec!["#ff73fa".to_owned()],
 	}
 }
 

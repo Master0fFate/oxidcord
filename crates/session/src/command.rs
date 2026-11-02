@@ -137,6 +137,7 @@ pub enum Command {
 		channel_id: Snowflake,
 		message_id: Snowflake,
 		emoji: String,
+		burst: bool,
 	},
 	Typing {
 		channel_id: Snowflake,
@@ -647,6 +648,7 @@ pub enum Command {
 		channel_id: Snowflake,
 		message_id: Snowflake,
 		emoji: String,
+		burst: bool,
 	},
 	ForwardMessage {
 		channel_id: Snowflake,

@@ -557,19 +557,23 @@ impl Timeline {
 				message_id,
 				emoji,
 				add,
+				burst,
 			} => {
 				let command = if add {
 					Command::AddReaction {
 						channel_id,
 						message_id,
 						emoji,
-						burst: plugins::client_options(cx).super_react_default.unwrap_or(false),
+						burst: burst.unwrap_or_else(|| {
+							plugins::client_options(cx).super_react_default.unwrap_or(false)
+						}),
 					}
 				} else {
 					Command::RemoveReaction {
 						channel_id,
 						message_id,
 						emoji,
+						burst: burst.unwrap_or(false),
 					}
 				};
 				self.data.read(cx).send(command);

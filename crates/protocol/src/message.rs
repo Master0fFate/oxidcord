@@ -209,6 +209,8 @@ pub struct Embed {
 	pub components: LenientVec<Component>,
 }
 
+pub const BURST_REACTION: i64 = 1;
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ReactionCountDetails {
@@ -225,6 +227,16 @@ pub struct Reaction {
 	pub me_burst: bool,
 	pub emoji: PartialEmoji,
 	pub burst_colors: Vec<String>,
+}
+
+impl Reaction {
+	pub fn burst_count(&self) -> i64 {
+		self.count_details.as_ref().map_or(0, |details| details.burst)
+	}
+
+	pub fn normal_count(&self) -> i64 {
+		self.count - self.burst_count()
+	}
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -431,4 +443,11 @@ pub struct MessageUpdate {
 	pub components: Option<LenientVec<Component>>,
 	pub sticker_items: Option<LenientVec<StickerItem>>,
 	pub poll: Option<Poll>,
+	pub application: Option<MessageApplication>,
+	pub application_id: Option<Snowflake>,
+	pub message_snapshots: Option<LenientVec<MessageSnapshot>>,
+	pub interaction_metadata: Option<Value>,
+	pub thread: Option<Box<Channel>>,
+	pub position: Option<i64>,
+	pub call: Option<CallInfo>,
 }

@@ -18,6 +18,8 @@ const CHAOS_MALFORMED_READY_ODDS: f64 = 0.2;
 const MOCK_FOLDER_COLOR: u64 = 0x6666ff;
 const MOCK_FOLDER_NAME: &str = "Mock folder";
 const MOCK_FOLDER_GUILDS: usize = 2;
+const PRIORITIZED_READY_PAYLOAD: u64 = 32;
+const USER_SETTINGS_PROTO_CAPABILITY: u64 = 512;
 
 pub fn is_thread(kind: ChannelType) -> bool {
 	matches!(
@@ -165,22 +167,27 @@ fn legacy_user_settings(fixtures: &Fixtures, store: &Store) -> Value {
 	})
 }
 
-pub fn build(shared: &Shared, session_id: &str, with_proto: bool) -> (Value, Value) {
+pub fn build(shared: &Shared, session_id: &str, capabilities: u64) -> (Value, Value) {
 	let fixtures = &shared.fixtures;
 	let store = shared.store.lock();
 	let guilds: Vec<Value> = live_guilds(fixtures, &store)
 		.map(|guild| ready_guild(&store, guild))
 		.collect();
-	let (settings_proto, settings) = if with_proto {
+	let (settings_proto, settings) = if capabilities & USER_SETTINGS_PROTO_CAPABILITY != 0 {
 		(json!(user_settings_proto(fixtures, &store)), Value::Null)
 	} else {
 		(Value::Null, legacy_user_settings(fixtures, &store))
 	};
-	let private_channels: Vec<&Channel> = store
+	let mut private_channels: Vec<&Channel> = store
 		.private_channel_ids
 		.iter()
 		.filter_map(|id| store.channels.get(id))
 		.collect();
+	let lazy_private_channels = if capabilities & PRIORITIZED_READY_PAYLOAD != 0 {
+		private_channels.split_off(private_channels.len().div_ceil(2))
+	} else {
+		Vec::new()
+	};
 	let mut ready = json!({
 		"v": API_VERSION,
 		"user": store.current_user,
@@ -227,6 +234,7 @@ pub fn build(shared: &Shared, session_id: &str, with_proto: bool) -> (Value, Val
 		"guilds": live_guilds(fixtures, &store)
 			.map(|guild| json!({ "id": guild.id.to_string(), "voice_states": guild.voice_states }))
 			.collect::<Vec<_>>(),
+		"lazy_private_channels": lazy_private_channels,
 	});
 	(ready, supplemental)
 }

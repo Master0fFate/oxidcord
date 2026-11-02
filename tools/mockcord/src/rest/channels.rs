@@ -8,7 +8,7 @@ use axum::extract::{FromRequest, Multipart, Path, Query, Request, State};
 use axum::http::StatusCode;
 use axum::http::header::CONTENT_TYPE;
 use axum::response::{IntoResponse, Response};
-use protocol::{ChannelType, EditMessage, Snowflake};
+use protocol::{BURST_REACTION, ChannelType, EditMessage, Snowflake};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -199,11 +199,16 @@ pub async fn delete_message(
 	Ok(StatusCode::NO_CONTENT)
 }
 
+pub fn is_burst(kind: Option<&String>) -> bool {
+	kind.is_some_and(|kind| kind.parse::<i64>().is_ok_and(|kind| kind == BURST_REACTION))
+}
+
 pub async fn add_reaction(
 	State(shared): State<Arc<Shared>>,
 	Path((id, mid, emoji)): Path<(u64, u64, String)>,
+	Query(params): Query<HashMap<String, String>>,
 ) -> Result<StatusCode, ApiError> {
-	shared.set_reaction(id, mid, &emoji, true)?;
+	shared.set_reaction(id, mid, &emoji, true, is_burst(params.get("type")))?;
 	Ok(StatusCode::NO_CONTENT)
 }
 
@@ -211,7 +216,15 @@ pub async fn remove_reaction(
 	State(shared): State<Arc<Shared>>,
 	Path((id, mid, emoji)): Path<(u64, u64, String)>,
 ) -> Result<StatusCode, ApiError> {
-	shared.set_reaction(id, mid, &emoji, false)?;
+	shared.set_reaction(id, mid, &emoji, false, false)?;
+	Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn remove_typed_reaction(
+	State(shared): State<Arc<Shared>>,
+	Path((id, mid, emoji, kind)): Path<(u64, u64, String, String)>,
+) -> Result<StatusCode, ApiError> {
+	shared.set_reaction(id, mid, &emoji, false, is_burst(Some(&kind)))?;
 	Ok(StatusCode::NO_CONTENT)
 }
 

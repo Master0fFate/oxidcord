@@ -1,5 +1,5 @@
 use protocol::rest::{AttachmentDescriptor, ComponentInteraction, CreateMessage, EditMessage, MessagesQuery};
-use protocol::{Channel, CommandIndex, LenientVec, Message, Snowflake, ThreadMember, User};
+use protocol::{BURST_REACTION, Channel, CommandIndex, LenientVec, Message, Snowflake, ThreadMember, User};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -210,8 +210,13 @@ impl RestClient {
 		channel_id: Snowflake,
 		message_id: Snowflake,
 		emoji: &str,
+		burst: bool,
 	) -> Result<()> {
-		let path = format!("{}/@me", reaction_path(channel_id, message_id, emoji));
+		let base = reaction_path(channel_id, message_id, emoji);
+		let path = match burst {
+			true => format!("{base}/{BURST_REACTION}/@me"),
+			false => format!("{base}/@me"),
+		};
 		self.send_empty(Request::delete(path)).await
 	}
 
@@ -221,9 +226,13 @@ impl RestClient {
 		message_id: Snowflake,
 		emoji: &str,
 		limit: u8,
+		burst: bool,
 	) -> Result<LenientVec<User>> {
-		let request =
+		let mut request =
 			Request::get(reaction_path(channel_id, message_id, emoji)).query(&[("limit", limit.to_string())]);
+		if burst {
+			request = request.query(&[("type", BURST_REACTION.to_string())]);
+		}
 		self.send(request).await
 	}
 

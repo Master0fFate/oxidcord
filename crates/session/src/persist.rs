@@ -2,7 +2,7 @@ use std::mem;
 use std::sync::Arc;
 
 use anyhow::Result;
-use protocol::{Message, Ready, Snowflake};
+use protocol::{Channel, Message, Ready, Snowflake};
 use serde::de::DeserializeOwned;
 use store::{ReadState, Store, Table};
 use tokio::runtime::Handle;
@@ -20,6 +20,7 @@ pub(crate) const RECENT_STICKERS_KEY: &str = "expressions.recent.stickers";
 
 pub(crate) enum Job {
 	Ready(Box<Ready>),
+	PrivateChannels(Vec<Channel>),
 	Messages {
 		channel_id: Snowflake,
 		messages: Vec<Arc<Message>>,
@@ -82,6 +83,7 @@ async fn write_loop(store: Arc<Store>, mut jobs: mpsc::Receiver<Job>) {
 fn write(store: &Store, job: Job) -> Result<()> {
 	match job {
 		Job::Ready(ready) => write_ready(store, &ready),
+		Job::PrivateChannels(channels) => write_private_channels(store, channels),
 		Job::Messages { channel_id, messages } => {
 			let encoded = messages
 				.iter()
@@ -122,12 +124,7 @@ fn write_ready(store: &Store, ready: &Ready) -> Result<()> {
 		}
 	}
 	for channel in ready.private_channels.iter() {
-		db.put_json(
-			Table::Channels,
-			channel.id.get(),
-			None,
-			&serde_json::to_vec(channel)?,
-		)?;
+		put_private_channel(store, channel)?;
 	}
 	for user in ready.users.iter() {
 		db.put_json(Table::Users, user.id.get(), None, &serde_json::to_vec(user)?)?;
@@ -136,6 +133,29 @@ fn write_ready(store: &Store, ready: &Ready) -> Result<()> {
 		db.set_read_state(&stored_read_state(read_state))?;
 	}
 	db.kv_set(READY_KEY, &serde_json::to_vec(ready)?)?;
+	Ok(())
+}
+
+fn put_private_channel(store: &Store, channel: &Channel) -> Result<()> {
+	Ok(store.db.put_json(
+		Table::Channels,
+		channel.id.get(),
+		None,
+		&serde_json::to_vec(channel)?,
+	)?)
+}
+
+fn write_private_channels(store: &Store, channels: Vec<Channel>) -> Result<()> {
+	let Some(mut ready) = load_ready(store) else {
+		return Ok(());
+	};
+	for channel in channels {
+		put_private_channel(store, &channel)?;
+		if !ready.private_channels.iter().any(|known| known.id == channel.id) {
+			ready.private_channels.push(channel);
+		}
+	}
+	store.db.kv_set(READY_KEY, &serde_json::to_vec(&ready)?)?;
 	Ok(())
 }
 
