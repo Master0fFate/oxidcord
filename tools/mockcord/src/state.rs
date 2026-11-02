@@ -7,12 +7,14 @@ use protocol::{
 	Snowflake, StatusKind, User, UserGuildSettings,
 };
 use serde_json::Value;
-use tokio::sync::watch;
+use tokio::sync::{broadcast, watch};
 
 use crate::config::MockConfig;
 use crate::fixtures::Fixtures;
 use crate::hub::Hub;
 use crate::ids::snowflake_at;
+use crate::scenario::VoiceJoin;
+use crate::voice::Signal;
 
 const WINDOW_SECONDS: f64 = 2.0;
 const BUCKET_LIMIT: u32 = 5;
@@ -182,11 +184,19 @@ pub struct Shared {
 	pub hub: Hub,
 	pub urls: Urls,
 	pub shutdown: watch::Receiver<bool>,
+	pub voice_signals: broadcast::Sender<Signal>,
+	pub voice_join: Mutex<Option<VoiceJoin>>,
 	windows: Mutex<HashMap<String, Window>>,
 }
 
 impl Shared {
-	pub fn new(config: MockConfig, fixtures: Fixtures, urls: Urls, shutdown: watch::Receiver<bool>) -> Self {
+	pub fn new(
+		config: MockConfig,
+		fixtures: Fixtures,
+		urls: Urls,
+		voice_signals: broadcast::Sender<Signal>,
+		shutdown: watch::Receiver<bool>,
+	) -> Self {
 		let store = Mutex::new(Store::new(&fixtures));
 		Self {
 			config,
@@ -195,6 +205,8 @@ impl Shared {
 			hub: Hub::default(),
 			urls,
 			shutdown,
+			voice_signals,
+			voice_join: Mutex::new(None),
 			windows: Mutex::new(HashMap::new()),
 		}
 	}

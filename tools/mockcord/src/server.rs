@@ -42,7 +42,13 @@ impl Server {
 			gateway: format!("ws://{address}/gateway"),
 			voice: voice.url,
 		};
-		let shared = Arc::new(Shared::new(config, fixtures, urls, stopped.clone()));
+		let shared = Arc::new(Shared::new(
+			config,
+			fixtures,
+			urls,
+			voice.signals,
+			stopped.clone(),
+		));
 		let mut graceful = stopped;
 		let serve = axum::serve(listener, rest::router(shared.clone())).with_graceful_shutdown(async move {
 			let _ = graceful.wait_for(|stopped| *stopped).await;

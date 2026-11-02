@@ -13,6 +13,7 @@ mod ops;
 mod ready;
 mod reconnect;
 mod rest;
+mod scenario;
 mod server;
 mod state;
 mod threads;

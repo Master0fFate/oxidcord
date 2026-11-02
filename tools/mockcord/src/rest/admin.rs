@@ -399,3 +399,23 @@ pub fn profile_extras(shared: &Shared, user_id: u64, guild_id: Option<u64>) -> V
 		}),
 	})
 }
+
+pub async fn voice_elsewhere(State(shared): Mock) -> NoContent {
+	shared.voice_elsewhere()?;
+	Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn voice_move(State(shared): Mock) -> NoContent {
+	shared.voice_move()?;
+	Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn voice_reassign(State(shared): Mock) -> NoContent {
+	shared.voice_reassign()?;
+	Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn voice_close(State(shared): Mock, Path(code): Path<u16>) -> NoContent {
+	shared.voice_close(code);
+	Ok(StatusCode::NO_CONTENT)
+}

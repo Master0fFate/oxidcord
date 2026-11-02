@@ -47,6 +47,10 @@ pub fn router(shared: Arc<Shared>) -> Router {
 			put(channels::save_message).delete(channels::save_message),
 		)
 		.route("/guilds", post(admin::create_guild))
+		.route("/mock/voice/elsewhere", post(admin::voice_elsewhere))
+		.route("/mock/voice/move", post(admin::voice_move))
+		.route("/mock/voice/reassign", post(admin::voice_reassign))
+		.route("/mock/voice/close/{code}", post(admin::voice_close))
 		.route("/auth/sessions", get(admin::auth_sessions))
 		.route("/auth/sessions/logout", post(admin::logout_sessions))
 		.route("/users/@me/guilds/{id}", delete(admin::leave_guild))

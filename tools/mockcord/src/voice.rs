@@ -6,7 +6,7 @@ use aes_gcm::Aes256Gcm;
 use aes_gcm::aead::{AeadInOut, KeyInit, Nonce};
 use axum::Router;
 use axum::extract::State;
-use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
 use axum::response::Response;
 use axum::routing::get;
 use rand::Rng;
@@ -35,13 +35,13 @@ const DISCOVERY_RESPONSE: u16 = 2;
 const DISCOVERY_ADDRESS_START: usize = 8;
 const DISCOVERY_PORT_START: usize = 72;
 const UDP_BUFFER_BYTES: usize = 2048;
-const SPEAKING_CAPACITY: usize = 64;
+const SIGNAL_CAPACITY: usize = 64;
 
 struct Voice {
 	key: [u8; KEY_LEN],
 	udp_port: u16,
 	next_ssrc: AtomicU32,
-	speaking: broadcast::Sender<String>,
+	signals: broadcast::Sender<Signal>,
 	shutdown: watch::Receiver<bool>,
 }
 
@@ -50,8 +50,15 @@ struct Peer {
 	ssrc: u32,
 }
 
+#[derive(Clone)]
+pub enum Signal {
+	Frame(String),
+	Close(u16),
+}
+
 pub struct VoiceEndpoint {
 	pub url: String,
+	pub signals: broadcast::Sender<Signal>,
 	pub tasks: Vec<JoinHandle<()>>,
 }
 
@@ -59,11 +66,12 @@ pub async fn spawn(shutdown: watch::Receiver<bool>) -> io::Result<VoiceEndpoint>
 	let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
 	let socket = UdpSocket::bind(("127.0.0.1", 0)).await?;
 	let url = format!("ws://{}", listener.local_addr()?);
+	let signals = broadcast::channel(SIGNAL_CAPACITY).0;
 	let voice = Arc::new(Voice {
 		key: rand::rng().random(),
 		udp_port: socket.local_addr()?.port(),
 		next_ssrc: AtomicU32::new(FIRST_SSRC),
-		speaking: broadcast::channel(SPEAKING_CAPACITY).0,
+		signals: signals.clone(),
 		shutdown: shutdown.clone(),
 	});
 	let router = Router::new().route("/", get(upgrade)).with_state(voice.clone());
@@ -79,6 +87,7 @@ pub async fn spawn(shutdown: watch::Receiver<bool>) -> io::Result<VoiceEndpoint>
 	let media = tokio::spawn(echo(socket, voice));
 	Ok(VoiceEndpoint {
 		url,
+		signals,
 		tasks: vec![signaling, media],
 	})
 }
@@ -96,7 +105,7 @@ async fn signal(voice: Arc<Voice>, mut socket: WebSocket) {
 	if !send(&mut socket, &hello).await {
 		return;
 	}
-	let mut speaking = voice.speaking.subscribe();
+	let mut signals = voice.signals.subscribe();
 	let mut shutdown = voice.shutdown.clone();
 	let mut peer = Peer {
 		user_id: None,
@@ -116,11 +125,19 @@ async fn signal(voice: Arc<Voice>, mut socket: WebSocket) {
 				Some(Ok(Message::Close(_)) | Err(_)) | None => break,
 				Some(Ok(_)) => {}
 			},
-			broadcast = speaking.recv() => match broadcast {
-				Ok(frame) => {
+			broadcast = signals.recv() => match broadcast {
+				Ok(Signal::Frame(frame)) => {
 					if socket.send(Message::Text(frame.into())).await.is_err() {
 						break;
 					}
+				}
+				Ok(Signal::Close(code)) => {
+					let frame = CloseFrame {
+						code,
+						reason: "".into(),
+					};
+					let _ = socket.send(Message::Close(Some(frame))).await;
+					break;
 				}
 				Err(broadcast::error::RecvError::Lagged(_)) => {}
 				Err(broadcast::error::RecvError::Closed) => break,
@@ -168,7 +185,7 @@ async fn on_frame(voice: &Voice, socket: &mut WebSocket, peer: &mut Peer, frame:
 					"user_id": peer.user_id.map(|id| id.to_string()),
 				},
 			});
-			let _ = voice.speaking.send(speaking.to_string());
+			let _ = voice.signals.send(Signal::Frame(speaking.to_string()));
 			true
 		}
 		Some(7) => send(socket, &json!({ "op": 9, "d": null })).await,

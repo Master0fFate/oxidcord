@@ -17,7 +17,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use crate::fixtures::CURRENT_USER_ID;
 use crate::hub::{Link, Outgoing};
-use crate::json::{parse_id, to_json};
+use crate::json::parse_id;
 use crate::member_list::{self, presence_json};
 use crate::ready;
 use crate::state::Shared;
@@ -401,34 +401,11 @@ impl Connection {
 	fn broadcast_voice_state(&self, session: &str, data: &Value) {
 		let guild_id = parse_id(&data["guild_id"]);
 		let channel_id = parse_id(&data["channel_id"]);
-		let member = guild_id
-			.and_then(|id| self.shared.fixtures.guild(id))
-			.map_or(Value::Null, |guild| to_json(guild.current_member()));
-		let event = json!({
-			"guild_id": guild_id.map(|id| id.to_string()),
-			"channel_id": channel_id.map(|id| id.to_string()),
-			"user_id": CURRENT_USER_ID.to_string(),
-			"member": member,
-			"session_id": session,
-			"deaf": false,
-			"mute": false,
-			"self_deaf": data["self_deaf"].as_bool().unwrap_or(false),
-			"self_mute": data["self_mute"].as_bool().unwrap_or(false),
-			"self_stream": false,
-			"self_video": data["self_video"].as_bool().unwrap_or(false),
-			"suppress": false,
-			"request_to_speak_timestamp": data["request_to_speak_timestamp"].clone(),
-		});
+		let changed = self.shared.remember_voice(session, guild_id, channel_id);
+		let event = self.shared.voice_state_event(session, guild_id, channel_id, data);
 		self.shared.hub.broadcast("VOICE_STATE_UPDATE", &event);
-		if let Some(channel_id) = channel_id {
-			let mut server = json!({
-				"token": VOICE_TOKEN,
-				"guild_id": guild_id.map(|id| id.to_string()),
-				"endpoint": self.shared.urls.voice,
-			});
-			if guild_id.is_none() {
-				server["channel_id"] = json!(channel_id.to_string());
-			}
+		if let (true, Some(channel_id)) = (changed, channel_id) {
+			let server = self.shared.voice_server_event(guild_id, channel_id);
 			self.shared
 				.hub
 				.dispatch_to(session, "VOICE_SERVER_UPDATE", &server);
