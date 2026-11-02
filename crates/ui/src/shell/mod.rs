@@ -331,9 +331,9 @@ impl Shell {
 			|this, _, event: &DmSidebarEvent, window, cx| match event {
 				DmSidebarEvent::OpenDm(id) => this.select(None, *id, cx),
 				DmSidebarEvent::Search => this.open_quick_switcher(window, cx),
-				DmSidebarEvent::OpenFriends => this.home_pages.show(HomePage::Friends, cx),
-				DmSidebarEvent::OpenNitro => this.home_pages.show(HomePage::Nitro, cx),
-				DmSidebarEvent::OpenShop => this.home_pages.show(HomePage::Shop, cx),
+				DmSidebarEvent::OpenFriends => this.open_home_page(HomePage::Friends, cx),
+				DmSidebarEvent::OpenNitro => this.open_home_page(HomePage::Nitro, cx),
+				DmSidebarEvent::OpenShop => this.open_home_page(HomePage::Shop, cx),
 				DmSidebarEvent::CreateGroup => account::open_create(this.data.clone(), window, cx),
 				DmSidebarEvent::CloseDm(id) => this.confirm_close_dm(*id, window, cx),
 			},
@@ -603,6 +603,9 @@ impl Shell {
 	}
 
 	fn select(&mut self, guild: Option<Snowflake>, channel: Snowflake, cx: &mut Context<Self>) {
+		if self.home_pages.is_open() {
+			self.history.visit(Place::Channel { guild, channel });
+		}
 		self.home_pages.close(cx);
 		self.plugin_ui.update(cx, |ui, cx| ui.close_page(cx));
 		self.send(
@@ -729,14 +732,23 @@ impl Shell {
 		self.show_friends(window, cx);
 	}
 
-	fn show_friends(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+	fn enter_home(&mut self, window: &mut Window, cx: &mut Context<Self>) {
 		self.plugin_ui.update(cx, |ui, cx| ui.close_page(cx));
 		self.home = true;
 		self.guild = None;
 		self.channel = None;
 		self.apply_selection(window, cx);
-		self.home_pages.show(HomePage::Friends, cx);
+	}
+
+	fn show_friends(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+		self.enter_home(window, cx);
+		self.open_home_page(HomePage::Friends, cx);
 		cx.notify();
+	}
+
+	fn open_home_page(&mut self, page: HomePage, cx: &mut Context<Self>) {
+		self.history.visit(Place::Home(page));
+		self.home_pages.show(page, cx);
 	}
 
 	fn sync_selection(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -766,7 +778,7 @@ impl Shell {
 			guild: selected.guild_id,
 			channel: selected.channel_id,
 		});
-		self.history.visit(Place {
+		self.history.visit(Place::Channel {
 			guild: selected.guild_id,
 			channel: selected.channel_id,
 		});
@@ -1016,8 +1028,8 @@ impl Shell {
 					settings.update(cx, |settings, cx| settings.show_named(&page, window, cx));
 				}
 			}
-			UiIntent::NavigateBack => self.navigate(NavigationDirection::Back, cx),
-			UiIntent::NavigateForward => self.navigate(NavigationDirection::Forward, cx),
+			UiIntent::NavigateBack => self.navigate(NavigationDirection::Back, window, cx),
+			UiIntent::NavigateForward => self.navigate(NavigationDirection::Forward, window, cx),
 			_ => {}
 		}
 	}
@@ -1259,15 +1271,29 @@ impl Shell {
 		}
 	}
 
-	fn navigate(&mut self, direction: NavigationDirection, cx: &mut Context<Self>) {
-		let place = match direction {
-			NavigationDirection::Back => self.history.back(),
-			NavigationDirection::Forward => self.history.forward(),
+	fn navigate(&mut self, direction: NavigationDirection, window: &mut Window, cx: &mut Context<Self>) {
+		let place = {
+			let state = self.data.read(cx).state();
+			let reachable = |place: &Place| match place {
+				Place::Channel { channel, .. } => state.channel(*channel).is_some(),
+				Place::Home(_) => true,
+			};
+			match direction {
+				NavigationDirection::Back => self.history.back(reachable),
+				NavigationDirection::Forward => self.history.forward(reachable),
+			}
 		};
-		if let Some(place) = place {
-			self.select(place.guild, place.channel, cx);
-			cx.notify();
+		match place {
+			Some(Place::Channel { guild, channel }) => self.select(guild, channel, cx),
+			Some(Place::Home(page)) => {
+				if !self.home {
+					self.enter_home(window, cx);
+				}
+				self.open_home_page(page, cx);
+			}
+			None => return,
 		}
+		cx.notify();
 	}
 
 	fn history_button(&self, direction: NavigationDirection, cx: &mut Context<Self>) -> AnyElement {
@@ -1291,7 +1317,7 @@ impl Shell {
 			.hit_size(rem(24.))
 			.tooltip(cx.t(label))
 			.when(!enabled, |button| button.color(muted))
-			.on_click(cx.listener(move |this, _, _, cx| this.navigate(direction, cx)))
+			.on_click(cx.listener(move |this, _, window, cx| this.navigate(direction, window, cx)))
 			.into_any_element()
 	}
 
@@ -1633,11 +1659,11 @@ impl Render for Shell {
 			.on_action(cx.listener(|this, _: &NextChannel, _, cx| this.step_channel(true, cx)))
 			.on_mouse_down(
 				MouseButton::Navigate(NavigationDirection::Back),
-				cx.listener(|this, _, _, cx| this.navigate(NavigationDirection::Back, cx)),
+				cx.listener(|this, _, window, cx| this.navigate(NavigationDirection::Back, window, cx)),
 			)
 			.on_mouse_down(
 				MouseButton::Navigate(NavigationDirection::Forward),
-				cx.listener(|this, _, _, cx| this.navigate(NavigationDirection::Forward, cx)),
+				cx.listener(|this, _, window, cx| this.navigate(NavigationDirection::Forward, window, cx)),
 			)
 			.relative()
 			.flex()

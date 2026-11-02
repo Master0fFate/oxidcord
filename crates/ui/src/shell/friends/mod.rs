@@ -449,6 +449,10 @@ impl HomePages {
 		cx.notify();
 	}
 
+	pub fn is_open(&self) -> bool {
+		self.current.is_some()
+	}
+
 	pub fn close<T: 'static>(&mut self, cx: &mut Context<T>) {
 		if self.current.take().is_some() {
 			cx.notify();

@@ -1,11 +1,16 @@
 use protocol::Snowflake;
 
+use super::friends::HomePage;
+
 const HISTORY_LIMIT: usize = 100;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub struct Place {
-	pub guild: Option<Snowflake>,
-	pub channel: Snowflake,
+pub enum Place {
+	Channel {
+		guild: Option<Snowflake>,
+		channel: Snowflake,
+	},
+	Home(HomePage),
 }
 
 #[derive(Default)]
@@ -28,20 +33,16 @@ impl History {
 		self.cursor = self.places.len() - 1;
 	}
 
-	pub fn back(&mut self) -> Option<Place> {
-		if !self.can_go_back() {
-			return None;
-		}
-		self.cursor -= 1;
-		self.travel()
+	pub fn back(&mut self, reachable: impl Fn(&Place) -> bool) -> Option<Place> {
+		let cursor = self.places[..self.cursor]
+			.iter()
+			.rposition(reachable)?;
+		self.travel(cursor)
 	}
 
-	pub fn forward(&mut self) -> Option<Place> {
-		if !self.can_go_forward() {
-			return None;
-		}
-		self.cursor += 1;
-		self.travel()
+	pub fn forward(&mut self, reachable: impl Fn(&Place) -> bool) -> Option<Place> {
+		let skipped = self.places.get(self.cursor + 1..)?.iter().position(reachable)?;
+		self.travel(self.cursor + 1 + skipped)
 	}
 
 	pub fn can_go_back(&self) -> bool {
@@ -52,8 +53,9 @@ impl History {
 		self.cursor + 1 < self.places.len()
 	}
 
-	fn travel(&mut self) -> Option<Place> {
-		let place = self.places.get(self.cursor).copied()?;
+	fn travel(&mut self, cursor: usize) -> Option<Place> {
+		let place = self.places.get(cursor).copied()?;
+		self.cursor = cursor;
 		self.travelling = Some(place);
 		Some(place)
 	}
