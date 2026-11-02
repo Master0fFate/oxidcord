@@ -97,9 +97,12 @@ impl DmSidebar {
 						.and_then(|over| over.name.clone())
 						.unwrap_or(row.name)
 						.into(),
-					avatar: single.map_or_else(String::new, |user| {
-						plugins::avatar_url(&state, None, user, AVATAR_PIXELS)
-					}),
+					avatar: match single {
+						Some(user) => plugins::avatar_url(&state, None, user, AVATAR_PIXELS),
+						None => row.icon.as_deref().map_or_else(String::new, |hash| {
+							media::cdn::channel_icon_url(row.channel_id.get(), hash, AVATAR_PIXELS)
+						}),
+					},
 					status: single.map_or(Status::Offline, |user| status_of(&state, user)),
 					group_members: single.is_none().then(|| row.recipients.len() + 1),
 					unread: row.unread,
@@ -204,6 +207,10 @@ impl DmSidebar {
 				} else {
 					theme.background_tertiary
 				})
+				.into_any_element(),
+			Some(_) if !dm.avatar.is_empty() => Avatar::new(dm.name.clone())
+				.size(rem(32.))
+				.url(dm.avatar.clone())
 				.into_any_element(),
 			Some(_) => div()
 				.flex()

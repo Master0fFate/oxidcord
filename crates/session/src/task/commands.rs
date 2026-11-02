@@ -125,6 +125,8 @@ impl Core {
 			| Command::AddGroupRecipient { .. }
 			| Command::RemoveGroupRecipient { .. }
 			| Command::RenameGroup { .. }
+			| Command::SetGroupIcon { .. }
+			| Command::TransferGroup { .. }
 			| Command::CloseDm { .. }
 			| Command::MuteChannel { .. }
 			| Command::UnmuteChannel { .. }
@@ -459,6 +461,20 @@ impl Core {
 			Command::RenameGroup { channel_id, name } => {
 				self.spawn_action("rename group", move |rest| async move {
 					rest.modify_channel(channel_id, json!({ "name": name }))
+						.await
+						.map(drop)
+				});
+			}
+			Command::SetGroupIcon { channel_id, icon_png } => {
+				self.spawn_action("change group icon", move |rest| async move {
+					rest.modify_channel(channel_id, json!({ "icon": png(&icon_png) }))
+						.await
+						.map(drop)
+				});
+			}
+			Command::TransferGroup { channel_id, owner_id } => {
+				self.spawn_action("transfer group", move |rest| async move {
+					rest.modify_channel(channel_id, json!({ "owner": owner_id }))
 						.await
 						.map(drop)
 				});

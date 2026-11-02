@@ -432,6 +432,14 @@ pub enum Command {
 		channel_id: Snowflake,
 		name: String,
 	},
+	SetGroupIcon {
+		channel_id: Snowflake,
+		icon_png: Vec<u8>,
+	},
+	TransferGroup {
+		channel_id: Snowflake,
+		owner_id: Snowflake,
+	},
 	CloseDm {
 		channel_id: Snowflake,
 	},

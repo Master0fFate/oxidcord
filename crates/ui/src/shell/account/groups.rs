@@ -16,9 +16,11 @@ use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
 use crate::lookup::avatar_for;
 use crate::model::{Status, status_of};
+use crate::shell::community::files::{Fit, IMAGE_TYPES, pick_image};
 use crate::theme::{Theme, rem};
 
 const AVATAR_PIXELS: u32 = 64;
+const ICON_SIDE: u32 = 512;
 
 pub enum GroupEvent {
 	OpenProfile { user: Snowflake, at: Point<Pixels> },
@@ -56,6 +58,7 @@ impl Groups {
 struct Group {
 	channel: Snowflake,
 	name: SharedString,
+	icon: Option<String>,
 	owner: Option<Snowflake>,
 	members: Vec<Snowflake>,
 }
@@ -76,6 +79,7 @@ fn load_group(data: &Data, channel: Option<Snowflake>) -> Option<Group> {
 	Some(Group {
 		channel,
 		name: name.into(),
+		icon: found.icon.clone(),
 		owner: found.owner_id,
 		members: found.recipient_ids.clone(),
 	})
@@ -147,6 +151,13 @@ impl GroupBar {
 		cx.notify();
 	}
 
+	fn set_icon(&mut self, channel: Snowflake, icon_png: Vec<u8>, cx: &mut Context<Self>) {
+		self.data.read(cx).send(Command::SetGroupIcon {
+			channel_id: channel,
+			icon_png,
+		});
+	}
+
 	fn begin_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
 		let Some(group) = &self.group else {
 			return;
@@ -199,13 +210,23 @@ impl Render for GroupBar {
 		};
 		let data = self.data.clone();
 		let leave_data = self.data.clone();
+		let badge = match &group.icon {
+			Some(hash) => Avatar::new(group.name.clone())
+				.size(rem(24.))
+				.url(media::cdn::channel_icon_url(channel.get(), hash, AVATAR_PIXELS))
+				.into_any_element(),
+			None => Icon::new(IconKind::Group)
+				.size(rem(22.))
+				.color(theme.text_muted)
+				.into_any_element(),
+		};
 		div()
 			.flex()
 			.flex_1()
 			.min_w_0()
 			.items_center()
 			.gap(theme.space_8)
-			.child(Icon::new(IconKind::Group).size(rem(22.)).color(theme.text_muted))
+			.child(badge)
 			.child(name)
 			.child(
 				div()
@@ -213,6 +234,19 @@ impl Render for GroupBar {
 					.text_size(theme.font_sm)
 					.text_color(theme.text_muted)
 					.child(cx.t_args("dm-group-members", &[("count", ArgValue::from(count))])),
+			)
+			.child(
+				IconButton::new("group-icon", IconKind::ImagePlus)
+					.filled_hover()
+					.tooltip(cx.t("group-icon"))
+					.on_click(cx.listener(move |_, _, _, cx| {
+						pick_image(
+							cx,
+							Fit::Square(ICON_SIDE),
+							IMAGE_TYPES,
+							move |this: &mut Self, picked, cx| this.set_icon(channel, picked.bytes, cx),
+						)
+					})),
 			)
 			.child(
 				IconButton::new("group-add-member", IconKind::FriendRequests)
@@ -310,6 +344,7 @@ impl GroupMembers {
 		let channel = self.channel;
 		let data = self.data.clone();
 		let remove_data = self.data.clone();
+		let transfer_data = self.data.clone();
 		let weak = cx.weak_entity();
 		let mut menu = ContextMenuBuilder::new()
 			.item(
@@ -334,16 +369,24 @@ impl GroupMembers {
 			&& Some(id) != me
 			&& let Some(channel_id) = channel
 		{
-			menu = menu.separator().danger_item(
-				cx.t("group-remove-member"),
-				Some(IconKind::Trash),
-				move |_, cx| {
-					remove_data.read(cx).send(Command::RemoveGroupRecipient {
+			menu = menu
+				.separator()
+				.item(cx.t("group-transfer"), Some(IconKind::Crown), move |_, cx| {
+					transfer_data.read(cx).send(Command::TransferGroup {
 						channel_id,
-						user_id: id,
+						owner_id: id,
 					});
-				},
-			);
+				})
+				.danger_item(
+					cx.t("group-remove-member"),
+					Some(IconKind::Trash),
+					move |_, cx| {
+						remove_data.read(cx).send(Command::RemoveGroupRecipient {
+							channel_id,
+							user_id: id,
+						});
+					},
+				);
 		}
 		div()
 			.id(("group-member", id.get()))

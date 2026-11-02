@@ -363,12 +363,21 @@ impl Shared {
 
 	pub fn modify_channel(&self, channel_id: u64, body: &Value) -> Result<Value, ApiError> {
 		let mut store = self.store.lock();
+		let new_icon = body["icon"]
+			.is_string()
+			.then(|| format!("{:032x}", store.next_snowflake()));
 		let channel = store
 			.channels
 			.get_mut(&channel_id)
 			.ok_or_else(ApiError::unknown_channel)?;
 		if let Some(name) = body["name"].as_str() {
 			channel.name = Some(name.to_owned());
+		}
+		if new_icon.is_some() {
+			channel.icon = new_icon;
+		}
+		if let Some(owner_id) = parse_id(&body["owner"]) {
+			channel.owner_id = Some(Snowflake(owner_id));
 		}
 		if let Some(topic) = body["topic"].as_str() {
 			channel.topic = Some(topic.to_owned());

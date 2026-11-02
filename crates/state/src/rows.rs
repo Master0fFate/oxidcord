@@ -320,10 +320,7 @@ impl State {
 				DmRow {
 					channel_id: channel.id,
 					name: self.dm_name(channel),
-					icon: channel.icon.clone().or_else(|| {
-						let first = channel.recipient_ids.first()?;
-						self.users.get(first)?.avatar.clone()
-					}),
+					icon: channel.icon.clone(),
 					recipients: channel.recipient_ids.clone(),
 					unread: status.unread,
 					mentions: status.mentions,

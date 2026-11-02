@@ -119,6 +119,14 @@ pub fn guild_icon_url(guild_id: u64, hash: &str, size: u32) -> String {
 	)
 }
 
+pub fn channel_icon_url(channel_id: u64, hash: &str, size: u32) -> String {
+	format!(
+		"{CDN}/channel-icons/{channel_id}/{hash}.{}?size={}",
+		extension(hash),
+		clamp_size(size)
+	)
+}
+
 pub fn emoji_url(id: u64, animated: bool, size: u32) -> String {
 	let extension = if animated { "gif" } else { "webp" };
 	format!(

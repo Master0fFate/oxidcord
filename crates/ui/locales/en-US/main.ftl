@@ -612,6 +612,8 @@ dm-close-title = Close Conversation
 dm-close-body = This conversation will be removed from your list. You can reopen it at any time.
 group-remove-member = Remove from Group
 group-owner = Owner
+group-icon = Change Icon
+group-transfer = Make Owner
 group-members-title = Members — { $count }
 
 settings-note-privacy = Privacy & Safety settings are managed in Discord's web app.
