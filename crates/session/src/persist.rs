@@ -13,6 +13,7 @@ const QUEUE_CAPACITY: usize = 1024;
 const BATCH_LIMIT: usize = 256;
 const READY_KEY: &str = "session.ready";
 pub(crate) const CACHED_MESSAGES: u32 = 50;
+const KEPT_MESSAGES_PER_CHANNEL: u32 = 200;
 pub(crate) const RECENT_EMOJI_KEY: &str = "expressions.recent.emoji";
 pub(crate) const LAST_SELECTION_KEY: &str = "navigation.last_selection";
 pub(crate) const RECENT_GIFS_KEY: &str = "expressions.recent.gifs";
@@ -26,6 +27,7 @@ pub(crate) enum Job {
 		messages: Vec<Arc<Message>>,
 	},
 	DeleteMessages(Vec<Snowflake>),
+	DropChannels(Vec<Snowflake>),
 	Wipe,
 	ReadState(ReadState),
 	Draft {
@@ -133,13 +135,18 @@ fn write(db: &Database, job: Job) -> Result<()> {
 				.map(|message| Ok((message.id.get(), serde_json::to_vec(&**message)?)))
 				.collect::<Result<Vec<_>>>()?;
 			let rows: Vec<(u64, &[u8])> = encoded.iter().map(|(id, json)| (*id, json.as_slice())).collect();
-			Ok(db.put_messages_batch(channel_id.get(), &rows)?)
+			db.put_messages_batch(channel_id.get(), &rows)?;
+			Ok(db.trim_channel(channel_id.get(), KEPT_MESSAGES_PER_CHANNEL)?)
 		}
 		Job::DeleteMessages(ids) => {
 			for id in ids {
 				db.delete_message(id.get())?;
 			}
 			Ok(())
+		}
+		Job::DropChannels(ids) => {
+			let ids: Vec<u64> = ids.into_iter().map(Snowflake::get).collect();
+			Ok(db.drop_channels(&ids)?)
 		}
 		Job::Wipe => Ok(db.wipe()?),
 		Job::ReadState(state) => Ok(db.set_read_state(&state)?),

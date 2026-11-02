@@ -163,6 +163,36 @@ impl Database {
 		Ok(())
 	}
 
+	pub fn trim_channel(&self, channel_id: u64, keep: u32) -> Result<()> {
+		self.conn
+			.lock()
+			.prepare_cached(
+				"DELETE FROM messages WHERE channel_id = ?1 AND id < (
+					SELECT id FROM messages WHERE channel_id = ?1 ORDER BY id DESC LIMIT 1 OFFSET ?2
+				)",
+			)?
+			.execute(params![channel_id as i64, keep.saturating_sub(1)])?;
+		Ok(())
+	}
+
+	pub fn drop_channels(&self, channel_ids: &[u64]) -> Result<()> {
+		let mut conn = self.conn.lock();
+		let tx = conn.transaction()?;
+		for (table, column) in [
+			("messages", "channel_id"),
+			("read_state", "channel_id"),
+			("drafts", "channel_id"),
+			("channels", "id"),
+		] {
+			let mut statement = tx.prepare_cached(&format!("DELETE FROM {table} WHERE {column} = ?1"))?;
+			for channel_id in channel_ids {
+				statement.execute([*channel_id as i64])?;
+			}
+		}
+		tx.commit()?;
+		Ok(())
+	}
+
 	pub fn wipe(&self) -> Result<()> {
 		let mut conn = self.conn.lock();
 		let tx = conn.transaction()?;
@@ -360,7 +390,8 @@ impl Database {
 		let conn = self.conn.lock();
 		let page_size: i64 = conn.pragma_query_value(None, "page_size", |row| row.get(0))?;
 		let page_count: i64 = conn.pragma_query_value(None, "page_count", |row| row.get(0))?;
-		if (page_size * page_count) as u64 <= limit_bytes {
+		let free_pages: i64 = conn.pragma_query_value(None, "freelist_count", |row| row.get(0))?;
+		if free_pages == 0 || (page_size * page_count) as u64 <= limit_bytes {
 			return Ok(false);
 		}
 		conn.execute_batch("VACUUM")?;

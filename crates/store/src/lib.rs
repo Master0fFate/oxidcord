@@ -28,6 +28,7 @@ pub use token::{TokenBackend, TokenStore};
 
 const ACCOUNTS_FILE: &str = "accounts.json";
 const ACCOUNT_TOKENS_DIR: &str = "account-tokens";
+const BYTES_PER_MB: u64 = 1024 * 1024;
 
 pub struct Store {
 	pub paths: Paths,
@@ -60,7 +61,10 @@ impl Store {
 	}
 
 	pub fn open_account_cache(&self, user_id: Snowflake) -> Result<Database> {
-		Database::open(&self.paths.account_database_path(user_id), &self.cache_key)
+		let db = Database::open(&self.paths.account_database_path(user_id), &self.cache_key)?;
+		let limit_mb = self.settings.read().storage.cache_limit_mb;
+		db.vacuum_if_over(u64::from(limit_mb) * BYTES_PER_MB)?;
+		Ok(db)
 	}
 
 	pub fn update_settings(&self, apply: impl FnOnce(&mut Settings)) -> Result<()> {

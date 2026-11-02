@@ -623,6 +623,7 @@ impl Core {
 
 	fn on_dispatch(&mut self, event: DispatchEvent) {
 		let probe = self.probe_dispatch(&event);
+		let dropped = self.dropped_channels(&event);
 		let selected = matches!(
 			event,
 			DispatchEvent::ChannelDelete(_) | DispatchEvent::ThreadDelete(_) | DispatchEvent::GuildDelete(_)
@@ -630,6 +631,9 @@ impl Core {
 		.then(|| self.state.read().selected())
 		.flatten();
 		self.apply_dispatch(&event);
+		if !dropped.is_empty() {
+			self.persist.submit(Job::DropChannels(dropped));
+		}
 		if let Some(selected) = selected {
 			self.reselect_after_delete(selected);
 		}
@@ -637,12 +641,8 @@ impl Core {
 		self.forward_client_events(&event, probe);
 		match event {
 			DispatchEvent::MessageCreate(message) => {
-				let channel_id = message.channel_id;
-				self.persist.submit(Job::Messages {
-					channel_id,
-					messages: vec![Arc::from(message)],
-				});
-				self.persist_read_state(channel_id);
+				self.persist_cached_message(message.channel_id, message.id);
+				self.persist_read_state(message.channel_id);
 			}
 			DispatchEvent::MessageUpdate(update) => self.persist_cached_message(update.channel_id, update.id),
 			DispatchEvent::MessageReactionAdd(reaction) => {
@@ -690,6 +690,27 @@ impl Core {
 		match fallback {
 			Some(channel_id) => self.select_channel(previous.guild_id, channel_id),
 			None => self.selected_guild = None,
+		}
+	}
+
+	fn dropped_channels(&self, event: &DispatchEvent) -> Vec<Snowflake> {
+		match event {
+			DispatchEvent::ChannelDelete(channel) => vec![channel.id],
+			DispatchEvent::ThreadDelete(delete) => vec![delete.id],
+			DispatchEvent::GuildDelete(guild) if guild.unavailable != Some(true) => self
+				.state
+				.read()
+				.guild(guild.id)
+				.map(|guild| {
+					guild
+						.channels
+						.keys()
+						.chain(guild.threads.keys())
+						.copied()
+						.collect()
+				})
+				.unwrap_or_default(),
+			_ => Vec::new(),
 		}
 	}
 
