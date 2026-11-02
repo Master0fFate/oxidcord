@@ -2,7 +2,7 @@ use std::mem;
 use std::sync::Arc;
 
 use anyhow::Result;
-use protocol::{Channel, Message, Ready, Snowflake};
+use protocol::{Channel, LenientVec, Message, Ready, Snowflake};
 use serde::de::DeserializeOwned;
 use store::{ReadState, Store, Table};
 use tokio::runtime::Handle;
@@ -230,6 +230,7 @@ pub(crate) fn load_recent<T: DeserializeOwned>(store: &Store, key: &str) -> Vec<
 		.kv_get(key)
 		.ok()
 		.flatten()
-		.and_then(|bytes| serde_json::from_slice(&bytes).ok())
+		.and_then(|bytes| serde_json::from_slice::<LenientVec<T>>(&bytes).ok())
+		.map(LenientVec::into_vec)
 		.unwrap_or_default()
 }

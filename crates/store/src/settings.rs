@@ -3,6 +3,7 @@ use std::io::ErrorKind;
 
 use protocol::gateway::{CHROME_VERSION, FALLBACK_BUILD_NUMBER};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::atomic::write_atomic;
 use crate::error::Result;
@@ -344,14 +345,40 @@ impl Settings {
 				return Self::default();
 			}
 		};
-		serde_json::from_slice(&bytes).unwrap_or_else(|error| {
-			tracing::warn!(%error, path = %path.display(), "settings file is malformed, using defaults");
-			Self::default()
-		})
+		let (settings, intact) = decode_sections(&bytes);
+		if !intact {
+			tracing::warn!(path = %path.display(), "settings had unreadable parts, keeping a copy of the file");
+			if let Err(error) = fs::copy(&path, path.with_extension("json.bad")) {
+				tracing::warn!(%error, "could not keep a copy of the settings file");
+			}
+		}
+		settings
 	}
 
 	pub fn save(&self, paths: &Paths) -> Result<()> {
 		let bytes = serde_json::to_vec_pretty(self)?;
 		write_atomic(&paths.settings_path(), &bytes, false)
 	}
+}
+
+fn decode_sections(bytes: &[u8]) -> (Settings, bool) {
+	let Ok(Value::Object(file)) = serde_json::from_slice(bytes) else {
+		return (Settings::default(), false);
+	};
+	let Ok(Value::Object(mut merged)) = serde_json::to_value(Settings::default()) else {
+		return (Settings::default(), false);
+	};
+	let mut intact = true;
+	for (name, value) in file {
+		let Some(previous) = merged.insert(name.clone(), value) else {
+			merged.remove(&name);
+			continue;
+		};
+		if serde_json::from_value::<Settings>(Value::Object(merged.clone())).is_err() {
+			merged.insert(name, previous);
+			intact = false;
+		}
+	}
+	let settings = serde_json::from_value(Value::Object(merged)).unwrap_or_default();
+	(settings, intact)
 }

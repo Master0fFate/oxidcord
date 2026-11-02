@@ -4,8 +4,9 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use parking_lot::Mutex;
-use protocol::Snowflake;
+use protocol::{LenientVec, Snowflake};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::atomic::write_atomic;
 use crate::error::Result;
@@ -19,11 +20,10 @@ pub struct Account {
 	pub avatar: Option<String>,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
-#[serde(default)]
+#[derive(Debug, Default, Serialize)]
 struct AccountIndex {
 	current: Option<Snowflake>,
-	accounts: Vec<Account>,
+	accounts: LenientVec<Account>,
 }
 
 #[derive(Debug)]
@@ -50,7 +50,7 @@ impl AccountStore {
 	}
 
 	pub fn list(&self) -> Vec<Account> {
-		self.index.lock().accounts.clone()
+		self.index.lock().accounts.to_vec()
 	}
 
 	pub fn current(&self) -> Option<Snowflake> {
@@ -129,14 +129,30 @@ impl AccountStore {
 
 fn load_index(path: &PathBuf) -> AccountIndex {
 	match fs::read(path) {
-		Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|error| {
-			tracing::warn!(%error, "accounts file is malformed, starting empty");
-			AccountIndex::default()
-		}),
+		Ok(bytes) => decode_index(&bytes),
 		Err(error) if error.kind() == ErrorKind::NotFound => AccountIndex::default(),
 		Err(error) => {
 			tracing::warn!(%error, "could not read the accounts file");
 			AccountIndex::default()
 		}
+	}
+}
+
+fn decode_index(bytes: &[u8]) -> AccountIndex {
+	let mut file = match serde_json::from_slice(bytes) {
+		Ok(Value::Object(file)) => file,
+		_ => {
+			tracing::warn!("accounts file is malformed, starting empty");
+			return AccountIndex::default();
+		}
+	};
+	AccountIndex {
+		current: file
+			.remove("current")
+			.and_then(|value| serde_json::from_value(value).ok()),
+		accounts: file
+			.remove("accounts")
+			.and_then(|value| serde_json::from_value(value).ok())
+			.unwrap_or_default(),
 	}
 }
