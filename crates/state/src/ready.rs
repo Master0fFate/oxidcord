@@ -111,6 +111,18 @@ impl State {
 		self.guild_settings.clear();
 		self.global_settings = None;
 		self.typing.clear();
+		self.calls.clear();
+		self.alerts.clear();
+		let own_share = self
+			.voice
+			.as_ref()
+			.and_then(|session| session.screen_share.as_ref())
+			.map(|share| share.stream_key.as_str());
+		self.streams
+			.retain(|stream_key, _| own_share == Some(stream_key.as_str()));
+		for cache in self.messages.values_mut() {
+			cache.mark_stale();
+		}
 	}
 
 	pub(crate) fn ingest_guild(&mut self, guild: &Guild) {

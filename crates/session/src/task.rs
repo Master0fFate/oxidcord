@@ -1069,16 +1069,18 @@ impl Core {
 			self.schedule_decorations();
 		}
 		self.selected_guild = guild_id;
-		let (has_messages, has_draft) = {
+		let (has_messages, stale, has_draft) = {
 			let state = self.state.read();
+			let cache = state.messages(channel_id);
 			(
-				state
-					.messages(channel_id)
-					.is_some_and(|cache| !cache.ordered.is_empty()),
+				cache.is_some_and(|cache| !cache.ordered.is_empty()),
+				cache.is_some_and(|cache| cache.is_stale()),
 				state.draft(channel_id).is_some(),
 			)
 		};
-		if !has_messages {
+		if stale {
+			self.load_latest(channel_id);
+		} else if !has_messages {
 			self.load_initial(channel_id);
 		}
 		if !has_draft {

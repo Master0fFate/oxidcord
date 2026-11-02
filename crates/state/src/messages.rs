@@ -31,6 +31,7 @@ pub struct ChannelMessages {
 	deleted: HashSet<Snowflake>,
 	latency: HashMap<Snowflake, u32>,
 	detached: bool,
+	stale: bool,
 }
 
 impl ChannelMessages {
@@ -74,6 +75,19 @@ impl ChannelMessages {
 		self.detached
 	}
 
+	pub fn is_stale(&self) -> bool {
+		self.stale
+	}
+
+	pub fn mark_stale(&mut self) {
+		if self.ordered.is_empty() {
+			return;
+		}
+		self.stale = true;
+		self.detached = true;
+		self.reset_tail_gap(None);
+	}
+
 	pub fn push_live(&mut self, message: Arc<Message>) -> bool {
 		if self.detached {
 			self.extend_tail_gap(message.id);
@@ -100,6 +114,7 @@ impl ChannelMessages {
 			self.deleted.clear();
 			self.latency.clear();
 			self.gaps.clear();
+			self.stale = false;
 		}
 		for message in messages {
 			self.insert(message);
