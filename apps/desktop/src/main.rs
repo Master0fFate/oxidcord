@@ -270,6 +270,11 @@ fn session_starter(store: &Arc<Store>, rest_base: Url, gateway_url: String, safe
 			settings.client.chrome_version.clone(),
 		)
 	};
+	rest::install_identity(IdentifyProperties::web_client(
+		&locale,
+		build_number,
+		&chrome_version,
+	));
 	let runtime = Handle::current();
 	let plugins = PluginOptions::new(safe_mode, Arc::new(PlatformSink));
 	Box::new(move |token, notify| {
@@ -322,6 +327,12 @@ fn refresh_client_identity(runtime: &tokio::runtime::Runtime, store: &Arc<Store>
 			settings.client.build_checked_at = now;
 		});
 		if saved.is_ok() {
+			let settings = store.settings.read();
+			rest::install_identity(IdentifyProperties::web_client(
+				&settings.locale,
+				settings.client.build_number,
+				&settings.client.chrome_version,
+			));
 			tracing::debug!("discord client identity refreshed");
 		}
 	});

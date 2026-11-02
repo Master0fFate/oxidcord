@@ -80,12 +80,12 @@ pub struct Hello {
 
 macro_rules! chrome_version {
 	() => {
-		"156.0.8078.48"
+		"156.0.0.0"
 	};
 }
 
 pub const CHROME_VERSION: &str = chrome_version!();
-pub const FALLBACK_BUILD_NUMBER: u64 = 647615;
+pub const FALLBACK_BUILD_NUMBER: u64 = 655747;
 
 const WINDOWS_USER_AGENT: &str = concat!(
 	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/",
@@ -105,11 +105,15 @@ pub struct IdentifyProperties {
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub system_locale: Option<String>,
 	#[serde(skip_serializing_if = "Option::is_none")]
+	pub has_client_mods: Option<bool>,
+	#[serde(skip_serializing_if = "Option::is_none")]
 	pub browser_user_agent: Option<String>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub browser_version: Option<String>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub os_version: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub os_arch: Option<String>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub referrer: Option<String>,
 	#[serde(skip_serializing_if = "Option::is_none")]
@@ -124,7 +128,50 @@ pub struct IdentifyProperties {
 	pub client_build_number: Option<u64>,
 	pub client_event_source: Value,
 	#[serde(skip_serializing_if = "Option::is_none")]
+	pub client_launch_id: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub launch_signature: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub client_heartbeat_session_id: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub client_app_state: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
 	pub design_id: Option<u64>,
+}
+
+struct LaunchIds {
+	launch: String,
+	signature: String,
+	heartbeat_session: String,
+}
+
+fn launch_ids() -> &'static LaunchIds {
+	static CACHED: std::sync::OnceLock<LaunchIds> = std::sync::OnceLock::new();
+	CACHED.get_or_init(|| LaunchIds {
+		launch: random_uuid(),
+		signature: random_uuid(),
+		heartbeat_session: random_uuid(),
+	})
+}
+
+fn random_uuid() -> String {
+	let bits = (rand::random::<u128>() & !(0xf000u128 << 64) & !(0xc000u128 << 48))
+		| (0x4000u128 << 64)
+		| (0x8000u128 << 48);
+	let hex = format!("{bits:032x}");
+	format!(
+		"{}-{}-{}-{}-{}",
+		&hex[..8],
+		&hex[8..12],
+		&hex[12..16],
+		&hex[16..20],
+		&hex[20..]
+	)
+}
+
+pub fn reduced_chrome_version(version: &str) -> String {
+	let major = version.split('.').next().unwrap_or_default();
+	format!("{major}.0.0.0")
 }
 
 impl IdentifyProperties {
@@ -136,14 +183,17 @@ impl IdentifyProperties {
 		} else {
 			"Windows"
 		};
+		let ids = launch_ids();
 		Self {
 			os: Some(os.to_owned()),
 			browser: Some("Chrome".to_owned()),
 			device: Some(String::new()),
 			system_locale: Some(locale.to_owned()),
+			has_client_mods: Some(false),
 			browser_user_agent: Some(chrome_user_agent(chrome_version)),
-			browser_version: Some(chrome_version.to_owned()),
+			browser_version: Some(reduced_chrome_version(chrome_version)),
 			os_version: Some(host_os_version().to_owned()),
+			os_arch: Some(host_arch().to_owned()),
 			referrer: Some(String::new()),
 			referring_domain: Some(String::new()),
 			referrer_current: Some(String::new()),
@@ -151,6 +201,10 @@ impl IdentifyProperties {
 			release_channel: Some("stable".to_owned()),
 			client_build_number: Some(build_number),
 			client_event_source: Value::Null,
+			client_launch_id: Some(ids.launch.clone()),
+			launch_signature: Some(ids.signature.clone()),
+			client_heartbeat_session_id: Some(ids.heartbeat_session.clone()),
+			client_app_state: Some("focused".to_owned()),
 			design_id: None,
 		}
 	}
@@ -172,7 +226,16 @@ pub fn chrome_user_agent(version: &str) -> String {
 	} else {
 		"Windows NT 10.0; Win64; x64"
 	};
+	let version = reduced_chrome_version(version);
 	format!("Mozilla/5.0 ({platform}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version} Safari/537.36")
+}
+
+fn host_arch() -> &'static str {
+	if cfg!(target_arch = "aarch64") {
+		"arm64"
+	} else {
+		"x64"
+	}
 }
 
 pub fn web_user_agent() -> String {

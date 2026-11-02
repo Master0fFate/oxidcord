@@ -1,7 +1,20 @@
 use std::time::Duration;
 
+use parking_lot::RwLock;
 use protocol::gateway::{CHROME_VERSION, FALLBACK_BUILD_NUMBER, IdentifyProperties, sec_ch_ua};
 use url::Url;
+
+static INSTALLED_IDENTITY: RwLock<Option<IdentifyProperties>> = RwLock::new(None);
+
+pub fn install_identity(identify: IdentifyProperties) {
+	*INSTALLED_IDENTITY.write() = Some(identify);
+}
+
+fn current_identity() -> IdentifyProperties {
+	INSTALLED_IDENTITY.read().clone().unwrap_or_else(|| {
+		IdentifyProperties::web_client(DEFAULT_LOCALE, FALLBACK_BUILD_NUMBER, CHROME_VERSION)
+	})
+}
 
 const DEFAULT_BASE_URL: &str = "https://discord.com/api/v10";
 const DEFAULT_LOCALE: &str = "en-US";
@@ -28,11 +41,14 @@ impl RestConfig {
 
 impl Default for RestConfig {
 	fn default() -> Self {
-		let identify = IdentifyProperties::web_client(DEFAULT_LOCALE, FALLBACK_BUILD_NUMBER, CHROME_VERSION);
+		let identify = current_identity();
 		Self {
 			base_url: Url::parse(DEFAULT_BASE_URL).expect("default base url is valid"),
 			user_agent: String::new(),
-			locale: DEFAULT_LOCALE.to_owned(),
+			locale: identify
+				.system_locale
+				.clone()
+				.unwrap_or_else(|| DEFAULT_LOCALE.to_owned()),
 			super_properties: None,
 			sec_ch_ua: None,
 			timeout: Duration::from_secs(30),

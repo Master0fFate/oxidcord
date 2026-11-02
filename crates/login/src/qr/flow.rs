@@ -28,7 +28,6 @@ const HELLO_TIMEOUT: Duration = Duration::from_secs(15);
 const MIN_HEARTBEAT: Duration = Duration::from_secs(1);
 const CODE_URL_PREFIX: &str = "https://discord.com/ra/";
 const LOGIN_PATH: &str = "/users/@me/remote-auth/login";
-const CAPTCHA_HINT: &str = "Discord refused the ticket exchange, it may need a captcha. Use the web login";
 
 struct Flow<'a> {
 	events: &'a Sender<QrEvent>,
@@ -255,9 +254,15 @@ impl Flow<'_> {
 
 fn exchange_error(error: rest::RestError) -> LoginError {
 	match error {
-		rest::RestError::Http(status, _) if status.as_u16() == 400 => {
-			LoginError::Protocol(CAPTCHA_HINT.to_owned())
-		}
+		rest::RestError::Http(status, Some(api)) if !api.message.is_empty() => LoginError::Protocol(format!(
+			"Discord refused the ticket ({}): {}",
+			status.as_u16(),
+			api.message
+		)),
+		rest::RestError::Http(status, _) => LoginError::Protocol(format!(
+			"Discord refused the ticket with http {}",
+			status.as_u16()
+		)),
 		other => LoginError::from(other),
 	}
 }

@@ -63,7 +63,9 @@ pub(crate) async fn connect(url: &Url, identify: &IdentifyProperties) -> Result<
 	let request = ClientRequestBuilder::new(uri)
 		.with_header("User-Agent", identify.user_agent())
 		.with_header("Origin", WEB_ORIGIN)
-		.with_header("Accept-Language", accept_language(locale));
+		.with_header("Accept-Language", accept_language(locale))
+		.with_header("Cache-Control", "no-cache")
+		.with_header("Pragma", "no-cache");
 	let attempt = timeout(
 		CONNECT_TIMEOUT,
 		connect_async_with_config(request, Some(config), true),

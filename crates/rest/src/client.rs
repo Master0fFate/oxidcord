@@ -30,6 +30,7 @@ const FALLBACK_RETRY_AFTER: Duration = Duration::from_secs(1);
 const UPLOAD_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 const WEB_ORIGIN: &str = "https://discord.com";
 const WEB_REFERER: &str = "https://discord.com/channels/@me";
+const CAPTCHA_MARKER: &[u8] = b"\"captcha_key\"";
 
 #[derive(Clone)]
 pub struct RestClient {
@@ -76,10 +77,19 @@ fn default_headers(config: &RestConfig) -> HeaderMap {
 	headers.insert("sec-fetch-dest", HeaderValue::from_static("empty"));
 	headers.insert("sec-fetch-mode", HeaderValue::from_static("cors"));
 	headers.insert("sec-fetch-site", HeaderValue::from_static("same-origin"));
+	headers.insert("priority", HeaderValue::from_static("u=1, i"));
+	headers.insert("x-debug-options", HeaderValue::from_static("bugReporterEnabled"));
+	if let Ok(timezone) = HeaderValue::from_str(&host_timezone()) {
+		headers.insert("x-discord-timezone", timezone);
+	}
 	if discord_host(&config.base_url) {
 		headers.insert(REFERER, HeaderValue::from_static(WEB_REFERER));
 	}
 	headers
+}
+
+fn host_timezone() -> String {
+	iana_time_zone::get_timezone().unwrap_or_else(|_| "UTC".to_owned())
 }
 
 fn discord_host(url: &Url) -> bool {
@@ -153,6 +163,13 @@ async fn read_capped(response: Response, max: usize) -> Result<Bytes> {
 
 fn classify(status: StatusCode, body: &[u8]) -> RestError {
 	match status {
+		StatusCode::BAD_REQUEST
+			if body
+				.windows(CAPTCHA_MARKER.len())
+				.any(|window| window == CAPTCHA_MARKER) =>
+		{
+			RestError::CaptchaRequired
+		}
 		StatusCode::UNAUTHORIZED => RestError::Unauthorized,
 		StatusCode::FORBIDDEN => RestError::Forbidden,
 		StatusCode::NOT_FOUND => RestError::NotFound,

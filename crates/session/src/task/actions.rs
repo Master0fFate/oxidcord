@@ -31,6 +31,7 @@ fn failure_reason(what: &str, error: &RestError) -> String {
 		RestError::Forbidden => format!("{what}: missing permissions"),
 		RestError::NotFound => format!("{what}: not found"),
 		RestError::RateLimited { .. } => format!("{what}: rate limited, try again shortly"),
+		RestError::CaptchaRequired => format!("{what}: Discord asks for a captcha, do this on discord.com"),
 		RestError::Http(_, Some(api)) if !api.message.is_empty() => format!("{what}: {}", api.message),
 		RestError::Http(status, _) => format!("{what}: http {}", status.as_u16()),
 		RestError::Network(reason) => format!("{what}: {reason}"),

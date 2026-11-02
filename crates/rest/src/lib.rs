@@ -7,7 +7,7 @@ mod request;
 mod route;
 
 pub use client::RestClient;
-pub use config::RestConfig;
+pub use config::{RestConfig, install_identity};
 pub use error::{RestError, Result};
 pub use limiter::RateLimiter;
 pub use request::{Request, UploadFile, content_type_for, encode_component};
