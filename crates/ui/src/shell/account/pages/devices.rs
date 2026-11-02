@@ -112,44 +112,48 @@ impl DevicesPage {
 impl Render for DevicesPage {
 	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
-		let sessions = self.data.read(cx).state().auth_sessions().map(|found| {
-			let mut sessions = found.to_vec();
-			sessions.sort_by_key(|session| std::cmp::Reverse(session.last_used));
-			sessions
-		});
-		let Some(sessions) = sessions else {
+		let listed = {
+			let data = self.data.read(cx);
+			let state = data.state();
+			state.auth_sessions().map(|found| {
+				let mut sessions = found.to_vec();
+				let current = state.current_auth_session().map(|index| sessions.remove(index));
+				sessions.sort_by_key(|session| std::cmp::Reverse(session.last_used));
+				(current, sessions)
+			})
+		};
+		let Some((current, others)) = listed else {
 			return div()
 				.text_size(theme.font_md)
 				.text_color(theme.text_muted)
 				.child(cx.t("devices-loading"))
 				.into_any_element();
 		};
-		if sessions.is_empty() {
+		if current.is_none() && others.is_empty() {
 			return div()
 				.text_size(theme.font_md)
 				.text_color(theme.text_muted)
 				.child(cx.t("devices-empty"))
 				.into_any_element();
 		}
-		let others: Vec<String> = sessions
+		let hashes: Vec<String> = others.iter().map(|session| session.id_hash.clone()).collect();
+		let rows: Vec<_> = current
 			.iter()
-			.skip(1)
-			.map(|session| session.id_hash.clone())
+			.map(|session| (session, true))
+			.chain(others.iter().map(|session| (session, false)))
+			.enumerate()
+			.map(|(index, (session, is_current))| self.device_row(index, session, is_current, &theme, cx))
 			.collect();
-		let mut rows = Vec::with_capacity(sessions.len());
-		for (index, session) in sessions.iter().enumerate() {
-			rows.push(self.device_row(index, session, index == 0, &theme, cx));
-		}
 		div()
 			.flex()
 			.flex_col()
 			.children(rows)
-			.children((!others.is_empty()).then(|| {
+			.children((current.is_some() && !hashes.is_empty()).then(|| {
 				div().pt(theme.space_16).child(
 					Button::new("devices-log-out-others")
 						.danger()
 						.label(cx.t("devices-log-out-others"))
-						.on_click(cx.listener(move |this, _, _, cx| this.log_out(others.clone(), cx))),
+						.on_click(cx.listener(move |this, _, _, cx| this.log_out(hashes.clone(), cx))),
 				)
 			}))
 			.into_any_element()

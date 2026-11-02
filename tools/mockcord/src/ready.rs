@@ -205,6 +205,7 @@ pub fn build(shared: &Shared, session_id: &str, capabilities: u64) -> (Value, Va
 			"partial": false,
 		},
 		"session_id": session_id,
+		"auth_session_id_hash": crate::admin::current_session_hash(),
 		"resume_gateway_url": shared.urls.gateway,
 		"sessions": [{
 			"session_id": session_id,

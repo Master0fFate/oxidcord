@@ -36,6 +36,10 @@ const ACTION_PIN: i64 = 74;
 const ACTION_UNPIN: i64 = 75;
 const ACTION_BULK_DELETE: i64 = 73;
 
+pub fn current_session_hash() -> String {
+	format!("mock-session-{CURRENT_USER_ID}")
+}
+
 pub fn seed_audit(fixtures: &Fixtures) -> HashMap<u64, Vec<Value>> {
 	let anchor_ms = fixtures.anchor.timestamp_millis();
 	fixtures
@@ -164,6 +168,51 @@ fn user_ids(value: &Value) -> Vec<Snowflake> {
 }
 
 impl Shared {
+	pub fn auth_sessions_json(&self) -> Value {
+		let now = Utc::now();
+		let ended = self.store.lock().ended_sessions.clone();
+		let sessions = [
+			(
+				current_session_hash(),
+				"windows",
+				"desktop",
+				"Mock",
+				Duration::minutes(2),
+			),
+			(
+				"mock-session-phone".to_owned(),
+				"ios",
+				"mobile",
+				"Mock City",
+				Duration::minutes(1),
+			),
+			(
+				"mock-session-browser".to_owned(),
+				"linux",
+				"web",
+				"Mock Town",
+				Duration::days(1),
+			),
+		];
+		let user_sessions: Vec<Value> = sessions
+			.into_iter()
+			.filter(|(hash, ..)| !ended.contains(hash))
+			.map(|(hash, os, platform, location, age)| {
+				json!({
+					"id_hash": hash,
+					"approx_last_used_time": (now - age).to_rfc3339(),
+					"client_info": { "os": os, "platform": platform, "location": location },
+				})
+			})
+			.collect();
+		json!({ "user_sessions": user_sessions })
+	}
+
+	pub fn end_sessions(&self, hashes: &Value) {
+		let ended = hashes.as_array().into_iter().flatten().filter_map(Value::as_str);
+		self.store.lock().ended_sessions.extend(ended.map(str::to_owned));
+	}
+
 	fn live_guild(&self, store: &Store, id: u64) -> Result<&GuildFixture, ApiError> {
 		self.fixtures
 			.guild(id)

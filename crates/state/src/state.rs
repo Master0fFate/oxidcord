@@ -30,6 +30,7 @@ pub type SharedState = Arc<RwLock<State>>;
 #[derive(Debug, Clone, Default)]
 pub struct SessionInfo {
 	pub session_id: String,
+	pub auth_session_id_hash: Option<String>,
 	pub resume_url: Option<String>,
 	pub connected: bool,
 	pub signed_out: bool,

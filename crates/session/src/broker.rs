@@ -794,7 +794,9 @@ impl HostBroker for SessionBroker {
 			}
 			return Err(HostError::Unavailable);
 		};
-		let current = current_session(found, &state.session().session_id);
+		let current = state
+			.current_auth_session()
+			.or_else(|| current_session(found, &state.session().session_id));
 		Ok(found
 			.iter()
 			.enumerate()

@@ -313,6 +313,8 @@ pub struct Ready {
 	#[serde(deserialize_with = "or_default")]
 	pub session_id: String,
 	#[serde(deserialize_with = "or_default")]
+	pub auth_session_id_hash: Option<String>,
+	#[serde(deserialize_with = "or_default")]
 	pub resume_gateway_url: Option<String>,
 	#[serde(deserialize_with = "or_default")]
 	pub sessions: Vec<Value>,

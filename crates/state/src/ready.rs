@@ -12,6 +12,9 @@ impl State {
 		self.current_user = Some(ready.user.clone());
 		intern_user(&mut self.users, &ready.user);
 		self.session.session_id.clone_from(&ready.session_id);
+		self.session
+			.auth_session_id_hash
+			.clone_from(&ready.auth_session_id_hash);
 		self.session.resume_url.clone_from(&ready.resume_gateway_url);
 		self.session.connected = true;
 		for user in ready.users.iter() {

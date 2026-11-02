@@ -10,6 +10,8 @@ use state::{Loaded, LocalEvent};
 use super::expressions::reaction_emoji;
 use super::{Core, Internal};
 
+const MFA_REQUIRED: i64 = 60003;
+
 pub(super) fn object<const N: usize>(fields: [(&str, Option<Value>); N]) -> Value {
 	Value::Object(
 		fields
@@ -43,6 +45,9 @@ fn failure_reason(what: &str, error: &RestError) -> String {
 		RestError::IndexNotReady { .. } => format!("{what}: still indexing, try again shortly"),
 		RestError::RateLimited { .. } => format!("{what}: rate limited, try again shortly"),
 		RestError::CaptchaRequired => format!("{what}: Discord asks for a captcha, do this on discord.com"),
+		RestError::Http(_, Some(api)) if api.code == MFA_REQUIRED => {
+			format!("{what}: needs MFA, finish this in the Discord web app")
+		}
 		RestError::Http(_, Some(api)) if !api.message.is_empty() => format!("{what}: {}", api.message),
 		RestError::Http(status, _) => format!("{what}: http {}", status.as_u16()),
 		RestError::Network(reason) => format!("{what}: {reason}"),

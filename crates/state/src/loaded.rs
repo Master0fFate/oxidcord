@@ -890,6 +890,13 @@ impl State {
 		self.lazy.auth_sessions.as_deref()
 	}
 
+	pub fn current_auth_session(&self) -> Option<usize> {
+		let hash = self.session.auth_session_id_hash.as_deref()?;
+		self.auth_sessions()?
+			.iter()
+			.position(|session| session.id_hash == hash)
+	}
+
 	pub fn bans(&self, guild_id: Snowflake) -> &[BanEntry] {
 		self.lazy.bans.get(&guild_id).map_or(&[][..], Vec::as_slice)
 	}

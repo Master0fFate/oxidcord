@@ -4,7 +4,6 @@ use std::sync::Arc;
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
-use chrono::Utc;
 use protocol::decode_settings;
 use serde_json::{Value, json};
 
@@ -143,22 +142,15 @@ pub async fn create_guild(State(shared): Mock, Json(body): Json<Value>) -> ApiRe
 }
 
 pub async fn auth_sessions(State(shared): Mock) -> Json<Value> {
-	let user_id = shared.store.lock().current_user.id.to_string();
-	Json(json!({
-		"user_sessions": [{
-			"id_hash": format!("mock-session-{user_id}"),
-			"approx_last_used_time": Utc::now().to_rfc3339(),
-			"client_info": { "os": "windows", "platform": "desktop", "location": "Mock" },
-		}]
-	}))
+	Json(shared.auth_sessions_json())
 }
 
-pub async fn logout_sessions(headers: HeaderMap, Json(_body): Json<Value>) -> NoContent {
-	if headers.contains_key(MFA_AUTHORIZATION) {
-		Ok(StatusCode::NO_CONTENT)
-	} else {
-		Err(ApiError::mfa_required())
+pub async fn logout_sessions(State(shared): Mock, headers: HeaderMap, Json(body): Json<Value>) -> NoContent {
+	if !headers.contains_key(MFA_AUTHORIZATION) {
+		return Err(ApiError::mfa_required());
 	}
+	shared.end_sessions(&body["session_id_hashes"]);
+	Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn delete_invite(State(shared): Mock, Path(code): Path<String>) -> ApiResult {
