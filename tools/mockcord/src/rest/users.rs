@@ -105,6 +105,7 @@ pub async fn profile(
 		"mutual_friends_count": friends,
 		"connected_accounts": extras["connected_accounts"],
 		"guild_member": extras["guild_member"],
+		"guild_member_profile": extras["guild_member_profile"],
 		"premium_since": null,
 		"premium_type": null,
 		"badges": extras["badges"],

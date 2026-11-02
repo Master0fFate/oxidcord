@@ -700,6 +700,10 @@ impl Shared {
 		if body["avatar"].is_string() {
 			member.avatar = Some(format!("{:032x}", store.next_snowflake()));
 		}
+		if let Some(bio) = body.get("bio") {
+			let bio = bio.as_str().unwrap_or_default().to_owned();
+			store.guild_bios.insert((guild_id, user_id), bio);
+		}
 		if body["roles"].is_array() {
 			member.roles = user_ids(&body["roles"]);
 		}

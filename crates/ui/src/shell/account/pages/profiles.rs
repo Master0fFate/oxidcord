@@ -2,7 +2,7 @@ use std::io::Cursor;
 use std::sync::Arc;
 
 use gpui::{
-	AnyElement, AppContext as _, Context, Entity, FontWeight, InteractiveElement as _, IntoElement,
+	AnyElement, App, AppContext as _, Context, Entity, FontWeight, InteractiveElement as _, IntoElement,
 	ObjectFit, ParentElement as _, Render, RenderImage, SharedString, StatefulInteractiveElement as _,
 	Styled as _, StyledImage as _, Subscription, Window, div, img, prelude::FluentBuilder as _,
 };
@@ -22,10 +22,11 @@ use crate::lookup::user_avatar;
 use crate::model::role_color;
 use crate::shell::account::{avatar_ring, markdown_text};
 use crate::theme::{Theme, with_alpha};
+use state::Changes;
 
 const AVATAR_LIMIT: u32 = 512;
 const BANNER_LIMIT: (u32, u32) = (960, 540);
-const BIO_LIMIT: usize = 190;
+const BIO_LIMIT: usize = 300;
 const PREVIEW_AVATAR_PIXELS: u32 = 256;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,6 +47,69 @@ struct Picked {
 	preview: Arc<RenderImage>,
 }
 
+#[derive(Default)]
+struct Applied {
+	name: String,
+	pronouns: String,
+	bio: String,
+	nick: String,
+	server_bio: String,
+}
+
+trait Editable: Sized + 'static {
+	fn text(&self) -> SharedString;
+	fn replace(&mut self, value: String, window: &mut Window, cx: &mut Context<Self>);
+}
+
+impl Editable for InputState {
+	fn text(&self) -> SharedString {
+		self.value()
+	}
+
+	fn replace(&mut self, value: String, window: &mut Window, cx: &mut Context<Self>) {
+		self.set_value(value, window, cx);
+	}
+}
+
+impl Editable for TextareaState {
+	fn text(&self) -> SharedString {
+		self.value()
+	}
+
+	fn replace(&mut self, value: String, window: &mut Window, cx: &mut Context<Self>) {
+		self.set_value(value, window, cx);
+	}
+}
+
+fn adopt<S: Editable>(
+	field: &Entity<S>,
+	applied: &mut String,
+	incoming: String,
+	window: &mut Window,
+	cx: &mut App,
+) {
+	let current = field.read(cx).text();
+	if current.as_ref() != applied.as_str() && current.as_ref() != incoming {
+		return;
+	}
+	if current.as_ref() != incoming {
+		field.update(cx, |field, cx| field.replace(incoming.clone(), window, cx));
+	}
+	*applied = incoming;
+}
+
+fn revert<S: Editable>(field: &Entity<S>, applied: &str, window: &mut Window, cx: &mut App) {
+	field.update(cx, |field, cx| field.replace(applied.to_owned(), window, cx));
+}
+
+fn changed(current: &str, applied: &str) -> Option<String> {
+	(current != applied).then(|| current.to_owned())
+}
+
+fn remaining(text: &str) -> usize {
+	BIO_LIMIT.saturating_sub(text.chars().count())
+}
+
 pub struct ProfilesPage {
 	data: Entity<Data>,
 	tab: Tab,
@@ -58,7 +122,7 @@ pub struct ProfilesPage {
 	banner: Option<Picked>,
 	server_avatar: Option<Picked>,
 	guild: Option<Snowflake>,
-	prefilled: bool,
+	applied: Applied,
 	_subscriptions: Vec<Subscription>,
 }
 
@@ -107,16 +171,26 @@ impl ProfilesPage {
 			}));
 		}
 		for input in [&bio, &server_bio] {
-			subscriptions.push(cx.subscribe(input, |_, _, event: &InputEvent, cx| {
-				if matches!(event, InputEvent::Change) {
-					cx.notify();
-				}
-			}));
+			subscriptions.push(
+				cx.subscribe_in(input, window, |_, input, event: &InputEvent, window, cx| {
+					if matches!(event, InputEvent::Change) {
+						let value = input.read(cx).value();
+						if value.chars().count() > BIO_LIMIT {
+							let capped: String = value.chars().take(BIO_LIMIT).collect();
+							input.update(cx, |state, cx| state.set_value(capped, window, cx));
+						}
+						cx.notify();
+					}
+				}),
+			);
 		}
 		subscriptions.push(
 			cx.subscribe_in(&data, window, |this, _, event: &DataEvent, window, cx| {
-				if matches!(event, DataEvent::Changed(_)) && !this.prefilled {
+				if let DataEvent::Changed(changes) = event
+					&& this.concerns_me(changes, cx)
+				{
 					this.prefill(window, cx);
+					this.sync_server(window, cx);
 				}
 			}),
 		);
@@ -138,57 +212,89 @@ impl ProfilesPage {
 			banner: None,
 			server_avatar: None,
 			guild: None,
-			prefilled: false,
+			applied: Applied::default(),
 			_subscriptions: subscriptions,
 		};
 		page.prefill(window, cx);
 		page
 	}
 
+	fn concerns_me(&self, changes: &Changes, cx: &Context<Self>) -> bool {
+		changes.current_user
+			|| self
+				.data
+				.read(cx)
+				.me()
+				.is_some_and(|me| changes.loaded.contains(me))
+	}
+
 	fn prefill(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-		let (name, bio, pronouns, loaded) = {
+		let (name, extras) = {
 			let data = self.data.read(cx);
 			let state = data.state();
 			let Some(user) = state.current_user() else {
 				return;
 			};
-			let profile = state.profile(user.id);
 			(
 				user.global_name.clone().unwrap_or_default(),
-				profile
-					.and_then(|profile| profile.bio.clone())
-					.unwrap_or_default(),
-				profile
-					.and_then(|profile| profile.pronouns.clone())
-					.unwrap_or_default(),
-				profile.is_some(),
+				state.profile(user.id).map(|profile| {
+					(
+						profile.bio.clone().unwrap_or_default(),
+						profile.pronouns.clone().unwrap_or_default(),
+					)
+				}),
 			)
 		};
-		self.name
-			.update(cx, |state, cx| state.set_value(name, window, cx));
-		self.bio.update(cx, |state, cx| state.set_value(bio, window, cx));
-		self.pronouns
-			.update(cx, |state, cx| state.set_value(pronouns, window, cx));
-		self.prefilled = loaded;
+		adopt(&self.name, &mut self.applied.name, name, window, cx);
+		if let Some((bio, pronouns)) = extras {
+			adopt(&self.bio, &mut self.applied.bio, bio, window, cx);
+			adopt(&self.pronouns, &mut self.applied.pronouns, pronouns, window, cx);
+		}
+		cx.notify();
+	}
+
+	fn sync_server(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+		let Some(guild) = self.guild else {
+			return;
+		};
+		let (nick, bio) = {
+			let data = self.data.read(cx);
+			let state = data.state();
+			let Some(me) = state.current_user_id() else {
+				return;
+			};
+			(
+				state
+					.guild(guild)
+					.and_then(|found| found.members.get(&me)?.nick.clone())
+					.unwrap_or_default(),
+				state
+					.profile(me)
+					.and_then(|profile| profile.guild_profile.as_ref())
+					.filter(|profile| profile.guild_id == guild)
+					.map(|profile| profile.bio.clone().unwrap_or_default()),
+			)
+		};
+		adopt(&self.nick, &mut self.applied.nick, nick, window, cx);
+		if let Some(bio) = bio {
+			adopt(&self.server_bio, &mut self.applied.server_bio, bio, window, cx);
+		}
 		cx.notify();
 	}
 
 	fn select_guild(&mut self, guild: Snowflake, window: &mut Window, cx: &mut Context<Self>) {
 		self.guild = Some(guild);
 		self.server_avatar = None;
-		let nick = {
-			let data = self.data.read(cx);
-			let state = data.state();
-			state
-				.current_user_id()
-				.and_then(|me| state.guild(guild)?.members.get(&me)?.nick.clone())
-				.unwrap_or_default()
-		};
-		self.nick
-			.update(cx, |state, cx| state.set_value(nick, window, cx));
-		self.server_bio
-			.update(cx, |state, cx| state.set_value("", window, cx));
-		cx.notify();
+		self.applied.nick = self.nick.read(cx).value().to_string();
+		self.applied.server_bio.clear();
+		revert(&self.server_bio, "", window, cx);
+		self.sync_server(window, cx);
+		if let Some(me) = self.data.read(cx).me() {
+			self.data.read(cx).send(Command::LoadProfile {
+				user_id: me,
+				guild_id: Some(guild),
+			});
+		}
 	}
 
 	fn pick(&mut self, slot: Slot, window: &mut Window, cx: &mut Context<Self>) {
@@ -235,19 +341,19 @@ impl ProfilesPage {
 		let data = self.data.read(cx);
 		match self.tab {
 			Tab::User => data.send(Command::EditProfile {
-				global_name: Some(self.name.read(cx).value().trim().to_owned()),
-				bio: Some(self.bio.read(cx).value().to_string()),
+				global_name: changed(self.name.read(cx).value().trim(), &self.applied.name),
+				bio: changed(&self.bio.read(cx).value(), &self.applied.bio),
 				avatar_png: self.avatar.take().map(|picked| picked.png),
 				banner_png: self.banner.take().map(|picked| picked.png),
-				pronouns: Some(self.pronouns.read(cx).value().trim().to_owned()),
+				pronouns: changed(self.pronouns.read(cx).value().trim(), &self.applied.pronouns),
 			}),
 			Tab::Server => {
 				if let Some(guild_id) = self.guild {
 					data.send(Command::SetGuildProfile {
 						guild_id,
-						nick: Some(self.nick.read(cx).value().trim().to_owned()),
+						nick: changed(self.nick.read(cx).value().trim(), &self.applied.nick),
 						avatar_png: self.server_avatar.take().map(|picked| picked.png),
-						bio: Some(self.server_bio.read(cx).value().to_string()),
+						bio: changed(&self.server_bio.read(cx).value(), &self.applied.server_bio),
 					});
 				}
 			}
@@ -259,10 +365,18 @@ impl ProfilesPage {
 		self.avatar = None;
 		self.banner = None;
 		self.server_avatar = None;
-		match (self.tab, self.guild) {
-			(Tab::Server, Some(guild)) => self.select_guild(guild, window, cx),
-			_ => self.prefill(window, cx),
+		match self.tab {
+			Tab::User => {
+				revert(&self.name, &self.applied.name, window, cx);
+				revert(&self.bio, &self.applied.bio, window, cx);
+				revert(&self.pronouns, &self.applied.pronouns, window, cx);
+			}
+			Tab::Server => {
+				revert(&self.nick, &self.applied.nick, window, cx);
+				revert(&self.server_bio, &self.applied.server_bio, window, cx);
+			}
 		}
+		cx.notify();
 	}
 
 	fn field(&self, label: SharedString, body: impl IntoElement, theme: &Theme) -> AnyElement {
@@ -300,6 +414,24 @@ impl ProfilesPage {
 				cx.notify();
 			}))
 			.child(cx.t(key))
+			.into_any_element()
+	}
+
+	fn bio_input(&self, state: &Entity<TextareaState>, theme: &Theme, cx: &Context<Self>) -> AnyElement {
+		let left = remaining(&state.read(cx).value());
+		div()
+			.flex()
+			.flex_col()
+			.gap(theme.space_4)
+			.child(Textarea::new(state))
+			.child(
+				div()
+					.flex()
+					.justify_end()
+					.text_size(theme.font_sm)
+					.text_color(if left == 0 { theme.danger } else { theme.text_muted })
+					.child(left.to_string()),
+			)
 			.into_any_element()
 	}
 
@@ -358,7 +490,11 @@ impl ProfilesPage {
 				),
 				theme,
 			),
-			self.field(cx.t("profile-about-me"), Textarea::new(&self.bio), theme),
+			self.field(
+				cx.t("profile-about-me"),
+				self.bio_input(&self.bio, theme, cx),
+				theme,
+			),
 		]
 	}
 
@@ -412,7 +548,11 @@ impl ProfilesPage {
 				),
 				theme,
 			));
-			form.push(self.field(cx.t("profile-about-me"), Textarea::new(&self.server_bio), theme));
+			form.push(self.field(
+				cx.t("profile-about-me"),
+				self.bio_input(&self.server_bio, theme, cx),
+				theme,
+			));
 		}
 		form
 	}

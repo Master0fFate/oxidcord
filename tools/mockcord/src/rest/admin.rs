@@ -418,6 +418,14 @@ pub fn profile_extras(shared: &Shared, user_id: u64, guild_id: Option<u64>) -> V
 		"connected_accounts": user.map_or_else(Vec::new, |user| {
 			vec![json!({ "type": "github", "id": user.id.to_string(), "name": user.username, "verified": true })]
 		}),
+		"guild_member_profile": guild_id.and_then(|guild_id| {
+			let guild = fixtures.guild(guild_id)?;
+			let bio = store.guild_bios.get(&(guild_id, user_id)).cloned().or_else(|| {
+				(user_id == crate::fixtures::CURRENT_USER_ID)
+					.then(|| format!("Regular in {}", guild.properties.name.clone().unwrap_or_default()))
+			})?;
+			Some(json!({ "guild_id": guild_id.to_string(), "bio": bio }))
+		}),
 		"guild_member": guild_id.and_then(|guild_id| {
 			let guild = fixtures.guild(guild_id)?;
 			store.member_now(guild, user_id).map(|member| to_json(&member))

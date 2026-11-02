@@ -61,6 +61,7 @@ pub struct Store {
 	pub invites: BTreeMap<String, Value>,
 	pub left_guilds: BTreeSet<u64>,
 	pub ended_sessions: BTreeSet<String>,
+	pub guild_bios: HashMap<(u64, u64), String>,
 	pub audit: HashMap<u64, Vec<Value>>,
 	pub joined_threads: BTreeSet<u64>,
 	pub created_guilds: HashMap<u64, Value>,
@@ -138,6 +139,7 @@ impl Store {
 			created_guilds: HashMap::new(),
 			left_guilds: BTreeSet::new(),
 			ended_sessions: BTreeSet::new(),
+			guild_bios: HashMap::new(),
 			audit: crate::admin::seed_audit(fixtures),
 			joined_threads: fixtures
 				.guilds
