@@ -8,6 +8,6 @@ mod session;
 mod transport;
 
 pub use config::GatewayConfig;
-pub use error::{GatewayError, SendError};
+pub use error::{AUTHENTICATION_FAILED, GatewayError, SendError};
 pub use event::GatewayEvent;
 pub use handle::{Gateway, GatewayHandle};

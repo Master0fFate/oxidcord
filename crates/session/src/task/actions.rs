@@ -32,7 +32,18 @@ fn failure_reason(what: &str, error: &RestError) -> String {
 		RestError::NotFound => format!("{what}: not found"),
 		RestError::RateLimited { .. } => format!("{what}: rate limited, try again shortly"),
 		RestError::Http(_, Some(api)) if !api.message.is_empty() => format!("{what}: {}", api.message),
+		RestError::Http(status, _) => format!("{what}: http {}", status.as_u16()),
+		RestError::Network(reason) => format!("{what}: {reason}"),
+		RestError::Decode(_) => format!("{what}: unreadable response"),
 		_ => format!("{what} failed"),
+	}
+}
+
+fn rest_failure(what: &str, error: &RestError) -> Internal {
+	tracing::warn!(%error, what, "rest call failed");
+	match error {
+		RestError::Unauthorized => Internal::SignedOut,
+		_ => Internal::Rejected(failure_reason(what, error)),
 	}
 }
 
@@ -41,6 +52,16 @@ impl Core {
 		self.apply_local(LocalEvent::CommandRejected {
 			reason: reason.into(),
 		});
+	}
+
+	pub(super) fn on_signed_out(&mut self) {
+		if self.state.read().session().signed_out {
+			return;
+		}
+		tracing::warn!("discord rejected the session token");
+		self.store.tokens.clear();
+		self.rest.clear_token();
+		self.apply_local(LocalEvent::SignedOut);
 	}
 
 	pub(super) fn on_loaded(&mut self, loaded: Loaded) {
@@ -109,8 +130,7 @@ impl Core {
 		let internal = self.internal.clone();
 		self.runtime.spawn(async move {
 			if let Err(error) = request.await {
-				tracing::warn!(%error, what, "rest call failed");
-				let _ = internal.send(Internal::Rejected(failure_reason(what, &error)));
+				let _ = internal.send(rest_failure(what, &error));
 			}
 		});
 	}
@@ -128,8 +148,7 @@ impl Core {
 					let _ = internal.send(Internal::Loaded(loaded));
 				}
 				Err(error) => {
-					tracing::warn!(%error, what, "rest call failed");
-					let _ = internal.send(Internal::Rejected(failure_reason(what, &error)));
+					let _ = internal.send(rest_failure(what, &error));
 				}
 			}
 		});
@@ -153,8 +172,7 @@ impl Core {
 					let _ = internal.send(message);
 				}
 				Err(error) => {
-					tracing::warn!(%error, what, "rest call failed");
-					let _ = internal.send(Internal::Rejected(failure_reason(what, &error)));
+					let _ = internal.send(rest_failure(what, &error));
 				}
 			}
 		});

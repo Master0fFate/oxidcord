@@ -26,11 +26,12 @@ pub enum SendError {
 	Closed,
 }
 
+pub const AUTHENTICATION_FAILED: u16 = 4004;
 pub(crate) const FATAL_CLOSE_CODES: [u16; 6] = [4004, 4010, 4011, 4012, 4013, 4014];
 
 fn fatal_meaning(code: u16) -> &'static str {
 	match code {
-		4004 => "authentication failed",
+		AUTHENTICATION_FAILED => "authentication failed",
 		4010 => "invalid shard",
 		4011 => "sharding required",
 		4012 => "invalid api version",

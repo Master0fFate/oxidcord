@@ -1,6 +1,7 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
-use std::path::PathBuf;
+use std::fs::File;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -15,6 +16,7 @@ use session::{BrokerSink, PluginOptions, Session, SessionConfig, VoiceIo};
 use store::{Paths, Store};
 use tokio::runtime::Handle;
 use tracing_subscriber::EnvFilter;
+use tracing_subscriber::fmt::writer::MakeWriterExt as _;
 use ui::{AppFlags, LaunchConfig, StartSession};
 use url::Url;
 
@@ -138,14 +140,13 @@ fn main() -> anyhow::Result<()> {
 		std::process::exit(code);
 	}
 	let cli = Cli::parse();
-	init_tracing(&cli.log);
-
 	let paths = match (&cli.data_dir, cli.mock) {
 		(Some(dir), _) => Paths::at(dir),
 		(None, true) => Paths::discover().and_then(|live| Paths::at(live.data_dir().join(MOCK_PROFILE))),
 		(None, false) => Paths::discover(),
 	}
 	.context("prepare data directories")?;
+	init_tracing(&cli.log, &paths.logs_dir());
 	install_panic_hook(paths.logs_dir());
 	match updater::apply_pending_on_start(paths.data_dir()) {
 		Ok(outcome) if outcome.should_exit() => return Ok(()),
@@ -332,9 +333,18 @@ fn unix_now() -> i64 {
 		.map_or(0, |elapsed| elapsed.as_secs() as i64)
 }
 
-fn init_tracing(filter: &str) {
+fn init_tracing(filter: &str, logs: &Path) {
 	let filter = EnvFilter::try_new(filter).unwrap_or_else(|_| EnvFilter::new("info"));
-	tracing_subscriber::fmt().with_env_filter(filter).init();
+	let subscriber = tracing_subscriber::fmt().with_env_filter(filter).with_ansi(false);
+	match log_file(logs) {
+		Some(file) => subscriber.with_writer(std::io::stdout.and(file)).init(),
+		None => subscriber.init(),
+	}
+}
+
+fn log_file(logs: &Path) -> Option<Arc<File>> {
+	std::fs::create_dir_all(logs).ok()?;
+	File::create(logs.join("session.log")).ok().map(Arc::new)
 }
 
 fn install_panic_hook(logs: PathBuf) {

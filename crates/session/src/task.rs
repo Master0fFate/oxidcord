@@ -6,7 +6,7 @@ use std::time::{Duration, Instant as StdInstant};
 
 use activity::ActivityHandle;
 use chrono::Utc;
-use gateway::{GatewayEvent, GatewayHandle};
+use gateway::{AUTHENTICATION_FAILED, GatewayError, GatewayEvent, GatewayHandle};
 use parking_lot::Mutex;
 use plugin_host::api::VoiceInfo;
 use plugin_host::api::model::DmSection;
@@ -108,6 +108,7 @@ pub(crate) enum Internal {
 		answer: PluginAnswer,
 	},
 	Rejected(String),
+	SignedOut,
 	CameraStarted {
 		generation: u64,
 		result: Result<(), String>,
@@ -574,6 +575,9 @@ impl Core {
 				self.stats.reconnects.fetch_add(1, Ordering::Relaxed);
 				self.apply_local(LocalEvent::ConnectionChanged { connected: false });
 			}
+			GatewayEvent::Fatal(GatewayError::Fatal {
+				code: AUTHENTICATION_FAILED,
+			}) => self.on_signed_out(),
 			GatewayEvent::Fatal(error) => {
 				tracing::error!(%error, "gateway stopped");
 				self.apply_local(LocalEvent::ConnectionChanged { connected: false });
@@ -695,6 +699,7 @@ impl Core {
 			}
 			Internal::PluginApplied { loaded, answer } => self.on_plugin_applied(loaded, answer),
 			Internal::Rejected(reason) => self.reject(reason),
+			Internal::SignedOut => self.on_signed_out(),
 			Internal::CameraStarted { generation, result } => self.on_camera_started(generation, result),
 			Internal::StreamTimeout { generation } => self.on_stream_timeout(generation),
 			Internal::StreamConnected { generation, result } => self.on_stream_connected(generation, result),

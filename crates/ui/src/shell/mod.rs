@@ -889,9 +889,13 @@ impl Shell {
 			self.user_panel.update(cx, |panel, cx| panel.refresh(cx));
 		}
 		if changes.session {
-			let connected = self.data.read(cx).state().session().connected;
+			let session = self.data.read(cx).state().session().clone();
+			if session.signed_out {
+				self.log_out(window, cx);
+				return;
+			}
 			self.timeline
-				.update(cx, |timeline, cx| timeline.set_connected(connected, cx));
+				.update(cx, |timeline, cx| timeline.set_connected(session.connected, cx));
 		}
 		if let Some(guild) = self.guild
 			&& (changes.members.contains(guild) || changes.presence_any() || changes.guild_list)

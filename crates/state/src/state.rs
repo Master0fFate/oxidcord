@@ -32,6 +32,7 @@ pub struct SessionInfo {
 	pub session_id: String,
 	pub resume_url: Option<String>,
 	pub connected: bool,
+	pub signed_out: bool,
 	pub latency: Option<Duration>,
 }
 
@@ -444,6 +445,11 @@ impl State {
 			}
 			LocalEvent::ConnectionChanged { connected } => {
 				self.session.connected = *connected;
+				changes.session = true;
+			}
+			LocalEvent::SignedOut => {
+				self.session.connected = false;
+				self.session.signed_out = true;
 				changes.session = true;
 			}
 			LocalEvent::LatencyMeasured(latency) => {

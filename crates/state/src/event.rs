@@ -64,6 +64,7 @@ pub enum LocalEvent {
 	ConnectionChanged {
 		connected: bool,
 	},
+	SignedOut,
 	LatencyMeasured(Duration),
 	VoiceConnection {
 		status: VoiceStatus,
