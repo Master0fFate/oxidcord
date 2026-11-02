@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use parking_lot::Mutex;
+use protocol::gateway::IdentifyProperties;
 use protocol::{Snowflake, Token};
 use tokio::sync::{mpsc, watch};
 
@@ -35,6 +36,7 @@ pub struct VoiceOptions {
 	pub output_device: Option<String>,
 	pub transform: Box<dyn FrameTransform>,
 	pub stream: bool,
+	pub identity: Option<IdentifyProperties>,
 }
 
 impl Default for VoiceOptions {
@@ -45,6 +47,7 @@ impl Default for VoiceOptions {
 			output_device: None,
 			transform: Box::new(Passthrough),
 			stream: false,
+			identity: None,
 		}
 	}
 }
@@ -68,6 +71,7 @@ impl VoiceConnection {
 			params.token,
 			&params.endpoint,
 			options.stream,
+			options.identity,
 		)?;
 		let established = establish(&credentials).await?;
 		let dave_group = match (options.stream, params.guild_id) {

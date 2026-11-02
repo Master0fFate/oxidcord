@@ -5,6 +5,7 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use futures_util::{SinkExt, StreamExt};
+use protocol::gateway::{IdentifyProperties, accept_language};
 use protocol::{Snowflake, Token};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -12,12 +13,13 @@ use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 use tokio::time::{Interval, MissedTickBehavior, interval_at, sleep, timeout};
+use tokio_tungstenite::tungstenite::ClientRequestBuilder;
 use tokio_tungstenite::tungstenite::protocol::CloseFrame;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 use tokio_tungstenite::tungstenite::{Bytes, Message};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async_with_config};
-use tracing::{debug, warn};
+use tracing::debug;
 use url::{Host, Url};
 
 use crate::crypto::{EncryptionMode, PacketCipher};
@@ -47,8 +49,8 @@ const DISCOVERY_REQUEST: u16 = 1;
 const DISCOVERY_RESPONSE: u16 = 2;
 const ADDRESS_RANGE: std::ops::Range<usize> = 8..72;
 const RESUME_ATTEMPTS: u32 = 5;
-const FRESH_ATTEMPTS: u32 = 3;
 const MAX_BACKOFF_SHIFT: u32 = 3;
+const WEB_ORIGIN: &str = "https://discord.com";
 const NORMAL_CLOSE_REASON: &str = "";
 const MAX_BACKLOG_FRAMES: usize = 64;
 const BINARY_HEADER_BYTES: usize = 3;
@@ -64,6 +66,7 @@ pub(crate) struct Credentials {
 	token: Token,
 	url: Url,
 	stream: bool,
+	identity: Option<IdentifyProperties>,
 }
 
 impl Credentials {
@@ -74,6 +77,7 @@ impl Credentials {
 		token: Token,
 		endpoint: &str,
 		stream: bool,
+		identity: Option<IdentifyProperties>,
 	) -> Result<Self> {
 		Ok(Self {
 			server_id,
@@ -82,11 +86,31 @@ impl Credentials {
 			token,
 			url: endpoint_url(endpoint)?,
 			stream,
+			identity,
 		})
 	}
 
 	pub fn user_id(&self) -> Snowflake {
 		self.user_id
+	}
+
+	fn request(&self) -> Result<ClientRequestBuilder> {
+		let uri = self
+			.url
+			.as_str()
+			.parse()
+			.map_err(|_| VoiceError::InvalidEndpoint)?;
+		let request = ClientRequestBuilder::new(uri);
+		let Some(identity) = &self.identity else {
+			return Ok(request);
+		};
+		let locale = identity.system_locale.as_deref().unwrap_or("en-US");
+		Ok(request
+			.with_header("User-Agent", identity.user_agent())
+			.with_header("Origin", WEB_ORIGIN)
+			.with_header("Accept-Language", accept_language(locale))
+			.with_header("Cache-Control", "no-cache")
+			.with_header("Pragma", "no-cache"))
 	}
 
 	fn identify(&self) -> Value {
@@ -192,13 +216,13 @@ pub(crate) struct Link {
 }
 
 impl Link {
-	async fn connect(url: &Url) -> Result<Self> {
+	async fn connect(credentials: &Credentials) -> Result<Self> {
 		let config = WebSocketConfig::default()
 			.max_frame_size(Some(MAX_FRAME_BYTES))
 			.max_message_size(Some(MAX_FRAME_BYTES));
 		let (socket, _) = timeout(
 			CONNECT_TIMEOUT,
-			connect_async_with_config(url.as_str(), Some(config), true),
+			connect_async_with_config(credentials.request()?, Some(config), true),
 		)
 		.await
 		.map_err(|_| VoiceError::Timeout)?
@@ -429,7 +453,7 @@ pub(crate) async fn establish(credentials: &Credentials) -> Result<Established> 
 }
 
 async fn handshake(credentials: &Credentials) -> Result<Established> {
-	let mut link = Link::connect(&credentials.url).await?;
+	let mut link = Link::connect(credentials).await?;
 	link.send(credentials.identify()).await.map_err(exit_error)?;
 	let ready: Ready = link.expect(opcode::READY).await?;
 	let mode = EncryptionMode::select(&ready.modes).ok_or(VoiceError::NoEncryptionMode)?;
@@ -519,16 +543,17 @@ async fn discover(socket: &UdpSocket, ssrc: u32) -> Result<(String, u16)> {
 
 async fn resume(credentials: &Credentials, last_seq: i64) -> Result<Link> {
 	let attempt = async {
-		let mut link = Link::connect(&credentials.url).await?;
+		let mut link = Link::connect(credentials).await?;
 		link.last_seq = last_seq;
 		link.send(credentials.resume(last_seq))
 			.await
 			.map_err(exit_error)?;
 		loop {
-			let frame = link.next().await.map_err(exit_error)?;
+			let frame = link.read().await.map_err(exit_error)?;
 			if frame.op == opcode::RESUMED {
 				return Ok(link);
 			}
+			link.defer(frame);
 		}
 	};
 	timeout(HANDSHAKE_TIMEOUT, attempt)
@@ -580,18 +605,10 @@ fn clear_video_frame(audio_ssrc: u32) -> Value {
 	})
 }
 
-enum Next {
-	Resume,
-	Fresh,
-	Stop,
-}
-
-fn classify(code: Option<u16>) -> Next {
+fn resumable(code: Option<u16>) -> bool {
 	match code {
-		None | Some(wire::close::SERVER_CRASHED) => Next::Resume,
-		Some(wire::close::SESSION_INVALID | wire::close::SESSION_TIMEOUT) => Next::Fresh,
-		Some(code) if code < 4000 => Next::Resume,
-		Some(_) => Next::Stop,
+		None | Some(wire::close::SERVER_CRASHED) => true,
+		Some(code) => code < 4000,
 	}
 }
 
@@ -621,17 +638,14 @@ enum Recovery {
 pub(crate) struct Supervisor {
 	credentials: Credentials,
 	shared: Arc<Shared>,
-	transform: SharedTransform,
-	audio_io: bool,
 	control: mpsc::UnboundedSender<Control>,
 	commands: mpsc::UnboundedReceiver<Control>,
 	shutdown: watch::Receiver<bool>,
 	link: Link,
-	media: MediaHandle,
+	_media: MediaHandle,
 	ssrc: u32,
 	ssrcs: VideoSsrcs,
 	announced: Option<(VideoKind, VideoQuality)>,
-	reannounce: bool,
 	speaking: bool,
 	dave: DaveSession,
 	outbox: Vec<Outgoing>,
@@ -663,30 +677,25 @@ impl Supervisor {
 			.video
 			.keyframe_interval_ms
 			.store(established.keyframe_interval_ms, Ordering::Relaxed);
-		let media = spawn_media(established.transport, &shared, &control, &transform, audio_io)?;
+		let _media = spawn_media(established.transport, &shared, &control, &transform, audio_io)?;
 		shared.hub.emit(VoiceEvent::Connected { ssrc });
 		let mut supervisor = Self {
 			credentials,
 			shared,
-			transform,
-			audio_io,
 			control,
 			commands,
 			shutdown,
 			link: established.link,
-			media,
+			_media,
 			ssrc,
 			ssrcs: established.ssrcs,
 			announced: None,
-			reannounce: false,
 			speaking: false,
 			dave,
 			outbox: Vec::new(),
 		};
 		supervisor.outbox = supervisor.dave.on_protocol_version(established.dave_version);
-		while let Some(frame) = supervisor.link.backlog.pop_front() {
-			supervisor.on_frame(frame);
-		}
+		supervisor.drain_backlog();
 		Ok(supervisor)
 	}
 
@@ -711,7 +720,7 @@ impl Supervisor {
 				Exit::Closed(code) => code,
 				Exit::Lost => None,
 			};
-			if matches!(classify(code), Next::Stop) {
+			if !resumable(code) {
 				return code;
 			}
 			match self.recover(code).await {
@@ -727,9 +736,6 @@ impl Supervisor {
 			if let Err(exit) = self.flush_dave().await {
 				return Drive::Exit(exit);
 			}
-			if let Err(exit) = self.flush_video().await {
-				return Drive::Exit(exit);
-			}
 			tokio::select! {
 				frame = self.link.next() => match frame {
 					Ok(frame) => self.on_frame(frame),
@@ -738,6 +744,10 @@ impl Supervisor {
 				command = self.commands.recv() => match command {
 					Some(Control::Speaking(speaking)) => {
 						self.speaking = speaking;
+						self.shared.hub.emit(VoiceEvent::Speaking {
+							user_id: self.credentials.user_id(),
+							speaking,
+						});
 						if let Err(exit) = self.link.send(speaking_frame(speaking, self.ssrc)).await {
 							return Drive::Exit(exit);
 						}
@@ -826,17 +836,6 @@ impl Supervisor {
 		}
 		for outgoing in std::mem::take(&mut self.outbox) {
 			self.link.send_message(outgoing.encode()).await?;
-		}
-		Ok(())
-	}
-
-	async fn flush_video(&mut self) -> std::result::Result<(), Exit> {
-		if !std::mem::take(&mut self.reannounce) {
-			return Ok(());
-		}
-		if let Some((_, quality)) = self.announced {
-			self.link.send(video_frame(self.ssrcs, true, &quality)).await?;
-			self.shared.video.set_ssrc(self.ssrcs.video);
 		}
 		Ok(())
 	}
@@ -1022,39 +1021,22 @@ impl Supervisor {
 			reconnecting: true,
 		});
 		let mut code = code;
-		if matches!(classify(code), Next::Resume) {
-			for attempt in 0..RESUME_ATTEMPTS {
-				if !self.pause(backoff(attempt)).await {
-					return Recovery::Shutdown;
-				}
-				match resume(&self.credentials, self.link.last_seq).await {
-					Ok(link) => {
-						self.link = link;
-						return self.after_resume().await;
-					}
-					Err(VoiceError::Closed(closed)) => {
-						code = Some(closed);
-						match classify(code) {
-							Next::Resume => {}
-							Next::Fresh => break,
-							Next::Stop => return Recovery::Stopped(code),
-						}
-					}
-					Err(error) => debug!(%error, "voice resume attempt failed"),
-				}
-				if attempt + 1 == RESUME_ATTEMPTS {
-					return Recovery::Stopped(code);
-				}
-			}
-		}
-		for attempt in 0..FRESH_ATTEMPTS {
+		for attempt in 0..RESUME_ATTEMPTS {
 			if !self.pause(backoff(attempt)).await {
 				return Recovery::Shutdown;
 			}
-			match establish(&self.credentials).await {
-				Ok(established) => return self.adopt(established),
-				Err(VoiceError::Closed(closed)) => return Recovery::Stopped(Some(closed)),
-				Err(error) => debug!(%error, "voice reconnect attempt failed"),
+			match resume(&self.credentials, self.link.last_seq).await {
+				Ok(link) => {
+					self.link = link;
+					return self.after_resume().await;
+				}
+				Err(VoiceError::Closed(closed)) => {
+					code = Some(closed);
+					if !resumable(code) {
+						return Recovery::Stopped(code);
+					}
+				}
+				Err(error) => debug!(%error, "voice resume attempt failed"),
 			}
 		}
 		Recovery::Stopped(code)
@@ -1069,44 +1051,15 @@ impl Supervisor {
 		{
 			return Recovery::Stopped(None);
 		}
+		self.drain_backlog();
 		self.shared.hub.emit(VoiceEvent::Connected { ssrc: self.ssrc });
 		Recovery::Recovered
 	}
 
-	fn adopt(&mut self, established: Established) -> Recovery {
-		self.shared.ssrc_users.lock().clear();
-		self.shared.video.remote.lock().clear();
-		self.ssrc = established.transport.ssrc;
-		self.ssrcs = established.ssrcs;
-		self.shared
-			.video
-			.keyframe_interval_ms
-			.store(established.keyframe_interval_ms, Ordering::Relaxed);
-		if self.announced.is_some() {
-			self.shared.video.set_ssrc(0);
-			self.reannounce = true;
-		}
-		self.speaking = false;
-		match spawn_media(
-			established.transport,
-			&self.shared,
-			&self.control,
-			&self.transform,
-			self.audio_io,
-		) {
-			Ok(media) => self.media = media,
-			Err(error) => {
-				warn!(%error, "failed to restart voice media");
-				return Recovery::Stopped(None);
-			}
-		}
-		self.link = established.link;
-		self.outbox = self.dave.on_protocol_version(established.dave_version);
+	fn drain_backlog(&mut self) {
 		while let Some(frame) = self.link.backlog.pop_front() {
 			self.on_frame(frame);
 		}
-		self.shared.hub.emit(VoiceEvent::Connected { ssrc: self.ssrc });
-		Recovery::Recovered
 	}
 
 	async fn pause(&mut self, duration: Duration) -> bool {

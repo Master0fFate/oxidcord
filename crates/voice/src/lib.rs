@@ -33,3 +33,4 @@ pub use mixer::Mixer;
 pub use resample::Resampler;
 pub use shared::{InputMode, VoiceStats};
 pub use transform::{Codec, FrameTransform, Passthrough};
+pub use wire::close;

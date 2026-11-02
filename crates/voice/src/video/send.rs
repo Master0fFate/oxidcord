@@ -9,6 +9,7 @@ use super::capture::VideoSource;
 use super::encode::{EncoderConfig, H264Encoder};
 use super::hub::OutgoingFrame;
 use super::{VideoError, VideoKind, convert, rtp};
+use crate::event::VoiceEvent;
 use crate::shared::Shared;
 
 const PAUSED_POLL: Duration = Duration::from_millis(50);
@@ -109,6 +110,9 @@ impl Pipeline {
 			}
 		}
 		self.shared.video.bitrate.store(0, Ordering::Relaxed);
+		if failures >= MAX_CONSECUTIVE_FAILURES {
+			self.shared.hub.emit(VoiceEvent::VideoFailed { kind: self.kind });
+		}
 		debug!("video pipeline stopped");
 	}
 

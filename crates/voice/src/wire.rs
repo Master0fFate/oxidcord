@@ -35,7 +35,12 @@ pub mod opcode {
 pub mod close {
 	pub const SESSION_INVALID: u16 = 4006;
 	pub const SESSION_TIMEOUT: u16 = 4009;
+	pub const DISCONNECTED: u16 = 4014;
 	pub const SERVER_CRASHED: u16 = 4015;
+	pub const UNKNOWN_ENCRYPTION_MODE: u16 = 4016;
+	pub const E2EE_REQUIRED: u16 = 4017;
+	pub const RATE_LIMITED: u16 = 4021;
+	pub const CALL_TERMINATED: u16 = 4022;
 }
 
 #[derive(Debug, Deserialize)]

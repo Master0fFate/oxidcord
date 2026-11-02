@@ -49,6 +49,9 @@ pub enum VoiceEvent {
 		ssrc: u32,
 		kind: VideoKind,
 	},
+	VideoFailed {
+		kind: VideoKind,
+	},
 }
 
 #[derive(Default)]
