@@ -371,7 +371,8 @@ impl VoiceRoom {
 						let data = self.data.clone();
 						let preset = *preset;
 						menu.item(cx.t(preset.key()), None, move |_, cx| {
-							data.read(cx).send(Command::SetVideoQuality(preset.quality(None)));
+							data.read(cx)
+								.send(Command::SetStreamQuality(preset.quality(None)));
 						})
 					})
 					.build();

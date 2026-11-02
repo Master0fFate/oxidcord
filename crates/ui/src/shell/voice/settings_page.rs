@@ -211,7 +211,7 @@ impl VoiceVideoPage {
 					if let Some(preset) = value.as_ref().and_then(|value| value.parse::<u8>().ok()) {
 						this.voice.video_preset = preset;
 						this.write(move |voice| voice.video_preset = preset);
-						this.data.read(cx).send(Command::SetDefaultVideoQuality(
+						this.data.read(cx).send(Command::SetCameraQuality(
 							Preset::from_index(preset).quality(None),
 						));
 						cx.notify();

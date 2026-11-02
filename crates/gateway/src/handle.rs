@@ -137,6 +137,7 @@ impl GatewayHandle {
 		channel_id: Option<Snowflake>,
 		self_mute: bool,
 		self_deaf: bool,
+		self_video: bool,
 		request_to_speak_timestamp: Option<DateTime<Utc>>,
 	) -> Result<(), SendError> {
 		self.queue(
@@ -146,7 +147,7 @@ impl GatewayHandle {
 				"channel_id": channel_id,
 				"self_mute": self_mute,
 				"self_deaf": self_deaf,
-				"self_video": false,
+				"self_video": self_video,
 				"request_to_speak_timestamp": request_to_speak_timestamp.map(|time| time.to_rfc3339()),
 			}),
 		)

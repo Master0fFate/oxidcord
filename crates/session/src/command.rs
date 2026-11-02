@@ -205,7 +205,7 @@ pub enum Command {
 		auto: bool,
 		threshold_db: f32,
 	},
-	SetDefaultVideoQuality(VideoQuality),
+	SetCameraQuality(VideoQuality),
 	StartMicTest {
 		seconds: u32,
 	},
@@ -313,7 +313,7 @@ pub enum Command {
 		with_audio: bool,
 	},
 	StopScreenShare,
-	SetVideoQuality(VideoQuality),
+	SetStreamQuality(VideoQuality),
 	WatchStream {
 		stream_key: String,
 	},

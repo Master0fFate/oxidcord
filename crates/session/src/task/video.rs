@@ -63,6 +63,8 @@ impl Core {
 			self.reject("Join a voice channel first");
 			return;
 		};
+		self.voice.camera_device.clone_from(&device_id);
+		self.voice.camera_quality = quality;
 		let generation = self.voice.generation;
 		let internal = self.internal.clone();
 		self.runtime.spawn(async move {
@@ -94,15 +96,25 @@ impl Core {
 		}
 		match result {
 			Ok(()) => self.set_camera(true),
-			Err(error) => self.reject(format!("Camera failed: {error}")),
+			Err(error) => {
+				self.reject(format!("Camera failed: {error}"));
+				let streaming = self
+					.voice
+					.connection
+					.as_ref()
+					.is_some_and(|connection| connection.active_video().is_some());
+				if !streaming {
+					self.set_camera(false);
+				}
+			}
 		}
 	}
 
-	pub(super) fn set_video_quality(&self, quality: VideoQuality) {
+	pub(super) fn set_camera_quality(&mut self, quality: VideoQuality) {
+		self.voice.camera_quality = quality;
 		if let Some(connection) = &self.voice.connection {
 			connection.set_video_quality(quality);
 		}
-		self.streams.set_quality(quality);
 	}
 
 	pub(super) fn set_camera(&mut self, on: bool) {

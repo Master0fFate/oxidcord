@@ -328,6 +328,7 @@ impl Core {
 			VoiceEvent::Disconnected {
 				reconnecting: false, ..
 			} => self.fail_stream(generation, "Stream connection lost"),
+			VoiceEvent::VideoFailed { .. } => self.fail_stream(generation, "Screen share ended"),
 			event => self.on_remote_video(&event),
 		}
 	}
@@ -390,6 +391,7 @@ impl Core {
 		let options = VoiceOptions {
 			audio_io: false,
 			stream: true,
+			identity: Some(self.identity.clone()),
 			..VoiceOptions::default()
 		};
 		let internal = self.internal.clone();

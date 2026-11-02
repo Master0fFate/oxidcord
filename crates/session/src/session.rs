@@ -134,6 +134,7 @@ impl Session {
 		let save_media = media_fetcher(&config.identify, &config.rest_base, SAVE_MEDIA_MAX_BYTES);
 		let rest_base = config.rest_base.clone();
 		let user_agent = config.identify.user_agent().to_owned();
+		let identity = config.identify.clone();
 		let rest = RestClient::new(
 			RestConfig {
 				base_url: config.rest_base,
@@ -214,6 +215,7 @@ impl Session {
 			save_media,
 			sink: plugins.sink,
 			activity: activity.clone(),
+			identity,
 		});
 		let (done, finished) = std::sync::mpsc::channel();
 		handle.spawn(async move {

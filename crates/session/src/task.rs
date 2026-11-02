@@ -11,6 +11,7 @@ use parking_lot::Mutex;
 use plugin_host::api::VoiceInfo;
 use plugin_host::api::model::DmSection;
 use plugin_host::{FullSendDecision, Invalidation};
+use protocol::gateway::IdentifyProperties;
 use protocol::{
 	AllowedMentions, Channel, ChannelType, CreateMessage, DISCORD_EPOCH_MS, DispatchEvent, EditMessage,
 	Message, MessageAck, MessageFlags, MessageReference, MessagesQuery, Nonce, Snowflake, Token, User,
@@ -137,6 +138,7 @@ pub(crate) enum Internal {
 		channel_id: Snowflake,
 	},
 	VoiceJoinTimeout(u64),
+	VoiceSettled(u64),
 	VoiceConnected {
 		generation: u64,
 		result: Result<Arc<::voice::VoiceConnection>, ::voice::VoiceError>,
@@ -222,6 +224,7 @@ pub(crate) struct CoreParts {
 	pub(crate) save_media: Option<media::MediaFetcher>,
 	pub(crate) sink: Arc<dyn BrokerSink>,
 	pub(crate) activity: ActivityHandle,
+	pub(crate) identity: IdentifyProperties,
 }
 
 pub(crate) struct Core {
@@ -272,6 +275,7 @@ pub(crate) struct Core {
 	hooks: plugin_hooks::HookState,
 	activity: ActivityHandle,
 	activities: Vec<Value>,
+	identity: IdentifyProperties,
 }
 
 fn page_query(
@@ -355,6 +359,7 @@ impl Core {
 			hooks: plugin_hooks::HookState::default(),
 			activity: parts.activity,
 			activities: Vec::new(),
+			identity: parts.identity,
 		}
 	}
 
@@ -737,6 +742,7 @@ impl Core {
 			}
 			Internal::JoinVoice { guild_id, channel_id } => self.join_voice(guild_id, channel_id),
 			Internal::VoiceJoinTimeout(generation) => self.on_voice_join_timeout(generation),
+			Internal::VoiceSettled(generation) => self.on_voice_settled(generation),
 			Internal::VoiceConnected { generation, result } => self.on_voice_connected(generation, result),
 			Internal::VoiceEvent { generation, event } => self.on_voice_event(generation, event),
 			Internal::VoiceLevels {
@@ -973,7 +979,7 @@ impl Core {
 			Command::SetOutputVolume(volume) => self.set_output_volume(volume),
 			Command::SetNoiseSuppression(enabled) => self.set_noise_suppression(enabled),
 			Command::SetVadThreshold { auto, threshold_db } => self.set_vad_threshold(auto, threshold_db),
-			Command::SetDefaultVideoQuality(quality) => self.set_default_video_quality(quality),
+			Command::SetCameraQuality(quality) => self.set_camera_quality(quality),
 			Command::StartMicTest { seconds } => self.start_mic_test(seconds),
 			Command::StopMicTest => self.stop_mic_test(),
 			Command::RequestToSpeak {
