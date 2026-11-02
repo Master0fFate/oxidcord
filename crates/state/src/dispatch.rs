@@ -4,8 +4,8 @@ use std::time::Instant;
 use protocol::{
 	Channel, ChannelLastMessage, ChannelRecipientChange, DispatchEvent, GuildMemberListUpdate,
 	GuildMembersChunk, GuildRoleChange, Member, MemberListGroup, Message, MessageAck, MessageUpdate,
-	PassiveUpdate, Presence, Snowflake,
-	ThreadDelete, ThreadListSync, TypingStart, UnavailableGuild, UserGuildSettings, VoiceState,
+	PassiveUpdate, Presence, Snowflake, ThreadDelete, ThreadListSync, TypingStart, UnavailableGuild,
+	UserGuildSettings, VoiceState,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -464,6 +464,10 @@ impl State {
 				changes.voice.insert(guild_id);
 				changes.channel_lists.insert(guild_id);
 			}
+		}
+		changes
+	}
+
 	fn recipient_added(&mut self, change: &ChannelRecipientChange) -> Changes {
 		intern_user(&mut self.users, &change.user);
 		let mut changes = Changes::default();
