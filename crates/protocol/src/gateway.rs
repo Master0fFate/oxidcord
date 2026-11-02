@@ -10,7 +10,7 @@ use crate::channel::{Channel, ChannelType, ThreadMember};
 use crate::emoji::{Emoji, PartialEmoji, Sticker};
 use crate::error::DecodeError;
 use crate::guild::{Guild, UnavailableGuild};
-use crate::lenient::{LenientVec, int_enum, timestamp};
+use crate::lenient::{LenientVec, int_enum, or_default, timestamp};
 use crate::member::Member;
 use crate::message::{Message, MessageUpdate};
 use crate::presence::Presence;
@@ -192,8 +192,8 @@ impl IdentifyProperties {
 			has_client_mods: Some(false),
 			browser_user_agent: Some(chrome_user_agent(chrome_version)),
 			browser_version: Some(reduced_chrome_version(chrome_version)),
-			os_version: Some(host_os_version().to_owned()),
-			os_arch: Some(host_arch().to_owned()),
+			os_version: Some(browser_os_version().to_owned()),
+			os_arch: None,
 			referrer: Some(String::new()),
 			referring_domain: Some(String::new()),
 			referrer_current: Some(String::new()),
@@ -230,11 +230,13 @@ pub fn chrome_user_agent(version: &str) -> String {
 	format!("Mozilla/5.0 ({platform}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version} Safari/537.36")
 }
 
-fn host_arch() -> &'static str {
-	if cfg!(target_arch = "aarch64") {
-		"arm64"
+fn browser_os_version() -> &'static str {
+	if cfg!(target_os = "macos") {
+		"10.15.7"
+	} else if cfg!(target_os = "linux") {
+		""
 	} else {
-		"x64"
+		"10"
 	}
 }
 
@@ -261,47 +263,6 @@ pub fn sec_ch_ua_platform() -> &'static str {
 	}
 }
 
-fn host_os_version() -> &'static str {
-	static CACHED: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-	CACHED.get_or_init(detect_os_version).as_str()
-}
-
-fn detect_os_version() -> String {
-	#[cfg(target_os = "windows")]
-	{
-		use windows::Wdk::System::SystemServices::RtlGetVersion;
-		use windows::Win32::Foundation::STATUS_SUCCESS;
-		use windows::Win32::System::SystemInformation::OSVERSIONINFOW;
-		let mut info = OSVERSIONINFOW {
-			dwOSVersionInfoSize: std::mem::size_of::<OSVERSIONINFOW>() as u32,
-			..Default::default()
-		};
-		if unsafe { RtlGetVersion(&mut info) } == STATUS_SUCCESS {
-			format!(
-				"{}.{}.{}",
-				info.dwMajorVersion, info.dwMinorVersion, info.dwBuildNumber
-			)
-		} else {
-			String::new()
-		}
-	}
-	#[cfg(target_os = "macos")]
-	{
-		std::process::Command::new("sw_vers")
-			.arg("-productVersion")
-			.output()
-			.ok()
-			.and_then(|output| String::from_utf8(output.stdout).ok())
-			.map(|value| value.trim().to_owned())
-			.filter(|value| !value.is_empty())
-			.unwrap_or_default()
-	}
-	#[cfg(not(any(target_os = "windows", target_os = "macos")))]
-	{
-		String::new()
-	}
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Identify {
 	pub token: Token,
@@ -325,9 +286,23 @@ pub struct Resume {
 	pub seq: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub mod capability {
+	pub const LAZY_USER_NOTES: u64 = 1 << 0;
+	pub const VERSIONED_READ_STATES: u64 = 1 << 2;
+	pub const VERSIONED_USER_GUILD_SETTINGS: u64 = 1 << 3;
+	pub const DEDUPE_USER_OBJECTS: u64 = 1 << 4;
+	pub const PRIORITIZED_READY_PAYLOAD: u64 = 1 << 5;
+	pub const MULTIPLE_GUILD_EXPERIMENT_POPULATIONS: u64 = 1 << 6;
+	pub const NON_CHANNEL_READ_STATES: u64 = 1 << 7;
+	pub const AUTH_TOKEN_REFRESH: u64 = 1 << 8;
+	pub const USER_SETTINGS_PROTO: u64 = 1 << 9;
+	pub const CLIENT_STATE_V2: u64 = 1 << 10;
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Ready {
+	#[serde(deserialize_with = "or_default")]
 	pub v: Option<i64>,
 	pub user: User,
 	pub guilds: LenientVec<Guild>,
@@ -335,13 +310,21 @@ pub struct Ready {
 	pub relationships: LenientVec<Relationship>,
 	pub read_state: ReadStateContainer,
 	pub user_guild_settings: UserGuildSettingsContainer,
+	#[serde(deserialize_with = "or_default")]
 	pub session_id: String,
+	#[serde(deserialize_with = "or_default")]
 	pub resume_gateway_url: Option<String>,
+	#[serde(deserialize_with = "or_default")]
 	pub sessions: Vec<Value>,
 	pub users: LenientVec<User>,
+	#[serde(deserialize_with = "or_default")]
 	pub merged_members: Vec<LenientVec<Member>>,
+	#[serde(deserialize_with = "or_default")]
 	pub user_settings_proto: Option<String>,
+	#[serde(deserialize_with = "or_default")]
 	pub user_settings: Option<Value>,
+	#[serde(skip_serializing, deserialize_with = "or_default")]
+	pub auth_token: Option<Token>,
 }
 
 impl Ready {

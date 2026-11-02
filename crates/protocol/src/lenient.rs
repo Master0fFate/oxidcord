@@ -342,6 +342,15 @@ pub fn present<'de, D: Deserializer<'de>>(deserializer: D) -> Result<bool, D::Er
 	IgnoredAny::deserialize(deserializer).map(|_| true)
 }
 
+pub fn or_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+	D: Deserializer<'de>,
+	T: DeserializeOwned + Default,
+{
+	let raw = Box::<RawValue>::deserialize(deserializer)?;
+	Ok(serde_json::from_str(raw.get()).unwrap_or_default())
+}
+
 macro_rules! int_enum {
 	(
 		$(#[$meta:meta])*

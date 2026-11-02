@@ -6,6 +6,8 @@ use serde_json::{Value, json};
 use crate::config::GatewayConfig;
 use crate::error::GatewayError;
 
+const INITIAL_STATUS: &str = "unknown";
+
 #[derive(Serialize)]
 struct Outgoing<'a, T: Serialize> {
 	op: Opcode,
@@ -17,16 +19,16 @@ struct IdentifyData<'a> {
 	token: &'a Token,
 	capabilities: u64,
 	properties: &'a IdentifyProperties,
-	presence: Presence<'a>,
+	presence: Presence,
 	compress: bool,
 	large_threshold: u32,
 	client_state: ClientState,
 }
 
 #[derive(Serialize)]
-struct Presence<'a> {
-	status: &'a str,
-	since: Option<u64>,
+struct Presence {
+	status: &'static str,
+	since: u64,
 	activities: [Value; 0],
 	afk: bool,
 }
@@ -55,8 +57,8 @@ pub(crate) fn identify(config: &GatewayConfig) -> Result<String, GatewayError> {
 			capabilities: config.capabilities,
 			properties: &config.identify,
 			presence: Presence {
-				status: &config.initial_status,
-				since: None,
+				status: INITIAL_STATUS,
+				since: 0,
 				activities: [],
 				afk: false,
 			},

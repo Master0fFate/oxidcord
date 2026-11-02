@@ -32,7 +32,7 @@ mockcord = { path = "tools/mockcord" }
 
 tokio = { version = "1.54", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "fs", "signal"] }
 tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "stream", "multipart", "gzip", "brotli", "zstd", "http2"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "stream", "multipart", "gzip", "deflate", "brotli", "zstd", "http2"] }
 futures-util = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["raw_value"] }
@@ -88,7 +88,6 @@ windows = { version = "0.62", features = [
 	"Win32_UI_Input_KeyboardAndMouse",
 	"Win32_UI_Shell",
 	"Win32_UI_WindowsAndMessaging",
-	"Wdk_System_SystemServices",
 ] }
 
 wasmtime = { version = "50", default-features = false, features = ["component-model", "cranelift", "runtime", "parallel-compilation", "std"] }

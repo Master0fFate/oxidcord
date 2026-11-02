@@ -18,6 +18,3 @@ thiserror.workspace = true
 zeroize.workspace = true
 rand.workspace = true
 base64.workspace = true
-
-[target.'cfg(windows)'.dependencies]
-windows.workspace = true

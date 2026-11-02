@@ -1,3 +1,8 @@
+use protocol::gateway::capability::{
+	AUTH_TOKEN_REFRESH, CLIENT_STATE_V2, DEDUPE_USER_OBJECTS, LAZY_USER_NOTES,
+	MULTIPLE_GUILD_EXPERIMENT_POPULATIONS, NON_CHANNEL_READ_STATES, PRIORITIZED_READY_PAYLOAD,
+	USER_SETTINGS_PROTO, VERSIONED_READ_STATES, VERSIONED_USER_GUILD_SETTINGS,
+};
 use protocol::{IdentifyProperties, Token};
 
 #[derive(Debug)]
@@ -6,14 +11,21 @@ pub struct GatewayConfig {
 	pub gateway_url: String,
 	pub identify: IdentifyProperties,
 	pub capabilities: u64,
-	pub initial_status: String,
 	pub large_threshold: u32,
 }
 
 impl GatewayConfig {
 	pub const DEFAULT_GATEWAY_URL: &'static str = "wss://gateway.discord.gg";
-	pub const DEFAULT_CAPABILITIES: u64 =
-		1 | 2 | 4 | 8 | 16 | 32 | 64 | 128 | 256 | 512 | 1024 | 2048 | 4096 | 8192 | 16384;
+	pub const DEFAULT_CAPABILITIES: u64 = LAZY_USER_NOTES
+		| VERSIONED_READ_STATES
+		| VERSIONED_USER_GUILD_SETTINGS
+		| DEDUPE_USER_OBJECTS
+		| PRIORITIZED_READY_PAYLOAD
+		| MULTIPLE_GUILD_EXPERIMENT_POPULATIONS
+		| NON_CHANNEL_READ_STATES
+		| AUTH_TOKEN_REFRESH
+		| USER_SETTINGS_PROTO
+		| CLIENT_STATE_V2;
 	pub const DEFAULT_LARGE_THRESHOLD: u32 = 250;
 
 	pub fn new(token: Token, identify: IdentifyProperties) -> Self {
@@ -22,7 +34,6 @@ impl GatewayConfig {
 			gateway_url: Self::DEFAULT_GATEWAY_URL.to_owned(),
 			identify,
 			capabilities: Self::DEFAULT_CAPABILITIES,
-			initial_status: "online".to_owned(),
 			large_threshold: Self::DEFAULT_LARGE_THRESHOLD,
 		}
 	}
