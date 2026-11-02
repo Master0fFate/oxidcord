@@ -47,7 +47,7 @@ pub async fn validate_token(rest_base: &Url, token: &str) -> Result<User, LoginE
 	});
 	client.set_token(Token::new(token));
 	client.current_user().await.map_err(|error| match error {
-		RestError::Unauthorized | RestError::Forbidden => LoginError::Rejected,
+		RestError::Unauthorized(_) | RestError::Forbidden(_) => LoginError::Rejected,
 		other => LoginError::Rest(other),
 	})
 }

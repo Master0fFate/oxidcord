@@ -25,15 +25,15 @@ pub fn discovery_client() -> Result<Client> {
 pub async fn discover_chrome_version(client: &Client) -> Result<String> {
 	let base = Url::parse(CHROME_VERSION_URL).map_err(|_| RestError::InvalidRequest)?;
 	let (body, _) = fetch_capped(client, &base, MAX_VERSION_BYTES).await?;
-	let parsed: Value = serde_json::from_slice(&body).map_err(|_| RestError::NotFound)?;
+	let parsed: Value = serde_json::from_slice(&body).map_err(|_| RestError::NotFound(None))?;
 	let version = parsed
 		.get("latest_version")
 		.and_then(|channel| channel.get("stable"))
 		.and_then(Value::as_str)
-		.ok_or(RestError::NotFound)?
+		.ok_or(RestError::NotFound(None))?
 		.to_owned();
 	if !plausible_version(&version) {
-		return Err(RestError::NotFound);
+		return Err(RestError::NotFound(None));
 	}
 	Ok(version)
 }
@@ -60,7 +60,7 @@ pub async fn discover_build_number(client: &Client) -> Result<u64> {
 			break;
 		}
 	}
-	Err(RestError::NotFound)
+	Err(RestError::NotFound(None))
 }
 
 async fn fetch_capped(client: &Client, url: &Url, cap: usize) -> Result<(Vec<u8>, bool)> {

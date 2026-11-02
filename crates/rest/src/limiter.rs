@@ -8,6 +8,7 @@ use crate::route::RouteKey;
 
 const MAX_HEADER_WAIT: f64 = 600.0;
 const PRUNE_THRESHOLD: usize = 1024;
+const RESET_PROBE_GRACE: Duration = Duration::from_millis(500);
 
 #[derive(Default)]
 pub struct RateLimiter {
@@ -22,9 +23,7 @@ struct State {
 }
 
 struct Bucket {
-	limit: u32,
 	remaining: u32,
-	window: Duration,
 	reset_at: Instant,
 }
 
@@ -36,9 +35,12 @@ fn header_text<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
 	headers.get(name)?.to_str().ok()
 }
 
-fn header_secs(headers: &HeaderMap, name: &str) -> Option<Duration> {
-	let seconds = header_text(headers, name)?.parse::<f64>().ok()?;
+pub(crate) fn clamp_wait(seconds: f64) -> Option<Duration> {
 	Duration::try_from_secs_f64(seconds.clamp(0.0, MAX_HEADER_WAIT)).ok()
+}
+
+fn header_secs(headers: &HeaderMap, name: &str) -> Option<Duration> {
+	clamp_wait(header_text(headers, name)?.parse().ok()?)
 }
 
 pub(crate) fn header_u32(headers: &HeaderMap, name: &str) -> Option<u32> {
@@ -74,8 +76,8 @@ impl RateLimiter {
 		let id = bucket_id(hash, route);
 		let bucket = state.buckets.get_mut(&id)?;
 		if bucket.reset_at <= now {
-			bucket.remaining = bucket.limit;
-			bucket.reset_at = now + bucket.window;
+			bucket.remaining = 1;
+			bucket.reset_at = now + RESET_PROBE_GRACE;
 		}
 		if bucket.remaining == 0 {
 			return Some(bucket.reset_at - now);
@@ -102,16 +104,10 @@ impl RateLimiter {
 				.route_buckets
 				.insert(route.as_str().to_owned(), hash.to_owned());
 		}
-		let limit = header_u32(headers, "x-ratelimit-limit")
-			.or_else(|| state.buckets.get(&id).map(|bucket| bucket.limit))
-			.unwrap_or(remaining)
-			.max(remaining);
 		state.buckets.insert(
 			id,
 			Bucket {
-				limit,
 				remaining,
-				window: reset_after,
 				reset_at: now + reset_after,
 			},
 		);

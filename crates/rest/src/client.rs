@@ -11,11 +11,12 @@ use reqwest::header::{
 	REFERER,
 };
 use serde::de::DeserializeOwned;
+use serde_json::Value;
 use url::{Host, Url};
 
 use crate::config::RestConfig;
 use crate::error::{RestError, Result, network_error};
-use crate::limiter::{RateLimiter, header_global, header_retry_after, header_u32};
+use crate::limiter::{RateLimiter, clamp_wait, header_global, header_retry_after, header_u32};
 use crate::request::{Body, Request, UploadFile, encode_component};
 use crate::route::{RouteKey, route_key};
 use protocol::gateway::{accept_language, sec_ch_ua_platform};
@@ -27,10 +28,19 @@ const MAX_RETRIES: u32 = 3;
 const MAX_AUTO_WAIT: Duration = Duration::from_secs(60);
 const RETRY_JITTER: Duration = Duration::from_millis(50);
 const FALLBACK_RETRY_AFTER: Duration = Duration::from_secs(1);
+const UNSTRUCTURED_RETRY_AFTER: Duration = Duration::from_secs(5);
 const UPLOAD_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 const WEB_ORIGIN: &str = "https://discord.com";
 const WEB_REFERER: &str = "https://discord.com/channels/@me";
 const CAPTCHA_MARKER: &[u8] = b"\"captcha_key\"";
+const MFA_REQUIRED_CODE: i64 = 60003;
+const MFA_MARKER: &[u8] = b"\"mfa\"";
+
+struct Throttle {
+	retry_after: Duration,
+	global: bool,
+	structured: bool,
+}
 
 #[derive(Clone)]
 pub struct RestClient {
@@ -161,20 +171,38 @@ async fn read_capped(response: Response, max: usize) -> Result<Bytes> {
 	Ok(buffer.freeze())
 }
 
+fn contains(body: &[u8], marker: &[u8]) -> bool {
+	body.windows(marker.len()).any(|window| window == marker)
+}
+
 fn classify(status: StatusCode, body: &[u8]) -> RestError {
-	match status {
-		StatusCode::BAD_REQUEST
-			if body
-				.windows(CAPTCHA_MARKER.len())
-				.any(|window| window == CAPTCHA_MARKER) =>
-		{
-			RestError::CaptchaRequired
-		}
-		StatusCode::UNAUTHORIZED => RestError::Unauthorized,
-		StatusCode::FORBIDDEN => RestError::Forbidden,
-		StatusCode::NOT_FOUND => RestError::NotFound,
-		_ => RestError::Http(status, serde_json::from_slice::<ApiError>(body).ok()),
+	if status == StatusCode::BAD_REQUEST && contains(body, CAPTCHA_MARKER) {
+		return RestError::CaptchaRequired;
 	}
+	let api = serde_json::from_slice::<ApiError>(body).ok();
+	let gated = matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN);
+	if gated && (api.as_ref().is_some_and(|api| api.code == MFA_REQUIRED_CODE) || contains(body, MFA_MARKER))
+	{
+		return RestError::MfaRequired;
+	}
+	match status {
+		StatusCode::UNAUTHORIZED => RestError::Unauthorized(api),
+		StatusCode::FORBIDDEN => RestError::Forbidden(api),
+		StatusCode::NOT_FOUND => RestError::NotFound(api),
+		_ => RestError::Http(status, api),
+	}
+}
+
+fn decode<T: DeserializeOwned>(body: &[u8]) -> Result<T> {
+	serde_json::from_slice(body)
+		.map_err(|error| RestError::Decode(DecodeError::new(std::any::type_name::<T>(), error)))
+}
+
+fn indexing_wait(body: &[u8]) -> Duration {
+	serde_json::from_slice::<RateLimitBody>(body)
+		.ok()
+		.and_then(|parsed| clamp_wait(parsed.retry_after))
+		.unwrap_or(FALLBACK_RETRY_AFTER)
 }
 
 impl RestClient {
@@ -211,9 +239,18 @@ impl RestClient {
 	}
 
 	pub async fn send<T: DeserializeOwned>(&self, request: Request) -> Result<T> {
-		let body = self.execute(request).await?;
-		serde_json::from_slice(&body)
-			.map_err(|error| RestError::Decode(DecodeError::new(std::any::type_name::<T>(), error)))
+		let (_, body) = self.execute(request).await?;
+		decode(&body)
+	}
+
+	pub async fn send_indexed(&self, request: Request) -> Result<Value> {
+		let (status, body) = self.execute(request).await?;
+		if status == StatusCode::ACCEPTED {
+			return Err(RestError::IndexNotReady {
+				retry_after: indexing_wait(&body),
+			});
+		}
+		decode(&body)
 	}
 
 	pub async fn send_empty(&self, request: Request) -> Result<()> {
@@ -221,7 +258,7 @@ impl RestClient {
 	}
 
 	pub async fn send_bytes(&self, request: Request) -> Result<Bytes> {
-		self.execute(request).await
+		self.execute(request).await.map(|(_, body)| body)
 	}
 
 	fn build_url(&self, request: &Request) -> Result<Url> {
@@ -275,18 +312,26 @@ impl RestClient {
 		builder.send().await.map_err(network_error)
 	}
 
-	fn rate_limit_wait(&self, route: &RouteKey, headers: &HeaderMap, body: &[u8]) -> (Duration, bool) {
+	fn throttle(&self, route: &RouteKey, headers: &HeaderMap, body: &[u8]) -> Throttle {
 		let parsed = serde_json::from_slice::<RateLimitBody>(body).ok();
-		let global = header_global(headers) || parsed.as_ref().is_some_and(|parsed| parsed.global);
-		let retry_after = parsed
-			.and_then(|parsed| Duration::try_from_secs_f64(parsed.retry_after.max(0.0)).ok())
-			.or_else(|| header_retry_after(headers))
-			.unwrap_or(FALLBACK_RETRY_AFTER);
+		let structured = parsed.is_some();
+		let global =
+			!structured || header_global(headers) || parsed.as_ref().is_some_and(|parsed| parsed.global);
+		let retry_after = match parsed {
+			Some(parsed) => clamp_wait(parsed.retry_after)
+				.or_else(|| header_retry_after(headers))
+				.unwrap_or(FALLBACK_RETRY_AFTER),
+			None => header_retry_after(headers).unwrap_or(UNSTRUCTURED_RETRY_AFTER),
+		};
 		self.inner.limiter.limited(route, retry_after, global);
-		(retry_after, global)
+		Throttle {
+			retry_after,
+			global,
+			structured,
+		}
 	}
 
-	async fn execute(&self, request: Request) -> Result<Bytes> {
+	async fn execute(&self, request: Request) -> Result<(StatusCode, Bytes)> {
 		let url = self.build_url(&request)?;
 		let route = route_key(&request.method, &request.path);
 		let retryable = request.method != Method::POST || request.idempotent;
@@ -311,17 +356,19 @@ impl RestClient {
 			}
 			let body = read_capped(response, self.inner.max_body).await?;
 			if status == StatusCode::TOO_MANY_REQUESTS {
-				let (retry_after, global) = self.rate_limit_wait(&route, &headers, &body);
-				if !retryable || retries >= MAX_RETRIES || retry_after > MAX_AUTO_WAIT {
+				let throttle = self.throttle(&route, &headers, &body);
+				let retry_after = throttle.retry_after;
+				if !retryable || !throttle.structured || retries >= MAX_RETRIES || retry_after > MAX_AUTO_WAIT
+				{
 					return Err(RestError::RateLimited { retry_after });
 				}
 				retries += 1;
-				tracing::debug!(route = %route, global, retries, "rest rate limited, retrying");
+				tracing::debug!(route = %route, global = throttle.global, retries, "rest rate limited, retrying");
 				tokio::time::sleep(retry_after + RETRY_JITTER).await;
 				continue;
 			}
 			if status.is_success() {
-				return Ok(body);
+				return Ok((status, body));
 			}
 			return Err(classify(status, &body));
 		}

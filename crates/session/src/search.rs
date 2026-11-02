@@ -5,6 +5,7 @@ use serde_json::Value;
 pub struct SearchResults {
 	pub messages: Vec<Message>,
 	pub total: u64,
+	pub indexing: bool,
 }
 
 fn hit_of(group: &Value) -> Option<&Value> {
@@ -27,6 +28,17 @@ impl SearchResults {
 		let total = response["total_results"]
 			.as_u64()
 			.unwrap_or(messages.len() as u64);
-		Self { messages, total }
+		Self {
+			messages,
+			total,
+			indexing: false,
+		}
+	}
+
+	pub fn indexing() -> Self {
+		Self {
+			indexing: true,
+			..Self::default()
+		}
 	}
 }

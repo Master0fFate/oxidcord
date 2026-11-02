@@ -721,7 +721,7 @@ impl Core {
 		}));
 		self.persist_read_state(channel_id);
 		let body = json!({ "manual": true, "mention_count": 0 });
-		self.spawn_rest("mark unread", move |rest| async move {
+		self.spawn_action("mark unread", move |rest| async move {
 			rest.ack_message(channel_id, previous, body).await.map(drop)
 		});
 	}
@@ -733,7 +733,7 @@ impl Core {
 		}
 		for chunk in unread.chunks(ACK_BULK_LIMIT) {
 			let chunk = chunk.to_vec();
-			self.spawn_rest("ack guild", move |rest| async move { rest.ack_bulk(chunk).await });
+			self.spawn_action("ack guild", move |rest| async move { rest.ack_bulk(chunk).await });
 		}
 	}
 

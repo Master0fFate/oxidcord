@@ -8,6 +8,7 @@ pub struct ApiError {
 	status: StatusCode,
 	code: i64,
 	message: &'static str,
+	mfa: bool,
 }
 
 pub type ApiResult<T = Json<Value>> = Result<T, ApiError>;
@@ -18,11 +19,31 @@ impl ApiError {
 			status,
 			code,
 			message,
+			mfa: false,
 		}
 	}
 
 	pub const fn unauthorized() -> Self {
 		Self::new(StatusCode::UNAUTHORIZED, 0, "401: Unauthorized")
+	}
+
+	pub const fn mfa_required() -> Self {
+		Self {
+			mfa: true,
+			..Self::new(
+				StatusCode::UNAUTHORIZED,
+				60003,
+				"Two factor is required for this operation",
+			)
+		}
+	}
+
+	pub const fn cannot_message_user() -> Self {
+		Self::new(StatusCode::FORBIDDEN, 50007, "Cannot send messages to this user")
+	}
+
+	pub const fn missing_permissions() -> Self {
+		Self::new(StatusCode::FORBIDDEN, 50013, "Missing Permissions")
 	}
 
 	pub const fn not_found() -> Self {
@@ -80,10 +101,10 @@ impl ApiError {
 
 impl IntoResponse for ApiError {
 	fn into_response(self) -> Response {
-		(
-			self.status,
-			Json(json!({ "message": self.message, "code": self.code })),
-		)
-			.into_response()
+		let mut body = json!({ "message": self.message, "code": self.code });
+		if self.mfa {
+			body["mfa"] = json!({ "ticket": "mock-mfa-ticket", "methods": [] });
+		}
+		(self.status, Json(body)).into_response()
 	}
 }

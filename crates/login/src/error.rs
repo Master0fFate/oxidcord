@@ -29,7 +29,7 @@ pub enum LoginError {
 impl From<rest::RestError> for LoginError {
 	fn from(error: rest::RestError) -> Self {
 		match error {
-			rest::RestError::Unauthorized => Self::InvalidToken,
+			rest::RestError::Unauthorized(_) => Self::InvalidToken,
 			rest::RestError::CaptchaRequired => Self::Protocol(CAPTCHA_REFUSAL.to_owned()),
 			rest::RestError::Network(reason) => Self::Network(reason),
 			rest::RestError::RateLimited { retry_after } => {

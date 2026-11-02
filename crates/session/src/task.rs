@@ -17,8 +17,8 @@ use protocol::{
 	Message, MessageAck, MessageFlags, MessageReference, MessagesQuery, Nonce, ProtoCustomStatus, Snowflake,
 	Token, User,
 };
-use rest::RestClient;
 use rest::api::SearchQuery;
+use rest::{RestClient, RestError};
 use serde_json::{Value, json};
 use state::{
 	AlertVerdict, Changes, ChannelDecoration, ClientOptions, Event, LoadDirection, Loaded, LocalEvent,
@@ -54,6 +54,7 @@ mod streams;
 mod video;
 mod voice_link;
 
+use actions::rest_failure;
 use mic_test::MicTestRun;
 use outgoing::Outgoing;
 pub(crate) use plugin_load::PluginAnswer;
@@ -72,6 +73,8 @@ const PAGE_SIZE: u8 = 50;
 const TYPING_THROTTLE: Duration = Duration::from_secs(9);
 const TYPING_EXPIRY_SLACK: Duration = Duration::from_millis(100);
 const MEMBER_SEARCH_LIMIT: u32 = 100;
+const SEARCH_INDEX_RETRIES: u32 = 2;
+const SEARCH_INDEX_MAX_WAIT: Duration = Duration::from_secs(10);
 const MEMBER_LIST_RANGE: [u32; 2] = [0, 99];
 const DAY_MILLIS: i64 = 86_400_000;
 const NONCE_SEQUENCE_BITS: u32 = 22;
@@ -890,7 +893,7 @@ impl Core {
 				channel_id,
 				message_id,
 				content,
-			} => self.spawn_rest("edit message", move |rest| async move {
+			} => self.spawn_action("edit message", move |rest| async move {
 				let body = EditMessage {
 					content: Some(content),
 					..EditMessage::default()
@@ -900,29 +903,35 @@ impl Core {
 			Command::DeleteMessage {
 				channel_id,
 				message_id,
-			} => self.spawn_rest("delete message", move |rest| async move {
-				rest.delete_message(channel_id, message_id).await
-			}),
+			} => {
+				if self.delete_allowed(channel_id, message_id) {
+					self.spawn_action("delete message", move |rest| async move {
+						rest.delete_message(channel_id, message_id).await
+					});
+				}
+			}
 			Command::AddReaction {
 				channel_id,
 				message_id,
 				emoji,
 				burst,
 			} => {
-				self.remember_reaction(&emoji);
-				self.spawn_rest("add reaction", move |rest| async move {
-					if burst {
-						rest.add_burst_reaction(channel_id, message_id, &emoji).await
-					} else {
-						rest.add_reaction(channel_id, message_id, &emoji).await
-					}
-				});
+				if self.react_allowed(channel_id, message_id, &emoji) {
+					self.remember_reaction(&emoji);
+					self.spawn_action("add reaction", move |rest| async move {
+						if burst {
+							rest.add_burst_reaction(channel_id, message_id, &emoji).await
+						} else {
+							rest.add_reaction(channel_id, message_id, &emoji).await
+						}
+					});
+				}
 			}
 			Command::RemoveReaction {
 				channel_id,
 				message_id,
 				emoji,
-			} => self.spawn_rest("remove reaction", move |rest| async move {
+			} => self.spawn_action("remove reaction", move |rest| async move {
 				rest.remove_own_reaction(channel_id, message_id, &emoji).await
 			}),
 			Command::Typing { channel_id } => self.typing(channel_id),
@@ -1482,12 +1491,25 @@ impl Core {
 		let rest = self.rest.clone();
 		let internal = self.internal.clone();
 		self.runtime.spawn(async move {
-			match rest.search_messages(guild_id, channel_id, query).await {
-				Ok(response) => {
-					let _ = internal.send(Internal::Search(SearchResults::from_response(&response)));
+			let mut retries = 0;
+			let outcome = loop {
+				match rest.search_messages(guild_id, channel_id, query.clone()).await {
+					Err(RestError::IndexNotReady { retry_after }) if retries < SEARCH_INDEX_RETRIES => {
+						retries += 1;
+						tokio::time::sleep(retry_after.min(SEARCH_INDEX_MAX_WAIT)).await;
+					}
+					other => break other,
 				}
-				Err(error) => tracing::warn!(%error, "search failed"),
-			}
+			};
+			let results = match outcome {
+				Ok(response) => SearchResults::from_response(&response),
+				Err(RestError::IndexNotReady { .. }) => SearchResults::indexing(),
+				Err(error) => {
+					let _ = internal.send(rest_failure("search", &error));
+					SearchResults::default()
+				}
+			};
+			let _ = internal.send(Internal::Search(results));
 		});
 	}
 }

@@ -34,7 +34,7 @@ pub(crate) enum PluginAnswer {
 
 fn answer_error<T>(error: &RestError, absent: T) -> LoadResult<T> {
 	match error {
-		RestError::NotFound | RestError::Forbidden => Ok(absent),
+		RestError::NotFound(_) | RestError::Forbidden(_) => Ok(absent),
 		RestError::RateLimited { .. } => Err(HostError::RateLimited),
 		other => {
 			tracing::debug!(error = %other, "plugin load failed");

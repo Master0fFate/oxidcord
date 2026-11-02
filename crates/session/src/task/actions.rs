@@ -7,6 +7,7 @@ use rest::{RestClient, RestError};
 use serde_json::{Map, Value, json};
 use state::{Loaded, LocalEvent};
 
+use super::expressions::reaction_emoji;
 use super::{Core, Internal};
 
 pub(super) fn object<const N: usize>(fields: [(&str, Option<Value>); N]) -> Value {
@@ -27,9 +28,19 @@ pub(super) fn timestamp(time: DateTime<Utc>) -> String {
 }
 
 fn failure_reason(what: &str, error: &RestError) -> String {
+	let detail = |fallback: &str| {
+		let message = error
+			.api()
+			.map(|api| api.message.as_str())
+			.filter(|message| !message.is_empty());
+		format!("{what}: {}", message.unwrap_or(fallback))
+	};
 	match error {
-		RestError::Forbidden => format!("{what}: missing permissions"),
-		RestError::NotFound => format!("{what}: not found"),
+		RestError::MfaRequired => format!("{what}: confirm with 2FA on discord.com"),
+		RestError::Unauthorized(_) => detail("unauthorized"),
+		RestError::Forbidden(_) => detail("missing permissions"),
+		RestError::NotFound(_) => detail("not found"),
+		RestError::IndexNotReady { .. } => format!("{what}: still indexing, try again shortly"),
 		RestError::RateLimited { .. } => format!("{what}: rate limited, try again shortly"),
 		RestError::CaptchaRequired => format!("{what}: Discord asks for a captcha, do this on discord.com"),
 		RestError::Http(_, Some(api)) if !api.message.is_empty() => format!("{what}: {}", api.message),
@@ -40,11 +51,12 @@ fn failure_reason(what: &str, error: &RestError) -> String {
 	}
 }
 
-fn rest_failure(what: &str, error: &RestError) -> Internal {
+pub(super) fn rest_failure(what: &str, error: &RestError) -> Internal {
 	tracing::warn!(%error, what, "rest call failed");
-	match error {
-		RestError::Unauthorized => Internal::SignedOut,
-		_ => Internal::Rejected(failure_reason(what, error)),
+	if error.is_dead_session() {
+		Internal::SignedOut
+	} else {
+		Internal::Rejected(failure_reason(what, error))
 	}
 }
 
@@ -91,6 +103,52 @@ impl Core {
 			self.reject(format!("You need the {what} permission"));
 		}
 		allowed
+	}
+
+	pub(super) fn react_allowed(
+		&mut self,
+		channel_id: Snowflake,
+		message_id: Snowflake,
+		emoji: &str,
+	) -> bool {
+		let wanted = reaction_emoji(emoji);
+		let present = self
+			.state
+			.read()
+			.messages(channel_id)
+			.and_then(|cache| cache.by_id.get(&message_id))
+			.is_some_and(|message| {
+				message.reactions.iter().any(|reaction| {
+					reaction.emoji.id == wanted.id
+						&& (wanted.id.is_some()
+							|| reaction.emoji.name.as_deref() == Some(wanted.name.as_str()))
+				})
+			});
+		if present {
+			self.channel_allows(
+				channel_id,
+				Permissions::READ_MESSAGE_HISTORY,
+				"Read Message History",
+			)
+		} else {
+			self.channel_allows(
+				channel_id,
+				Permissions::ADD_REACTIONS | Permissions::READ_MESSAGE_HISTORY,
+				"Add Reactions",
+			)
+		}
+	}
+
+	pub(super) fn delete_allowed(&mut self, channel_id: Snowflake, message_id: Snowflake) -> bool {
+		let foreign = {
+			let state = self.state.read();
+			let me = state.current_user_id();
+			state
+				.messages(channel_id)
+				.and_then(|cache| cache.by_id.get(&message_id))
+				.is_some_and(|message| Some(message.author.id) != me)
+		};
+		!foreign || self.channel_allows(channel_id, Permissions::MANAGE_MESSAGES, "Manage Messages")
 	}
 
 	pub(super) fn may_send(&self, channel_id: Snowflake) -> bool {

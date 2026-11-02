@@ -22,11 +22,15 @@ pub enum RestError {
 	#[error("unexpected redirect")]
 	Redirect,
 	#[error("unauthorized")]
-	Unauthorized,
+	Unauthorized(Option<ApiError>),
+	#[error("two-factor confirmation required")]
+	MfaRequired,
 	#[error("forbidden")]
-	Forbidden,
+	Forbidden(Option<ApiError>),
 	#[error("not found")]
-	NotFound,
+	NotFound(Option<ApiError>),
+	#[error("search index is not ready, retry in {retry_after:?}")]
+	IndexNotReady { retry_after: Duration },
 	#[error("response body too large")]
 	TooLarge,
 	#[error("invalid request")]
@@ -35,6 +39,24 @@ pub enum RestError {
 	InvalidSettings,
 	#[error("settings changed while updating")]
 	OutOfDate,
+}
+
+const INVALID_TOKEN_CODE: i64 = 40001;
+
+impl RestError {
+	pub fn api(&self) -> Option<&ApiError> {
+		match self {
+			Self::Http(_, api) | Self::Unauthorized(api) | Self::Forbidden(api) | Self::NotFound(api) => {
+				api.as_ref()
+			}
+			_ => None,
+		}
+	}
+
+	pub fn is_dead_session(&self) -> bool {
+		matches!(self, Self::Unauthorized(api)
+			if api.as_ref().is_none_or(|api| api.code == 0 || api.code == INVALID_TOKEN_CODE))
+	}
 }
 
 pub(crate) fn network_error(error: reqwest::Error) -> RestError {

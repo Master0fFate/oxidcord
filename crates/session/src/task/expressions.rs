@@ -57,7 +57,7 @@ fn unicode_emoji(content: &str) -> Vec<EmojiRef> {
 		.collect()
 }
 
-fn reaction_emoji(emoji: &str) -> EmojiRef {
+pub(super) fn reaction_emoji(emoji: &str) -> EmojiRef {
 	let (animated, rest) = match emoji.strip_prefix("a:") {
 		Some(rest) => (true, rest),
 		None => (false, emoji),

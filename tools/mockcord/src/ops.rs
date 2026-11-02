@@ -1,8 +1,8 @@
 use chrono::{SecondsFormat, Utc};
 use protocol::{
-	Attachment, AttachmentDescriptor, CreateMessage, EditMessage, LenientVec, Message, MessageFlags,
-	MessageReference, MessageReferenceKind, MessageType, Nonce, ReadState, ReadStateKind, Snowflake,
-	StickerFormat, StickerItem, User,
+	Attachment, AttachmentDescriptor, ChannelType, CreateMessage, EditMessage, LenientVec, Message,
+	MessageFlags, MessageReference, MessageReferenceKind, MessageType, Nonce, Permissions, ReadState,
+	ReadStateKind, RelationshipKind, Snowflake, StickerFormat, StickerItem, User,
 };
 use serde_json::{Value, json};
 
@@ -135,6 +135,32 @@ impl Shared {
 			.ok_or_else(ApiError::unknown_channel)
 	}
 
+	fn blocked_conversation(store: &Store, channel_id: u64) -> bool {
+		store.channels.get(&channel_id).is_some_and(|channel| {
+			channel.kind == ChannelType::Dm
+				&& channel.recipient_ids.iter().any(|id| {
+					store
+						.relationships
+						.get(&id.0)
+						.is_some_and(|relationship| relationship.kind == RelationshipKind::Blocked)
+				})
+		})
+	}
+
+	fn reactions_denied(&self, store: &Store, channel_id: u64) -> bool {
+		let Some(channel) = store.channels.get(&channel_id) else {
+			return false;
+		};
+		let Some(guild) = channel.guild_id.and_then(|id| self.fixtures.guild(id.0)) else {
+			return false;
+		};
+		let me = guild.current_member();
+		!guild.permissions_for(me).contains(Permissions::ADMINISTRATOR)
+			&& channel.permission_overwrites.iter().any(|overwrite| {
+				overwrite.deny.contains(Permissions::ADD_REACTIONS) && me.roles.contains(&overwrite.id)
+			})
+	}
+
 	pub fn post_message(&self, channel_id: u64, author: &User, draft: Draft) -> Result<Value, ApiError> {
 		let forwarding = draft
 			.reference
@@ -145,6 +171,9 @@ impl Shared {
 		}
 		let mut store = self.store.lock();
 		let guild_id = Self::guild_of(&store, channel_id)?;
+		if author.id.0 == CURRENT_USER_ID && Self::blocked_conversation(&store, channel_id) {
+			return Err(ApiError::cannot_message_user());
+		}
 		let id = draft.id.unwrap_or_else(|| store.next_snowflake());
 		let (user_ids, mention_roles) = scan_mentions(&draft.content);
 		let mentions: Vec<User> = user_ids
@@ -355,6 +384,9 @@ impl Shared {
 		};
 		let mut store = self.store.lock();
 		let guild_id = Self::guild_of(&store, channel_id)?;
+		if add && self.reactions_denied(&store, channel_id) {
+			return Err(ApiError::missing_permissions());
+		}
 		let message = store
 			.message_mut(channel_id, id)
 			.ok_or_else(ApiError::unknown_message)?;

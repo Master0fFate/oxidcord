@@ -17,6 +17,7 @@ type Mock = State<Arc<Shared>>;
 type NoContent = Result<StatusCode, ApiError>;
 
 const AUDIT_REASON: &str = "x-audit-log-reason";
+const MFA_AUTHORIZATION: &str = "x-discord-mfa-authorization";
 const DEFAULT_REACTION_LIMIT: usize = 25;
 
 fn audit_reason(headers: &HeaderMap) -> Option<String> {
@@ -151,8 +152,12 @@ pub async fn auth_sessions(State(shared): Mock) -> Json<Value> {
 	}))
 }
 
-pub async fn logout_sessions(Json(_body): Json<Value>) -> StatusCode {
-	StatusCode::NO_CONTENT
+pub async fn logout_sessions(headers: HeaderMap, Json(_body): Json<Value>) -> NoContent {
+	if headers.contains_key(MFA_AUTHORIZATION) {
+		Ok(StatusCode::NO_CONTENT)
+	} else {
+		Err(ApiError::mfa_required())
+	}
 }
 
 pub async fn delete_invite(State(shared): Mock, Path(code): Path<String>) -> ApiResult {
