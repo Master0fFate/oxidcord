@@ -209,8 +209,9 @@ fn build_user_guild_settings(guilds: &[GuildFixture]) -> Vec<UserGuildSettings> 
 				} else {
 					NotificationLevel::AllMessages
 				}),
-				suppress_everyone: false,
+				suppress_everyone: index == 2,
 				suppress_roles: false,
+				mobile_push: Some(index != 2),
 				hide_muted_channels: false,
 				channel_overrides: LenientVec::from(channel_overrides),
 				notify_highlights: Some(0),

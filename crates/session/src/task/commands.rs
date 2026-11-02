@@ -133,7 +133,6 @@ impl Core {
 			| Command::MuteGuild { .. }
 			| Command::UnmuteGuild { .. }
 			| Command::SetChannelNotifications { .. }
-			| Command::SetGuildNotifications { .. }
 			| Command::MarkGuildRead { .. }
 			| Command::MarkChannelRead { .. }
 			| Command::MarkUnread { .. }
@@ -515,23 +514,6 @@ impl Core {
 					guild_id,
 					json!({ "message_notifications": i64::from(level) }),
 				);
-			}
-			Command::SetGuildNotifications {
-				guild_id,
-				level,
-				suppress_everyone,
-				suppress_roles,
-				mobile_push,
-			} => {
-				let body = json!({
-					"message_notifications": i64::from(level),
-					"suppress_everyone": suppress_everyone,
-					"suppress_roles": suppress_roles,
-					"mobile_push": mobile_push,
-				});
-				self.spawn_action("notification settings", move |rest| async move {
-					rest.patch_guild_settings(guild_id, body).await.map(drop)
-				});
 			}
 			Command::MarkGuildRead { guild_id } => self.mark_guild_read(guild_id),
 			Command::MarkChannelRead { channel_id } => {

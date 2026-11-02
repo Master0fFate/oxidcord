@@ -602,13 +602,6 @@ pub enum Command {
 		channel_id: Snowflake,
 		level: NotificationLevel,
 	},
-	SetGuildNotifications {
-		guild_id: Option<Snowflake>,
-		level: NotificationLevel,
-		suppress_everyone: bool,
-		suppress_roles: bool,
-		mobile_push: bool,
-	},
 	MarkGuildRead {
 		guild_id: Snowflake,
 	},

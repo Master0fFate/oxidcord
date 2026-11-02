@@ -113,6 +113,7 @@ notify-guild-title = Notification Settings
 notify-suppress-everyone = Suppress @everyone and @here
 notify-suppress-roles = Suppress All Role @mentions
 notify-mobile-push = Mobile Push Notifications
+notify-hide-muted = Hide Muted Channels
 
 channel-edit-title = Edit #{ $name }
 channel-tab-overview = Overview

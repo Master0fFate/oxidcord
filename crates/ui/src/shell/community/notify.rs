@@ -6,6 +6,7 @@ use gpui::{
 	ParentElement as _, Render, StatefulInteractiveElement as _, Styled as _, Window, div,
 	prelude::FluentBuilder as _,
 };
+use plugin_host::api::model::NotificationSettings;
 use protocol::{NotificationLevel, Snowflake};
 use session::Command;
 
@@ -42,6 +43,18 @@ pub enum Scope {
 		thread: Snowflake,
 		post: bool,
 	},
+}
+
+fn level_only(level: NotificationLevel) -> NotificationSettings {
+	NotificationSettings {
+		muted: None,
+		level: u8::try_from(i64::from(level)).ok(),
+		suppress_everyone: None,
+		suppress_roles: None,
+		mobile_push: None,
+		hide_muted: None,
+		mute_until_ms: None,
+	}
 }
 
 fn until(minutes: Option<i64>) -> Option<DateTime<Utc>> {
@@ -149,12 +162,10 @@ pub fn level_items(menu: ContextMenuBuilder, scope: Scope, cx: &App) -> ContextM
 						channel_id: channel,
 						level,
 					}),
-					Scope::Guild(guild) => data.read(cx).send(Command::SetGuildNotifications {
+					Scope::Guild(guild) => data.read(cx).send(Command::SetNotificationSettings {
 						guild_id: Some(guild),
-						level,
-						suppress_everyone: false,
-						suppress_roles: false,
-						mobile_push: true,
+						channel_id: None,
+						settings: level_only(level),
 					}),
 					Scope::Thread { thread, .. } => data.read(cx).send(Command::SetThreadNotifications {
 						thread_id: thread,
@@ -187,32 +198,35 @@ pub struct GuildNotifications {
 	suppress_everyone: bool,
 	suppress_roles: bool,
 	mobile_push: bool,
+	hide_muted: bool,
 }
 
 impl EventEmitter<Close> for GuildNotifications {}
 
 pub fn open_guild_modal(window: &mut Window, cx: &mut App, guild: Snowflake) {
 	let data = data_handle(cx);
-	let (level, suppress_everyone, suppress_roles) = {
+	let (level, settings) = {
 		let state = data.read(cx).state();
-		let (suppress_everyone, suppress_roles) = state
-			.guild_settings(Some(guild))
-			.map_or((false, false), |settings| {
-				(settings.suppress_everyone, settings.suppress_roles)
-			});
 		(
 			state.notification_level(Some(guild), None),
-			suppress_everyone,
-			suppress_roles,
+			state.guild_settings(Some(guild)).cloned(),
 		)
 	};
 	let view = cx.new(|_| GuildNotifications {
 		data,
 		guild,
 		level,
-		suppress_everyone,
-		suppress_roles,
-		mobile_push: true,
+		suppress_everyone: settings
+			.as_ref()
+			.is_some_and(|settings| settings.suppress_everyone),
+		suppress_roles: settings.as_ref().is_some_and(|settings| settings.suppress_roles),
+		mobile_push: settings
+			.as_ref()
+			.and_then(|settings| settings.mobile_push)
+			.unwrap_or(true),
+		hide_muted: settings
+			.as_ref()
+			.is_some_and(|settings| settings.hide_muted_channels),
 	});
 	let title = cx.t("notify-guild-title");
 	let width = cx.global::<Theme>().modal_width_sm;
@@ -221,12 +235,16 @@ pub fn open_guild_modal(window: &mut Window, cx: &mut App, guild: Snowflake) {
 
 impl GuildNotifications {
 	fn save(&self, cx: &mut Context<Self>) {
-		self.data.read(cx).send(Command::SetGuildNotifications {
+		self.data.read(cx).send(Command::SetNotificationSettings {
 			guild_id: Some(self.guild),
-			level: self.level,
-			suppress_everyone: self.suppress_everyone,
-			suppress_roles: self.suppress_roles,
-			mobile_push: self.mobile_push,
+			channel_id: None,
+			settings: NotificationSettings {
+				suppress_everyone: Some(self.suppress_everyone),
+				suppress_roles: Some(self.suppress_roles),
+				mobile_push: Some(self.mobile_push),
+				hide_muted: Some(self.hide_muted),
+				..level_only(self.level)
+			},
 		});
 		cx.emit(Close);
 	}
@@ -302,6 +320,7 @@ impl Render for GuildNotifications {
 		let everyone = self.toggle(cx, |this, value| this.suppress_everyone = value);
 		let roles = self.toggle(cx, |this, value| this.suppress_roles = value);
 		let push = self.toggle(cx, |this, value| this.mobile_push = value);
+		let hide_muted = self.toggle(cx, |this, value| this.hide_muted = value);
 		div()
 			.flex()
 			.flex_col()
@@ -331,6 +350,14 @@ impl Render for GuildNotifications {
 				self.mobile_push,
 				&theme,
 				push,
+			))
+			.child(switch_row(
+				"notify-hide-muted",
+				cx.t("notify-hide-muted"),
+				None,
+				self.hide_muted,
+				&theme,
+				hide_muted,
 			))
 			.child(dialog_footer(
 				cx.t("action-cancel"),
