@@ -733,23 +733,7 @@ impl Core {
 	}
 
 	fn mark_guild_read(&mut self, guild_id: Snowflake) {
-		let unread: Vec<(Snowflake, Snowflake)> = {
-			let state = self.state.read();
-			let Some(guild) = state.guild(guild_id) else {
-				return;
-			};
-			guild
-				.channels
-				.values()
-				.filter_map(|channel| {
-					let last = channel.last_message_id?;
-					let read = state
-						.read_state(channel.id)
-						.is_some_and(|read_state| read_state.last_message_id >= Some(last));
-					(!read).then_some((channel.id, last))
-				})
-				.collect()
-		};
+		let unread = self.state.read().guild_unread_targets(guild_id);
 		for (channel_id, message_id) in &unread {
 			self.ack_local(*channel_id, *message_id);
 		}

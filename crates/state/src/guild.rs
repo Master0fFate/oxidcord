@@ -41,6 +41,13 @@ pub fn is_thread(kind: ChannelType) -> bool {
 	)
 }
 
+fn is_archived(thread: &Channel) -> bool {
+	thread
+		.thread_metadata
+		.as_ref()
+		.is_some_and(|metadata| metadata.archived)
+}
+
 pub fn is_voice(kind: ChannelType) -> bool {
 	matches!(kind, ChannelType::GuildVoice | ChannelType::GuildStageVoice)
 }
@@ -122,6 +129,14 @@ impl GuildState {
 			Some(channel) => Some(channel),
 			None => self.threads.get_mut(&id),
 		}
+	}
+
+	pub fn tracked_channels(&self) -> impl Iterator<Item = &Channel> {
+		self.channels.values().chain(
+			self.threads
+				.values()
+				.filter(|thread| thread.member.is_some() && !is_archived(thread)),
+		)
 	}
 
 	pub fn insert_channel(&mut self, channel: Channel) {
