@@ -20,7 +20,7 @@ use rest::api::SearchQuery;
 use serde_json::{Value, json};
 use state::{
 	AlertVerdict, Changes, ChannelDecoration, ClientOptions, Event, LoadDirection, Loaded, LocalEvent,
-	SharedState, TYPING_TIMEOUT, UiIntent, UserOverride,
+	Selection, SharedState, TYPING_TIMEOUT, UiIntent, UserOverride,
 };
 use store::Store;
 use tokio::runtime::Handle;
@@ -596,7 +596,16 @@ impl Core {
 
 	fn on_dispatch(&mut self, event: DispatchEvent) {
 		let probe = self.probe_dispatch(&event);
+		let selected = matches!(
+			event,
+			DispatchEvent::ChannelDelete(_) | DispatchEvent::ThreadDelete(_) | DispatchEvent::GuildDelete(_)
+		)
+		.then(|| self.state.read().selected())
+		.flatten();
 		self.apply_dispatch(&event);
+		if let Some(selected) = selected {
+			self.reselect_after_delete(selected);
+		}
 		self.forward_dispatch(&event);
 		self.forward_client_events(&event, probe);
 		match event {
@@ -639,6 +648,19 @@ impl Core {
 			DispatchEvent::UserSettingsUpdate(_) => self.push_activity_rules(),
 			DispatchEvent::UserConnectionsUpdate(_) => self.activity.refresh_connections(),
 			_ => {}
+		}
+	}
+
+	fn reselect_after_delete(&mut self, previous: Selection) {
+		if self.state.read().selected().is_some() {
+			return;
+		}
+		let fallback = previous
+			.guild_id
+			.and_then(|guild_id| self.subscription_channel(guild_id));
+		match fallback {
+			Some(channel_id) => self.select_channel(previous.guild_id, channel_id),
+			None => self.selected_guild = None,
 		}
 	}
 

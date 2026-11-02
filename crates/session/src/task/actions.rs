@@ -85,7 +85,7 @@ impl Core {
 	pub(super) fn channel_allows(&mut self, channel_id: Snowflake, needed: Permissions, what: &str) -> bool {
 		let allowed = {
 			let state = self.state.read();
-			state.channel_guild(channel_id).is_none() || state.my_permissions(channel_id).contains(needed)
+			state.is_private(channel_id) || state.my_permissions(channel_id).contains(needed)
 		};
 		if !allowed {
 			self.reject(format!("You need the {what} permission"));
@@ -95,7 +95,7 @@ impl Core {
 
 	pub(super) fn may_send(&self, channel_id: Snowflake) -> bool {
 		let state = self.state.read();
-		state.channel_guild(channel_id).is_none() || state.can_send(channel_id)
+		state.is_private(channel_id) || state.can_send(channel_id)
 	}
 
 	pub(super) fn send_allowed(&mut self, channel_id: Snowflake) -> bool {

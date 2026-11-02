@@ -163,6 +163,10 @@ impl State {
 		self.channel_guilds.get(&channel_id).copied().flatten()
 	}
 
+	pub fn is_private(&self, channel_id: Snowflake) -> bool {
+		matches!(self.channel_guilds.get(&channel_id), Some(None))
+	}
+
 	pub fn private_channels(&self) -> impl Iterator<Item = &Channel> {
 		self.private_channels.values()
 	}

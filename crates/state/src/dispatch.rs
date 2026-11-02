@@ -361,6 +361,13 @@ impl State {
 
 	fn remove_channel(&mut self, channel_id: Snowflake) -> Changes {
 		let mut changes = Changes::default();
+		if self
+			.selected
+			.is_some_and(|selected| selected.channel_id == channel_id)
+		{
+			self.selected = None;
+			changes.selection = true;
+		}
 		self.mark_channel_dirty(channel_id, &mut changes);
 		match self.channel_guilds.remove(&channel_id) {
 			Some(Some(guild_id)) => {
@@ -484,6 +491,13 @@ impl State {
 		let Some(state) = self.guilds.shift_remove(&guild.id) else {
 			return changes;
 		};
+		if self
+			.selected
+			.is_some_and(|selected| selected.guild_id == Some(guild.id))
+		{
+			self.selected = None;
+			changes.selection = true;
+		}
 		for id in state.channels.keys().chain(state.threads.keys()) {
 			self.channel_guilds.remove(id);
 			self.messages.remove(id);
