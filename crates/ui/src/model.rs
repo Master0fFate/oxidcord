@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicU8, Ordering};
+
 use gpui::{Hsla, rgb};
 use protocol::StatusKind;
 use state::State;
@@ -31,6 +33,16 @@ pub fn status_of(state: &State, user_id: protocol::Snowflake) -> Status {
 		.map_or(Status::Offline, |presence| Status::from(&presence.status))
 }
 
+static ROLE_SATURATION: AtomicU8 = AtomicU8::new(MAX_ROLE_SATURATION);
+
+pub const MAX_ROLE_SATURATION: u8 = 100;
+
+pub fn set_role_saturation(percent: u8) {
+	ROLE_SATURATION.store(percent.min(MAX_ROLE_SATURATION), Ordering::Relaxed);
+}
+
 pub fn role_color(color: u32) -> Hsla {
-	rgb(color).into()
+	let mut color: Hsla = rgb(color).into();
+	color.s *= f32::from(ROLE_SATURATION.load(Ordering::Relaxed)) / f32::from(MAX_ROLE_SATURATION);
+	color
 }

@@ -9,13 +9,13 @@ use store::Settings;
 
 use super::widgets::{heading, row};
 use crate::i18n::Translate as _;
+use crate::model::{MAX_ROLE_SATURATION, set_role_saturation};
 use crate::shell::{SettingsBackend, set_reduced_motion};
 use crate::theme::{Theme, rem};
 
 const FONT_SCALE_MIN: f32 = 0.8;
 const FONT_SCALE_MAX: f32 = 1.5;
 const FONT_SCALE_STEP: f32 = 0.05;
-const SATURATION_MAX: f32 = 100.;
 
 pub struct AccessibilityPage {
 	backend: Rc<SettingsBackend>,
@@ -36,7 +36,7 @@ impl AccessibilityPage {
 		let saturation = cx.new(|_| {
 			SliderState::new()
 				.min(0.)
-				.max(SATURATION_MAX)
+				.max(f32::from(MAX_ROLE_SATURATION))
 				.step(1.)
 				.default_value(f32::from(current.saturation))
 		});
@@ -52,7 +52,10 @@ impl AccessibilityPage {
 		})
 		.detach();
 		cx.subscribe(&saturation, |this, _, event: &SliderEvent, cx| match event {
-			SliderEvent::Change(_) => cx.notify(),
+			SliderEvent::Change(value) => {
+				set_role_saturation(value.end().round() as u8);
+				cx.refresh_windows();
+			}
 			SliderEvent::Release(value) => {
 				let saturation = value.end().round() as u8;
 				this.write(move |settings| settings.accessibility.saturation = saturation);

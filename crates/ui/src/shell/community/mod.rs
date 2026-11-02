@@ -70,6 +70,10 @@ pub fn settings(cx: &gpui::App) -> Settings {
 	(cx.global::<CommunityHandle>().backend.read)()
 }
 
+pub fn emoji_autocomplete(cx: &gpui::App) -> bool {
+	!cx.has_global::<CommunityHandle>() || settings(cx).chat.emoji_autocomplete
+}
+
 pub fn developer_mode(cx: &gpui::App) -> bool {
 	settings(cx).developer.developer_mode
 }

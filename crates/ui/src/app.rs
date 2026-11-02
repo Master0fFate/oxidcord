@@ -24,6 +24,7 @@ use crate::data::{Data, DataEvent};
 use crate::desktop::{self, Desktop, DesktopEvent, TrayActive};
 use crate::i18n::Localizer;
 use crate::images::Images;
+use crate::model::set_role_saturation;
 use crate::playback::Playback;
 use crate::shell::{
 	DataDir, LoginEvent, LoginOptions, LoginScreen, PluginStore, SettingsBackend, Shell, ShellEvent,
@@ -107,6 +108,7 @@ pub fn run(mut config: LaunchConfig) {
 		Theme::resolve(&settings.theme, &config.store.paths.themes_dir()).install(cx);
 		zoom::install(config.store.clone(), cx);
 		set_reduced_motion(settings.accessibility.reduced_motion);
+		set_role_saturation(settings.accessibility.saturation);
 		cx.set_global(config.flags);
 		cx.set_global(Textures(VideoTextures::new()));
 		VoiceHotkeys::install(&settings.keybinds, cx);

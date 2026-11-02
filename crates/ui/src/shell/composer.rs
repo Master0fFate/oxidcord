@@ -20,6 +20,7 @@ use rest::UploadFile;
 use session::{Command, ReplyTarget};
 
 use super::attachments::{self, CardAction, Edit, Pending};
+use super::community;
 use super::incoming::{self, Incoming};
 use super::inline_emoji::{self, EmojiTokens};
 use super::pickers::{PickerTab, SkinTone, toned};
@@ -431,7 +432,11 @@ impl Composer {
 		let trigger = token.chars().next().and_then(trigger_of);
 		let query = &token[token.chars().next().map_or(0, char::len_utf8)..];
 		let usable = match trigger {
-			Some(Trigger::Emoji) => query.chars().count() >= MIN_EMOJI_QUERY && !query.contains(':'),
+			Some(Trigger::Emoji) => {
+				query.chars().count() >= MIN_EMOJI_QUERY
+					&& !query.contains(':')
+					&& community::emoji_autocomplete(cx)
+			}
 			Some(Trigger::Command) => start == 0,
 			Some(_) => true,
 			None => false,
