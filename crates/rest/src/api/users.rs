@@ -102,9 +102,9 @@ impl RestClient {
 }
 
 impl RestClient {
-	pub async fn send_friend_request(&self, username: &str) -> Result<()> {
+	pub async fn send_friend_request(&self, username: &str, discriminator: Option<&str>) -> Result<()> {
 		let request = Request::post("/users/@me/relationships")
-			.json(&json!({ "username": username, "discriminator": null }));
+			.json(&json!({ "username": username, "discriminator": discriminator }));
 		self.send_empty(request).await
 	}
 

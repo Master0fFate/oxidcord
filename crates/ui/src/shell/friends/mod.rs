@@ -3,8 +3,6 @@ mod add;
 mod feature;
 mod row;
 
-use std::time::Duration;
-
 use gpui::{
 	AnyElement, AppContext as _, Context, ElementId, Entity, EventEmitter, FontWeight,
 	InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Point, Render, SharedString,
@@ -14,8 +12,8 @@ use gpui_component::Sizable as _;
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::scroll::ScrollableElement as _;
 use protocol::Snowflake;
-use state::Changes;
 use state::RelationshipRow;
+use state::{Changes, IdSet};
 
 pub use self::feature::{FeatureKind, FeaturePage};
 use super::plugins;
@@ -24,8 +22,6 @@ use crate::data::Data;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
 use crate::theme::Theme;
-
-const SENT_FALLBACK: Duration = Duration::from_millis(1500);
 
 pub enum FriendsEvent {
 	OpenDm,
@@ -59,7 +55,12 @@ impl Tab {
 
 enum AddOutcome {
 	Idle,
-	Sending { baseline: u64, name: SharedString },
+	Sending {
+		rejection_baseline: u64,
+		request_baseline: u64,
+		username: String,
+		name: SharedString,
+	},
 	Sent(SharedString),
 	Failed(SharedString),
 }
@@ -128,15 +129,25 @@ impl FriendsPage {
 	}
 
 	pub fn on_changes(&mut self, changes: &Changes, cx: &mut Context<Self>) {
-		if changes.relationships || !changes.presence.is_empty() {
+		if changes.relationships || self.presence_matters(&changes.presence) {
 			self.refresh(cx);
 		}
 		if changes.rejected {
 			self.settle_rejection(cx);
 		}
-		if changes.relationships && matches!(self.add_outcome, AddOutcome::Sending { .. }) {
-			self.finish_sending(cx);
+		if changes.relationships {
+			self.settle_sent(cx);
 		}
+	}
+
+	fn presence_matters(&self, presence: &IdSet) -> bool {
+		let Some(ids) = presence.ids() else {
+			return true;
+		};
+		[&self.friends, &self.incoming, &self.outgoing, &self.blocked]
+			.into_iter()
+			.flatten()
+			.any(|row| ids.contains(&row.user_id))
 	}
 
 	fn select(&mut self, tab: Tab, cx: &mut Context<Self>) {

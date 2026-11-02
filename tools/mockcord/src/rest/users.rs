@@ -68,6 +68,7 @@ pub async fn profile(
 	Path(id): Path<u64>,
 	Query(params): Query<HashMap<String, String>>,
 ) -> ApiResult {
+	shared.simulate_latency().await;
 	let fixtures = &shared.fixtures;
 	let user = fixtures.users.get(&id).ok_or_else(ApiError::unknown_user)?;
 	let mutual_guilds: Vec<Value> = fixtures

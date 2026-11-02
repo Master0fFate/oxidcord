@@ -34,9 +34,7 @@ impl History {
 	}
 
 	pub fn back(&mut self, reachable: impl Fn(&Place) -> bool) -> Option<Place> {
-		let cursor = self.places[..self.cursor]
-			.iter()
-			.rposition(reachable)?;
+		let cursor = self.places[..self.cursor].iter().rposition(reachable)?;
 		self.travel(cursor)
 	}
 

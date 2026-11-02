@@ -79,6 +79,8 @@ pub struct State {
 	pub(crate) streams: HashMap<String, StreamSummary>,
 	pub(crate) rejection: Option<Rejection>,
 	pub(crate) rejection_count: u64,
+	pub(crate) friend_request: Option<SentRequest>,
+	pub(crate) friend_request_count: u64,
 	pub(crate) chosen_status: Option<StatusKind>,
 	pub(crate) afk: bool,
 	pub(crate) alerts: VecDeque<Alert>,
@@ -90,6 +92,12 @@ pub struct State {
 pub struct Rejection {
 	pub id: u64,
 	pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SentRequest {
+	pub id: u64,
+	pub username: String,
 }
 
 pub(crate) fn intern_user(users: &mut HashMap<Snowflake, Arc<User>>, user: &User) {
@@ -244,6 +252,10 @@ impl State {
 
 	pub fn last_rejection(&self) -> Option<&Rejection> {
 		self.rejection.as_ref()
+	}
+
+	pub fn last_friend_request(&self) -> Option<&SentRequest> {
+		self.friend_request.as_ref()
 	}
 
 	pub fn selected(&self) -> Option<Selection> {
@@ -529,6 +541,14 @@ impl State {
 					reason: reason.clone(),
 				});
 				changes.rejected = true;
+			}
+			LocalEvent::FriendRequestSent { username } => {
+				self.friend_request_count += 1;
+				self.friend_request = Some(SentRequest {
+					id: self.friend_request_count,
+					username: username.clone(),
+				});
+				changes.relationships = true;
 			}
 			LocalEvent::StatusChosen(status) => {
 				self.chosen_status = Some(status.clone());

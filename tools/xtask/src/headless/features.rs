@@ -162,7 +162,10 @@ impl Harness {
 				.context("no incoming friend request in the fixtures")?;
 			(stranger.username.clone(), stranger.id, incoming)
 		};
-		self.session.send(Command::AddFriend { username });
+		self.session.send(Command::AddFriend {
+			username,
+			discriminator: None,
+		});
 		self.until("the outgoing request to appear", |state| {
 			state.pending_outgoing().iter().any(|row| row.user_id == user_id)
 		})

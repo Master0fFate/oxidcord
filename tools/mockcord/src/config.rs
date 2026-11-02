@@ -12,6 +12,7 @@ pub struct MockConfig {
 	pub heartbeat_interval_ms: u64,
 	pub chaos: bool,
 	pub live_traffic: bool,
+	pub latency_ms: u64,
 }
 
 impl MockConfig {
@@ -37,6 +38,7 @@ impl Default for MockConfig {
 			heartbeat_interval_ms: 41_250,
 			chaos: false,
 			live_traffic: false,
+			latency_ms: 0,
 		}
 	}
 }

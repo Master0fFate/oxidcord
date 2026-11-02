@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use protocol::{
@@ -239,6 +239,12 @@ impl Shared {
 
 	pub fn index_pending(&self) -> bool {
 		self.config.chaos && !self.indexed.swap(true, Ordering::Relaxed)
+	}
+
+	pub async fn simulate_latency(&self) {
+		if self.config.latency_ms > 0 {
+			tokio::time::sleep(Duration::from_millis(self.config.latency_ms)).await;
+		}
 	}
 
 	pub fn touch_bucket(&self, key: &str) -> RateLimitSnapshot {

@@ -7,9 +7,20 @@ use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::input::Input;
 use session::Command;
 
-use super::{AddOutcome, FriendsPage, SENT_FALLBACK};
+use super::{AddOutcome, FriendsPage};
 use crate::i18n::{ArgValue, Translate as _};
 use crate::theme::Theme;
+
+fn split_tag(input: &str) -> (&str, Option<&str>) {
+	match input.rsplit_once('#') {
+		Some((name, tag))
+			if !name.is_empty() && tag.len() == 4 && tag.bytes().all(|byte| byte.is_ascii_digit()) =>
+		{
+			(name, Some(tag))
+		}
+		_ => (input, None),
+	}
+}
 
 impl FriendsPage {
 	pub(super) fn send_request(&mut self, cx: &mut Context<Self>) {
@@ -17,42 +28,64 @@ impl FriendsPage {
 		if name.is_empty() || matches!(self.add_outcome, AddOutcome::Sending { .. }) {
 			return;
 		}
-		let baseline = self
-			.data
-			.read(cx)
-			.state()
-			.last_rejection()
-			.map_or(0, |rejection| rejection.id);
-		self.add_outcome = AddOutcome::Sending {
-			baseline,
-			name: name.clone().into(),
+		let (username, discriminator) = split_tag(&name);
+		let (username, discriminator) = (username.to_owned(), discriminator.map(str::to_owned));
+		let (rejection_baseline, request_baseline) = {
+			let data = self.data.read(cx);
+			let state = data.state();
+			(
+				state.last_rejection().map_or(0, |rejection| rejection.id),
+				state.last_friend_request().map_or(0, |request| request.id),
+			)
 		};
-		self.data.read(cx).send(Command::AddFriend { username: name });
-		cx.spawn(async move |this, cx| {
-			cx.background_executor().timer(SENT_FALLBACK).await;
-			this.update(cx, |this, cx| this.finish_sending(cx)).ok();
-		})
-		.detach();
+		self.add_outcome = AddOutcome::Sending {
+			rejection_baseline,
+			request_baseline,
+			username: username.clone(),
+			name: name.into(),
+		};
+		self.data.read(cx).send(Command::AddFriend {
+			username,
+			discriminator,
+		});
 		cx.notify();
 	}
 
-	pub(super) fn finish_sending(&mut self, cx: &mut Context<Self>) {
-		if let AddOutcome::Sending { name, .. } = &self.add_outcome {
+	pub(super) fn settle_sent(&mut self, cx: &mut Context<Self>) {
+		let AddOutcome::Sending {
+			request_baseline,
+			username,
+			name,
+			..
+		} = &self.add_outcome
+		else {
+			return;
+		};
+		let confirmed = self
+			.data
+			.read(cx)
+			.state()
+			.last_friend_request()
+			.is_some_and(|request| request.id > *request_baseline && request.username == *username);
+		if confirmed {
 			self.add_outcome = AddOutcome::Sent(name.clone());
 			cx.notify();
 		}
 	}
 
 	pub(super) fn settle_rejection(&mut self, cx: &mut Context<Self>) {
-		let AddOutcome::Sending { baseline, .. } = &self.add_outcome else {
+		let AddOutcome::Sending {
+			rejection_baseline, ..
+		} = &self.add_outcome
+		else {
 			return;
 		};
-		let baseline = *baseline;
+		let rejection_baseline = *rejection_baseline;
 		let reason = {
 			let data = self.data.read(cx);
 			data.state()
 				.last_rejection()
-				.filter(|rejection| rejection.id > baseline)
+				.filter(|rejection| rejection.id > rejection_baseline)
 				.map(|rejection| rejection.reason.clone())
 		};
 		if let Some(reason) = reason {

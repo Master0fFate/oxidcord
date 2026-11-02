@@ -423,9 +423,16 @@ impl Core {
 
 	fn on_social_command(&mut self, command: Command) {
 		match command {
-			Command::AddFriend { username } => self.spawn_action("friend request", move |rest| async move {
-				rest.send_friend_request(&username).await
-			}),
+			Command::AddFriend {
+				username,
+				discriminator,
+			} => {
+				let done = Internal::FriendRequestSent(username.clone());
+				self.spawn_confirmed("friend request", Some(done), move |rest| async move {
+					rest.send_friend_request(&username, discriminator.as_deref())
+						.await
+				});
+			}
 			Command::AcceptFriend { user_id } => self.spawn_action("accept friend", move |rest| async move {
 				rest.add_relationship(user_id).await
 			}),

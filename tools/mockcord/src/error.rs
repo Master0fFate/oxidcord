@@ -74,6 +74,10 @@ impl ApiError {
 		Self::new(StatusCode::NOT_FOUND, 10013, "Unknown User")
 	}
 
+	pub const fn unknown_tag() -> Self {
+		Self::new(StatusCode::BAD_REQUEST, 80004, "No users with DiscordTag exist")
+	}
+
 	pub const fn invalid_body(message: &'static str) -> Self {
 		Self::new(StatusCode::BAD_REQUEST, 50035, message)
 	}

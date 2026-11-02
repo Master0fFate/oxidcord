@@ -113,6 +113,7 @@ pub(crate) enum Internal {
 		answer: PluginAnswer,
 	},
 	Rejected(String),
+	FriendRequestSent(String),
 	SignedOut,
 	CameraStarted {
 		generation: u64,
@@ -756,6 +757,9 @@ impl Core {
 			}
 			Internal::PluginApplied { loaded, answer } => self.on_plugin_applied(loaded, answer),
 			Internal::Rejected(reason) => self.reject(reason),
+			Internal::FriendRequestSent(username) => {
+				self.apply_local(LocalEvent::FriendRequestSent { username })
+			}
 			Internal::SignedOut => self.on_signed_out(),
 			Internal::CameraStarted { generation, result } => self.on_camera_started(generation, result),
 			Internal::StreamTimeout { generation } => self.on_stream_timeout(generation),

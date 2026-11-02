@@ -27,6 +27,7 @@ fn parse_args(mut args: impl Iterator<Item = String>) -> Result<MockConfig, Stri
 			"--port" => config.port = Some(next_value(&mut args, &flag)?),
 			"--chaos" => config.chaos = true,
 			"--live-traffic" => config.live_traffic = true,
+			"--latency-ms" => config.latency_ms = next_value(&mut args, &flag)?,
 			other => return Err(format!("unknown flag {other}")),
 		}
 	}

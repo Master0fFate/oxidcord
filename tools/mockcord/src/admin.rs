@@ -177,7 +177,7 @@ impl Shared {
 			.users
 			.values()
 			.find(|user| user.id.0 != CURRENT_USER_ID && user.username.eq_ignore_ascii_case(username))
-			.ok_or_else(ApiError::unknown_user)?;
+			.ok_or_else(ApiError::unknown_tag)?;
 		self.set_relationship(user.id.0, RelationshipKind::OutgoingRequest)
 	}
 

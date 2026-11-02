@@ -111,6 +111,9 @@ pub enum LocalEvent {
 	CommandRejected {
 		reason: String,
 	},
+	FriendRequestSent {
+		username: String,
+	},
 	StatusChosen(StatusKind),
 	AfkChanged(bool),
 	CustomStatusExpired,

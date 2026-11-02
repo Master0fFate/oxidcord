@@ -49,6 +49,7 @@ fn settings_scope(scope: &str) -> u64 {
 }
 
 pub async fn add_friend(State(shared): Mock, Json(body): Json<Value>) -> NoContent {
+	shared.simulate_latency().await;
 	let username = body["username"]
 		.as_str()
 		.ok_or_else(|| ApiError::invalid_body("username is required"))?;

@@ -124,6 +124,7 @@ pub fn action_row(
 				move |_: &gpui::ClickEvent, _: &mut Window, cx: &mut App| {
 					data.read(cx).send(Command::AddFriend {
 						username: username.clone(),
+						discriminator: None,
 					});
 				}
 			};

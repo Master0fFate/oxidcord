@@ -388,6 +388,7 @@ pub enum Command {
 	},
 	AddFriend {
 		username: String,
+		discriminator: Option<String>,
 	},
 	AcceptFriend {
 		user_id: Snowflake,
