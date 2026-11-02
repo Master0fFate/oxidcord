@@ -116,7 +116,12 @@ impl Store {
 			created_guilds: HashMap::new(),
 			left_guilds: BTreeSet::new(),
 			audit: crate::admin::seed_audit(fixtures),
-			joined_threads: BTreeSet::new(),
+			joined_threads: fixtures
+				.guilds
+				.first()
+				.and_then(|guild| guild.thread_ids.first().copied())
+				.into_iter()
+				.collect(),
 			frecency: ProtoFrecencySettings {
 				data_version: 1,
 				..ProtoFrecencySettings::default()

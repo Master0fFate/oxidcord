@@ -261,11 +261,17 @@ impl Connection {
 		let hub = &self.shared.hub;
 		match opcode {
 			Opcode::GuildSubscriptionsBulk => {
+				for guild_id in member_list::bulk_guild_ids(data) {
+					hub.subscribe(session, guild_id);
+				}
 				for update in member_list::bulk_updates(&self.shared, data) {
 					hub.dispatch_to(session, "GUILD_MEMBER_LIST_UPDATE", &update);
 				}
 			}
 			Opcode::GuildSubscriptions => {
+				if let Some(guild_id) = parse_id(&data["guild_id"]) {
+					hub.subscribe(session, guild_id);
+				}
 				for update in member_list::legacy_updates(&self.shared, data) {
 					hub.dispatch_to(session, "GUILD_MEMBER_LIST_UPDATE", &update);
 				}

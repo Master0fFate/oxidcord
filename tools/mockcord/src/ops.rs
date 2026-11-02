@@ -244,9 +244,31 @@ impl Shared {
 		}
 		let gateway = self.gateway_message(&store, &value);
 		drop(store);
-		self.hub.broadcast("MESSAGE_CREATE", &gateway);
+		self.announce_message(guild_id, &gateway);
 		self.unfurl(channel_id, id, guild_id, &message);
 		Ok(value)
+	}
+
+	fn announce_message(&self, guild_id: Option<Snowflake>, message: &Value) {
+		let large =
+			guild_id.filter(|guild_id| self.fixtures.guild(guild_id.0).is_some_and(|guild| guild.large));
+		match large {
+			Some(guild_id) => {
+				let passive = json!({
+					"guild_id": guild_id.to_string(),
+					"updated_channels": [{
+						"id": message["channel_id"],
+						"last_message_id": message["id"],
+					}],
+					"updated_voice_states": [],
+					"removed_voice_states": [],
+					"updated_members": [],
+				});
+				self.hub
+					.broadcast_unless_passive(guild_id.0, "MESSAGE_CREATE", message, &passive);
+			}
+			None => self.hub.broadcast("MESSAGE_CREATE", message),
+		}
 	}
 
 	fn unfurl(&self, channel_id: u64, id: u64, guild_id: Option<Snowflake>, message: &Message) {

@@ -11,6 +11,7 @@ mod media;
 mod member_list;
 mod ops;
 mod ready;
+mod reconnect;
 mod rest;
 mod server;
 mod state;

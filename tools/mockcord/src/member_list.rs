@@ -141,6 +141,14 @@ fn ranges_of(channels: &Value) -> Vec<Range> {
 	unique.into_iter().collect()
 }
 
+pub fn bulk_guild_ids(data: &Value) -> impl Iterator<Item = u64> + '_ {
+	data["subscriptions"]
+		.as_object()
+		.into_iter()
+		.flatten()
+		.filter_map(|(guild_key, _)| guild_key.parse().ok())
+}
+
 pub fn bulk_updates(shared: &Shared, data: &Value) -> Vec<Value> {
 	let empty = Map::new();
 	data["subscriptions"]

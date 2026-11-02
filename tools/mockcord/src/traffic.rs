@@ -24,6 +24,7 @@ const PRESENCE_INTERVAL: Duration = Duration::from_secs(10);
 const RECENT_CAPACITY: usize = 6;
 const EDIT_EVERY: u64 = 3;
 const DELETE_EVERY: u64 = 4;
+const THREAD_MENTION_EVERY: u64 = 5;
 const STATUSES: [StatusKind; 4] = [
 	StatusKind::Online,
 	StatusKind::Idle,
@@ -120,6 +121,24 @@ fn pick_target(shared: &Shared) -> Option<Target> {
 	})
 }
 
+fn thread_target(shared: &Shared) -> Option<Target> {
+	let (thread_id, guild_id) = {
+		let store = shared.store.lock();
+		let thread = store
+			.channels
+			.values()
+			.find(|channel| store.joined_threads.contains(&channel.id.0) && channel.guild_id.is_some())?;
+		(thread.id.0, thread.guild_id?.0)
+	};
+	let author = shared.fixtures.guild(guild_id)?.members.get(1)?.user.clone()?;
+	let sentence = *pick(&mut live_rng(), SENTENCES);
+	Some(Target {
+		channel_id: thread_id,
+		author,
+		content: format!("<@{CURRENT_USER_ID}> {sentence}"),
+	})
+}
+
 struct Posted {
 	channel_id: u64,
 	id: u64,
@@ -134,7 +153,13 @@ async fn message_loop(shared: Arc<Shared>) {
 		if interrupted(&mut shutdown, MESSAGE_INTERVAL - TYPING_LEAD).await {
 			return;
 		}
-		let Some(target) = pick_target(&shared) else {
+		let thread_round = round % THREAD_MENTION_EVERY == THREAD_MENTION_EVERY - 1;
+		let target = if thread_round {
+			thread_target(&shared).or_else(|| pick_target(&shared))
+		} else {
+			pick_target(&shared)
+		};
+		let Some(target) = target else {
 			continue;
 		};
 		if shared.typing(target.channel_id, target.author.id.0).is_err() {

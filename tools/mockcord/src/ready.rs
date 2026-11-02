@@ -49,7 +49,7 @@ fn ready_guild(store: &Store, guild: &GuildFixture) -> Value {
 		"presences": [],
 		"member_count": store.live_member_count(guild),
 		"joined_at": guild.joined_at,
-		"large": false,
+		"large": guild.large,
 		"premium_subscription_count": guild.properties.premium_subscription_count,
 		"stage_instances": [],
 		"guild_scheduled_events": [],

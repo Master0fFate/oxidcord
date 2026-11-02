@@ -21,6 +21,7 @@ const MUTED_COLOR: i64 = 0x607D8B;
 const THREAD_MESSAGE_CAP: usize = 40;
 const FORUM_POST_MESSAGE_CAP: usize = 15;
 const FIXED_NON_TEXT_CHANNELS: usize = 5;
+const LARGE_GUILD_STRIDE: usize = 3;
 
 pub struct GuildFixture {
 	pub id: u64,
@@ -36,6 +37,7 @@ pub struct GuildFixture {
 	pub presences: Vec<Presence>,
 	pub voice_states: Vec<VoiceState>,
 	pub joined_at: DateTime<Utc>,
+	pub large: bool,
 }
 
 impl GuildFixture {
@@ -795,5 +797,6 @@ pub fn build(builder: &mut Builder, index: usize) -> GuildFixture {
 		presences,
 		voice_states,
 		joined_at: anchor - Duration::days(400),
+		large: index % LARGE_GUILD_STRIDE == 1,
 	}
 }

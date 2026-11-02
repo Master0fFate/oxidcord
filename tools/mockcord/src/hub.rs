@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
@@ -27,6 +27,7 @@ struct SessionRecord {
 	buffer: VecDeque<(u64, Arc<str>)>,
 	link: Option<Link>,
 	detached_at: Option<Instant>,
+	subscribed: HashSet<u64>,
 }
 
 impl SessionRecord {
@@ -65,9 +66,38 @@ impl Hub {
 				buffer: VecDeque::new(),
 				link: Some(link),
 				detached_at: None,
+				subscribed: HashSet::new(),
 			},
 		);
 		session_id
+	}
+
+	pub fn subscribe(&self, session_id: &str, guild_id: u64) {
+		if let Some(record) = self.sessions.lock().get_mut(session_id) {
+			record.subscribed.insert(guild_id);
+		}
+	}
+
+	pub fn broadcast_unless_passive(&self, guild_id: u64, name: &str, data: &Value, passive: &Value) {
+		let text = data.to_string();
+		let passive_text = passive.to_string();
+		let mut sessions = self.sessions.lock();
+		sessions.retain(|_, record| record.detached_at.is_none_or(|at| at.elapsed() < DETACHED_TTL));
+		for record in sessions.values_mut() {
+			if record.subscribed.contains(&guild_id) {
+				record.push_event(name, &text);
+			} else {
+				record.push_event("PASSIVE_UPDATE_V2", &passive_text);
+			}
+		}
+	}
+
+	pub fn expire_all(&self, code: u16) {
+		for (_, record) in self.sessions.lock().drain() {
+			if let Some(link) = record.link {
+				let _ = link.tx.send(Outgoing::Close(code));
+			}
+		}
 	}
 
 	pub fn dispatch_to(&self, session_id: &str, name: &str, data: &Value) {

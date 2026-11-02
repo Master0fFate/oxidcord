@@ -26,6 +26,7 @@ use rand::Rng;
 use crate::error::ApiError;
 use crate::gateway;
 use crate::media;
+use crate::reconnect;
 use crate::state::{RateLimitSnapshot, Shared};
 
 const MAX_BODY_BYTES: usize = 64 * 1024 * 1024;
@@ -183,6 +184,7 @@ pub fn router(shared: Arc<Shared>) -> Router {
 	Router::new()
 		.route("/gateway", get(gateway::upgrade))
 		.route("/media/{name}", get(media::media))
+		.route("/mock/reconnect", post(reconnect::reconnect))
 		.nest("/api/v10", api)
 		.fallback(not_found)
 		.layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
