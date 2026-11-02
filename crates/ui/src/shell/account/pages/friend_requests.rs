@@ -2,15 +2,13 @@ use gpui::{
 	Context, Entity, IntoElement, ParentElement as _, Render, Styled as _, Subscription, Window, div,
 };
 use gpui_component::switch::Switch;
-use serde_json::{Value, json};
+use protocol::{FRIEND_SOURCE_MUTUAL_FRIENDS, FRIEND_SOURCE_MUTUAL_GUILDS, FRIEND_SOURCE_NO_RELATION};
 use session::Command;
 
 use super::widgets::{heading, row};
 use crate::data::{Data, DataEvent};
 use crate::i18n::Translate as _;
 use crate::theme::Theme;
-
-const FLAGS_KEY: &str = "friend_source_flags";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SourceFlags {
@@ -20,16 +18,11 @@ struct SourceFlags {
 }
 
 impl SourceFlags {
-	fn read(settings: &Value) -> Self {
-		let flag = |name: &str| {
-			settings
-				.get(FLAGS_KEY)
-				.and_then(|flags| flags.get(name)?.as_bool())
-		};
+	fn from_bits(bits: u32) -> Self {
 		Self {
-			all: flag("all").unwrap_or(true),
-			mutual_friends: flag("mutual_friends").unwrap_or(true),
-			mutual_guilds: flag("mutual_guilds").unwrap_or(true),
+			all: bits & FRIEND_SOURCE_NO_RELATION != 0,
+			mutual_friends: bits & FRIEND_SOURCE_MUTUAL_FRIENDS != 0,
+			mutual_guilds: bits & FRIEND_SOURCE_MUTUAL_GUILDS != 0,
 		}
 	}
 
@@ -57,14 +50,15 @@ impl SourceFlags {
 		}
 	}
 
-	fn to_settings(self) -> Value {
-		json!({
-			FLAGS_KEY: {
-				"all": self.all,
-				"mutual_friends": self.mutual_friends,
-				"mutual_guilds": self.mutual_guilds,
-			}
-		})
+	fn to_bits(self) -> u32 {
+		[
+			(self.all, FRIEND_SOURCE_NO_RELATION),
+			(self.mutual_friends, FRIEND_SOURCE_MUTUAL_FRIENDS),
+			(self.mutual_guilds, FRIEND_SOURCE_MUTUAL_GUILDS),
+		]
+		.into_iter()
+		.filter(|(enabled, _)| *enabled)
+		.fold(0, |bits, (_, flag)| bits | flag)
 	}
 }
 
@@ -91,14 +85,14 @@ impl FriendRequestsPage {
 	fn save(&self, flags: SourceFlags, cx: &Context<Self>) {
 		self.data
 			.read(cx)
-			.send(Command::UpdateUserSettings(flags.to_settings()));
+			.send(Command::SetFriendSources(flags.to_bits()));
 	}
 }
 
 impl Render for FriendRequestsPage {
 	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
-		let flags = SourceFlags::read(self.data.read(cx).state().user_settings());
+		let flags = SourceFlags::from_bits(self.data.read(cx).state().friend_source_flags());
 		div()
 			.flex()
 			.flex_col()

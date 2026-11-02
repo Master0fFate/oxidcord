@@ -2,7 +2,6 @@ use std::rc::Rc;
 
 use gpui::{AnyElement, App, Entity, IntoElement, ParentElement as _, SharedString, Styled as _, div};
 use gpui_component::switch::Switch;
-use serde_json::{Value, json};
 use session::Command;
 use store::Settings;
 
@@ -38,20 +37,12 @@ fn local_row(
 pub fn activity_page(backend: &Rc<SettingsBackend>, data: &Entity<Data>, cx: &App) -> AnyElement {
 	let theme = Theme::current(cx);
 	let local = (backend.read)().activity;
-	let show_current_game = data
-		.read(cx)
-		.state()
-		.user_settings()
-		.get("show_current_game")
-		.and_then(Value::as_bool)
-		.unwrap_or(true);
+	let show_current_game = data.read(cx).state().show_current_game();
 	let shared = data.clone();
 	let share_switch = Switch::new("activity-share")
 		.checked(show_current_game)
 		.on_change(move |checked, _, cx| {
-			shared.read(cx).send(Command::UpdateUserSettings(
-				json!({ "show_current_game": *checked }),
-			));
+			shared.read(cx).send(Command::SetShowCurrentGame(*checked));
 		});
 	div()
 		.flex()

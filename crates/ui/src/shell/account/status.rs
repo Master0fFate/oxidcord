@@ -9,7 +9,7 @@ use store::Account;
 
 use super::custom_status;
 use crate::app::AppRoot;
-use crate::components::{Avatar, Divider, IconButton, StatusDot};
+use crate::components::{Avatar, Divider, IconButton, StatusDot, StatusEmoji};
 use crate::data::Data;
 use crate::i18n::Translate as _;
 use crate::icons::{Icon, IconKind};
@@ -39,6 +39,7 @@ pub struct StatusMenu {
 	avatar: String,
 	status: Status,
 	custom: Option<SharedString>,
+	custom_emoji: Option<StatusEmoji>,
 	me: Option<Snowflake>,
 	view: View,
 	managing: bool,
@@ -63,6 +64,7 @@ impl StatusMenu {
 			avatar: String::new(),
 			status: Status::Online,
 			custom: None,
+			custom_emoji: None,
 			me: None,
 			view: View::Main,
 			managing: false,
@@ -115,16 +117,19 @@ impl StatusMenu {
 		self.handle = user.username.clone().into();
 		self.avatar = user_avatar(user, 64);
 		self.status = Status::from(&state.own_status());
-		self.custom = presence
-			.and_then(|presence| {
-				presence
-					.activities
-					.iter()
-					.find(|activity| activity.kind == protocol::ActivityKind::Custom)
-			})
+		let custom = presence.and_then(|presence| {
+			presence
+				.activities
+				.iter()
+				.find(|activity| activity.kind == protocol::ActivityKind::Custom)
+		});
+		self.custom = custom
 			.and_then(|activity| activity.state.clone())
 			.filter(|text| !text.is_empty())
 			.map(Into::into);
+		self.custom_emoji = custom
+			.and_then(|activity| activity.emoji.as_ref())
+			.and_then(StatusEmoji::from_activity);
 	}
 
 	fn entry(
@@ -313,6 +318,13 @@ impl Render for StatusMenu {
 			})
 			.collect();
 		let custom_label = self.custom.clone().unwrap_or_else(|| cx.t("status-set-custom"));
+		let custom_leading = match &self.custom_emoji {
+			Some(emoji) => emoji.element(theme.icon_md, cx),
+			None => Icon::new(IconKind::Emoji)
+				.size(theme.icon_md)
+				.color(theme.interactive_normal)
+				.into_any_element(),
+		};
 		let data = self.data.clone();
 		let edit = self
 			.entry(
@@ -327,16 +339,7 @@ impl Render for StatusMenu {
 			)
 			.on_click(cx.listener(|_, _, _, cx| cx.emit(StatusMenuEvent::EditProfile)));
 		let custom = self
-			.entry(
-				"status-custom",
-				Icon::new(IconKind::Emoji)
-					.size(theme.icon_md)
-					.color(theme.interactive_normal)
-					.into_any_element(),
-				custom_label,
-				false,
-				&theme,
-			)
+			.entry("status-custom", custom_leading, custom_label, false, &theme)
 			.on_click(cx.listener(move |_, _, window, cx| {
 				open_custom(data.clone(), window, cx);
 				cx.emit(StatusMenuEvent::Close);

@@ -3,8 +3,9 @@ use std::time::Instant;
 
 use parking_lot::Mutex;
 use protocol::{
-	Channel, Emoji, GuildProperties, Member, Presence, ProtoFrecencySettings, ReadState, Relationship, Role,
-	Snowflake, StatusKind, User, UserGuildSettings,
+	Channel, Emoji, FRIEND_SOURCE_MUTUAL_FRIENDS, FRIEND_SOURCE_MUTUAL_GUILDS, GuildProperties, Member,
+	Presence, ProtoCustomStatus, ProtoFrecencySettings, ProtoStatus, ReadState, Relationship, Role,
+	Snowflake, StatusKind, User, UserGuildSettings, encode_status, privacy_with_friend_sources,
 };
 use serde_json::Value;
 use tokio::sync::{broadcast, watch};
@@ -18,6 +19,21 @@ use crate::voice::Signal;
 
 const WINDOW_SECONDS: f64 = 2.0;
 const BUCKET_LIMIT: u32 = 5;
+const MOCK_STATUS_MINUTES: i64 = 30;
+
+fn seed_status() -> Vec<u8> {
+	let expires = chrono::Utc::now() + chrono::Duration::minutes(MOCK_STATUS_MINUTES);
+	encode_status(&ProtoStatus {
+		status: Some("online".to_owned()),
+		custom_status: Some(ProtoCustomStatus {
+			text: "mock status".to_owned(),
+			emoji_id: None,
+			emoji_name: Some("\u{1f3a7}".to_owned()),
+			expires_at_ms: u64::try_from(expires.timestamp_millis()).ok(),
+		}),
+		show_current_game: true,
+	})
+}
 
 pub struct Urls {
 	pub rest: String,
@@ -47,6 +63,8 @@ pub struct Store {
 	pub joined_threads: BTreeSet<u64>,
 	pub created_guilds: HashMap<u64, Value>,
 	pub frecency: ProtoFrecencySettings,
+	pub proto_status: Vec<u8>,
+	pub proto_privacy: Vec<u8>,
 	last_id: u64,
 }
 
@@ -124,6 +142,11 @@ impl Store {
 				.and_then(|guild| guild.thread_ids.first().copied())
 				.into_iter()
 				.collect(),
+			proto_status: seed_status(),
+			proto_privacy: privacy_with_friend_sources(
+				&[],
+				FRIEND_SOURCE_MUTUAL_FRIENDS | FRIEND_SOURCE_MUTUAL_GUILDS,
+			),
 			frecency: ProtoFrecencySettings {
 				data_version: 1,
 				..ProtoFrecencySettings::default()

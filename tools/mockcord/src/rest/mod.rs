@@ -40,6 +40,7 @@ pub fn router(shared: Arc<Shared>) -> Router {
 		.route("/users/@me", get(users::me).patch(admin::patch_me))
 		.route("/users/@me/profile", patch(admin::patch_profile))
 		.route("/users/@me/settings", patch(admin::patch_settings))
+		.route("/users/@me/settings-proto/1", patch(admin::patch_settings_proto))
 		.route("/users/@me/guilds", get(users::my_guilds))
 		.route("/users/@me/mentions", get(users::my_mentions))
 		.route(

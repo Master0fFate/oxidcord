@@ -1,62 +1,24 @@
 use std::time::Duration;
 
 use gpui::{
-	Anchor, AnyElement, App, AppContext as _, ClickEvent, Context, Entity, EventEmitter, FontWeight,
-	InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Point, Render, SharedString,
-	StatefulInteractiveElement as _, Styled as _, Subscription, Window, anchored, deferred, div, img, point,
-	prelude::FluentBuilder as _,
+	Anchor, AppContext as _, ClickEvent, Context, Entity, EventEmitter, FontWeight, InteractiveElement as _,
+	IntoElement, ParentElement as _, Pixels, Point, Render, SharedString, StatefulInteractiveElement as _,
+	Styled as _, Subscription, Window, anchored, deferred, div, point, prelude::FluentBuilder as _,
 };
-use media::SizeHint;
 use protocol::ActivityKind;
 
 use super::account::{StatusMenu, StatusMenuEvent};
 use super::plugins::{self, MenuTarget, PANEL};
-use crate::components::{Avatar, IconButton, tooltip, unicode_emoji};
+use crate::components::{Avatar, IconButton, StatusEmoji, tooltip};
 use crate::data::{Data, streamer_mode};
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::IconKind;
-use crate::images::Images;
 use crate::lookup::user_avatar;
 use crate::model::Status;
 use crate::theme::{Theme, rem};
 
 const AVATAR_PIXELS: u32 = 64;
 const STATUS_EMOJI_SIZE: f32 = 14.;
-
-#[derive(Clone, PartialEq)]
-enum StatusEmoji {
-	Unicode(SharedString),
-	Custom { id: u64, animated: bool },
-}
-
-impl StatusEmoji {
-	fn from_activity(emoji: &protocol::PartialEmoji) -> Option<Self> {
-		match (emoji.id, &emoji.name) {
-			(Some(id), _) => Some(Self::Custom {
-				id: id.get(),
-				animated: emoji.animated,
-			}),
-			(None, Some(name)) if !name.is_empty() => Some(Self::Unicode(name.clone().into())),
-			_ => None,
-		}
-	}
-
-	fn element(&self, cx: &App) -> AnyElement {
-		match self {
-			Self::Unicode(glyph) => unicode_emoji(glyph, rem(STATUS_EMOJI_SIZE), cx),
-			Self::Custom { id, animated } => {
-				let pixels = STATUS_EMOJI_SIZE as u32 * 2;
-				let url = media::cdn::emoji_url(*id, *animated, pixels);
-				let image = cx.global::<Images>().get(&url, SizeHint::square(pixels));
-				div()
-					.flex_none()
-					.size(rem(STATUS_EMOJI_SIZE))
-					.when_some(image, |slot, image| slot.child(img(image).size_full()))
-					.into_any_element()
-			}
-		}
-	}
-}
 
 pub enum UserPanelEvent {
 	OpenSettings,
@@ -201,7 +163,10 @@ impl Render for UserPanel {
 			.custom_status
 			.clone()
 			.or_else(|| (!hide_handle).then(|| self.handle.clone()));
-		let subtitle_emoji = self.custom_emoji.as_ref().map(|emoji| emoji.element(cx));
+		let subtitle_emoji = self
+			.custom_emoji
+			.as_ref()
+			.map(|emoji| emoji.element(rem(STATUS_EMOJI_SIZE), cx));
 		let (muted, deafened, push_to_talk, talking) = {
 			let data = self.data.read(cx);
 			(

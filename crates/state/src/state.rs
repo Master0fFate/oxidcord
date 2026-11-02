@@ -6,9 +6,9 @@ use chrono::Utc;
 use indexmap::IndexMap;
 use parking_lot::RwLock;
 use protocol::{
-	Channel, Message, Presence, ReadState, Relationship, Snowflake, StatusKind, User, UserGuildSettings,
+	Channel, Message, Presence, ProtoStatus, ReadState, Relationship, Snowflake, StatusKind, User,
+	UserGuildSettings,
 };
-use serde_json::Value;
 use smallvec::SmallVec;
 
 use crate::changes::Changes;
@@ -59,7 +59,10 @@ pub struct State {
 	pub(crate) session: SessionInfo,
 	pub(crate) guild_folders: Vec<GuildFolder>,
 	pub(crate) guild_positions: Vec<Snowflake>,
-	pub(crate) user_settings: Value,
+	pub(crate) proto_status: Vec<u8>,
+	pub(crate) proto_privacy: Vec<u8>,
+	pub(crate) status_settings: ProtoStatus,
+	pub(crate) friend_source_flags: Option<u32>,
 	pub(crate) collapsed_categories: HashSet<Snowflake>,
 	pub(crate) drafts: HashMap<Snowflake, String>,
 	pub(crate) selected: Option<Selection>,
@@ -531,6 +534,7 @@ impl State {
 				self.chosen_status = Some(status.clone());
 				changes.own_status = true;
 			}
+			LocalEvent::CustomStatusExpired => return self.expire_custom_status(),
 			LocalEvent::AfkChanged(afk) => {
 				changes.own_status = self.afk != *afk;
 				self.afk = *afk;

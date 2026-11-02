@@ -1,15 +1,17 @@
 use chrono::{DateTime, Duration, Local, TimeDelta, Utc};
 use gpui::{
 	AnyElement, App, AppContext as _, Context, Entity, FontWeight, InteractiveElement as _, IntoElement,
-	ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription,
-	Window, div, prelude::FluentBuilder as _,
+	ParentElement as _, Render, StatefulInteractiveElement as _, Styled as _, Subscription, Window, div,
+	prelude::FluentBuilder as _,
 };
 use gpui_component::WindowExt as _;
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::dialog::DialogFooter;
 use gpui_component::input::{Input, InputState};
+use protocol::{ProtoCustomStatus, Snowflake};
 use session::Command;
 
+use crate::components::StatusEmoji;
 use crate::data::Data;
 use crate::i18n::Translate as _;
 use crate::icons::{Icon, IconKind};
@@ -28,6 +30,14 @@ enum ClearAfter {
 }
 
 impl ClearAfter {
+	fn kept(expires_at_ms: Option<u64>) -> Self {
+		if expires_at_ms.is_some() {
+			Self::Today
+		} else {
+			Self::Never
+		}
+	}
+
 	const ALL: [ClearAfter; 5] = [
 		Self::Today,
 		Self::FourHours,
@@ -63,10 +73,32 @@ impl ClearAfter {
 	}
 }
 
+fn saved_emoji(saved: &ProtoCustomStatus) -> Option<EmojiChoice> {
+	match (saved.emoji_id, &saved.emoji_name) {
+		(Some(id), name) => Some(EmojiChoice::Custom {
+			name: name.clone().unwrap_or_default(),
+			id: id.get(),
+			animated: false,
+		}),
+		(None, Some(name)) => Some(EmojiChoice::Unicode(name.clone())),
+		(None, None) => None,
+	}
+}
+
+fn preview(choice: &EmojiChoice) -> StatusEmoji {
+	match choice {
+		EmojiChoice::Unicode(glyph) => StatusEmoji::Unicode(glyph.clone().into()),
+		EmojiChoice::Custom { id, animated, .. } => StatusEmoji::Custom {
+			id: *id,
+			animated: *animated,
+		},
+	}
+}
+
 struct CustomStatusForm {
 	data: Entity<Data>,
 	input: Entity<InputState>,
-	emoji: Option<String>,
+	emoji: Option<EmojiChoice>,
 	clear_after: ClearAfter,
 	picker: Entity<EmojiPicker>,
 	picker_open: bool,
@@ -75,23 +107,30 @@ struct CustomStatusForm {
 
 impl CustomStatusForm {
 	fn new(data: Entity<Data>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+		let saved = data.read(cx).state().custom_status().cloned();
 		let placeholder = cx.t("custom-status-placeholder");
-		let input = cx.new(|cx| InputState::new(window, cx).placeholder(placeholder));
+		let input = cx.new(|cx| {
+			let mut input = InputState::new(window, cx).placeholder(placeholder);
+			if let Some(saved) = &saved {
+				input.set_value(saved.text.clone(), window, cx);
+			}
+			input
+		});
 		let picker = cx.new(|cx| EmojiPicker::new(window, cx));
 		picker.update(cx, |picker, cx| picker.open(Vec::new(), window, cx));
 		let subscription = cx.subscribe(&picker, |this, _, event: &EmojiPickerEvent, cx| {
 			let EmojiPickerEvent::Pick(choice) = event;
-			if let EmojiChoice::Unicode(glyph) = choice {
-				this.emoji = Some(glyph.clone());
-				this.picker_open = false;
-				cx.notify();
-			}
+			this.emoji = Some(choice.clone());
+			this.picker_open = false;
+			cx.notify();
 		});
 		Self {
 			data,
 			input,
-			emoji: None,
-			clear_after: ClearAfter::Today,
+			emoji: saved.as_ref().and_then(saved_emoji),
+			clear_after: saved
+				.as_ref()
+				.map_or(ClearAfter::Today, |saved| ClearAfter::kept(saved.expires_at_ms)),
 			picker,
 			picker_open: false,
 			_subscription: subscription,
@@ -109,10 +148,15 @@ impl CustomStatusForm {
 			.collect();
 		let text = (!text.is_empty()).then_some(text);
 		let has_content = text.is_some() || self.emoji.is_some();
+		let (emoji, emoji_id) = match &self.emoji {
+			Some(EmojiChoice::Unicode(glyph)) => (Some(glyph.clone()), None),
+			Some(EmojiChoice::Custom { name, id, .. }) => (Some(name.clone()), Some(Snowflake(*id))),
+			None => (None, None),
+		};
 		self.data.read(cx).send(Command::SetCustomStatus {
 			text,
-			emoji: self.emoji.clone(),
-			emoji_id: None,
+			emoji,
+			emoji_id,
 			expires: has_content.then(|| self.clear_after.expires()).flatten(),
 		});
 	}
@@ -149,8 +193,7 @@ impl CustomStatusForm {
 impl Render for CustomStatusForm {
 	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
-		let glyph: SharedString = self.emoji.clone().unwrap_or_default().into();
-		let has_emoji = self.emoji.is_some();
+		let chosen = self.emoji.as_ref().map(preview);
 		div()
 			.flex()
 			.flex_col()
@@ -188,15 +231,12 @@ impl Render for CustomStatusForm {
 										this.picker_open = !this.picker_open;
 										cx.notify();
 									}))
-									.when(has_emoji, |button| {
-										button.text_size(theme.font_lg).child(glyph.clone())
-									})
-									.when(!has_emoji, |button| {
-										button.child(
-											Icon::new(IconKind::Emoji)
-												.size(theme.icon_lg)
-												.color(theme.interactive_normal),
-										)
+									.child(match &chosen {
+										Some(emoji) => emoji.element(theme.icon_lg, cx),
+										None => Icon::new(IconKind::Emoji)
+											.size(theme.icon_lg)
+											.color(theme.interactive_normal)
+											.into_any_element(),
 									}),
 							)
 							.child(div().flex_1().child(Input::new(&self.input).cleanable(true))),

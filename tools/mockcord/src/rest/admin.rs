@@ -5,10 +5,12 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use chrono::Utc;
+use protocol::decode_settings;
 use serde_json::{Value, json};
 
 use crate::error::{ApiError, ApiResult};
 use crate::json::{parse_id, to_json};
+use crate::ready::user_settings_proto;
 use crate::state::Shared;
 
 type Mock = State<Arc<Shared>>;
@@ -79,6 +81,28 @@ pub async fn patch_profile(State(shared): Mock, Json(body): Json<Value>) -> ApiR
 pub async fn patch_settings(State(shared): Mock, Json(body): Json<Value>) -> ApiResult {
 	shared.hub.broadcast("USER_SETTINGS_UPDATE", &body);
 	Ok(Json(body))
+}
+
+pub async fn patch_settings_proto(State(shared): Mock, Json(body): Json<Value>) -> ApiResult {
+	let encoded = body["settings"]
+		.as_str()
+		.ok_or_else(|| ApiError::invalid_body("settings is required"))?;
+	let patch = decode_settings(encoded).ok_or_else(|| ApiError::invalid_body("settings is not valid"))?;
+	let settings = {
+		let mut store = shared.store.lock();
+		if let Some(status) = patch.status_bytes {
+			store.proto_status = status;
+		}
+		if let Some(privacy) = patch.privacy_bytes {
+			store.proto_privacy = privacy;
+		}
+		user_settings_proto(&shared.fixtures, &store)
+	};
+	shared.hub.broadcast(
+		"USER_SETTINGS_PROTO_UPDATE",
+		&json!({ "settings": { "type": 1, "proto": encoded }, "partial": true }),
+	);
+	Ok(Json(json!({ "settings": settings })))
 }
 
 pub async fn patch_guild_settings(

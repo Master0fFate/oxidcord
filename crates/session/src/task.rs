@@ -14,7 +14,8 @@ use plugin_host::{FullSendDecision, Invalidation};
 use protocol::gateway::IdentifyProperties;
 use protocol::{
 	AllowedMentions, Channel, ChannelType, CreateMessage, DISCORD_EPOCH_MS, DispatchEvent, EditMessage,
-	Message, MessageAck, MessageFlags, MessageReference, MessagesQuery, Nonce, Snowflake, Token, User,
+	Message, MessageAck, MessageFlags, MessageReference, MessagesQuery, Nonce, ProtoCustomStatus, Snowflake,
+	Token, User,
 };
 use rest::RestClient;
 use rest::api::SearchQuery;
@@ -247,7 +248,8 @@ pub(crate) struct Core {
 	voice: VoiceLink,
 	video: SharedVideo,
 	streams: StreamLink,
-	custom_status: Option<CustomStatus>,
+	custom_status: Option<ProtoCustomStatus>,
+	custom_status_due: Option<Instant>,
 	hub: Arc<PluginHub>,
 	render_worker: RenderWorker,
 	plugin_lanes: plugin_link::PluginLanes,
@@ -295,12 +297,6 @@ fn ack_day() -> i64 {
 	(Utc::now().timestamp_millis() - DISCORD_EPOCH_MS) / DAY_MILLIS
 }
 
-struct CustomStatus {
-	text: String,
-	emoji: Option<String>,
-	emoji_id: Option<Snowflake>,
-}
-
 impl Core {
 	pub(crate) fn new(parts: CoreParts) -> Self {
 		let persist = Persistor::spawn(parts.store.clone(), &parts.runtime);
@@ -332,6 +328,7 @@ impl Core {
 			video: parts.video,
 			streams: StreamLink::default(),
 			custom_status: None,
+			custom_status_due: None,
 			hub: parts.hub,
 			render_worker,
 			plugin_lanes,
@@ -377,6 +374,7 @@ impl Core {
 			let flush_at = self.notifier.deadline();
 			let expire_at = self.typing_expiry;
 			let overrides_at = self.overrides_due;
+			let custom_status_at = self.custom_status_due;
 			let hooks_at = self.hooks.next_deadline();
 			tokio::select! {
 				event = gateway_events.recv(), if gateway_open => match event {
@@ -397,6 +395,9 @@ impl Core {
 				}
 				() = sleep_until(expire_at.unwrap_or_else(Instant::now)), if expire_at.is_some() => {
 					self.expire_typing();
+				}
+				() = sleep_until(custom_status_at.unwrap_or_else(Instant::now)), if custom_status_at.is_some() => {
+					self.expire_custom_status();
 				}
 				() = sleep_until(overrides_at.unwrap_or_else(Instant::now)), if overrides_at.is_some() => {
 					self.refresh_overrides();
@@ -504,7 +505,11 @@ impl Core {
 			self.typing_expiry = Some(Instant::now() + TYPING_TIMEOUT + TYPING_EXPIRY_SLACK);
 		}
 		if changes.own_status {
+			self.schedule_custom_status_expiry();
 			self.publish_presence();
+		}
+		if changes.user_settings {
+			self.push_activity_rules();
 		}
 		if changes.alerts {
 			self.dispatch_pending_alerts();
@@ -525,6 +530,19 @@ impl Core {
 		}
 	}
 
+	fn schedule_custom_status_expiry(&mut self) {
+		let expires = self.state.read().custom_status_expiry_ms();
+		let now_ms = u64::try_from(Utc::now().timestamp_millis()).unwrap_or_default();
+		self.custom_status_due =
+			expires.map(|expires| Instant::now() + Duration::from_millis(expires.saturating_sub(now_ms)));
+	}
+
+	fn expire_custom_status(&mut self) {
+		self.custom_status_due = None;
+		self.apply_local(LocalEvent::CustomStatusExpired);
+		self.schedule_custom_status_expiry();
+	}
+
 	fn expire_typing(&mut self) {
 		self.typing_expiry = None;
 		let changes = self.state.write().expire(StdInstant::now());
@@ -543,7 +561,6 @@ impl Core {
 				self.apply(Event::Ready(&ready));
 				self.activity.set_user(Some(ready.user.clone()));
 				self.activity.refresh_connections();
-				self.push_activity_rules();
 				self.note_ready();
 				let stale = {
 					let state = self.state.read();
@@ -650,7 +667,6 @@ impl Core {
 			DispatchEvent::ChannelPinsUpdate(update) => self.reload_pins(update.channel_id),
 			DispatchEvent::GuildCreate(guild) => self.select_new_guild(guild.id),
 			DispatchEvent::UserUpdate(user) => self.activity.set_user(Some(*user)),
-			DispatchEvent::UserSettingsUpdate(_) => self.push_activity_rules(),
 			DispatchEvent::UserConnectionsUpdate(_) => self.activity.refresh_connections(),
 			_ => {}
 		}

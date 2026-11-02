@@ -2,7 +2,7 @@ use activity::ActivityRules;
 use protocol::rest::{ComponentInteraction, ComponentInteractionData};
 use protocol::{
 	ApplicationCommand, CreateMessage, DispatchEvent, MessageAck, MessageReference, MessageReferenceKind,
-	Permissions, Snowflake, StatusKind, ThreadMember,
+	Permissions, ProtoCustomStatus, Snowflake, StatusKind, ThreadMember,
 };
 use rest::UploadFile;
 use rest::api::image_data_uri;
@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use state::{Loaded, LocalEvent, USER_COMMANDS, guild_folders_settings};
 
 use super::actions::{mute_config, object, some, timestamp};
-use super::{Command, Core, CustomStatus, Internal};
+use super::{Command, Core, Internal};
 use crate::command::ComponentUse;
 
 const COMPONENT_INTERACTION: u8 = 3;
@@ -135,7 +135,8 @@ impl Core {
 			| Command::MarkGuildRead { .. }
 			| Command::MarkChannelRead { .. }
 			| Command::MarkUnread { .. }
-			| Command::UpdateUserSettings(_)
+			| Command::SetShowCurrentGame(_)
+			| Command::SetFriendSources(_)
 			| Command::SetGuildLayout(_)
 			| Command::CreateGuild { .. }
 			| Command::LoadSessions
@@ -522,10 +523,14 @@ impl Core {
 				channel_id,
 				message_id,
 			} => self.mark_unread(channel_id, message_id),
-			Command::UpdateUserSettings(changes) => self
-				.spawn_load("user settings", move |rest| async move {
-					Ok(Loaded::UserSettings(rest.patch_user_settings(changes).await?))
-				}),
+			Command::SetShowCurrentGame(shown) => {
+				let patch = self.state.read().show_current_game_patch(shown);
+				self.patch_settings_proto(patch, "activity sharing");
+			}
+			Command::SetFriendSources(flags) => {
+				let patch = self.state.read().friend_sources_patch(flags);
+				self.patch_settings_proto(patch, "friend requests");
+			}
 			Command::SetGuildLayout(layout) => {
 				self.set_guild_layout(&layout);
 				self.note_list_changed();
@@ -558,25 +563,14 @@ impl Core {
 				emoji_id,
 				expires,
 			} => {
-				let setting = (text.is_some() || emoji.is_some()).then(|| {
-					json!({
-						"text": text,
-						"emoji_name": emoji,
-						"emoji_id": emoji_id,
-						"expires_at": expires.map(timestamp),
-					})
-				});
-				self.custom_status = text.clone().or_else(|| emoji.clone()).map(|label| CustomStatus {
-					text: label,
-					emoji,
+				let custom = (text.is_some() || emoji.is_some()).then(|| ProtoCustomStatus {
+					text: text.unwrap_or_default(),
 					emoji_id,
+					emoji_name: emoji,
+					expires_at_ms: expires.and_then(|at| u64::try_from(at.timestamp_millis()).ok()),
 				});
-				self.publish_presence();
-				self.spawn_action("custom status", move |rest| async move {
-					rest.patch_user_settings(json!({ "custom_status": setting }))
-						.await
-						.map(drop)
-				});
+				let patch = self.state.read().custom_status_patch(custom.as_ref());
+				self.patch_settings_proto(patch, "custom status");
 			}
 			Command::SetStatus(status) => {
 				let body = json!({ "status": status.as_str() });
@@ -1110,36 +1104,34 @@ impl Core {
 		});
 	}
 
+	fn patch_settings_proto(&self, patch: String, what: &'static str) {
+		self.spawn_load(what, move |rest| async move {
+			Ok(Loaded::SettingsProto(
+				rest.patch_user_settings_proto(patch).await?,
+			))
+		});
+	}
+
 	pub(super) fn publish_presence(&self) {
+		let (status, afk, saved) = {
+			let state = self.state.read();
+			(state.own_status(), state.is_afk(), state.custom_status().cloned())
+		};
 		let activities = self
 			.custom_status
-			.iter()
-			.map(|custom| {
-				let mut activity = json!({ "type": 4, "name": "Custom Status", "state": custom.text });
-				if let Some(emoji) = &custom.emoji {
-					activity["emoji"] = json!({ "name": emoji, "id": custom.emoji_id });
-				}
-				activity
-			})
+			.as_ref()
+			.or(saved.as_ref())
+			.map(custom_status_activity)
+			.into_iter()
 			.chain(self.activities.iter().cloned())
 			.collect();
-		let (status, afk) = {
-			let state = self.state.read();
-			(state.own_status(), state.is_afk())
-		};
 		if let Err(error) = self.gateway.send_presence(status.as_str(), activities, afk) {
 			tracing::warn!(%error, "presence was not sent");
 		}
 	}
 
 	pub(super) fn push_activity_rules(&self) {
-		let show_current_game = self
-			.state
-			.read()
-			.user_settings()
-			.get("show_current_game")
-			.and_then(Value::as_bool)
-			.unwrap_or(true);
+		let show_current_game = self.state.read().show_current_game();
 		let local = self.store.settings.read().activity;
 		self.activity.set_rules(ActivityRules {
 			show_current_game,
@@ -1150,13 +1142,21 @@ impl Core {
 	}
 
 	pub(super) fn set_presence_command(&mut self, status: StatusKind, custom_status: Option<String>) {
-		self.custom_status = custom_status.map(|text| CustomStatus {
+		self.custom_status = custom_status.map(|text| ProtoCustomStatus {
 			text,
-			emoji: None,
-			emoji_id: None,
+			..ProtoCustomStatus::default()
 		});
 		self.apply_local(LocalEvent::StatusChosen(status));
 	}
+}
+
+fn custom_status_activity(custom: &ProtoCustomStatus) -> Value {
+	let text = Some(&custom.text).filter(|text| !text.is_empty());
+	let mut activity = json!({ "type": 4, "name": "Custom Status", "state": text });
+	if custom.emoji_name.is_some() || custom.emoji_id.is_some() {
+		activity["emoji"] = json!({ "name": custom.emoji_name, "id": custom.emoji_id });
+	}
+	activity
 }
 
 impl Core {

@@ -609,7 +609,8 @@ pub enum Command {
 		channel_id: Snowflake,
 		message_id: Snowflake,
 	},
-	UpdateUserSettings(Value),
+	SetShowCurrentGame(bool),
+	SetFriendSources(u32),
 	SetGuildLayout(Vec<state::RailEntry>),
 	UpdateGuildSettingsRaw {
 		guild_id: Option<Snowflake>,

@@ -5,9 +5,17 @@ use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
 
 use crate::snowflake::Snowflake;
 
+const PRELOADED_PRIVACY: u32 = 8;
 const PRELOADED_STATUS: u32 = 11;
 const PRELOADED_GUILD_FOLDERS: u32 = 14;
 const STATUS_VALUE: u32 = 1;
+const STATUS_CUSTOM: u32 = 2;
+const STATUS_SHOW_CURRENT_GAME: u32 = 3;
+const CUSTOM_TEXT: u32 = 1;
+const CUSTOM_EMOJI_ID: u32 = 2;
+const CUSTOM_EMOJI_NAME: u32 = 3;
+const CUSTOM_EXPIRES_AT_MS: u32 = 4;
+const PRIVACY_FRIEND_SOURCE_FLAGS: u32 = 11;
 const FOLDERS: u32 = 1;
 const POSITIONS: u32 = 2;
 const FOLDER_GUILD_IDS: u32 = 1;
@@ -27,6 +35,12 @@ const FAVORITE_SRC: u32 = 2;
 const FAVORITE_WIDTH: u32 = 3;
 const FAVORITE_HEIGHT: u32 = 4;
 const FAVORITE_ORDER: u32 = 5;
+
+pub const FRIEND_SOURCE_MUTUAL_FRIENDS: u32 = 1 << 1;
+pub const FRIEND_SOURCE_MUTUAL_GUILDS: u32 = 1 << 2;
+pub const FRIEND_SOURCE_NO_RELATION: u32 = 1 << 3;
+pub const FRIEND_SOURCES_ALL: u32 =
+	FRIEND_SOURCE_MUTUAL_FRIENDS | FRIEND_SOURCE_MUTUAL_GUILDS | FRIEND_SOURCE_NO_RELATION;
 
 const LENIENT: GeneralPurpose = GeneralPurpose::new(
 	&STANDARD_ALPHABET,
@@ -49,8 +63,40 @@ pub struct ProtoGuildFolders {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ProtoSettings {
-	pub status: Option<String>,
+	pub status_bytes: Option<Vec<u8>>,
+	pub privacy_bytes: Option<Vec<u8>>,
 	pub guild_folders: Option<ProtoGuildFolders>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ProtoCustomStatus {
+	pub text: String,
+	pub emoji_id: Option<Snowflake>,
+	pub emoji_name: Option<String>,
+	pub expires_at_ms: Option<u64>,
+}
+
+impl ProtoCustomStatus {
+	pub fn expired_at(&self, now_ms: u64) -> bool {
+		self.expires_at_ms.is_some_and(|expires| expires <= now_ms)
+	}
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProtoStatus {
+	pub status: Option<String>,
+	pub custom_status: Option<ProtoCustomStatus>,
+	pub show_current_game: bool,
+}
+
+impl Default for ProtoStatus {
+	fn default() -> Self {
+		Self {
+			status: None,
+			custom_status: None,
+			show_current_game: true,
+		}
+	}
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -79,8 +125,8 @@ pub struct ProtoFrecencySettings {
 enum Wire<'a> {
 	Varint(u64),
 	Fixed64(u64),
+	Fixed32(u32),
 	Bytes(&'a [u8]),
-	Skipped,
 }
 
 struct Fields<'a> {
@@ -127,10 +173,7 @@ impl<'a> Iterator for Fields<'a> {
 				let length = usize::try_from(self.varint()?).ok()?;
 				Wire::Bytes(self.take(length)?)
 			}
-			5 => {
-				self.take(4)?;
-				Wire::Skipped
-			}
+			5 => Wire::Fixed32(u32::from_le_bytes(self.take(4)?.try_into().ok()?)),
 			_ => return None,
 		};
 		Some((number, wire))
@@ -153,7 +196,7 @@ fn push_ids(ids: &mut Vec<Snowflake>, wire: Wire) {
 				.iter()
 				.map(|chunk| Snowflake(u64::from_le_bytes(*chunk))),
 		),
-		Wire::Varint(_) | Wire::Skipped => {}
+		Wire::Varint(_) | Wire::Fixed32(_) => {}
 	}
 }
 
@@ -195,14 +238,59 @@ fn decode_folders(bytes: &[u8]) -> ProtoGuildFolders {
 	decoded
 }
 
-fn decode_status(bytes: &[u8]) -> Option<String> {
-	Fields::new(bytes).find_map(|(number, wire)| match (number, wire) {
-		(STATUS_VALUE, Wire::Bytes(inner)) => match wrapped(inner)? {
-			Wire::Bytes(text) => Some(String::from_utf8_lossy(text).into_owned()),
-			_ => None,
-		},
+fn wrapped_string(bytes: &[u8]) -> Option<String> {
+	match wrapped(bytes)? {
+		Wire::Bytes(text) => Some(String::from_utf8_lossy(text).into_owned()),
 		_ => None,
-	})
+	}
+}
+
+fn decode_custom_status(bytes: &[u8]) -> Option<ProtoCustomStatus> {
+	let mut custom = ProtoCustomStatus::default();
+	for (number, wire) in Fields::new(bytes) {
+		match (number, wire) {
+			(CUSTOM_TEXT, Wire::Bytes(text)) => custom.text = String::from_utf8_lossy(text).into_owned(),
+			(CUSTOM_EMOJI_ID, Wire::Fixed64(id)) => {
+				custom.emoji_id = Some(Snowflake(id)).filter(|id| id.0 != 0)
+			}
+			(CUSTOM_EMOJI_NAME, Wire::Bytes(name)) => {
+				custom.emoji_name =
+					Some(String::from_utf8_lossy(name).into_owned()).filter(|name| !name.is_empty());
+			}
+			(CUSTOM_EXPIRES_AT_MS, Wire::Fixed64(expires)) => {
+				custom.expires_at_ms = Some(expires).filter(|expires| *expires != 0);
+			}
+			_ => {}
+		}
+	}
+	(!custom.text.is_empty() || custom.emoji_id.is_some() || custom.emoji_name.is_some()).then_some(custom)
+}
+
+pub fn decode_status(bytes: &[u8]) -> ProtoStatus {
+	let mut status = ProtoStatus::default();
+	for (number, wire) in Fields::new(bytes) {
+		match (number, wire) {
+			(STATUS_VALUE, Wire::Bytes(inner)) => status.status = wrapped_string(inner),
+			(STATUS_CUSTOM, Wire::Bytes(inner)) => status.custom_status = decode_custom_status(inner),
+			(STATUS_SHOW_CURRENT_GAME, Wire::Bytes(inner)) => {
+				status.show_current_game = matches!(wrapped(inner), Some(Wire::Varint(shown)) if shown != 0);
+			}
+			_ => {}
+		}
+	}
+	status
+}
+
+pub fn decode_friend_source_flags(bytes: &[u8]) -> Option<u32> {
+	Fields::new(bytes)
+		.filter_map(|(number, wire)| match (number, wire) {
+			(PRIVACY_FRIEND_SOURCE_FLAGS, Wire::Bytes(inner)) => Some(match wrapped(inner) {
+				Some(Wire::Varint(flags)) => u32::try_from(flags).unwrap_or_default(),
+				_ => 0,
+			}),
+			_ => None,
+		})
+		.last()
 }
 
 pub fn decode_settings(encoded: &str) -> Option<ProtoSettings> {
@@ -210,7 +298,8 @@ pub fn decode_settings(encoded: &str) -> Option<ProtoSettings> {
 	let mut settings = ProtoSettings::default();
 	for (number, wire) in Fields::new(&bytes) {
 		match (number, wire) {
-			(PRELOADED_STATUS, Wire::Bytes(inner)) => settings.status = decode_status(inner),
+			(PRELOADED_STATUS, Wire::Bytes(inner)) => settings.status_bytes = Some(inner.to_vec()),
+			(PRELOADED_PRIVACY, Wire::Bytes(inner)) => settings.privacy_bytes = Some(inner.to_vec()),
 			(PRELOADED_GUILD_FOLDERS, Wire::Bytes(inner)) => {
 				settings.guild_folders = Some(decode_folders(inner));
 			}
@@ -323,6 +412,153 @@ fn put_string(out: &mut Vec<u8>, number: u32, text: &str) {
 	if !text.is_empty() {
 		put_bytes(out, number, text.as_bytes());
 	}
+}
+
+fn put_fixed64(out: &mut Vec<u8>, number: u32, value: u64) {
+	if value != 0 {
+		put_tag(out, number, 1);
+		out.extend_from_slice(&value.to_le_bytes());
+	}
+}
+
+fn put_wire(out: &mut Vec<u8>, number: u32, wire: Wire) {
+	match wire {
+		Wire::Varint(value) => {
+			put_tag(out, number, 0);
+			put_varint(out, value);
+		}
+		Wire::Fixed64(value) => {
+			put_tag(out, number, 1);
+			out.extend_from_slice(&value.to_le_bytes());
+		}
+		Wire::Fixed32(value) => {
+			put_tag(out, number, 5);
+			out.extend_from_slice(&value.to_le_bytes());
+		}
+		Wire::Bytes(bytes) => put_bytes(out, number, bytes),
+	}
+}
+
+fn uint_wrapper(value: u64) -> Vec<u8> {
+	let mut inner = Vec::new();
+	put_uint(&mut inner, WRAPPED_VALUE, value);
+	inner
+}
+
+fn string_wrapper(text: &str) -> Vec<u8> {
+	let mut inner = Vec::new();
+	put_string(&mut inner, WRAPPED_VALUE, text);
+	inner
+}
+
+fn packed_ids(ids: &[Snowflake]) -> Vec<u8> {
+	ids.iter().flat_map(|id| id.0.to_le_bytes()).collect()
+}
+
+fn with_field(message: &[u8], number: u32, field: Option<&[u8]>) -> Vec<u8> {
+	let mut out = Vec::with_capacity(message.len());
+	for (current, wire) in Fields::new(message).filter(|(current, _)| *current != number) {
+		put_wire(&mut out, current, wire);
+	}
+	if let Some(field) = field {
+		put_bytes(&mut out, number, field);
+	}
+	out
+}
+
+fn encode_custom_status(custom: &ProtoCustomStatus) -> Vec<u8> {
+	let mut out = Vec::new();
+	put_string(&mut out, CUSTOM_TEXT, &custom.text);
+	put_fixed64(&mut out, CUSTOM_EMOJI_ID, custom.emoji_id.map_or(0, |id| id.0));
+	put_string(
+		&mut out,
+		CUSTOM_EMOJI_NAME,
+		custom.emoji_name.as_deref().unwrap_or_default(),
+	);
+	put_fixed64(
+		&mut out,
+		CUSTOM_EXPIRES_AT_MS,
+		custom.expires_at_ms.unwrap_or_default(),
+	);
+	out
+}
+
+pub fn encode_status(status: &ProtoStatus) -> Vec<u8> {
+	let mut out = Vec::new();
+	if let Some(value) = &status.status {
+		put_bytes(&mut out, STATUS_VALUE, &string_wrapper(value));
+	}
+	if let Some(custom) = &status.custom_status {
+		put_bytes(&mut out, STATUS_CUSTOM, &encode_custom_status(custom));
+	}
+	put_bytes(
+		&mut out,
+		STATUS_SHOW_CURRENT_GAME,
+		&uint_wrapper(u64::from(status.show_current_game)),
+	);
+	out
+}
+
+pub fn status_with_custom(status: &[u8], custom: Option<&ProtoCustomStatus>) -> Vec<u8> {
+	with_field(status, STATUS_CUSTOM, custom.map(encode_custom_status).as_deref())
+}
+
+pub fn status_with_show_current_game(status: &[u8], shown: bool) -> Vec<u8> {
+	with_field(
+		status,
+		STATUS_SHOW_CURRENT_GAME,
+		Some(&uint_wrapper(u64::from(shown))),
+	)
+}
+
+pub fn privacy_with_friend_sources(privacy: &[u8], flags: u32) -> Vec<u8> {
+	with_field(
+		privacy,
+		PRIVACY_FRIEND_SOURCE_FLAGS,
+		Some(&uint_wrapper(u64::from(flags))),
+	)
+}
+
+fn encode_folder(folder: &ProtoGuildFolder) -> Vec<u8> {
+	let mut out = Vec::new();
+	if !folder.guild_ids.is_empty() {
+		put_bytes(&mut out, FOLDER_GUILD_IDS, &packed_ids(&folder.guild_ids));
+	}
+	if let Some(id) = folder.id {
+		put_bytes(&mut out, FOLDER_ID, &uint_wrapper(id as u64));
+	}
+	if let Some(name) = &folder.name {
+		put_bytes(&mut out, FOLDER_NAME, &string_wrapper(name));
+	}
+	if let Some(color) = folder.color {
+		put_bytes(&mut out, FOLDER_COLOR, &uint_wrapper(color));
+	}
+	out
+}
+
+fn encode_folders(folders: &ProtoGuildFolders) -> Vec<u8> {
+	let mut out = Vec::new();
+	for folder in &folders.folders {
+		put_bytes(&mut out, FOLDERS, &encode_folder(folder));
+	}
+	if !folders.positions.is_empty() {
+		put_bytes(&mut out, POSITIONS, &packed_ids(&folders.positions));
+	}
+	out
+}
+
+pub fn encode_settings(settings: &ProtoSettings) -> String {
+	let mut out = Vec::new();
+	if let Some(privacy) = &settings.privacy_bytes {
+		put_bytes(&mut out, PRELOADED_PRIVACY, privacy);
+	}
+	if let Some(status) = &settings.status_bytes {
+		put_bytes(&mut out, PRELOADED_STATUS, status);
+	}
+	if let Some(folders) = &settings.guild_folders {
+		put_bytes(&mut out, PRELOADED_GUILD_FOLDERS, &encode_folders(folders));
+	}
+	STANDARD.encode(out)
 }
 
 fn encode_favorite(gif: &ProtoFavoriteGif) -> Vec<u8> {

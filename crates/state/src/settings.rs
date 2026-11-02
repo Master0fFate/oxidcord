@@ -1,10 +1,13 @@
 use std::collections::{HashMap, HashSet};
 
+use chrono::Utc;
 use protocol::{
-	ProtoGuildFolder, ProtoGuildFolders, ProtoSettings, Snowflake, UserGuildSettings, decode_settings,
+	FRIEND_SOURCES_ALL, ProtoCustomStatus, ProtoGuildFolder, ProtoGuildFolders, ProtoSettings, Snowflake,
+	UserGuildSettings, decode_friend_source_flags, decode_settings, decode_status, encode_settings,
+	privacy_with_friend_sources, status_with_custom, status_with_show_current_game,
 };
 use serde::Deserialize;
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 
 use crate::changes::Changes;
 use crate::state::State;
@@ -49,8 +52,42 @@ impl From<RawFolder> for GuildFolder {
 }
 
 impl State {
-	pub fn user_settings(&self) -> &Value {
-		&self.user_settings
+	pub fn custom_status(&self) -> Option<&ProtoCustomStatus> {
+		self.status_settings.custom_status.as_ref()
+	}
+
+	pub fn custom_status_expiry_ms(&self) -> Option<u64> {
+		self.custom_status()?.expires_at_ms
+	}
+
+	pub fn show_current_game(&self) -> bool {
+		self.status_settings.show_current_game
+	}
+
+	pub fn friend_source_flags(&self) -> u32 {
+		self.friend_source_flags.unwrap_or(FRIEND_SOURCES_ALL)
+	}
+
+	pub fn custom_status_patch(&self, custom: Option<&ProtoCustomStatus>) -> String {
+		self.status_patch(status_with_custom(&self.proto_status, custom))
+	}
+
+	pub fn show_current_game_patch(&self, shown: bool) -> String {
+		self.status_patch(status_with_show_current_game(&self.proto_status, shown))
+	}
+
+	pub fn friend_sources_patch(&self, flags: u32) -> String {
+		encode_settings(&ProtoSettings {
+			privacy_bytes: Some(privacy_with_friend_sources(&self.proto_privacy, flags)),
+			..ProtoSettings::default()
+		})
+	}
+
+	fn status_patch(&self, status: Vec<u8>) -> String {
+		encode_settings(&ProtoSettings {
+			status_bytes: Some(status),
+			..ProtoSettings::default()
+		})
 	}
 
 	pub fn guild_layout(&self) -> Vec<RailEntry> {
@@ -83,17 +120,21 @@ impl State {
 		layout
 	}
 
-	pub(crate) fn apply_settings_proto(&mut self, encoded: &str) -> Changes {
+	pub(crate) fn apply_settings_proto(&mut self, encoded: &str, partial: bool) -> Changes {
 		let mut changes = Changes::default();
 		let Some(ProtoSettings {
-			status,
+			status_bytes,
+			privacy_bytes,
 			guild_folders,
 		}) = decode_settings(encoded)
 		else {
 			return changes;
 		};
-		if let Some(status) = status {
-			changes.own_status = self.restore_status(&status);
+		if status_bytes.is_some() || !partial {
+			changes.merge(self.replace_status_settings(status_bytes.unwrap_or_default()));
+		}
+		if privacy_bytes.is_some() || !partial {
+			changes.merge(self.replace_privacy_settings(privacy_bytes.unwrap_or_default()));
 		}
 		if let Some(ProtoGuildFolders { folders, positions }) = guild_folders {
 			self.guild_folders = folders.into_iter().map(GuildFolder::from).collect();
@@ -104,6 +145,48 @@ impl State {
 		changes
 	}
 
+	fn replace_status_settings(&mut self, bytes: Vec<u8>) -> Changes {
+		let mut status = decode_status(&bytes);
+		let now_ms = now_ms();
+		status.custom_status = status.custom_status.filter(|custom| !custom.expired_at(now_ms));
+		let mut changes = Changes::default();
+		if let Some(chosen) = &status.status {
+			changes.own_status = self.restore_status(chosen);
+		}
+		if status != self.status_settings {
+			changes.own_status |= status.custom_status != self.status_settings.custom_status;
+			changes.user_settings = true;
+		}
+		self.proto_status = bytes;
+		self.status_settings = status;
+		changes
+	}
+
+	fn replace_privacy_settings(&mut self, bytes: Vec<u8>) -> Changes {
+		let flags = decode_friend_source_flags(&bytes);
+		let changed = flags != self.friend_source_flags;
+		self.proto_privacy = bytes;
+		self.friend_source_flags = flags;
+		Changes {
+			user_settings: changed,
+			..Changes::default()
+		}
+	}
+
+	pub(crate) fn expire_custom_status(&mut self) -> Changes {
+		let expired = self
+			.custom_status()
+			.is_some_and(|custom| custom.expired_at(now_ms()));
+		if expired {
+			self.status_settings.custom_status = None;
+		}
+		Changes {
+			own_status: expired,
+			user_settings: expired,
+			..Changes::default()
+		}
+	}
+
 	pub(crate) fn apply_settings_proto_update(&mut self, update: &Value) -> Changes {
 		let settings = update.get("settings");
 		let proto = settings
@@ -112,23 +195,15 @@ impl State {
 		let kind = settings
 			.and_then(|settings| settings.get("type"))
 			.and_then(Value::as_i64);
+		let partial = update.get("partial").and_then(Value::as_bool).unwrap_or(true);
 		match proto {
-			Some(encoded) if kind.is_none_or(|kind| kind == 1) => self.apply_settings_proto(encoded),
+			Some(encoded) if kind.is_none_or(|kind| kind == 1) => self.apply_settings_proto(encoded, partial),
 			_ => Changes::default(),
 		}
 	}
 
 	pub(crate) fn apply_user_settings(&mut self, settings: &Value) -> Changes {
 		let mut changes = Changes::default();
-		if let Some(fields) = settings.as_object() {
-			if !self.user_settings.is_object() {
-				self.user_settings = Value::Object(Map::new());
-			}
-			if let Some(stored) = self.user_settings.as_object_mut() {
-				stored.extend(fields.iter().map(|(key, value)| (key.clone(), value.clone())));
-			}
-			changes.user_settings = true;
-		}
 		if let Some(status) = settings.get("status").and_then(Value::as_str) {
 			changes.own_status = self.restore_status(status);
 		}
@@ -199,6 +274,10 @@ impl State {
 			.iter()
 			.position(|folder| folder.id.is_some() && folder.guild_ids.contains(&guild_id))
 	}
+}
+
+fn now_ms() -> u64 {
+	u64::try_from(Utc::now().timestamp_millis()).unwrap_or_default()
 }
 
 impl From<ProtoGuildFolder> for GuildFolder {

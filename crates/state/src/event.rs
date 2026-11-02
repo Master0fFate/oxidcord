@@ -113,6 +113,7 @@ pub enum LocalEvent {
 	},
 	StatusChosen(StatusKind),
 	AfkChanged(bool),
+	CustomStatusExpired,
 	UiIntent(UiIntent),
 	ClientOptionsChanged(ClientOptions),
 	DmSectionsChanged(Vec<DmSectionView>),

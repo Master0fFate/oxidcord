@@ -45,14 +45,8 @@ impl State {
 		if let Some(settings) = &ready.user_settings {
 			self.apply_user_settings(settings);
 		}
-		let legacy_folders = ready
-			.user_settings
-			.as_ref()
-			.and_then(|settings| settings.get("guild_folders"))
-			.and_then(serde_json::Value::as_array)
-			.is_some_and(|folders| !folders.is_empty());
-		if !legacy_folders && let Some(proto) = &ready.user_settings_proto {
-			self.apply_settings_proto(proto);
+		if let Some(proto) = &ready.user_settings_proto {
+			self.apply_settings_proto(proto, false);
 		}
 		self.reorder_guilds();
 		Changes::everything()

@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
 
-use protocol::{Channel, ChannelType, Presence, RelationshipKind, Snowflake, User};
+use protocol::{
+	Channel, ChannelType, Presence, ProtoGuildFolder, ProtoGuildFolders, ProtoSettings, RelationshipKind,
+	Snowflake, User, encode_settings,
+};
 use rand::Rng;
 use serde_json::{Value, json};
 
@@ -11,8 +14,10 @@ use crate::state::{Shared, Store};
 const API_VERSION: i64 = 10;
 const CONTAINER_VERSION: i64 = 1;
 const MOCK_FOLDER_ID: i64 = 1_001;
-const MOCK_FOLDER_COLOR: i64 = 0x6666ff;
 const CHAOS_MALFORMED_READY_ODDS: f64 = 0.2;
+const MOCK_FOLDER_COLOR: u64 = 0x6666ff;
+const MOCK_FOLDER_NAME: &str = "Mock folder";
+const MOCK_FOLDER_GUILDS: usize = 2;
 
 pub fn is_thread(kind: ChannelType) -> bool {
 	matches!(
@@ -125,16 +130,52 @@ fn friend_presences<'a>(fixtures: &Fixtures, store: &'a Store) -> Vec<&'a Presen
 		.collect()
 }
 
-pub fn build(shared: &Shared, session_id: &str) -> (Value, Value) {
+pub fn user_settings_proto(fixtures: &Fixtures, store: &Store) -> String {
+	let guild_ids = live_guilds(fixtures, store)
+		.take(MOCK_FOLDER_GUILDS)
+		.map(|guild| Snowflake(guild.id))
+		.collect();
+	encode_settings(&ProtoSettings {
+		status_bytes: Some(store.proto_status.clone()),
+		privacy_bytes: Some(store.proto_privacy.clone()),
+		guild_folders: Some(ProtoGuildFolders {
+			folders: vec![ProtoGuildFolder {
+				id: Some(MOCK_FOLDER_ID),
+				name: Some(MOCK_FOLDER_NAME.to_owned()),
+				color: Some(MOCK_FOLDER_COLOR),
+				guild_ids,
+			}],
+			positions: Vec::new(),
+		}),
+	})
+}
+
+fn legacy_user_settings(fixtures: &Fixtures, store: &Store) -> Value {
+	let guild_ids: Vec<String> = live_guilds(fixtures, store)
+		.take(MOCK_FOLDER_GUILDS)
+		.map(|guild| guild.id.to_string())
+		.collect();
+	json!({
+		"guild_folders": [{
+			"id": MOCK_FOLDER_ID,
+			"name": MOCK_FOLDER_NAME,
+			"color": MOCK_FOLDER_COLOR,
+			"guild_ids": guild_ids,
+		}],
+	})
+}
+
+pub fn build(shared: &Shared, session_id: &str, with_proto: bool) -> (Value, Value) {
 	let fixtures = &shared.fixtures;
 	let store = shared.store.lock();
 	let guilds: Vec<Value> = live_guilds(fixtures, &store)
 		.map(|guild| ready_guild(&store, guild))
 		.collect();
-	let folder_guild_ids: Vec<String> = live_guilds(fixtures, &store)
-		.take(2)
-		.map(|guild| guild.id.to_string())
-		.collect();
+	let (settings_proto, settings) = if with_proto {
+		(json!(user_settings_proto(fixtures, &store)), Value::Null)
+	} else {
+		(Value::Null, legacy_user_settings(fixtures, &store))
+	};
 	let private_channels: Vec<&Channel> = store
 		.private_channel_ids
 		.iter()
@@ -168,15 +209,8 @@ pub fn build(shared: &Shared, session_id: &str) -> (Value, Value) {
 		"users": referenced_users(fixtures, &store),
 		"merged_members": merged_members(fixtures, &store),
 		"analytics_token": "x",
-		"user_settings_proto": null,
-		"user_settings": {
-			"guild_folders": [{
-				"id": MOCK_FOLDER_ID,
-				"name": "Mock folder",
-				"color": MOCK_FOLDER_COLOR,
-				"guild_ids": folder_guild_ids,
-			}],
-		},
+		"user_settings_proto": settings_proto,
+		"user_settings": settings,
 	});
 	if shared.config.chaos && rand::rng().random_bool(CHAOS_MALFORMED_READY_ODDS) {
 		ready["v"] = json!("10");

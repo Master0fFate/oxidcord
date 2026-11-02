@@ -11,6 +11,7 @@ use crate::error::{RestError, Result};
 use crate::request::{Request, UploadFile};
 
 const GIF_PROVIDER: &str = "tenor";
+const USER_SETTINGS_PROTO: &str = "/users/@me/settings-proto/1";
 const FRECENCY_SETTINGS: &str = "/users/@me/settings-proto/2";
 const FRECENCY_ATTEMPTS: usize = 2;
 const GIF_FORMAT_IMAGE: u32 = 1;
@@ -137,6 +138,14 @@ impl RestClient {
 	pub async fn gif_select(&self, id: &str, search_term: Option<&str>) -> Result<()> {
 		let request = Request::post("/gifs/select").json(&json!({ "id": id, "q": search_term }));
 		self.send_empty(request).await
+	}
+
+	pub async fn patch_user_settings_proto(&self, settings: String) -> Result<String> {
+		let request = Request::patch(USER_SETTINGS_PROTO).json(&json!({ "settings": settings }));
+		let payload: SettingsProtoPayload = self.send(request).await?;
+		Some(payload.settings)
+			.filter(|settings| !settings.is_empty())
+			.ok_or(RestError::InvalidSettings)
 	}
 
 	pub async fn gif_favorites(&self) -> Result<GifFavorites> {

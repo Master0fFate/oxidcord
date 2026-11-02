@@ -8,6 +8,7 @@ mod icon_button;
 mod mention_badge;
 mod section_header;
 mod status_dot;
+mod status_emoji;
 mod tooltip;
 mod unread_pill;
 
@@ -24,5 +25,6 @@ pub use icon_button::IconButton;
 pub use mention_badge::MentionBadge;
 pub use section_header::SectionHeader;
 pub use status_dot::{StatusDot, status_color};
+pub use status_emoji::StatusEmoji;
 pub use tooltip::tooltip;
 pub use unread_pill::{PillState, UnreadPill};

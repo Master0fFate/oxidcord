@@ -94,6 +94,7 @@ pub enum Loaded {
 	RecentGifs(Vec<Gif>),
 	RecentStickers(Vec<Sticker>),
 	UserSettings(Value),
+	SettingsProto(String),
 	AuthSessions(Value),
 	User(Box<User>),
 }
@@ -545,6 +546,7 @@ impl State {
 				}
 			}
 			Loaded::UserSettings(settings) => return self.apply_user_settings(settings),
+			Loaded::SettingsProto(encoded) => return self.apply_settings_proto(encoded, false),
 			Loaded::User(user) => {
 				intern_user(&mut self.users, user);
 				changes.loaded.insert(user.id);
