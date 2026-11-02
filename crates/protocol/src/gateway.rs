@@ -438,6 +438,32 @@ pub struct ChannelPinsUpdate {
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
+pub struct ChannelLastMessage {
+	pub id: Snowflake,
+	pub last_message_id: Option<Snowflake>,
+	#[serde(deserialize_with = "timestamp")]
+	pub last_pin_timestamp: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PassiveUpdate {
+	pub guild_id: Snowflake,
+	pub updated_channels: LenientVec<ChannelLastMessage>,
+	pub updated_voice_states: LenientVec<VoiceState>,
+	pub removed_voice_states: LenientVec<Snowflake>,
+	pub updated_members: LenientVec<Member>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ChannelUnreadUpdate {
+	pub guild_id: Snowflake,
+	pub channel_unread_updates: LenientVec<ChannelLastMessage>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ThreadDelete {
 	pub id: Snowflake,
 	pub guild_id: Option<Snowflake>,
@@ -604,6 +630,8 @@ pub enum DispatchEvent {
 	ChannelUpdate(Box<Channel>),
 	ChannelDelete(Box<Channel>),
 	ChannelPinsUpdate(ChannelPinsUpdate),
+	ChannelUnreadUpdate(ChannelUnreadUpdate),
+	PassiveUpdateV2(Box<PassiveUpdate>),
 	ThreadCreate(Box<Channel>),
 	ThreadUpdate(Box<Channel>),
 	ThreadDelete(ThreadDelete),
@@ -675,6 +703,8 @@ impl DispatchEvent {
 			"CHANNEL_UPDATE" => Self::ChannelUpdate(decode(name, data)?),
 			"CHANNEL_DELETE" => Self::ChannelDelete(decode(name, data)?),
 			"CHANNEL_PINS_UPDATE" => Self::ChannelPinsUpdate(decode(name, data)?),
+			"CHANNEL_UNREAD_UPDATE" => Self::ChannelUnreadUpdate(decode(name, data)?),
+			"PASSIVE_UPDATE_V2" => Self::PassiveUpdateV2(decode(name, data)?),
 			"THREAD_CREATE" => Self::ThreadCreate(decode(name, data)?),
 			"THREAD_UPDATE" => Self::ThreadUpdate(decode(name, data)?),
 			"THREAD_DELETE" => Self::ThreadDelete(decode(name, data)?),

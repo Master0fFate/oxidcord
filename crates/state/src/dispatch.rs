@@ -2,9 +2,9 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use protocol::{
-	Channel, DispatchEvent, GuildMemberListUpdate, GuildMembersChunk, GuildRoleChange, Member,
-	MemberListGroup, Message, MessageAck, MessageUpdate, Presence, Snowflake, ThreadDelete, ThreadListSync,
-	TypingStart, UnavailableGuild, UserGuildSettings, VoiceState,
+	Channel, ChannelLastMessage, DispatchEvent, GuildMemberListUpdate, GuildMembersChunk, GuildRoleChange,
+	Member, MemberListGroup, Message, MessageAck, MessageUpdate, PassiveUpdate, Presence, Snowflake,
+	ThreadDelete, ThreadListSync, TypingStart, UnavailableGuild, UserGuildSettings, VoiceState,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -67,6 +67,10 @@ impl State {
 			| DispatchEvent::ThreadCreate(channel)
 			| DispatchEvent::ThreadUpdate(channel) => self.upsert_channel(channel),
 			DispatchEvent::ChannelDelete(channel) => self.remove_channel(channel.id),
+			DispatchEvent::ChannelUnreadUpdate(update) => {
+				self.channels_last_message(update.guild_id, &update.channel_unread_updates)
+			}
+			DispatchEvent::PassiveUpdateV2(update) => self.passive_update(update),
 			DispatchEvent::ThreadDelete(delete) => self.thread_delete(delete),
 			DispatchEvent::ThreadListSync(sync) => self.thread_list_sync(sync),
 			DispatchEvent::ThreadMemberUpdate(member) => {
@@ -379,6 +383,55 @@ impl State {
 		changes
 	}
 
+	fn channels_last_message(&mut self, guild_id: Snowflake, updates: &[ChannelLastMessage]) -> Changes {
+		let mut changes = Changes::default();
+		let Some(guild) = self.guilds.get_mut(&guild_id) else {
+			return changes;
+		};
+		let mut moved = false;
+		for update in updates {
+			let Some(channel) = guild.channel_mut(update.id) else {
+				continue;
+			};
+			if update.last_message_id > channel.last_message_id {
+				channel.last_message_id = update.last_message_id;
+				moved = true;
+			}
+			if update.last_pin_timestamp.is_some() {
+				channel.last_pin_timestamp = update.last_pin_timestamp;
+			}
+		}
+		if moved {
+			changes.read_state = true;
+			changes.guild_list = true;
+			changes.channel_lists.insert(guild_id);
+		}
+		changes
+	}
+
+	fn passive_update(&mut self, update: &PassiveUpdate) -> Changes {
+		let guild_id = update.guild_id;
+		let mut changes = self.channels_last_message(guild_id, &update.updated_channels);
+		if !update.updated_members.is_empty() {
+			self.ingest_members(guild_id, &update.updated_members);
+			changes.members.insert(guild_id);
+		}
+		for voice in update.updated_voice_states.iter() {
+			changes.merge(self.guild_voice_state(guild_id, voice));
+		}
+		if let Some(guild) = self.guilds.get_mut(&guild_id) {
+			let mut removed = false;
+			for user_id in update.removed_voice_states.iter() {
+				removed |= guild.voice_states.remove(user_id).is_some();
+			}
+			if removed {
+				changes.voice.insert(guild_id);
+				changes.channel_lists.insert(guild_id);
+			}
+		}
+		changes
+	}
+
 	fn thread_delete(&mut self, delete: &ThreadDelete) -> Changes {
 		self.remove_channel(delete.id)
 	}
@@ -509,10 +562,14 @@ impl State {
 	}
 
 	fn voice_state_update(&mut self, voice: &VoiceState) -> Changes {
-		let mut changes = Changes::default();
 		let Some(guild_id) = voice.guild_id else {
 			return self.call_voice_state(voice);
 		};
+		self.guild_voice_state(guild_id, voice)
+	}
+
+	fn guild_voice_state(&mut self, guild_id: Snowflake, voice: &VoiceState) -> Changes {
+		let mut changes = Changes::default();
 		if let Some(user) = voice.member.as_ref().and_then(|member| member.user.as_ref()) {
 			intern_user(&mut self.users, user);
 		}
@@ -520,7 +577,13 @@ impl State {
 			return changes;
 		};
 		if voice.channel_id.is_some() {
-			guild.voice_states.insert(voice.user_id, voice.clone());
+			guild.voice_states.insert(
+				voice.user_id,
+				VoiceState {
+					guild_id: Some(guild_id),
+					..voice.clone()
+				},
+			);
 		} else {
 			guild.voice_states.remove(&voice.user_id);
 		}
