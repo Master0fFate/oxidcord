@@ -375,7 +375,7 @@ fn volume_control(
 		window.refresh();
 	})
 	.on_hover(|hovered: &bool, window, cx| {
-		cx.global::<Playback>().set_volume_button_hover(*hovered);
+		Playback::set_volume_button_hover(*hovered, cx);
 		window.refresh();
 	});
 	let slider = div()
@@ -390,7 +390,7 @@ fn volume_control(
 		.cursor_pointer()
 		.on_click(|_, _, cx| cx.stop_propagation())
 		.on_hover(|hovered: &bool, window, cx| {
-			cx.global::<Playback>().set_volume_slider_hover(*hovered);
+			Playback::set_volume_slider_hover(*hovered, cx);
 			window.refresh();
 		})
 		.on_mouse_down(MouseButton::Left, |event: &MouseDownEvent, window, cx| {
@@ -448,7 +448,7 @@ fn volume_control(
 						.w(rem(CONTROL_HIT))
 						.h(rem(VOLUME_LIFT - CONTROL_HIT))
 						.on_hover(|hovered: &bool, window, cx| {
-							cx.global::<Playback>().set_volume_slider_hover(*hovered);
+							Playback::set_volume_slider_hover(*hovered, cx);
 							window.refresh();
 						}),
 				)

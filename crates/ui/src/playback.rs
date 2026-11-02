@@ -24,6 +24,7 @@ const MEDIA_GRACE: Duration = Duration::from_secs(10);
 const SWEEP: Duration = Duration::from_millis(500);
 const FRAME_SWEEP: Duration = Duration::from_millis(100);
 const LOOP_FRAME_INTERVAL: Duration = Duration::from_millis(40);
+const VOLUME_LINGER: Duration = Duration::from_millis(450);
 const SIZE_HINT: f32 = 2.;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -69,6 +70,7 @@ pub struct Playback {
 	volume_bar: Cell<Option<Bounds<Pixels>>>,
 	volume_button_hover: Cell<bool>,
 	volume_slider_hover: Cell<bool>,
+	volume_left_at: Cell<Option<Instant>>,
 	volume_dragging: Cell<bool>,
 	volume_drag_moved: Cell<bool>,
 	epochs: RefCell<HashMap<EntityId, u64>>,
@@ -129,6 +131,7 @@ impl Playback {
 			volume_bar: Cell::new(None),
 			volume_button_hover: Cell::new(false),
 			volume_slider_hover: Cell::new(false),
+			volume_left_at: Cell::new(None),
 			volume_dragging: Cell::new(false),
 			volume_drag_moved: Cell::new(false),
 			epochs: RefCell::new(HashMap::new()),
@@ -443,16 +446,41 @@ impl Playback {
 		self.apply_volume();
 	}
 
-	pub fn set_volume_button_hover(&self, hovered: bool) {
-		self.volume_button_hover.set(hovered);
+	pub fn set_volume_button_hover(hovered: bool, cx: &mut App) {
+		cx.global::<Self>().volume_button_hover.set(hovered);
+		Self::note_volume_hover(cx);
 	}
 
-	pub fn set_volume_slider_hover(&self, hovered: bool) {
-		self.volume_slider_hover.set(hovered);
+	pub fn set_volume_slider_hover(hovered: bool, cx: &mut App) {
+		cx.global::<Self>().volume_slider_hover.set(hovered);
+		Self::note_volume_hover(cx);
+	}
+
+	fn note_volume_hover(cx: &mut App) {
+		let playback = cx.global::<Self>();
+		if playback.volume_hovered() {
+			playback.volume_left_at.set(None);
+			return;
+		}
+		playback.volume_left_at.set(Some(Instant::now()));
+		cx.spawn(async move |cx| {
+			cx.background_executor().timer(VOLUME_LINGER).await;
+			cx.update(|cx| cx.refresh_windows());
+		})
+		.detach();
+	}
+
+	fn volume_hovered(&self) -> bool {
+		self.volume_button_hover.get() || self.volume_slider_hover.get()
 	}
 
 	pub fn volume_slider_open(&self) -> bool {
-		self.volume_dragging.get() || self.volume_button_hover.get() || self.volume_slider_hover.get()
+		self.volume_dragging.get()
+			|| self.volume_hovered()
+			|| self
+				.volume_left_at
+				.get()
+				.is_some_and(|left| left.elapsed() < VOLUME_LINGER)
 	}
 
 	pub fn volume_dragging(&self) -> bool {
