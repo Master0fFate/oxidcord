@@ -174,7 +174,7 @@ fn write_ready(db: &Database, ready: &Ready) -> Result<()> {
 		}
 	}
 	for channel in ready.private_channels.iter() {
-		put_private_channel(store, channel)?;
+		put_private_channel(db, channel)?;
 	}
 	for user in ready.users.iter() {
 		db.put_json(Table::Users, user.id.get(), None, &serde_json::to_vec(user)?)?;
