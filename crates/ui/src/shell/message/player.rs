@@ -437,7 +437,23 @@ fn volume_control(
 		.relative()
 		.flex_none()
 		.child(button)
-		.when(open, |wrapper| wrapper.child(slider))
+		.when(open, |wrapper| {
+			wrapper
+				.child(
+					div()
+						.id(element_id("media-volume-bridge", key))
+						.absolute()
+						.left_0()
+						.bottom(rem(CONTROL_HIT))
+						.w(rem(CONTROL_HIT))
+						.h(rem(VOLUME_LIFT - CONTROL_HIT))
+						.on_hover(|hovered: &bool, window, cx| {
+							cx.global::<Playback>().set_volume_slider_hover(*hovered);
+							window.refresh();
+						}),
+				)
+				.child(slider)
+		})
 		.into_any_element()
 }
 
