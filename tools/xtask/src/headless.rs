@@ -417,6 +417,8 @@ async fn scenario(
 	let store = Arc::new(Store::open(Paths::at(root)?)?);
 	store.update_settings(|settings| {
 		settings.voice.noise_suppression = false;
+		settings.voice.echo_cancellation = false;
+		settings.voice.auto_gain = false;
 		settings.storage.plaintext_token = true;
 	})?;
 	install_plugins(&store).await?;

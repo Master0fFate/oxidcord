@@ -325,6 +325,8 @@ pub enum Command {
 	SetInputVolume(f32),
 	SetOutputVolume(f32),
 	SetNoiseSuppression(bool),
+	SetEchoCancellation(bool),
+	SetAutoGain(bool),
 	SetVadThreshold {
 		auto: bool,
 		threshold_db: f32,

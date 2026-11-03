@@ -1209,6 +1209,8 @@ impl Core {
 			Command::SetInputVolume(volume) => self.set_input_volume(volume),
 			Command::SetOutputVolume(volume) => self.set_output_volume(volume),
 			Command::SetNoiseSuppression(enabled) => self.set_noise_suppression(enabled),
+			Command::SetEchoCancellation(enabled) => self.set_echo_cancellation(enabled),
+			Command::SetAutoGain(enabled) => self.set_auto_gain(enabled),
 			Command::SetVadThreshold { auto, threshold_db } => self.set_vad_threshold(auto, threshold_db),
 			Command::SetCameraQuality(quality) => self.set_camera_quality(quality),
 			Command::StartMicTest { seconds } => self.start_mic_test(seconds),

@@ -369,6 +369,18 @@ impl VoiceVideoPage {
 		cx.notify();
 	}
 
+	fn set_echo_cancellation(&mut self, enabled: bool, cx: &mut Context<Self>) {
+		self.voice.echo_cancellation = enabled;
+		self.data.read(cx).send(Command::SetEchoCancellation(enabled));
+		cx.notify();
+	}
+
+	fn set_auto_gain(&mut self, enabled: bool, cx: &mut Context<Self>) {
+		self.voice.auto_gain = enabled;
+		self.data.read(cx).send(Command::SetAutoGain(enabled));
+		cx.notify();
+	}
+
 	fn send_vad_threshold(&self, cx: &Context<Self>) {
 		self.data.read(cx).send(Command::SetVadThreshold {
 			auto: self.voice.auto_sensitivity,
@@ -697,6 +709,32 @@ impl Render for VoiceVideoPage {
 						.on_change(cx.listener(|this, checked: &bool, _, cx| {
 							this.set_noise_suppression(*checked, cx)
 						})),
+					&theme,
+					cx,
+				),
+			)
+			.child(
+				self.field(
+					"voice-echo-cancellation",
+					Switch::new("voice-echo-cancellation")
+						.checked(self.voice.echo_cancellation)
+						.label(cx.t("voice-echo-cancellation-label"))
+						.on_change(cx.listener(|this, checked: &bool, _, cx| {
+							this.set_echo_cancellation(*checked, cx)
+						})),
+					&theme,
+					cx,
+				),
+			)
+			.child(
+				self.field(
+					"voice-auto-gain",
+					Switch::new("voice-auto-gain")
+						.checked(self.voice.auto_gain)
+						.label(cx.t("voice-auto-gain-label"))
+						.on_change(
+							cx.listener(|this, checked: &bool, _, cx| this.set_auto_gain(*checked, cx)),
+						),
 					&theme,
 					cx,
 				),

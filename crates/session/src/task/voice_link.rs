@@ -232,6 +232,20 @@ impl Core {
 		self.update_voice_settings(move |settings| settings.noise_suppression = enabled);
 	}
 
+	pub(super) fn set_echo_cancellation(&mut self, enabled: bool) {
+		if let Some(connection) = &self.voice.connection {
+			connection.set_echo_cancellation(enabled);
+		}
+		self.update_voice_settings(move |settings| settings.echo_cancellation = enabled);
+	}
+
+	pub(super) fn set_auto_gain(&mut self, enabled: bool) {
+		if let Some(connection) = &self.voice.connection {
+			connection.set_auto_gain(enabled);
+		}
+		self.update_voice_settings(move |settings| settings.auto_gain = enabled);
+	}
+
 	pub(super) fn set_vad_threshold(&mut self, auto: bool, threshold_db: f32) {
 		if let Some(connection) = &self.voice.connection {
 			connection.set_vad_threshold_db(vad_threshold_db(auto, threshold_db));
@@ -619,6 +633,8 @@ impl Core {
 			connection.set_input_volume(f32::from(voice.input_volume) / FULL_VOLUME_PERCENT);
 			connection.set_output_volume(f32::from(voice.output_volume) / FULL_VOLUME_PERCENT);
 			connection.set_noise_suppression(voice.noise_suppression);
+			connection.set_echo_cancellation(voice.echo_cancellation);
+			connection.set_auto_gain(voice.auto_gain);
 			connection.set_vad_threshold_db(vad_threshold_db(
 				voice.auto_sensitivity,
 				f32::from(voice.sensitivity_db),
