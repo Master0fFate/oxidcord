@@ -1,5 +1,5 @@
 use gpui::{
-	AnyElement, AppContext as _, ClickEvent, Context, Entity, EventEmitter, FontWeight,
+	AnyElement, App, AppContext as _, ClickEvent, Context, Entity, EventEmitter, FontWeight,
 	InteractiveElement as _, IntoElement, MouseDownEvent, ParentElement as _, Pixels, Point, Render,
 	SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, prelude::FluentBuilder as _,
 	transparent_black,
@@ -424,7 +424,7 @@ impl ChannelSidebar {
 		let Some(guild) = self.guild else {
 			return;
 		};
-		let positions = rearranged(&self.groups(), dragged, drop);
+		let positions = rearranged(&self.groups(guild, cx), dragged, drop);
 		if !positions.is_empty() {
 			self.data.read(cx).send(Command::ReorderChannels {
 				guild_id: guild,
@@ -433,19 +433,22 @@ impl ChannelSidebar {
 		}
 	}
 
-	fn groups(&self) -> Vec<Group> {
-		self.categories
+	fn groups(&self, guild: Snowflake, cx: &App) -> Vec<Group> {
+		self.data
+			.read(cx)
+			.state()
+			.guild_channel_tree(guild)
 			.iter()
-			.map(|category| Group {
-				id: category.id,
-				position: category.position,
-				channels: category
-					.channels
+			.map(|node| Group {
+				id: node.category.as_ref().map(|category| category.id),
+				position: node.category.as_ref().map_or(0, |category| category.position),
+				channels: node
+					.children
 					.iter()
-					.filter(|channel| !channel.thread)
-					.map(|channel| Slot {
-						id: channel.id,
-						position: channel.position,
+					.filter(|row| !is_thread(row.kind))
+					.map(|row| Slot {
+						id: row.id,
+						position: row.position,
 					})
 					.collect(),
 			})
