@@ -251,6 +251,7 @@ impl ProfileData {
 					profile
 						.badges
 						.iter()
+						.chain(&profile.guild_badges)
 						.map(|badge| Badge {
 							icon_url: media::cdn::badge_icon_url(&badge.icon),
 							description: badge.description.clone().into(),

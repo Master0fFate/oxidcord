@@ -606,6 +606,14 @@ pub fn profile_extras(shared: &Shared, user_id: u64, guild_id: Option<u64>) -> V
 	} else {
 		json!([])
 	};
+	let guild_badges = if guild_id.is_some() && user_id.is_multiple_of(2) {
+		json!([{ "id": "guild_booster_lvl1", "description": "Booster", "icon": "51040c70d4f20a921ad6674ff86fc95c" }])
+	} else {
+		json!([])
+	};
+	let profile_effect = user_id
+		.is_multiple_of(2)
+		.then(|| json!({ "id": "1139323098643333240", "expires_at": null }));
 	let theme_colors = user
 		.and_then(|user| user.display_name_styles.as_ref())
 		.and_then(|style| Some([*style.colors.first()?, *style.colors.last()?]));
@@ -614,6 +622,8 @@ pub fn profile_extras(shared: &Shared, user_id: u64, guild_id: Option<u64>) -> V
 	json!({
 		"mutual_friends": friends,
 		"badges": badges,
+		"guild_badges": guild_badges,
+		"profile_effect": profile_effect,
 		"theme_colors": theme_colors,
 		"legacy_username": user.filter(|_| tagged).map(|user| format!("{}#1234", user.username)),
 		"private": tagged && decorated,

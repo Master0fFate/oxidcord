@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use chrono::{DateTime, Utc};
-use protocol::lenient::{or_default, timestamp};
+use protocol::lenient::{or_default, timestamp, timestamp_or_seconds};
 use protocol::{
 	ApplicationCommand, ApplicationCommandType, AutoModRule, Channel, ChannelType, CommandChoice,
 	CommandIndex, Connection, Gif, GifFavorites, GifTrending, GuildBan, InteractionContext,
@@ -172,6 +172,12 @@ pub struct ProfileBadge {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProfileEffect {
+	pub id: Snowflake,
+	pub expires_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConnectedAccount {
 	pub id: String,
 	pub kind: String,
@@ -201,6 +207,8 @@ pub struct UserProfile {
 	pub private: bool,
 	pub guild_profile: Option<GuildProfile>,
 	pub badges: Vec<ProfileBadge>,
+	pub guild_badges: Vec<ProfileBadge>,
+	pub profile_effect: Option<ProfileEffect>,
 	pub mutual_guilds: Vec<Snowflake>,
 	pub mutual_friends: Vec<Snowflake>,
 	pub mutual_friends_count: u32,
@@ -324,6 +332,17 @@ pub(crate) struct CommandChoices {
 	choices: Vec<CommandChoice>,
 }
 
+fn profile_badges(raw: Option<LenientVec<RawBadge>>) -> Vec<ProfileBadge> {
+	raw.unwrap_or_default()
+		.into_iter()
+		.map(|badge| ProfileBadge {
+			id: badge.id,
+			description: badge.description,
+			icon: badge.icon,
+		})
+		.collect()
+}
+
 fn context_allows(command: &ApplicationCommand, in_guild: bool, in_bot_dm: bool) -> bool {
 	command.contexts.as_ref().is_none_or(|contexts| {
 		contexts.iter().any(|context| match context {
@@ -405,6 +424,16 @@ struct RawMeta {
 	#[serde(deserialize_with = "or_default")]
 	theme_colors: Option<[u32; 2]>,
 	pronouns: Option<String>,
+	#[serde(deserialize_with = "or_default")]
+	profile_effect: Option<RawEffect>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct RawEffect {
+	id: Snowflake,
+	#[serde(deserialize_with = "timestamp_or_seconds")]
+	expires_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Deserialize, Default)]
@@ -414,6 +443,7 @@ struct RawProfile {
 	user_profile: Option<RawMeta>,
 	guild_member_profile: Option<RawMeta>,
 	badges: Option<LenientVec<RawBadge>>,
+	guild_badges: Option<LenientVec<RawBadge>>,
 	mutual_guilds: Option<LenientVec<RawMutualGuild>>,
 	mutual_friends: Option<LenientVec<User>>,
 	mutual_friends_count: Option<u32>,
@@ -950,6 +980,15 @@ impl State {
 		let mutual_friends_count = parsed
 			.mutual_friends_count
 			.unwrap_or_else(|| u32::try_from(mutual_friends.len()).unwrap_or(u32::MAX));
+		let profile_effect = parsed
+			.guild_member_profile
+			.as_ref()
+			.and_then(|guild_meta| guild_meta.profile_effect.as_ref())
+			.or(meta.profile_effect.as_ref())
+			.map(|effect| ProfileEffect {
+				id: effect.id,
+				expires_at: effect.expires_at,
+			});
 		let guild_profile = parsed.guild_member_profile.and_then(|meta| {
 			Some(GuildProfile {
 				guild_id: meta.guild_id?,
@@ -972,16 +1011,9 @@ impl State {
 			pronouns: meta.pronouns.filter(|pronouns| !pronouns.is_empty()),
 			legacy_username: parsed.legacy_username.filter(|name| !name.is_empty()),
 			private: parsed.private,
-			badges: parsed
-				.badges
-				.unwrap_or_default()
-				.into_iter()
-				.map(|badge| ProfileBadge {
-					id: badge.id,
-					description: badge.description,
-					icon: badge.icon,
-				})
-				.collect(),
+			badges: profile_badges(parsed.badges),
+			guild_badges: profile_badges(parsed.guild_badges),
+			profile_effect,
 			mutual_guilds: parsed
 				.mutual_guilds
 				.unwrap_or_default()
