@@ -1148,6 +1148,7 @@ impl Shell {
 				+ state.pending_incoming_count()
 		};
 		if total != self.title_mentions {
+			let badge_flipped = (self.title_mentions > 0) != (total > 0);
 			self.title_mentions = total;
 			let title = if total > 0 {
 				format!("({total}) {WINDOW_TITLE}")
@@ -1155,7 +1156,9 @@ impl Shell {
 				WINDOW_TITLE.to_owned()
 			};
 			window.set_window_title(&title);
-			crate::desktop::set_mentions(window, total, cx);
+			if badge_flipped {
+				crate::desktop::set_mentions(window, total, cx);
+			}
 		}
 	}
 
