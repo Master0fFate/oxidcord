@@ -260,13 +260,18 @@ impl Core {
 			self.spawn_action(what, call);
 			return;
 		}
-		self.spawn_load(what, move |rest| {
-			let change = call(rest.clone());
-			async move {
-				change.await?;
-				let raw = rest.role_member_counts(guild_id).await?;
-				Ok(Loaded::RoleCounts { guild_id, raw })
-			}
+		let change = call(self.rest.clone());
+		let rest = self.rest.clone();
+		let internal = self.internal.clone();
+		self.runtime.spawn(async move {
+			let message = match change.await {
+				Err(error) => rest_failure(what, &error),
+				Ok(()) => match rest.role_member_counts(guild_id).await {
+					Ok(raw) => Internal::Loaded(Loaded::RoleCounts { guild_id, raw }),
+					Err(error) => rest_failure("role counts", &error),
+				},
+			};
+			let _ = internal.send(message);
 		});
 	}
 
