@@ -232,13 +232,14 @@ enum ChannelFilter {
 
 impl ChannelFilter {
 	fn admits(self, state: &State, channel: Snowflake) -> bool {
-		let Some(entry) = state.channel_unread(channel) else {
-			return false;
-		};
 		match self {
 			Self::All => true,
-			Self::Unread => entry.mentions > 0 || (entry.unread && !entry.muted),
-			Self::Mentioned => entry.mentions > 0,
+			Self::Unread => state
+				.channel_unread(channel)
+				.is_some_and(|entry| entry.mentions > 0 || (entry.unread && !entry.muted)),
+			Self::Mentioned => state
+				.channel_unread(channel)
+				.is_some_and(|entry| entry.mentions > 0),
 		}
 	}
 }
@@ -845,9 +846,12 @@ impl Shell {
 			.data
 			.read(cx)
 			.state()
-			.guild_summaries()
+			.guild_layout()
 			.into_iter()
-			.map(|summary| summary.id)
+			.flat_map(|entry| match entry {
+				state::RailEntry::Guild(id) => vec![id],
+				state::RailEntry::Folder { guilds, .. } => guilds,
+			})
 			.collect();
 		if let Some(next) = cycle(&guilds, self.guild, forward).filter(|next| Some(*next) != self.guild) {
 			self.show_guild(next, window, cx);
