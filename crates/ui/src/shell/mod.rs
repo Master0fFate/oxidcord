@@ -146,14 +146,17 @@ enum Overlay {
 		card: Entity<ProfileCard>,
 		at: Point<Pixels>,
 		anchor: Anchor,
+		_subscription: Subscription,
 	},
 	VoiceUser {
 		menu: Entity<UserMenu>,
 		at: Point<Pixels>,
+		_subscription: Subscription,
 	},
 	Role {
 		card: Entity<RolePopover>,
 		at: Point<Pixels>,
+		_subscription: Subscription,
 	},
 }
 
@@ -1623,8 +1626,12 @@ impl Shell {
 			this.overlay = None;
 			cx.notify();
 		});
-		self._subscriptions.push(subscription);
-		self.overlay = Some(Overlay::Profile { card, at, anchor });
+		self.overlay = Some(Overlay::Profile {
+			card,
+			at,
+			anchor,
+			_subscription: subscription,
+		});
 		cx.notify();
 	}
 
@@ -1632,14 +1639,31 @@ impl Shell {
 		let Some(guild) = self.guild else {
 			return;
 		};
+		let known = self
+			.data
+			.read(cx)
+			.state()
+			.guild(guild)
+			.is_some_and(|found| found.roles.contains_key(&role));
+		if !known {
+			return;
+		}
 		let data = self.data.clone();
 		let card = cx.new(|cx| RolePopover::new(data, guild, role, cx));
 		let subscription = cx.subscribe(&card, |this, _, event: &RolePopoverEvent, cx| {
-			let RolePopoverEvent::OpenProfile { user, at } = event;
-			this.open_profile(*user, *at, Anchor::TopLeft, cx);
+			match event {
+				RolePopoverEvent::OpenProfile { user, at } => this.open_profile(*user, *at, Anchor::TopLeft, cx),
+				RolePopoverEvent::Close => {
+					this.overlay = None;
+					cx.notify();
+				}
+			}
 		});
-		self._subscriptions.push(subscription);
-		self.overlay = Some(Overlay::Role { card, at });
+		self.overlay = Some(Overlay::Role {
+			card,
+			at,
+			_subscription: subscription,
+		});
 		cx.notify();
 	}
 
@@ -1904,8 +1928,11 @@ impl Shell {
 			let UserMenuEvent::Profile(user) = event;
 			this.open_profile(*user, at, Anchor::TopLeft, cx);
 		});
-		self._subscriptions.push(subscription);
-		self.overlay = Some(Overlay::VoiceUser { menu, at });
+		self.overlay = Some(Overlay::VoiceUser {
+			menu,
+			at,
+			_subscription: subscription,
+		});
 		cx.notify();
 	}
 
@@ -2055,13 +2082,13 @@ impl Shell {
 				});
 				message::player::video_modal(target, window, theme, cx, close)
 			}
-			Overlay::Profile { card, at, anchor } => {
+			Overlay::Profile { card, at, anchor, .. } => {
 				floating(card.clone().into_any_element(), *at, *anchor, cx)
 			}
-			Overlay::VoiceUser { menu, at } => {
+			Overlay::VoiceUser { menu, at, .. } => {
 				floating(menu.clone().into_any_element(), *at, Anchor::TopLeft, cx)
 			}
-			Overlay::Role { card, at } => floating(card.clone().into_any_element(), *at, Anchor::TopLeft, cx),
+			Overlay::Role { card, at, .. } => floating(card.clone().into_any_element(), *at, Anchor::TopLeft, cx),
 		})
 	}
 }

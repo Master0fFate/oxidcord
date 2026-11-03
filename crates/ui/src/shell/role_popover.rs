@@ -19,6 +19,7 @@ const LIST_HEIGHT: f32 = 280.;
 
 pub enum RolePopoverEvent {
 	OpenProfile { user: Snowflake, at: Point<Pixels> },
+	Close,
 }
 
 struct Entry {
@@ -69,7 +70,7 @@ impl RolePopover {
 	fn reload(&mut self, cx: &mut Context<Self>) {
 		let data = self.data.read(cx);
 		let state = data.state();
-		self.roster = state.role_members(self.guild, self.role).map(|found| {
+		let roster = state.role_members(self.guild, self.role).map(|found| {
 			let RoleMembers {
 				name,
 				color,
@@ -94,6 +95,10 @@ impl RolePopover {
 			}
 		});
 		drop(state);
+		match roster {
+			Some(roster) => self.roster = Some(roster),
+			None => cx.emit(RolePopoverEvent::Close),
+		}
 		cx.notify();
 	}
 }
