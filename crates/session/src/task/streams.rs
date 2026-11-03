@@ -293,27 +293,27 @@ impl Core {
 		let Some(session) = self.streams.session_for_key(&update.stream_key) else {
 			return;
 		};
-		let generation = session.generation;
-		match (update.token, update.endpoint) {
-			(Some(token), Some(endpoint)) => {
-				if let Some(connection) = session.connection.take() {
-					connection.disconnect();
-					self.video.lock().detach(&connection);
-				}
-				if let Some(session) = self.streams.session_mut(generation) {
-					session.connecting = false;
-					session.server = Some(Server { token, endpoint });
-				}
-				self.try_connect_stream(generation);
-			}
-			_ => {
-				if let Some(connection) = session.connection.take() {
-					connection.disconnect();
-					self.video.lock().detach(&connection);
-				}
-				session.server = None;
-				session.connecting = false;
-			}
+		for task in [session.pump.take(), session.uploads.take()].into_iter().flatten() {
+			task.abort();
+		}
+		let connection = session.connection.take();
+		session.connecting = false;
+		session.server = update
+			.token
+			.zip(update.endpoint)
+			.map(|(token, endpoint)| Server { token, endpoint });
+		let connectable = session.server.is_some();
+		let generation = self.streams.next_generation();
+		if let Some(session) = self.streams.session_for_key(&update.stream_key) {
+			session.generation = generation;
+		}
+		if let Some(connection) = connection {
+			connection.disconnect();
+			self.video.lock().detach(&connection);
+		}
+		self.arm_stream_timeout(generation);
+		if connectable {
+			self.try_connect_stream(generation);
 		}
 	}
 
