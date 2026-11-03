@@ -350,6 +350,7 @@ impl State {
 					icon: channel.icon.clone(),
 					recipients: channel.recipient_ids.clone(),
 					unread: status.unread,
+					muted: status.muted,
 					mentions: status.mentions,
 					muted: status.muted,
 					last_message_id: channel.last_message_id,
@@ -357,6 +358,12 @@ impl State {
 			})
 			.collect();
 		rows.sort_by_key(|row| Reverse((row.last_message_id, row.channel_id)));
+		rows
+	}
+
+	pub fn unread_dm_rows(&self) -> Vec<DmRow> {
+		let mut rows = self.dm_rows();
+		rows.retain(|row| !row.muted && (row.unread || row.mentions > 0));
 		rows
 	}
 

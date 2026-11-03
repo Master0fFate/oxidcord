@@ -306,8 +306,9 @@ impl Shell {
 			&rail,
 			window,
 			|this, _, event: &RailEvent, window, cx| match event {
-				RailEvent::SelectHome => this.show_home(window, cx),
-				RailEvent::SelectGuild(id) => this.show_guild(*id, window, cx),
+				RailEvent::Home => this.show_home(window, cx),
+				RailEvent::Guild(id) => this.show_guild(*id, window, cx),
+				RailEvent::Dm(id) => this.open_home(Some(*id), window, cx),
 			},
 		));
 
@@ -672,9 +673,6 @@ impl Shell {
 	}
 
 	fn show_home(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-		self.plugin_ui.update(cx, |ui, cx| ui.close_page(cx));
-		self.home = true;
-		self.guild = None;
 		let dm = {
 			let data = self.data.read(cx);
 			let state = data.state();
@@ -682,6 +680,13 @@ impl Shell {
 				.filter(|dm| state.channel(*dm).is_some())
 				.or_else(|| state.dm_rows().first().map(|row| row.channel_id))
 		};
+		self.open_home(dm, window, cx);
+	}
+
+	fn open_home(&mut self, dm: Option<Snowflake>, window: &mut Window, cx: &mut Context<Self>) {
+		self.plugin_ui.update(cx, |ui, cx| ui.close_page(cx));
+		self.home = true;
+		self.guild = None;
 		match dm {
 			Some(dm) => self.select(None, dm, cx),
 			None => {

@@ -140,6 +140,7 @@ pub struct DmRow {
 	pub icon: Option<String>,
 	pub recipients: Vec<Snowflake>,
 	pub unread: bool,
+	pub muted: bool,
 	pub mentions: u32,
 	pub muted: bool,
 	pub last_message_id: Option<Snowflake>,

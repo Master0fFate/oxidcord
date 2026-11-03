@@ -27,6 +27,7 @@ pub const CURRENT_USER_ID: u64 = 100;
 pub const SECOND_USER_ID: u64 = 101;
 const MIN_POOL_SIZE: usize = 40;
 const READ_CUTOFF_PERCENT: usize = 85;
+const UNREAD_DM_POSITIONS: [usize; 2] = [1, 3];
 const SETTINGS_VERSION: i64 = 1;
 
 struct Builder {
@@ -140,18 +141,23 @@ impl Fixtures {
 }
 
 fn build_read_states(builder: &Builder, guilds: &[GuildFixture], private: &[u64]) -> Vec<ReadState> {
-	let channel_ids = guilds
+	let guild_channels = guilds
 		.iter()
 		.flat_map(|guild| guild.message_channel_ids.iter().copied())
-		.chain(private.iter().copied());
-	channel_ids
 		.enumerate()
-		.filter_map(|(position, channel_id)| {
+		.map(|(position, channel_id)| (channel_id, position % 3 != 2));
+	let direct_channels = private
+		.iter()
+		.enumerate()
+		.map(|(position, channel_id)| (*channel_id, UNREAD_DM_POSITIONS.contains(&position)));
+	guild_channels
+		.chain(direct_channels)
+		.filter_map(|(channel_id, unread)| {
 			let messages = builder
 				.messages
 				.get(&channel_id)
 				.filter(|messages| !messages.is_empty())?;
-			Some(read_state(channel_id, messages, position % 3 != 2))
+			Some(read_state(channel_id, messages, unread))
 		})
 		.collect()
 }

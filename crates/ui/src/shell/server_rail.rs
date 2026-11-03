@@ -18,7 +18,7 @@ use super::community::add_server;
 use super::community::menus::guild_menu_for;
 use super::plugins::{self, MenuTarget, PluginMenu as _};
 use super::transition::Pairs;
-use crate::components::{Divider, MentionBadge, PillState, UnreadPill, tooltip};
+use crate::components::{ContextMenuBuilder, Divider, MentionBadge, PillState, UnreadPill, tooltip};
 use crate::data::Data;
 use crate::i18n::Translate as _;
 use crate::icons::{Icon, IconKind};
@@ -36,6 +36,7 @@ const ICON_PIXELS: u32 = 96;
 const DEFAULT_FOLDER_COLOR: u32 = 0x5865f2;
 const FOLDER_NAME_GUILDS: usize = 3;
 const SERVER_DIRECTORY: &str = "https://discord.com/servers";
+const RAIL_DMS: usize = 5;
 
 #[derive(Clone, PartialEq)]
 pub struct GuildItem {
@@ -44,6 +45,15 @@ pub struct GuildItem {
 	pub icon: Option<String>,
 	pub unread: bool,
 	pub mentions: u32,
+}
+
+#[derive(Clone, PartialEq)]
+struct DmTile {
+	id: Snowflake,
+	name: SharedString,
+	avatar: Option<String>,
+	unread: bool,
+	mentions: u32,
 }
 
 #[derive(Clone, PartialEq)]
@@ -67,13 +77,15 @@ const LOGO_SIZE: f32 = 28.;
 const TILE_RADIUS_ACTIVE: f32 = 10.;
 
 pub enum RailEvent {
-	SelectHome,
-	SelectGuild(Snowflake),
+	Home,
+	Guild(Snowflake),
+	Dm(Snowflake),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum Target {
 	Home,
+	Dm(Id),
 	Guild(Id),
 	Folder(Id),
 	AddServer,
@@ -87,6 +99,7 @@ impl Target {
 			Self::AddServer => 2,
 			Self::Explore => 3,
 			Self::Guild(id) => id.wrapping_mul(2).wrapping_add(8),
+			Self::Dm(id) => id.wrapping_mul(2).wrapping_add(1 << 62),
 			Self::Folder(id) => id.wrapping_mul(2).wrapping_add(9),
 		}
 	}
@@ -132,6 +145,7 @@ struct TileSpec {
 pub struct ServerRail {
 	data: Entity<Data>,
 	entries: Vec<RailEntry>,
+	dms: Vec<DmTile>,
 	selected: Option<Snowflake>,
 	home_mentions: u32,
 	hovered: Option<Target>,
@@ -146,6 +160,7 @@ impl ServerRail {
 		let mut rail = Self {
 			data,
 			entries: Vec::new(),
+			dms: Vec::new(),
 			selected: None,
 			home_mentions: 0,
 			hovered: None,
@@ -192,11 +207,18 @@ impl ServerRail {
 		let data = self.data.read(cx);
 		let state = data.state();
 		let entries = rail_entries(&state);
-		let home_mentions =
-			state.dm_rows().iter().map(|row| row.mentions).sum::<u32>() + state.pending_incoming_count();
+		let unread = state.unread_dm_rows();
+		let home_mentions = unread.iter().skip(RAIL_DMS).map(|row| row.mentions).sum::<u32>()
+			+ state.pending_incoming_count();
+		let dms: Vec<DmTile> = unread
+			.into_iter()
+			.take(RAIL_DMS)
+			.map(|row| dm_tile(&state, row))
+			.collect();
 		drop(state);
-		if entries != self.entries || home_mentions != self.home_mentions {
+		if entries != self.entries || dms != self.dms || home_mentions != self.home_mentions {
 			self.entries = entries;
+			self.dms = dms;
 			self.home_mentions = home_mentions;
 			cx.notify();
 		}
@@ -391,6 +413,42 @@ fn acronym(name: &str) -> SharedString {
 }
 
 impl ServerRail {
+	fn dm_tile(&mut self, dm: &DmTile, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+		let id = dm.id;
+		let face = Face::Guild {
+			icon: dm.avatar.clone(),
+			acronym: acronym(&dm.name),
+		};
+		let style = TileStyle {
+			rest_background: theme.background_secondary,
+			rest_foreground: theme.text_normal,
+			active_background: theme.brand,
+			active_foreground: theme.text_on_brand,
+		};
+		let tile = self
+			.tile(
+				TileSpec {
+					target: Target::Dm(id.get()),
+					face,
+					style,
+					unread: dm.unread,
+					selected: false,
+					mentions: dm.mentions,
+					pill_inset: rem(0.),
+				},
+				theme,
+				cx,
+			)
+			.on_click(cx.listener(move |_, _, _, cx| cx.emit(RailEvent::Dm(id))))
+			.tooltip(tooltip(dm.name.clone()));
+		let target = MenuTarget::channel(None, id);
+		if !plugins::has_plugin_items("channel-context-menu", &target, cx) {
+			return tile.into_any_element();
+		}
+		let menu = ContextMenuBuilder::new().plugin_items("channel-context-menu", target, cx);
+		tile.context_menu(menu.build()).into_any_element()
+	}
+
 	fn guild_tile(
 		&mut self,
 		guild: &GuildItem,
@@ -438,7 +496,7 @@ impl ServerRail {
 				theme,
 				cx,
 			)
-			.on_click(cx.listener(move |_, _, _, cx| cx.emit(RailEvent::SelectGuild(id))))
+			.on_click(cx.listener(move |_, _, _, cx| cx.emit(RailEvent::Guild(id))))
 			.tooltip(plugins::guild_tooltip(
 				name,
 				ViewContext {
@@ -721,8 +779,11 @@ impl Render for ServerRail {
 				&theme,
 				cx,
 			)
-			.on_click(cx.listener(|_, _, _, cx| cx.emit(RailEvent::SelectHome)))
+			.on_click(cx.listener(|_, _, _, cx| cx.emit(RailEvent::Home)))
 			.tooltip(tooltip(cx.t("rail-home")));
+		let dms = std::mem::take(&mut self.dms);
+		let dm_tiles: Vec<AnyElement> = dms.iter().map(|dm| self.dm_tile(dm, &theme, cx)).collect();
+		self.dms = dms;
 		let options = plugins::client_options(cx);
 		let folders = FolderOptions {
 			sidebar: options.folder_sidebar.unwrap_or(false),
@@ -800,6 +861,7 @@ impl Render for ServerRail {
 			.bg(theme.background_tertiary)
 			.overflow_y_scroll()
 			.child(home)
+			.children(dm_tiles)
 			.child(
 				Divider::horizontal()
 					.thickness(px(1.))
@@ -827,6 +889,23 @@ impl Render for ServerRail {
 				.children(apps)
 			});
 		div().flex().flex_none().h_full().child(rail).children(column)
+	}
+}
+
+fn dm_tile(state: &State, row: state::DmRow) -> DmTile {
+	let avatar = match row.recipients.as_slice() {
+		[user] => Some(plugins::avatar_url(state, None, *user, ICON_PIXELS)),
+		_ => row
+			.icon
+			.as_deref()
+			.map(|hash| media::cdn::channel_icon_url(row.channel_id.get(), hash, ICON_PIXELS)),
+	};
+	DmTile {
+		id: row.channel_id,
+		name: row.name.into(),
+		avatar,
+		unread: row.unread,
+		mentions: row.mentions,
 	}
 }
 
