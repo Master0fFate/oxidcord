@@ -57,6 +57,7 @@ pub struct MemberVerification {
 pub struct InviteAccepted {
 	pub guild_id: Option<Snowflake>,
 	pub show_verification_form: bool,
+	pub new_member: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Deserialize)]

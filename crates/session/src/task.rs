@@ -131,6 +131,7 @@ pub(crate) enum Internal {
 	Search(SearchResults),
 	DmOpened(Box<Channel>),
 	ThreadOpened(Box<Channel>),
+	SelectJoinedGuild(Snowflake),
 	Loaded(Loaded),
 	PluginApplied {
 		loaded: Loaded,
@@ -858,6 +859,12 @@ impl Core {
 				self.select_channel(None, channel_id);
 			}
 			Internal::ThreadOpened(thread) => self.on_thread_opened(thread),
+			Internal::SelectJoinedGuild(guild_id) => {
+				self.select_created_guild = true;
+				if self.state.read().guild(guild_id).is_some() {
+					self.select_new_guild(guild_id);
+				}
+			}
 			Internal::Loaded(loaded) => self.on_loaded(loaded),
 			Internal::Activities(activities) => {
 				self.activities = activities;

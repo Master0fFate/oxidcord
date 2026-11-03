@@ -511,12 +511,18 @@ impl Core {
 				Ok(Loaded::InvitePreview { code, raw })
 			}),
 			Command::AcceptInvite { code } => {
-				self.select_created_guild = true;
 				let internal = self.internal.clone();
 				self.spawn_action("accept invite", move |rest| async move {
 					let accepted = rest.accept_invite(&code).await?;
-					if let Some(guild_id) = accepted.guild_id.filter(|_| accepted.show_verification_form) {
-						let form = rest.member_verification(guild_id, Some(&code)).await?;
+					let Some(guild_id) = accepted.guild_id else {
+						return Ok(());
+					};
+					if accepted.new_member {
+						let _ = internal.send(Internal::SelectJoinedGuild(guild_id));
+					}
+					if accepted.show_verification_form
+						&& let Ok(form) = rest.member_verification(guild_id, Some(&code)).await
+					{
 						let _ =
 							internal.send(Internal::Loaded(Loaded::MemberVerification { guild_id, form }));
 					}
