@@ -9,7 +9,7 @@ use plugin_host::api::model::{
 use plugin_host::api::{HostError, User as PluginUser};
 use plugin_host::{Navigation, Permission, PickedPath, ViewContext};
 use protocol::{
-	ApplicationCommand, ChannelType, ComponentType, Gif, MessageFlags, Nonce, NotificationLevel,
+	ApplicationCommand, AutoModRule, ChannelType, ComponentType, Gif, MessageFlags, Nonce, NotificationLevel,
 	PermissionOverwriteKind, Permissions, PollCreate, Snowflake, StatusKind,
 };
 use rest::UploadFile;
@@ -569,6 +569,17 @@ pub enum Command {
 	},
 	LoadBans {
 		guild_id: Snowflake,
+	},
+	LoadAutomodRules {
+		guild_id: Snowflake,
+	},
+	SaveAutomodRule {
+		guild_id: Snowflake,
+		rule: Box<AutoModRule>,
+	},
+	DeleteAutomodRule {
+		guild_id: Snowflake,
+		rule_id: Snowflake,
 	},
 	LoadInvites {
 		guild_id: Snowflake,

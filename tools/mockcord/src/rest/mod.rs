@@ -121,6 +121,14 @@ pub fn router(shared: Arc<Shared>) -> Router {
 		)
 		.route("/guilds/{id}/bans", get(admin::bans))
 		.route("/guilds/{id}/bans/{uid}", put(admin::ban).delete(admin::unban))
+		.route(
+			"/guilds/{id}/auto-moderation/rules",
+			get(admin::automod_rules).post(admin::create_automod_rule),
+		)
+		.route(
+			"/guilds/{id}/auto-moderation/rules/{rid}",
+			patch(admin::modify_automod_rule).delete(admin::delete_automod_rule),
+		)
 		.route("/guilds/{id}/invites", get(admin::guild_invites))
 		.route("/guilds/{id}/audit-logs", get(admin::audit_log))
 		.route("/guilds/{id}/threads/active", get(admin::active_threads))

@@ -1,4 +1,5 @@
 pub mod audit;
+pub mod automod;
 pub mod bans;
 pub mod channel;
 pub mod emoji;
@@ -19,6 +20,7 @@ use gpui::{
 use protocol::{Permissions, Snowflake};
 
 use self::audit::AuditPage;
+use self::automod::AutomodPage;
 use self::bans::BansPage;
 use self::emoji::EmojiPage;
 use self::invites::InvitesPage;
@@ -46,6 +48,7 @@ pub enum Page {
 	Invites,
 	Bans,
 	AuditLog,
+	AutoMod,
 }
 
 struct NavGroup {
@@ -68,7 +71,7 @@ const GROUPS: &[NavGroup] = &[
 	},
 	NavGroup {
 		title: "server-settings-group-moderation",
-		pages: &[Page::AuditLog],
+		pages: &[Page::AutoMod, Page::AuditLog],
 	},
 ];
 
@@ -83,6 +86,7 @@ impl Page {
 			Self::Invites => "server-settings-invites",
 			Self::Bans => "server-settings-bans",
 			Self::AuditLog => "server-settings-audit-log",
+			Self::AutoMod => "server-settings-automod",
 		}
 	}
 
@@ -96,12 +100,13 @@ impl Page {
 			Self::Invites => IconKind::Mail,
 			Self::Bans => IconKind::Ban,
 			Self::AuditLog => IconKind::AuditLog,
+			Self::AutoMod => IconKind::Gavel,
 		}
 	}
 
 	pub fn allowed(self, access: &GuildAccess) -> bool {
 		match self {
-			Self::Overview | Self::Invites => access.has(Permissions::MANAGE_GUILD),
+			Self::Overview | Self::Invites | Self::AutoMod => access.has(Permissions::MANAGE_GUILD),
 			Self::Roles => access.has(Permissions::MANAGE_ROLES),
 			Self::Emoji | Self::Stickers => {
 				access.has_any(Permissions::MANAGE_GUILD_EXPRESSIONS | Permissions::CREATE_GUILD_EXPRESSIONS)
@@ -129,6 +134,7 @@ enum Body {
 	Invites(Entity<InvitesPage>),
 	Bans(Entity<BansPage>),
 	Audit(Entity<AuditPage>),
+	Automod(Entity<AutomodPage>),
 }
 
 pub struct ServerSettings {
@@ -198,6 +204,7 @@ impl ServerSettings {
 			Page::Invites => Body::Invites(cx.new(|cx| InvitesPage::new(data, guild, cx))),
 			Page::Bans => Body::Bans(cx.new(|cx| BansPage::new(data, guild, window, cx))),
 			Page::AuditLog => Body::Audit(cx.new(|cx| AuditPage::new(data, guild, cx))),
+			Page::AutoMod => Body::Automod(cx.new(|cx| AutomodPage::new(data, guild, window, cx))),
 		});
 		cx.notify();
 	}
@@ -301,6 +308,7 @@ impl ServerSettings {
 			Some(Body::Invites(page)) => page.clone().into_any_element(),
 			Some(Body::Bans(page)) => page.clone().into_any_element(),
 			Some(Body::Audit(page)) => page.clone().into_any_element(),
+			Some(Body::Automod(page)) => page.clone().into_any_element(),
 			None => div().into_any_element(),
 		}
 	}

@@ -5,8 +5,8 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
 use protocol::{
-	Channel, Emoji, FRIEND_SOURCE_MUTUAL_FRIENDS, FRIEND_SOURCE_MUTUAL_GUILDS, GuildProperties, Member,
-	Presence, ProtoCustomStatus, ProtoFrecencySettings, ProtoStatus, ReadState, Relationship, Role,
+	AutoModRule, Channel, Emoji, FRIEND_SOURCE_MUTUAL_FRIENDS, FRIEND_SOURCE_MUTUAL_GUILDS, GuildProperties,
+	Member, Presence, ProtoCustomStatus, ProtoFrecencySettings, ProtoStatus, ReadState, Relationship, Role,
 	Snowflake, StatusKind, User, UserGuildSettings, encode_status, privacy_with_friend_sources,
 };
 use serde_json::Value;
@@ -60,6 +60,7 @@ pub struct Store {
 	pub emojis: HashMap<u64, Vec<Emoji>>,
 	pub removed_members: HashMap<u64, BTreeSet<u64>>,
 	pub bans: HashMap<u64, BTreeMap<u64, Option<String>>>,
+	pub automod_rules: HashMap<u64, Vec<AutoModRule>>,
 	pub member_edits: HashMap<(u64, u64), Member>,
 	pub invites: BTreeMap<String, Value>,
 	pub left_guilds: BTreeSet<u64>,
@@ -142,6 +143,7 @@ impl Store {
 				.collect(),
 			removed_members: HashMap::new(),
 			bans: HashMap::new(),
+			automod_rules: crate::automod::seed_automod(fixtures),
 			member_edits: HashMap::new(),
 			invites: BTreeMap::new(),
 			created_guilds: HashMap::new(),

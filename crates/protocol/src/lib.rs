@@ -1,3 +1,4 @@
+mod automod;
 mod channel;
 mod command;
 mod component;
@@ -21,6 +22,7 @@ mod token;
 mod user;
 mod voice;
 
+pub use automod::*;
 pub use channel::*;
 pub use command::*;
 pub use component::*;

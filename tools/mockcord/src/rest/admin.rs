@@ -222,6 +222,31 @@ pub async fn bans(State(shared): Mock, Path(id): Path<u64>) -> ApiResult {
 	shared.bans_json(id).map(Json)
 }
 
+pub async fn automod_rules(State(shared): Mock, Path(id): Path<u64>) -> ApiResult {
+	shared.automod_rules_json(id).map(Json)
+}
+
+pub async fn create_automod_rule(
+	State(shared): Mock,
+	Path(id): Path<u64>,
+	Json(body): Json<Value>,
+) -> ApiResult {
+	shared.create_automod_rule(id, body).map(Json)
+}
+
+pub async fn modify_automod_rule(
+	State(shared): Mock,
+	Path((id, rule_id)): Path<(u64, u64)>,
+	Json(body): Json<Value>,
+) -> ApiResult {
+	shared.modify_automod_rule(id, rule_id, &body).map(Json)
+}
+
+pub async fn delete_automod_rule(State(shared): Mock, Path((id, rule_id)): Path<(u64, u64)>) -> NoContent {
+	shared.delete_automod_rule(id, rule_id)?;
+	Ok(StatusCode::NO_CONTENT)
+}
+
 pub async fn active_threads(State(shared): Mock, Path(id): Path<u64>) -> ApiResult {
 	let guild_id = protocol::Snowflake(id);
 	Ok(Json(shared.threads_json(|thread| {

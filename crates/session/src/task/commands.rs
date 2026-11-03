@@ -1091,6 +1091,32 @@ impl Core {
 					});
 				}
 			}
+			Command::LoadAutomodRules { guild_id } => {
+				if self.guild_allows(guild_id, Permissions::MANAGE_GUILD, "Manage Server") {
+					self.spawn_load("automod rules", move |rest| async move {
+						let raw = rest.automod_rules(guild_id).await?;
+						Ok(Loaded::AutomodRules { guild_id, raw })
+					});
+				}
+			}
+			Command::SaveAutomodRule { guild_id, rule } => {
+				if self.guild_allows(guild_id, Permissions::MANAGE_GUILD, "Manage Server") {
+					self.spawn_load("save automod rule", move |rest| async move {
+						rest.save_automod_rule(guild_id, &rule).await?;
+						let raw = rest.automod_rules(guild_id).await?;
+						Ok(Loaded::AutomodRules { guild_id, raw })
+					});
+				}
+			}
+			Command::DeleteAutomodRule { guild_id, rule_id } => {
+				if self.guild_allows(guild_id, Permissions::MANAGE_GUILD, "Manage Server") {
+					self.spawn_load("delete automod rule", move |rest| async move {
+						rest.delete_automod_rule(guild_id, rule_id).await?;
+						let raw = rest.automod_rules(guild_id).await?;
+						Ok(Loaded::AutomodRules { guild_id, raw })
+					});
+				}
+			}
 			Command::LoadInvites { guild_id } => {
 				if self.guild_allows(guild_id, Permissions::MANAGE_GUILD, "Manage Server") {
 					self.spawn_load("invites", move |rest| async move {

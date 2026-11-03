@@ -35,6 +35,9 @@ const ACTION_GUILD_UPDATE: i64 = 1;
 const ACTION_PIN: i64 = 74;
 const ACTION_UNPIN: i64 = 75;
 const ACTION_BULK_DELETE: i64 = 73;
+pub const ACTION_AUTOMOD_RULE_CREATE: i64 = 140;
+pub const ACTION_AUTOMOD_RULE_UPDATE: i64 = 141;
+pub const ACTION_AUTOMOD_RULE_DELETE: i64 = 142;
 
 pub fn current_session_hash() -> String {
 	format!("mock-session-{CURRENT_USER_ID}")
@@ -245,7 +248,7 @@ impl Shared {
 		self.store.lock().ended_sessions.extend(ended.map(str::to_owned));
 	}
 
-	fn live_guild(&self, store: &Store, id: u64) -> Result<&GuildFixture, ApiError> {
+	pub(crate) fn live_guild(&self, store: &Store, id: u64) -> Result<&GuildFixture, ApiError> {
 		self.fixtures
 			.guild(id)
 			.filter(|_| !store.left_guilds.contains(&id))

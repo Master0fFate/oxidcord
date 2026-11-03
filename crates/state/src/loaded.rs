@@ -4,9 +4,9 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use protocol::lenient::timestamp;
 use protocol::{
-	ApplicationCommand, ApplicationCommandType, Channel, CommandIndex, Gif, GifFavorites, GifTrending,
-	InteractionContext, LenientVec, Member, Message, Permissions, PinnedMessage, Snowflake, Sticker,
-	StickerPack, ThreadMember, User,
+	ApplicationCommand, ApplicationCommandType, AutoModRule, Channel, CommandIndex, Gif, GifFavorites,
+	GifTrending, InteractionContext, LenientVec, Member, Message, Permissions, PinnedMessage, Snowflake,
+	Sticker, StickerPack, ThreadMember, User,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -77,6 +77,10 @@ pub enum Loaded {
 		append: bool,
 	},
 	Bans {
+		guild_id: Snowflake,
+		raw: Value,
+	},
+	AutomodRules {
 		guild_id: Snowflake,
 		raw: Value,
 	},
@@ -277,6 +281,7 @@ pub(crate) struct Lazy {
 	pub(crate) guild_invites: HashMap<Snowflake, Vec<InviteInfo>>,
 	pub(crate) audit_logs: HashMap<Snowflake, AuditLog>,
 	pub(crate) bans: HashMap<Snowflake, Vec<BanEntry>>,
+	pub(crate) automod_rules: HashMap<Snowflake, Vec<AutoModRule>>,
 	pub(crate) auth_sessions: Option<Vec<AuthSession>>,
 	pub(crate) reaction_users: HashMap<(Snowflake, String, bool), Vec<User>>,
 	pub(crate) expressions: Expressions,
@@ -454,6 +459,13 @@ pub fn audit_action_label(action_type: i64) -> &'static str {
 		110 => "Thread created",
 		111 => "Thread updated",
 		112 => "Thread deleted",
+		140 => "AutoMod rule created",
+		141 => "AutoMod rule updated",
+		142 => "AutoMod rule deleted",
+		143 => "AutoMod blocked message",
+		144 => "AutoMod flagged message",
+		145 => "AutoMod timed out member",
+		146 => "AutoMod quarantined member",
 		_ => "Unknown action",
 	}
 }
@@ -657,6 +669,11 @@ impl State {
 					})
 					.collect();
 				self.lazy.bans.insert(*guild_id, entries);
+				changes.loaded.insert(*guild_id);
+			}
+			Loaded::AutomodRules { guild_id, raw } => {
+				let rules = LenientVec::<AutoModRule>::deserialize(raw).unwrap_or_default();
+				self.lazy.automod_rules.insert(*guild_id, rules.into_vec());
 				changes.loaded.insert(*guild_id);
 			}
 			Loaded::ReactionUsers {
@@ -965,6 +982,13 @@ impl State {
 
 	pub fn bans(&self, guild_id: Snowflake) -> &[BanEntry] {
 		self.lazy.bans.get(&guild_id).map_or(&[][..], Vec::as_slice)
+	}
+
+	pub fn automod_rules(&self, guild_id: Snowflake) -> &[AutoModRule] {
+		self.lazy
+			.automod_rules
+			.get(&guild_id)
+			.map_or(&[][..], Vec::as_slice)
 	}
 
 	pub fn reaction_users(&self, message_id: Snowflake, emoji: &str, burst: bool) -> Option<&[User]> {

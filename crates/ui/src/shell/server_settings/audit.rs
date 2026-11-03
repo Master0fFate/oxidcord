@@ -20,8 +20,9 @@ use crate::icons::IconKind;
 use crate::lookup::user_avatar;
 use crate::theme::Theme;
 
-const FILTERS: [i64; 22] = [
-	-1, 1, 10, 11, 12, 20, 22, 23, 24, 25, 30, 31, 32, 40, 42, 60, 61, 62, 72, 74, 75, 110,
+const FILTERS: [i64; 29] = [
+	-1, 1, 10, 11, 12, 20, 22, 23, 24, 25, 30, 31, 32, 40, 42, 60, 61, 62, 72, 74, 75, 110, 140, 141, 142,
+	143, 144, 145, 146,
 ];
 const VALUE_LIMIT: usize = 60;
 const CHANGE_LIMIT: usize = 5;
@@ -48,6 +49,7 @@ fn known_action(action_type: i64) -> bool {
 			| 62 | 72 | 73
 			| 74 | 75 | 110
 			| 111 | 112
+			| 140..=146
 	)
 }
 
@@ -77,7 +79,7 @@ fn target_label(state: &State, guild: Snowflake, entry: &AuditEntry) -> String {
 		return named.unwrap_or_default();
 	};
 	match entry.action_type {
-		20 | 22 | 23 | 24 | 25 | 26 | 27 | 72 | 74 | 75 => state.display_name(Some(guild), id),
+		20 | 22 | 23 | 24 | 25 | 26 | 27 | 72 | 74 | 75 | 143..=146 => state.display_name(Some(guild), id),
 		10..=15 | 110..=112 => state
 			.channel(id)
 			.and_then(|channel| channel.name.clone())

@@ -1,6 +1,6 @@
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use protocol::{Channel, LenientVec, Role, Snowflake};
+use protocol::{AutoModRule, AutoModTriggerType, Channel, LenientVec, Role, Snowflake};
 use serde_json::{Value, json};
 
 use crate::client::RestClient;
@@ -12,6 +12,42 @@ pub(super) fn with_reason(request: Request, reason: Option<&str>) -> Request {
 		Some(reason) => request.audit_reason(reason),
 		None => request,
 	}
+}
+
+fn automod_metadata(rule: &AutoModRule) -> Value {
+	let metadata = &rule.trigger_metadata;
+	match rule.trigger_type {
+		AutoModTriggerType::Keyword | AutoModTriggerType::MemberProfile => json!({
+			"keyword_filter": metadata.keyword_filter,
+			"regex_patterns": metadata.regex_patterns,
+			"allow_list": metadata.allow_list,
+		}),
+		AutoModTriggerType::KeywordPreset => json!({
+			"presets": metadata.presets,
+			"allow_list": metadata.allow_list,
+		}),
+		AutoModTriggerType::MentionSpam => json!({
+			"mention_total_limit": metadata.mention_total_limit,
+			"mention_raid_protection_enabled": metadata.mention_raid_protection_enabled,
+		}),
+		AutoModTriggerType::Spam | AutoModTriggerType::Unknown(_) => Value::Null,
+	}
+}
+
+fn automod_body(rule: &AutoModRule) -> Value {
+	let mut body = json!({
+		"name": rule.name,
+		"event_type": rule.event_type,
+		"actions": rule.actions,
+		"enabled": rule.enabled,
+		"exempt_roles": rule.exempt_roles,
+		"exempt_channels": rule.exempt_channels,
+	});
+	let metadata = automod_metadata(rule);
+	if !metadata.is_null() {
+		body["trigger_metadata"] = metadata;
+	}
+	body
 }
 
 impl RestClient {
@@ -78,6 +114,29 @@ impl RestClient {
 			request = request.query(&[("action_type", action_type.to_string())]);
 		}
 		self.send(request).await
+	}
+
+	pub async fn automod_rules(&self, guild_id: Snowflake) -> Result<Value> {
+		self.send(Request::get(format!("/guilds/{guild_id}/auto-moderation/rules")))
+			.await
+	}
+
+	pub async fn save_automod_rule(&self, guild_id: Snowflake, rule: &AutoModRule) -> Result<Value> {
+		let mut body = automod_body(rule);
+		let request = if rule.id == Snowflake::default() {
+			body["trigger_type"] = json!(rule.trigger_type);
+			Request::post(format!("/guilds/{guild_id}/auto-moderation/rules"))
+		} else {
+			Request::patch(format!("/guilds/{guild_id}/auto-moderation/rules/{}", rule.id))
+		};
+		self.send(request.json(&body)).await
+	}
+
+	pub async fn delete_automod_rule(&self, guild_id: Snowflake, rule_id: Snowflake) -> Result<()> {
+		self.send_empty(Request::delete(format!(
+			"/guilds/{guild_id}/auto-moderation/rules/{rule_id}"
+		)))
+		.await
 	}
 
 	pub async fn guild_bans(&self, guild_id: Snowflake) -> Result<Value> {

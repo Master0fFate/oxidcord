@@ -1,4 +1,5 @@
 mod admin;
+mod automod;
 mod config;
 mod error;
 pub mod fixtures;
