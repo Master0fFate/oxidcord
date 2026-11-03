@@ -89,6 +89,7 @@ pub struct Timeline {
 	own_update: bool,
 	read_anchor: Option<Snowflake>,
 	own_ack: Option<Snowflake>,
+	gated: bool,
 	anchor_resolved: bool,
 	unread: Option<UnreadSince>,
 	marker_index: Option<usize>,
@@ -186,6 +187,7 @@ impl Timeline {
 			own_update: false,
 			read_anchor: None,
 			own_ack: None,
+			gated: false,
 			anchor_resolved: false,
 			unread: None,
 			marker_index: None,
@@ -290,6 +292,10 @@ impl Timeline {
 				.is_some_and(|parent| changes.messages.contains(parent))
 	}
 
+	pub fn set_gated(&mut self, gated: bool) {
+		self.gated = gated;
+	}
+
 	pub fn rebuild(&mut self, window: &mut Window, cx: &mut Context<Self>) {
 		self.refresh(window, cx);
 		cx.notify();
@@ -388,7 +394,7 @@ impl Timeline {
 	}
 
 	fn acknowledge(&mut self, channel: Snowflake, window: &Window, cx: &mut Context<Self>) {
-		if !window.is_window_active() || !self.scroll.read(cx).is_following_tail() {
+		if self.gated || !window.is_window_active() || !self.scroll.read(cx).is_following_tail() {
 			return;
 		}
 		let newest = self

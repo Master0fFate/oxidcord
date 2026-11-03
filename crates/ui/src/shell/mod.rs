@@ -1020,7 +1020,9 @@ impl Shell {
 		self.community
 			.update(cx, |community, cx| community.show_main(guild, channel, cx));
 		self.sync_pins_unread(cx);
+		let gated = self.gated_spoiler_channel(cx).is_some();
 		self.timeline.update(cx, |timeline, cx| {
+			timeline.set_gated(gated);
 			timeline.show(guild, channel, name.clone(), direct, window, cx)
 		});
 		self.composer.update(cx, |composer, cx| {
@@ -1053,8 +1055,12 @@ impl Shell {
 		spoiler.then_some(channel)
 	}
 
-	fn reveal_spoiler(&mut self, channel: Snowflake, cx: &mut Context<Self>) {
+	fn reveal_spoiler(&mut self, channel: Snowflake, window: &mut Window, cx: &mut Context<Self>) {
 		self.revealed_spoilers.insert(channel);
+		self.timeline.update(cx, |timeline, cx| {
+			timeline.set_gated(false);
+			timeline.rebuild(window, cx);
+		});
 		cx.notify();
 	}
 
@@ -2152,8 +2158,9 @@ impl Render for Shell {
 			.map(|membership| membership_bar::membership_bar(membership, &theme, cx));
 		let spoiler_gate = self.gated_spoiler_channel(cx).map(|channel| {
 			let weak = cx.weak_entity();
-			spoiler_gate::spoiler_gate(&theme, cx, move |_, cx| {
-				weak.update(cx, |this, cx| this.reveal_spoiler(channel, cx)).ok();
+			spoiler_gate::spoiler_gate(&theme, cx, move |window, cx| {
+				weak.update(cx, |this, cx| this.reveal_spoiler(channel, window, cx))
+					.ok();
 			})
 		});
 		let forum = self.community.read(cx).forum_view(cx);
