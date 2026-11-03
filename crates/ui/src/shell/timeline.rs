@@ -782,6 +782,14 @@ impl Timeline {
 					});
 				}
 			}
+			RowAction::DismissEphemeral(message_id) => {
+				if let Some(channel_id) = self.channel {
+					self.data.read(cx).send(Command::DismissEphemeral {
+						channel_id,
+						message_id,
+					});
+				}
+			}
 			RowAction::Report => moderation::open_report(),
 			RowAction::StartEdit(message) => self.start_edit(message, window, cx),
 			RowAction::Delete(message) => self.confirm_delete(message, window, cx),

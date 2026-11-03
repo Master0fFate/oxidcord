@@ -1,6 +1,7 @@
 mod body;
 mod components;
 mod game_invite;
+mod interaction;
 mod media;
 mod menu;
 pub mod player;
@@ -259,6 +260,7 @@ pub enum RowAction {
 		due: Option<DateTime<Utc>>,
 	},
 	Publish(Snowflake),
+	DismissEphemeral(Snowflake),
 }
 
 #[derive(Clone, Copy, Default)]
@@ -862,6 +864,31 @@ fn author_color(view: &MessageView, theme: &Theme) -> Hsla {
 	view.author_color.map_or(theme.header_primary, role_display_color)
 }
 
+fn reply_line(child: AnyElement, mounted: Vec<AnyElement>, theme: &Theme) -> AnyElement {
+	div()
+		.relative()
+		.flex()
+		.items_center()
+		.gap(theme.space_4)
+		.h(rem(20.))
+		.mb(rem(2.))
+		.child(
+			div()
+				.absolute()
+				.left(rem(-36.))
+				.top(rem(10.))
+				.w(rem(32.))
+				.h(rem(10.))
+				.border_l_2()
+				.border_t_2()
+				.border_color(theme.interactive_muted)
+				.rounded_tl(rem(6.)),
+		)
+		.child(child)
+		.children(mounted)
+		.into_any_element()
+}
+
 fn reply_header(
 	view: &MessageView,
 	env: &RowEnv,
@@ -874,30 +901,7 @@ fn reply_header(
 		return None;
 	}
 	message.message_reference.as_ref()?.message_id?;
-	let left = |child: AnyElement, mounted: Vec<AnyElement>| {
-		div()
-			.relative()
-			.flex()
-			.items_center()
-			.gap(theme.space_4)
-			.h(rem(20.))
-			.mb(rem(2.))
-			.child(
-				div()
-					.absolute()
-					.left(rem(-36.))
-					.top(rem(10.))
-					.w(rem(32.))
-					.h(rem(10.))
-					.border_l_2()
-					.border_t_2()
-					.border_color(theme.interactive_muted)
-					.rounded_tl(rem(6.)),
-			)
-			.child(child)
-			.children(mounted)
-			.into_any_element()
-	};
+	let left = |child: AnyElement, mounted: Vec<AnyElement>| reply_line(child, mounted, theme);
 	let Some(referenced) = &message.referenced_message else {
 		return Some(left(
 			div()
@@ -1415,6 +1419,8 @@ fn content_column(
 	if view.failed {
 		out.extend(failed_notice(view, env, cx));
 	}
+	out.extend(interaction::status(view, env, cx));
+	out.extend(interaction::ephemeral_notice(view, env, cx));
 	out.extend(message_extras(view, effects, theme, cx));
 	out
 }
@@ -1639,7 +1645,7 @@ fn message_row(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 	let id = message.id.get();
 	let group: SharedString = format!("message-{id}").into();
 	let effects = patch_effects(message.id, cx);
-	let reply = reply_header(view, env, effects.as_ref(), cx);
+	let reply = reply_header(view, env, effects.as_ref(), cx).or_else(|| interaction::header(view, env, cx));
 	let has_reply = reply.is_some();
 	let content = content_column(view, env, effects.as_ref(), cx);
 	let tip = effects
