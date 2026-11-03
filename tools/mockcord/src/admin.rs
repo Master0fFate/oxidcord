@@ -19,7 +19,6 @@ use crate::state::{Shared, Store};
 const AUDIT_PAGE: usize = 50;
 const MAX_VOICE_STATUS: usize = 500;
 const VOICE_SESSION_AGE_SECONDS: i64 = 600;
-const SEED_AUDIT_ENTRIES: i64 = 3;
 const MINUTE_MS: i64 = 60_000;
 const MAX_TIMEOUT_DAYS: i64 = 28;
 const BAN_PAGE: usize = 1000;
@@ -35,6 +34,10 @@ const ACTION_MEMBER_UPDATE: i64 = 24;
 const ACTION_ROLE_CREATE: i64 = 30;
 const ACTION_ROLE_UPDATE: i64 = 31;
 const ACTION_ROLE_DELETE: i64 = 32;
+const ACTION_CHANNEL_POSITION: i64 = 16;
+const ACTION_ROLE_POSITION: i64 = 33;
+const ACTION_AUTOMOD_BLOCK: i64 = 143;
+const ACTION_VOICE_STATUS: i64 = 192;
 const ACTION_INVITE_CREATE: i64 = 40;
 const ACTION_EMOJI_CREATE: i64 = 60;
 const ACTION_EMOJI_DELETE: i64 = 62;
@@ -68,6 +71,37 @@ pub fn seed_bans(fixtures: &Fixtures) -> HashMap<u64, BTreeMap<u64, Option<Strin
 		.collect()
 }
 
+const SEED_AUDIT: [(i64, &str); 7] = [
+	(ACTION_CHANNEL_CREATE, "announcements"),
+	(ACTION_ROLE_UPDATE, "Moderator"),
+	(ACTION_GUILD_UPDATE, "Server"),
+	(ACTION_CHANNEL_POSITION, "channels"),
+	(ACTION_ROLE_POSITION, "roles"),
+	(ACTION_AUTOMOD_BLOCK, "someone"),
+	(ACTION_VOICE_STATUS, "lobby"),
+];
+const SEED_ROLE_CHANGES: [&str; 7] = [
+	"name",
+	"color",
+	"hoist",
+	"mentionable",
+	"permissions",
+	"icon",
+	"unicode_emoji",
+];
+
+fn seed_changes(action: i64, name: &str) -> Value {
+	if action == ACTION_ROLE_UPDATE {
+		return Value::Array(
+			SEED_ROLE_CHANGES
+				.iter()
+				.map(|key| json!({ "key": key, "old_value": "previous", "new_value": name }))
+				.collect(),
+		);
+	}
+	json!([{ "key": "name", "new_value": name }])
+}
+
 pub fn seed_audit(fixtures: &Fixtures) -> HashMap<u64, Vec<Value>> {
 	let anchor_ms = fixtures.anchor.timestamp_millis();
 	fixtures
@@ -75,19 +109,15 @@ pub fn seed_audit(fixtures: &Fixtures) -> HashMap<u64, Vec<Value>> {
 		.iter()
 		.map(|guild| {
 			let actor = guild.properties.owner_id.map_or(CURRENT_USER_ID, Snowflake::get);
-			let entries = (0..SEED_AUDIT_ENTRIES)
-				.map(|step| {
-					let (action, name) = match step {
-						0 => (ACTION_CHANNEL_CREATE, "announcements"),
-						1 => (ACTION_ROLE_UPDATE, "Moderator"),
-						_ => (ACTION_GUILD_UPDATE, "Server"),
-					};
+			let entries = (0_i64..)
+				.zip(SEED_AUDIT)
+				.map(|(step, (action, name))| {
 					json!({
 						"id": snowflake_at(anchor_ms - (step + 1) * 60 * MINUTE_MS, 0).to_string(),
 						"user_id": actor.to_string(),
 						"target_id": null,
 						"action_type": action,
-						"changes": [{ "key": "name", "new_value": name }],
+						"changes": seed_changes(action, name),
 						"reason": null,
 					})
 				})

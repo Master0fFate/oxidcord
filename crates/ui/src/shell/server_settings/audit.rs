@@ -1,8 +1,10 @@
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use gpui::{
-	AnyElement, App, Context, Entity, FontWeight, IntoElement, ParentElement as _, Render, SharedString,
-	Styled as _, Subscription, Window, div, prelude::FluentBuilder as _,
+	AnyElement, App, Context, Entity, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _,
+	Render, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, WeakEntity, Window,
+	div, prelude::FluentBuilder as _,
 };
 use gpui_component::button::Button;
 use gpui_component::scroll::ScrollableElement as _;
@@ -20,9 +22,11 @@ use crate::icons::IconKind;
 use crate::lookup::user_avatar;
 use crate::theme::Theme;
 
-const FILTERS: [i64; 29] = [
-	-1, 1, 10, 11, 12, 20, 22, 23, 24, 25, 30, 31, 32, 40, 42, 60, 61, 62, 72, 74, 75, 110, 140, 141, 142,
-	143, 144, 145, 146,
+const ALL_ACTIONS: i64 = -1;
+const ACTIONS: [i64; 62] = [
+	1, 10, 11, 12, 13, 14, 15, 16, 20, 21, 22, 23, 24, 25, 26, 27, 28, 30, 31, 32, 33, 40, 41, 42, 50, 51,
+	52, 60, 61, 62, 72, 73, 74, 75, 80, 81, 82, 83, 84, 85, 90, 91, 92, 100, 101, 102, 110, 111, 112, 121,
+	130, 131, 132, 140, 141, 142, 143, 144, 145, 146, 192, 193,
 ];
 const VALUE_LIMIT: usize = 60;
 const CHANGE_LIMIT: usize = 5;
@@ -30,27 +34,18 @@ const CHANGE_LIMIT: usize = 5;
 pub struct AuditPage {
 	data: Entity<Data>,
 	guild: Snowflake,
+	filters: Vec<i64>,
 	filter: usize,
+	expanded: HashSet<Snowflake>,
 	_subscription: Subscription,
 }
 
 fn known_action(action_type: i64) -> bool {
-	matches!(
-		action_type,
-		1 | 10
-			| 11 | 12 | 13
-			| 14 | 15 | 20
-			| 21 | 22 | 23
-			| 24 | 25 | 26
-			| 27 | 30 | 31
-			| 32 | 40 | 41
-			| 42 | 50 | 51
-			| 52 | 60 | 61
-			| 62 | 72 | 73
-			| 74 | 75 | 110
-			| 111 | 112
-			| 140..=146
-	)
+	ACTIONS.binary_search(&action_type).is_ok()
+}
+
+fn filters() -> Vec<i64> {
+	std::iter::once(ALL_ACTIONS).chain(ACTIONS).collect()
 }
 
 fn show(value: &Value) -> String {
@@ -79,8 +74,8 @@ fn target_label(state: &State, guild: Snowflake, entry: &AuditEntry) -> String {
 		return named.unwrap_or_default();
 	};
 	match entry.action_type {
-		20 | 22 | 23 | 24 | 25 | 26 | 27 | 72 | 74 | 75 | 143..=146 => state.display_name(Some(guild), id),
-		10..=15 | 110..=112 => state
+		20 | 22..=28 | 72 | 74 | 75 | 143..=146 => state.display_name(Some(guild), id),
+		10..=15 | 110..=112 | 192 | 193 => state
 			.channel(id)
 			.and_then(|channel| channel.name.clone())
 			.or(named)
@@ -109,13 +104,15 @@ impl AuditPage {
 		Self {
 			data,
 			guild,
+			filters: filters(),
 			filter: 0,
+			expanded: HashSet::new(),
 			_subscription: subscription,
 		}
 	}
 
 	fn action_type(&self) -> Option<i64> {
-		Some(FILTERS[self.filter]).filter(|value| *value >= 0)
+		Some(self.filters[self.filter]).filter(|value| *value != ALL_ACTIONS)
 	}
 
 	fn reload(&self, cx: &App) {
@@ -140,7 +137,14 @@ impl AuditPage {
 		});
 	}
 
-	fn row(&self, entry: &AuditEntry, state: &State, theme: &Theme, cx: &App) -> AnyElement {
+	fn row(
+		&self,
+		entry: &AuditEntry,
+		state: &State,
+		weak: &WeakEntity<Self>,
+		theme: &Theme,
+		cx: &App,
+	) -> AnyElement {
 		let actor = entry
 			.user_id
 			.map(|id| state.display_name(Some(self.guild), id))
@@ -165,10 +169,18 @@ impl AuditPage {
 			.as_ref()
 			.map(|user| user_avatar(user, 64))
 			.unwrap_or_default();
-		let changes: Vec<AnyElement> = entry
+		let shown = if self.expanded.contains(&entry.id) {
+			entry.changes.len()
+		} else {
+			CHANGE_LIMIT
+		};
+		let hidden = entry.changes.len().saturating_sub(shown);
+		let entry_id = entry.id;
+		let weak = weak.clone();
+		let mut changes: Vec<AnyElement> = entry
 			.changes
 			.iter()
-			.take(CHANGE_LIMIT)
+			.take(shown)
 			.map(|change| {
 				let old = change.old.as_ref().map(show).unwrap_or_default();
 				let new = change.new.as_ref().map(show).unwrap_or_default();
@@ -205,6 +217,24 @@ impl AuditPage {
 					.into_any_element()
 			})
 			.collect();
+		if hidden > 0 {
+			changes.push(
+				div()
+					.id(("audit-more-changes", entry_id.get()))
+					.cursor_pointer()
+					.text_size(theme.font_sm)
+					.text_color(theme.link)
+					.child(cx.t_args("audit-changes-more", &[("count", ArgValue::from(hidden))]))
+					.on_click(move |_, _, cx| {
+						weak.update(cx, |this, cx| {
+							this.expanded.insert(entry_id);
+							cx.notify();
+						})
+						.ok();
+					})
+					.into_any_element(),
+			);
+		}
 		let when: SharedString = format::message_time(entry.id.timestamp(), cx);
 		div()
 			.flex()
@@ -267,10 +297,11 @@ impl AuditPage {
 impl Render for AuditPage {
 	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
-		let labels: Vec<SharedString> = FILTERS
+		let labels: Vec<SharedString> = self
+			.filters
 			.iter()
 			.map(|value| {
-				if *value < 0 {
+				if *value == ALL_ACTIONS {
 					cx.t("audit-filter-all")
 				} else {
 					cx.t(&format!("audit-filter-{value}"))
@@ -278,6 +309,7 @@ impl Render for AuditPage {
 			})
 			.collect();
 		let weak = cx.weak_entity();
+		let weak_rows = weak.clone();
 		let pick: PickHandler = Rc::new(move |index, _, cx| {
 			weak.update(cx, |this, cx| {
 				this.filter = index;
@@ -293,7 +325,7 @@ impl Render for AuditPage {
 				Some(log) => (
 					log.entries
 						.iter()
-						.map(|entry| self.row(entry, &state, &theme, cx))
+						.map(|entry| self.row(entry, &state, &weak_rows, &theme, cx))
 						.collect::<Vec<_>>(),
 					log.has_more,
 					true,

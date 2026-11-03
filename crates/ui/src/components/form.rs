@@ -136,7 +136,7 @@ pub fn select(
 		.outline()
 		.label(current)
 		.dropdown_caret(true)
-		.dropdown_menu(menu)
+		.dropdown_menu(move |popup, window, cx| menu(popup, window, cx).scrollable(true))
 }
 
 pub fn segmented(
