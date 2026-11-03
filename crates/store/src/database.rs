@@ -1,5 +1,5 @@
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use rusqlite::{Connection, OptionalExtension, params};
@@ -11,6 +11,8 @@ use crate::seal::{Sealer, is_sealed};
 const CANARY_KEY: &str = "seal-check";
 const CANARY_VALUE: &[u8] = b"oxidcord";
 const COMPACT_SQL: &str = "PRAGMA wal_checkpoint(TRUNCATE); VACUUM";
+const LIMIT_CHECK_INTERVAL: Duration = Duration::from_secs(60);
+const LIMIT_TARGET_PERCENT: u64 = 90;
 const ACCOUNT_TABLES: [&str; 6] = ["guilds", "channels", "users", "messages", "read_state", "drafts"];
 const SEALED_COLUMNS: [(&str, &str, &str); 6] = [
 	("kv", "value", "key"),
@@ -82,6 +84,8 @@ pub struct MediaEntry {
 pub struct Database {
 	conn: Mutex<Connection>,
 	sealer: Sealer,
+	limit_bytes: u64,
+	limit_checked: Mutex<Instant>,
 }
 
 fn now_millis() -> i64 {
@@ -98,12 +102,20 @@ impl Database {
 		conn.pragma_update_and_check(None, "journal_mode", "WAL", |row| row.get::<_, String>(0))?;
 		conn.pragma_update(None, "synchronous", "NORMAL")?;
 		conn.pragma_update(None, "foreign_keys", true)?;
+		conn.pragma_update(None, "auto_vacuum", "INCREMENTAL")?;
 		migrations::apply(&mut conn)?;
 		prepare_sealed_columns(&mut conn, &sealer)?;
 		Ok(Self {
 			conn: Mutex::new(conn),
 			sealer,
+			limit_bytes: 0,
+			limit_checked: Mutex::new(Instant::now()),
 		})
+	}
+
+	pub fn with_cache_limit(mut self, limit_bytes: u64) -> Self {
+		self.limit_bytes = limit_bytes;
+		self
 	}
 
 	pub fn put_json(&self, table: Table, id: u64, parent_id: Option<u64>, json: &[u8]) -> Result<()> {
@@ -160,7 +172,7 @@ impl Database {
 			}
 		}
 		tx.commit()?;
-		Ok(())
+		self.enforce_limit(&conn)
 	}
 
 	pub fn keep_floor(&self, channel_id: u64, keep: u32) -> Result<Option<u64>> {
@@ -405,25 +417,51 @@ impl Database {
 		if page_usage(&conn)?.file_bytes <= limit_bytes {
 			return Ok(false);
 		}
-		while page_usage(&conn)?.used_bytes > limit_bytes {
-			let stalest: Option<i64> = conn
-				.query_row(
-					"SELECT channel_id FROM messages GROUP BY channel_id ORDER BY MAX(updated_at) LIMIT 1",
-					[],
-					|row| row.get(0),
-				)
-				.optional()?;
-			let Some(channel_id) = stalest else {
-				break;
-			};
-			conn.execute("DELETE FROM messages WHERE channel_id = ?1", [channel_id])?;
-		}
+		evict_stale_channels(&conn, limit_bytes)?;
 		if page_usage(&conn)?.free_pages == 0 {
 			return Ok(false);
 		}
 		conn.execute_batch("VACUUM")?;
 		Ok(true)
 	}
+
+	fn enforce_limit(&self, conn: &Connection) -> Result<()> {
+		if self.limit_bytes == 0 || !self.limit_check_due() {
+			return Ok(());
+		}
+		if page_usage(conn)?.used_bytes <= self.limit_bytes {
+			return Ok(());
+		}
+		evict_stale_channels(conn, self.limit_bytes / 100 * LIMIT_TARGET_PERCENT)?;
+		conn.execute_batch("PRAGMA incremental_vacuum")?;
+		Ok(())
+	}
+
+	fn limit_check_due(&self) -> bool {
+		let mut checked = self.limit_checked.lock();
+		if checked.elapsed() < LIMIT_CHECK_INTERVAL {
+			return false;
+		}
+		*checked = Instant::now();
+		true
+	}
+}
+
+fn evict_stale_channels(conn: &Connection, target_bytes: u64) -> Result<()> {
+	while page_usage(conn)?.used_bytes > target_bytes {
+		let stalest: Option<i64> = conn
+			.query_row(
+				"SELECT channel_id FROM messages GROUP BY channel_id ORDER BY MAX(updated_at) LIMIT 1",
+				[],
+				|row| row.get(0),
+			)
+			.optional()?;
+		let Some(channel_id) = stalest else {
+			break;
+		};
+		conn.execute("DELETE FROM messages WHERE channel_id = ?1", [channel_id])?;
+	}
+	Ok(())
 }
 
 struct PageUsage {

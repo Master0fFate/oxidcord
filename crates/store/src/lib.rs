@@ -61,9 +61,10 @@ impl Store {
 	}
 
 	pub fn open_account_cache(&self, user_id: Snowflake) -> Result<Database> {
-		let db = Database::open(&self.paths.account_database_path(user_id), &self.cache_key)?;
-		let limit_mb = self.settings.read().storage.cache_limit_mb;
-		if let Err(error) = db.shrink_to(u64::from(limit_mb) * BYTES_PER_MB) {
+		let limit_bytes = u64::from(self.settings.read().storage.cache_limit_mb) * BYTES_PER_MB;
+		let db = Database::open(&self.paths.account_database_path(user_id), &self.cache_key)?
+			.with_cache_limit(limit_bytes);
+		if let Err(error) = db.shrink_to(limit_bytes) {
 			tracing::warn!(%error, "could not compact the account cache");
 		}
 		Ok(db)
