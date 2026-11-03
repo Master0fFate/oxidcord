@@ -376,6 +376,10 @@ fn same_emoji(a: &PartialEmoji, b: &PartialEmoji) -> bool {
 }
 
 fn adjust_count(reaction: &mut Reaction, burst: bool, delta: i64) {
+	if delta < 0 && reaction.count_details.is_none() {
+		reaction.count = (reaction.count + delta).max(0);
+		return;
+	}
 	let details = reaction.count_details.get_or_insert(ReactionCountDetails {
 		burst: 0,
 		normal: reaction.count,
