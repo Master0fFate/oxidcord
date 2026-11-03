@@ -993,3 +993,7 @@ shortcut-mark-read = Mark read
 shortcut-settings = Settings
 shortcut-shortcuts = Shortcuts
 shortcut-zoom = Zoom
+
+idle-after = Idle after
+idle-after-note = Set your status to idle when you stop using this computer.
+idle-never = Never

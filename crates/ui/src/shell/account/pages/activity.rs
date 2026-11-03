@@ -1,15 +1,21 @@
 use std::rc::Rc;
 
-use gpui::{AnyElement, App, Entity, IntoElement, ParentElement as _, SharedString, Styled as _, div};
+use gpui::{
+	AnyElement, App, Entity, IntoElement, ParentElement as _, SharedString, Styled as _, div,
+	prelude::FluentBuilder as _,
+};
 use gpui_component::switch::Switch;
 use session::Command;
 use store::Settings;
 
 use super::widgets::{heading, row};
+use crate::components::{PickHandler, select};
 use crate::data::Data;
 use crate::i18n::Translate as _;
 use crate::shell::SettingsBackend;
 use crate::theme::Theme;
+
+const IDLE_CHOICES_SECS: [u32; 6] = [0, 60, 300, 600, 900, 1800];
 
 fn local_row(
 	key: &'static str,
@@ -34,6 +40,33 @@ fn local_row(
 	row(cx.t(key), Some(note), switch, theme)
 }
 
+fn idle_row(backend: &Rc<SettingsBackend>, theme: &Theme, cx: &App) -> AnyElement {
+	let current = (backend.read)().presence.idle_after_secs;
+	let labels: Vec<SharedString> = IDLE_CHOICES_SECS
+		.iter()
+		.map(|secs| match secs {
+			0 => cx.t("idle-never"),
+			secs => cx.t_args("time-minutes", &[("count", i64::from(secs / 60).into())]),
+		})
+		.collect();
+	let selected = IDLE_CHOICES_SECS
+		.iter()
+		.position(|secs| *secs == current)
+		.unwrap_or_default();
+	let backend = backend.clone();
+	let pick: PickHandler = Rc::new(move |index, _, cx| {
+		let secs = IDLE_CHOICES_SECS[index];
+		(backend.write)(&|settings| settings.presence.idle_after_secs = secs);
+		cx.refresh_windows();
+	});
+	row(
+		cx.t("idle-after"),
+		Some(cx.t("idle-after-note")),
+		select("idle-after", labels[selected].clone(), &labels, selected, pick),
+		theme,
+	)
+}
+
 pub fn activity_page(backend: &Rc<SettingsBackend>, data: &Entity<Data>, cx: &App) -> AnyElement {
 	let theme = Theme::current(cx);
 	let local = (backend.read)().activity;
@@ -54,6 +87,9 @@ pub fn activity_page(backend: &Rc<SettingsBackend>, data: &Entity<Data>, cx: &Ap
 			share_switch,
 			&theme,
 		))
+		.when(platform::idle::seconds_since_input().is_some(), |page| {
+			page.child(idle_row(backend, &theme, cx))
+		})
 		.child(heading(cx.t("activity-sources"), &theme))
 		.child(local_row(
 			"activity-rpc-server",
