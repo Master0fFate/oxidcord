@@ -409,29 +409,27 @@ impl Core {
 	}
 
 	pub(super) fn on_stream_video(&mut self, generation: u64, result: Result<ShareAudio, String>) {
-		match result {
+		let audio = match result {
+			Ok(audio) => audio,
 			Err(error) => {
 				self.fail_stream(generation, &format!("Screen share failed: {error}"));
 				return;
 			}
-			Ok(ShareAudio::Unavailable) => self.reject("Sharing without audio"),
-			Ok(_) => {}
-		}
+		};
 		let Some(session) = self.streams.session_mut(generation) else {
 			return;
 		};
-		let (Some(key), Some(connection)) = (session.key.clone(), session.connection.clone()) else {
-			return;
-		};
-		let rest = self.rest.clone();
-		let uploads = self.runtime.spawn(async move {
-			loop {
-				upload_preview(&rest, &connection, &key).await;
-				sleep(PREVIEW_INTERVAL).await;
-			}
-		});
-		if let Some(session) = self.streams.session_mut(generation) {
-			session.uploads = Some(uploads);
+		if let (Some(key), Some(connection)) = (session.key.clone(), session.connection.clone()) {
+			let rest = self.rest.clone();
+			session.uploads = Some(self.runtime.spawn(async move {
+				loop {
+					upload_preview(&rest, &connection, &key).await;
+					sleep(PREVIEW_INTERVAL).await;
+				}
+			}));
+		}
+		if audio == ShareAudio::Unavailable {
+			self.reject("Sharing without audio");
 		}
 	}
 
