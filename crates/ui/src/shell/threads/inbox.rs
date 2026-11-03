@@ -347,12 +347,19 @@ impl InboxPanel {
 			}
 			Tab::Mentions => {
 				let (_, roles, everyone) = MENTION_FILTERS[self.filter];
-				let messages: Option<Vec<Arc<Message>>> = self
-					.data
-					.read(cx)
-					.state()
-					.mentions(roles, everyone)
-					.map(|mentions| mentions.to_vec());
+				let messages: Option<Vec<Arc<Message>>> = {
+					let data = self.data.read(cx);
+					let state = data.state();
+					state.mentions(roles, everyone).map(|mentions| {
+						mentions
+							.iter()
+							.filter(|message| {
+								!state.is_blocked(message.author.id) && !state.is_ignored(message.author.id)
+							})
+							.cloned()
+							.collect()
+					})
+				};
 				let status = match &messages {
 					None => Some("inbox-loading"),
 					Some(found) if found.is_empty() => Some("inbox-empty"),
