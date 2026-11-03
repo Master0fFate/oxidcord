@@ -5,7 +5,6 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
-use serde_json::Value;
 
 use super::channels::{index_pending, search_in};
 use crate::error::{ApiError, ApiResult};
