@@ -103,6 +103,10 @@ A value out of range returns `invalid("option value out of range")`.
 | `ctrl+k`, `meta+k` | Quick switcher |
 | `ctrl+0`, `meta+0` | Zoom reset |
 | `alt+up`, `alt+down` | Previous and next channel |
+| `alt+shift+up`, `alt+shift+down` | Previous and next unread channel |
+| `ctrl+alt+shift+up`, `ctrl+alt+shift+down` and the `meta` versions | Previous and next channel with mentions |
+| `ctrl+alt+up`, `ctrl+alt+down` and the `meta` versions | Previous and next server |
+| `ctrl+f`, `ctrl+1`, `ctrl+i`, `ctrl+shift+m`, `ctrl+shift+d` and the `meta` versions | Search, friends, inbox, mute and deafen |
 | `alt+f4`, `meta+q`, `ctrl+w`, `meta+w` | Closing the window and quitting |
 | `ctrl+a`, `ctrl+c`, `ctrl+v`, `ctrl+x`, `ctrl+z`, `ctrl+y` and the `meta` versions | Text editing |
 | `ctrl+,`, `meta+,` | Settings |
