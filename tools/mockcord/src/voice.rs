@@ -48,6 +48,7 @@ struct Voice {
 struct Peer {
 	user_id: Option<u64>,
 	ssrc: u32,
+	stream: bool,
 }
 
 #[derive(Clone)]
@@ -110,6 +111,7 @@ async fn signal(voice: Arc<Voice>, mut socket: WebSocket) {
 	let mut peer = Peer {
 		user_id: None,
 		ssrc: 0,
+		stream: false,
 	};
 	loop {
 		tokio::select! {
@@ -131,6 +133,7 @@ async fn signal(voice: Arc<Voice>, mut socket: WebSocket) {
 						break;
 					}
 				}
+				Ok(Signal::Close(_)) if peer.stream => {}
 				Ok(Signal::Close(code)) => {
 					let frame = CloseFrame {
 						code,
@@ -152,6 +155,7 @@ async fn on_frame(voice: &Voice, socket: &mut WebSocket, peer: &mut Peer, frame:
 	match frame["op"].as_u64() {
 		Some(0) => {
 			peer.user_id = parse_id(&data["user_id"]);
+			peer.stream = data["streams"][0]["type"].as_str() == Some("screen");
 			peer.ssrc = voice.next_ssrc.fetch_add(1, Ordering::Relaxed);
 			let ready = json!({
 				"op": 2,

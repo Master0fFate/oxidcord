@@ -1,3 +1,5 @@
+use std::sync::atomic::Ordering;
+
 use protocol::ChannelType;
 use serde_json::{Value, json};
 
@@ -9,6 +11,8 @@ use crate::voice::{Signal, VOICE_TOKEN};
 
 const OTHER_DEVICE_SESSION: &str = "mock-other-device";
 const CLOSE_DISCONNECTED: u16 = 4014;
+const CLOSE_SESSION_INVALID: u16 = 4006;
+const CLOSE_SESSION_TIMEOUT: u16 = 4009;
 
 #[derive(Clone, PartialEq)]
 pub struct VoiceJoin {
@@ -105,6 +109,9 @@ impl Shared {
 	}
 
 	pub fn voice_close(&self, code: u16) {
+		if matches!(code, CLOSE_SESSION_INVALID | CLOSE_SESSION_TIMEOUT) {
+			self.voice_stale.store(true, Ordering::Release);
+		}
 		let _ = self.voice_signals.send(Signal::Close(code));
 	}
 
