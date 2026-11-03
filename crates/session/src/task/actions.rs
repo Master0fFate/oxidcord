@@ -186,16 +186,11 @@ impl Core {
 		F: FnOnce(RestClient) -> Fut,
 		Fut: Future<Output = rest::Result<()>> + Send + 'static,
 	{
-		self.spawn_confirmed(what, None, None, call);
+		self.spawn_confirmed(what, None, call);
 	}
 
-	pub(super) fn spawn_confirmed<F, Fut>(
-		&self,
-		what: &'static str,
-		done: Option<Internal>,
-		failed: Option<Internal>,
-		call: F,
-	) where
+	pub(super) fn spawn_confirmed<F, Fut>(&self, what: &'static str, failed: Option<Internal>, call: F)
+	where
 		F: FnOnce(RestClient) -> Fut,
 		Fut: Future<Output = rest::Result<()>> + Send + 'static,
 	{
@@ -203,11 +198,7 @@ impl Core {
 		let internal = self.internal.clone();
 		self.runtime.spawn(async move {
 			match request.await {
-				Ok(()) => {
-					if let Some(done) = done {
-						let _ = internal.send(done);
-					}
-				}
+				Ok(()) => {}
 				Err(error) => {
 					if let Some(failed) = failed {
 						let _ = internal.send(failed);

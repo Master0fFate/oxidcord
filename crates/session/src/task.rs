@@ -122,6 +122,10 @@ pub(crate) enum Internal {
 	Rejected(String),
 	RestoreRead(Vec<ReadSnapshot>),
 	FriendRequestSent(String),
+	FriendRequestFailed {
+		username: String,
+		reason: String,
+	},
 	SignedOut,
 	CameraStarted {
 		generation: u64,
@@ -814,6 +818,9 @@ impl Core {
 			}
 			Internal::FriendRequestSent(username) => {
 				self.apply_local(LocalEvent::FriendRequestSent { username })
+			}
+			Internal::FriendRequestFailed { username, reason } => {
+				self.apply_local(LocalEvent::FriendRequestFailed { username, reason })
 			}
 			Internal::SignedOut => self.on_signed_out(),
 			Internal::CameraStarted { generation, result } => self.on_camera_started(generation, result),

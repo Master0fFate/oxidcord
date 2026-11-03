@@ -114,6 +114,10 @@ pub enum LocalEvent {
 	FriendRequestSent {
 		username: String,
 	},
+	FriendRequestFailed {
+		username: String,
+		reason: String,
+	},
 	StatusChosen(StatusKind),
 	AfkChanged(bool),
 	CustomStatusExpired,

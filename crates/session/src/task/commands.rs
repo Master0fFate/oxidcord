@@ -9,7 +9,7 @@ use rest::api::image_data_uri;
 use serde_json::{Value, json};
 use state::{Loaded, LocalEvent, USER_COMMANDS, guild_folders_settings};
 
-use super::actions::{mute_config, object, some, timestamp};
+use super::actions::{mute_config, object, rest_failure, some, timestamp};
 use super::{Command, Core, Internal, ReadSnapshot};
 use crate::command::ComponentUse;
 
@@ -426,10 +426,20 @@ impl Core {
 				username,
 				discriminator,
 			} => {
-				let done = Internal::FriendRequestSent(username.clone());
-				self.spawn_confirmed("friend request", Some(done), None, move |rest| async move {
-					rest.send_friend_request(&username, discriminator.as_deref())
+				let rest = self.rest.clone();
+				let internal = self.internal.clone();
+				self.runtime.spawn(async move {
+					let message = match rest
+						.send_friend_request(&username, discriminator.as_deref())
 						.await
+					{
+						Ok(()) => Internal::FriendRequestSent(username),
+						Err(error) => match rest_failure("friend request", &error) {
+							Internal::Rejected(reason) => Internal::FriendRequestFailed { username, reason },
+							other => other,
+						},
+					};
+					let _ = internal.send(message);
 				});
 			}
 			Command::AcceptFriend { user_id } => self.spawn_action("accept friend", move |rest| async move {
@@ -746,7 +756,6 @@ impl Core {
 		let body = json!({ "manual": true, "mention_count": 0 });
 		self.spawn_confirmed(
 			"mark unread",
-			None,
 			Some(Internal::RestoreRead(restore)),
 			move |rest| async move { rest.ack_message(channel_id, previous, body).await.map(drop) },
 		);
@@ -771,7 +780,6 @@ impl Core {
 				.collect();
 			self.spawn_confirmed(
 				"ack guild",
-				None,
 				Some(Internal::RestoreRead(restore)),
 				move |rest| async move { rest.ack_bulk(chunk).await },
 			);

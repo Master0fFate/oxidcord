@@ -6,6 +6,7 @@ use gpui_component::Sizable as _;
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::input::Input;
 use session::Command;
+use state::RequestOutcome;
 
 use super::{AddOutcome, FriendsPage};
 use crate::i18n::{ArgValue, Translate as _};
@@ -30,16 +31,13 @@ impl FriendsPage {
 		}
 		let (username, discriminator) = split_tag(&name);
 		let (username, discriminator) = (username.to_owned(), discriminator.map(str::to_owned));
-		let (rejection_baseline, request_baseline) = {
-			let data = self.data.read(cx);
-			let state = data.state();
-			(
-				state.last_rejection().map_or(0, |rejection| rejection.id),
-				state.last_friend_request().map_or(0, |request| request.id),
-			)
-		};
+		let request_baseline = self
+			.data
+			.read(cx)
+			.state()
+			.last_friend_request()
+			.map_or(0, |request| request.id);
 		self.add_outcome = AddOutcome::Sending {
-			rejection_baseline,
 			request_baseline,
 			username: username.clone(),
 			name: name.into(),
@@ -51,7 +49,7 @@ impl FriendsPage {
 		cx.notify();
 	}
 
-	pub(super) fn settle_sent(&mut self, cx: &mut Context<Self>) {
+	pub(super) fn settle_request(&mut self, cx: &mut Context<Self>) {
 		let AddOutcome::Sending {
 			request_baseline,
 			username,
@@ -61,35 +59,18 @@ impl FriendsPage {
 		else {
 			return;
 		};
-		let confirmed = self
+		let outcome = self
 			.data
 			.read(cx)
 			.state()
 			.last_friend_request()
-			.is_some_and(|request| request.id > *request_baseline && request.username == *username);
-		if confirmed {
-			self.add_outcome = AddOutcome::Sent(name.clone());
-			cx.notify();
-		}
-	}
-
-	pub(super) fn settle_rejection(&mut self, cx: &mut Context<Self>) {
-		let AddOutcome::Sending {
-			rejection_baseline, ..
-		} = &self.add_outcome
-		else {
-			return;
-		};
-		let rejection_baseline = *rejection_baseline;
-		let reason = {
-			let data = self.data.read(cx);
-			data.state()
-				.last_rejection()
-				.filter(|rejection| rejection.id > rejection_baseline)
-				.map(|rejection| rejection.reason.clone())
-		};
-		if let Some(reason) = reason {
-			self.add_outcome = AddOutcome::Failed(reason.into());
+			.filter(|request| request.id > *request_baseline && request.username == *username)
+			.map(|request| match &request.outcome {
+				RequestOutcome::Sent => AddOutcome::Sent(name.clone()),
+				RequestOutcome::Failed(reason) => AddOutcome::Failed(reason.clone().into()),
+			});
+		if let Some(outcome) = outcome {
+			self.add_outcome = outcome;
 			cx.notify();
 		}
 	}

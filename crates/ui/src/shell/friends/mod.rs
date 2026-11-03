@@ -56,7 +56,6 @@ impl Tab {
 enum AddOutcome {
 	Idle,
 	Sending {
-		rejection_baseline: u64,
 		request_baseline: u64,
 		username: String,
 		name: SharedString,
@@ -132,11 +131,8 @@ impl FriendsPage {
 		if changes.relationships || self.presence_matters(&changes.presence) {
 			self.refresh(cx);
 		}
-		if changes.rejected {
-			self.settle_rejection(cx);
-		}
-		if changes.relationships {
-			self.settle_sent(cx);
+		if changes.friend_request {
+			self.settle_request(cx);
 		}
 	}
 

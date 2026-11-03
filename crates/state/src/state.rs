@@ -99,6 +99,13 @@ pub struct Rejection {
 pub struct SentRequest {
 	pub id: u64,
 	pub username: String,
+	pub outcome: RequestOutcome,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RequestOutcome {
+	Sent,
+	Failed(String),
 }
 
 pub(crate) fn intern_user(users: &mut HashMap<Snowflake, Arc<User>>, user: &User) {
@@ -253,6 +260,15 @@ impl State {
 
 	pub fn last_rejection(&self) -> Option<&Rejection> {
 		self.rejection.as_ref()
+	}
+
+	fn note_friend_request(&mut self, username: String, outcome: RequestOutcome) {
+		self.friend_request_count += 1;
+		self.friend_request = Some(SentRequest {
+			id: self.friend_request_count,
+			username,
+			outcome,
+		});
 	}
 
 	pub fn last_friend_request(&self) -> Option<&SentRequest> {
@@ -544,12 +560,12 @@ impl State {
 				changes.rejected = true;
 			}
 			LocalEvent::FriendRequestSent { username } => {
-				self.friend_request_count += 1;
-				self.friend_request = Some(SentRequest {
-					id: self.friend_request_count,
-					username: username.clone(),
-				});
-				changes.relationships = true;
+				self.note_friend_request(username.clone(), RequestOutcome::Sent);
+				changes.friend_request = true;
+			}
+			LocalEvent::FriendRequestFailed { username, reason } => {
+				self.note_friend_request(username.clone(), RequestOutcome::Failed(reason.clone()));
+				changes.friend_request = true;
 			}
 			LocalEvent::StatusChosen(status) => {
 				self.chosen_status = Some(status.clone());
