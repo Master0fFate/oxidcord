@@ -145,6 +145,9 @@ pub enum LocalEvent {
 		channel_id: Snowflake,
 		message_id: Option<Snowflake>,
 	},
+	InteractionEnded {
+		nonce: Nonce,
+	},
 	EphemeralDismissed {
 		channel_id: Snowflake,
 		message_id: Snowflake,

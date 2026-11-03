@@ -690,6 +690,7 @@ impl State {
 				channel_id,
 				message_id,
 			} => return self.interaction_started(nonce, *channel_id, *message_id),
+			LocalEvent::InteractionEnded { nonce } => return self.interaction_ended(nonce),
 			LocalEvent::EphemeralDismissed {
 				channel_id,
 				message_id,

@@ -1085,6 +1085,7 @@ impl Core {
 	) {
 		let nonce = self.next_nonce();
 		self.track_interaction(&nonce, channel_id, None);
+		let aborted = Internal::InteractionAborted(nonce.clone());
 		let body = self.command_body(CommandCall {
 			kind: APPLICATION_COMMAND_INTERACTION,
 			guild_id,
@@ -1094,7 +1095,7 @@ impl Core {
 			target_id: Some(message_id),
 			options: &[],
 		});
-		self.spawn_action("run app command", move |rest| async move {
+		self.spawn_confirmed("run app command", Some(aborted), move |rest| async move {
 			rest.create_interaction(body, Vec::new()).await
 		});
 	}
@@ -1109,6 +1110,7 @@ impl Core {
 	) {
 		let nonce = self.next_nonce();
 		self.track_interaction(&nonce, channel_id, None);
+		let aborted = Internal::InteractionAborted(nonce.clone());
 		let body = self.command_body(CommandCall {
 			kind: APPLICATION_COMMAND_INTERACTION,
 			guild_id,
@@ -1118,7 +1120,7 @@ impl Core {
 			target_id: None,
 			options: &options,
 		});
-		self.spawn_action("run app command", move |rest| async move {
+		self.spawn_confirmed("run app command", Some(aborted), move |rest| async move {
 			rest.create_interaction(body, files).await
 		});
 	}
@@ -1199,6 +1201,7 @@ impl Core {
 	fn submit_modal(&mut self, submit: ModalSubmit) {
 		let nonce = self.next_nonce();
 		self.track_interaction(&nonce, submit.channel_id, None);
+		let aborted = Internal::InteractionAborted(nonce.clone());
 		let body = ModalSubmission {
 			kind: MODAL_SUBMIT_INTERACTION,
 			nonce: nonce.0,
@@ -1212,7 +1215,7 @@ impl Core {
 				components: submit.components,
 			},
 		};
-		self.spawn_action("submit modal", move |rest| async move {
+		self.spawn_confirmed("submit modal", Some(aborted), move |rest| async move {
 			rest.submit_modal(&body).await
 		});
 	}
@@ -1220,6 +1223,7 @@ impl Core {
 	fn use_component(&mut self, used: ComponentUse) {
 		let nonce = self.next_nonce();
 		self.track_interaction(&nonce, used.channel_id, Some(used.message_id));
+		let aborted = Internal::InteractionAborted(nonce.clone());
 		let body = ComponentInteraction {
 			kind: COMPONENT_INTERACTION,
 			nonce: nonce.0,
@@ -1236,7 +1240,7 @@ impl Core {
 				values: used.values,
 			},
 		};
-		self.spawn_action("use component", move |rest| async move {
+		self.spawn_confirmed("use component", Some(aborted), move |rest| async move {
 			rest.component_interaction(&body).await
 		});
 	}

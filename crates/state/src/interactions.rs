@@ -93,7 +93,12 @@ impl State {
 	pub(crate) fn interaction_succeeded(&mut self, ack: &InteractionAck) -> Changes {
 		ack.nonce
 			.as_ref()
-			.and_then(|nonce| self.interactions.remove(nonce))
+			.map_or_else(Changes::default, |nonce| self.interaction_ended(nonce))
+	}
+
+	pub(crate) fn interaction_ended(&mut self, nonce: &Nonce) -> Changes {
+		self.interactions
+			.remove(nonce)
 			.map_or_else(Changes::default, |pending| pending.changes())
 	}
 
