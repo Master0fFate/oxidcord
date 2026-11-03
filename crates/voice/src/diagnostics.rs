@@ -9,6 +9,7 @@ use crate::codec::{FRAME_SAMPLES, Profile, STEREO_FRAME_SAMPLES, VoiceDecoder, V
 use crate::denoise::Denoiser;
 use crate::error::{Result, VoiceError};
 use crate::gate::{meter_level, rms};
+use crate::processing::{Stages, VoiceProcessor};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(5);
 const PLAYBACK_PRIME_FRAMES: usize = 3;
@@ -20,6 +21,8 @@ pub struct LoopbackOptions {
 	pub output_device: Option<String>,
 	pub gain: f32,
 	pub denoise: bool,
+	pub echo_cancellation: bool,
+	pub auto_gain: bool,
 }
 
 impl Default for LoopbackOptions {
@@ -29,6 +32,8 @@ impl Default for LoopbackOptions {
 			output_device: None,
 			gain: 1.0,
 			denoise: true,
+			echo_cancellation: false,
+			auto_gain: false,
 		}
 	}
 }
@@ -66,6 +71,11 @@ pub fn loopback_with_levels(
 	let mut encoder = VoiceEncoder::new(Profile::Voice)?;
 	let mut decoder = VoiceDecoder::new()?;
 	let mut denoiser = Denoiser::new();
+	let mut processor = VoiceProcessor::new();
+	processor.set_stages(Stages {
+		echo_cancellation: options.echo_cancellation,
+		auto_gain: options.auto_gain,
+	});
 	let mut microphone = vec![0.0; FRAME_SAMPLES];
 	let mut speaker = vec![0.0; STEREO_FRAME_SAMPLES];
 	for _ in 0..PLAYBACK_PRIME_FRAMES {
@@ -78,12 +88,15 @@ pub fn loopback_with_levels(
 		capture.pull(&rings)?;
 		while capture.take_frame(&mut microphone) {
 			microphone.iter_mut().for_each(|sample| *sample *= options.gain);
-			peak = peak.max(meter_level(rms(&microphone)));
+			processor.cancel_echo(&mut microphone);
 			if options.denoise {
 				denoiser.process(&mut microphone);
 			}
+			processor.level_gain(&mut microphone);
+			peak = peak.max(meter_level(rms(&microphone)));
 			let packet = encoder.encode(&microphone)?;
 			decoder.decode(packet, false, &mut speaker)?;
+			processor.analyze_playback(&speaker);
 			playback.push(&speaker)?;
 		}
 		if Instant::now() >= next_level {

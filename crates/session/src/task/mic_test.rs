@@ -57,6 +57,8 @@ impl Core {
 			output_device: voice.output_device.clone(),
 			gain: gain(voice.input_volume),
 			denoise: voice.noise_suppression,
+			echo_cancellation: voice.echo_cancellation,
+			auto_gain: voice.auto_gain,
 		}
 	}
 
