@@ -701,6 +701,12 @@ pub struct TypingStart {
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
+pub struct RecentMentionDelete {
+	pub message_id: Snowflake,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct RelationshipRemove {
 	pub id: Snowflake,
 	#[serde(rename = "type")]
@@ -819,6 +825,7 @@ pub enum DispatchEvent {
 	RelationshipUpdate(Box<RelationshipUpdate>),
 	UserNoteUpdate(UserNoteUpdate),
 	RelationshipRemove(RelationshipRemove),
+	RecentMentionDelete(RecentMentionDelete),
 	VoiceStateUpdate(Box<VoiceState>),
 	VoiceServerUpdate(VoiceServerUpdate),
 	StageInstanceCreate(Box<StageInstance>),
@@ -925,6 +932,7 @@ impl DispatchEvent {
 			"RELATIONSHIP_UPDATE" => Self::RelationshipUpdate(decode(name, data)?),
 			"USER_NOTE_UPDATE" => Self::UserNoteUpdate(decode(name, data)?),
 			"RELATIONSHIP_REMOVE" => Self::RelationshipRemove(decode(name, data)?),
+			"RECENT_MENTION_DELETE" => Self::RecentMentionDelete(decode(name, data)?),
 			"VOICE_STATE_UPDATE" => Self::VoiceStateUpdate(decode(name, data)?),
 			"VOICE_SERVER_UPDATE" => Self::VoiceServerUpdate(decode(name, data)?),
 			"STAGE_INSTANCE_CREATE" => Self::StageInstanceCreate(decode(name, data)?),

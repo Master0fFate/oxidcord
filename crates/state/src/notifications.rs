@@ -36,6 +36,23 @@ pub enum AlertVerdict {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct MentionHits {
+	pub direct: bool,
+	pub everyone: bool,
+	pub role: bool,
+}
+
+impl MentionHits {
+	pub fn any(self) -> bool {
+		self.direct || self.everyone || self.role
+	}
+
+	pub fn passes(self, roles: bool, everyone: bool) -> bool {
+		self.direct || (roles && self.role) || (everyone && self.everyone)
+	}
+}
+
+#[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct ChannelStatus {
 	pub unread: bool,
 	pub mentions: u32,
@@ -351,28 +368,30 @@ impl State {
 	}
 
 	pub(crate) fn mentions_me(&self, message: &Message, guild_id: Option<Snowflake>) -> bool {
+		self.mention_hits(message, guild_id).any()
+	}
+
+	pub(crate) fn mention_hits(&self, message: &Message, guild_id: Option<Snowflake>) -> MentionHits {
 		let Some(me) = self.current_user_id() else {
-			return false;
+			return MentionHits::default();
 		};
-		if message.mentions.iter().any(|user| user.id == me) {
-			return true;
-		}
 		let settings = guild_id.and_then(|id| self.guild_settings.get(&id));
-		if message.mention_everyone && !settings.is_some_and(|settings| settings.suppress_everyone) {
-			return true;
+		MentionHits {
+			direct: message.mentions.iter().any(|user| user.id == me),
+			everyone: message.mention_everyone
+				&& !settings.is_some_and(|settings| settings.suppress_everyone),
+			role: !message.mention_roles.is_empty()
+				&& !settings.is_some_and(|settings| settings.suppress_roles)
+				&& guild_id
+					.and_then(|id| self.guilds.get(&id))
+					.and_then(|guild| guild.members.get(&me))
+					.is_some_and(|member| {
+						member
+							.roles
+							.iter()
+							.any(|role| message.mention_roles.contains(role))
+					}),
 		}
-		if message.mention_roles.is_empty() || settings.is_some_and(|settings| settings.suppress_roles) {
-			return false;
-		}
-		guild_id
-			.and_then(|id| self.guilds.get(&id))
-			.and_then(|guild| guild.members.get(&me))
-			.is_some_and(|member| {
-				member
-					.roles
-					.iter()
-					.any(|role| message.mention_roles.contains(role))
-			})
 	}
 
 	pub(crate) fn set_read_state(&mut self, channel_id: Snowflake, message_id: Snowflake, mentions: u32) {

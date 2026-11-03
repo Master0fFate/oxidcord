@@ -663,12 +663,7 @@ impl State {
 				self.lazy.mentions.insert((*roles, *everyone), shared);
 				changes.loaded.insert(INBOX_KEY);
 			}
-			Loaded::MentionDismissed(message_id) => {
-				for mentions in self.lazy.mentions.values_mut() {
-					mentions.retain(|message| message.id != *message_id);
-				}
-				changes.loaded.insert(INBOX_KEY);
-			}
+			Loaded::MentionDismissed(message_id) => return self.dismiss_mention(*message_id),
 			Loaded::CommandIndex { scope, index } => {
 				self.lazy.command_scopes.insert(*scope, CommandScope::from(index));
 				changes.loaded.insert(*scope);
@@ -1193,6 +1188,41 @@ impl State {
 				reason: entry.reason.filter(|reason| !reason.is_empty()),
 			})
 			.collect()
+	}
+
+	pub(crate) fn dismiss_mention(&mut self, message_id: Snowflake) -> Changes {
+		for mentions in self.lazy.mentions.values_mut() {
+			mentions.retain(|message| message.id != message_id);
+		}
+		let mut changes = Changes::default();
+		changes.loaded.insert(INBOX_KEY);
+		changes
+	}
+
+	pub(crate) fn add_live_mention(
+		&mut self,
+		message: &Message,
+		guild_id: Option<Snowflake>,
+		shared: Option<Arc<Message>>,
+	) -> bool {
+		if self.lazy.mentions.is_empty() {
+			return false;
+		}
+		let hits = self.mention_hits(message, guild_id);
+		if !hits.any() {
+			return false;
+		}
+		let shared = shared.unwrap_or_else(|| Arc::new(message.clone()));
+		let mut added = false;
+		for (&(roles, everyone), mentions) in self.lazy.mentions.iter_mut() {
+			if !hits.passes(roles, everyone) || mentions.iter().any(|known| known.id == message.id) {
+				continue;
+			}
+			let at = mentions.partition_point(|known| known.id > message.id);
+			mentions.insert(at, Arc::clone(&shared));
+			added = true;
+		}
+		added
 	}
 
 	pub fn mentions(&self, roles: bool, everyone: bool) -> Option<&[Arc<Message>]> {

@@ -144,6 +144,9 @@ pub async fn delete_connection(State(shared): Mock, Path((kind, id)): Path<(Stri
 
 pub async fn delete_mention(State(shared): Mock, Path(id): Path<u64>) -> NoContent {
 	shared.store.lock().dismissed_mentions.insert(id);
+	shared
+		.hub
+		.broadcast("RECENT_MENTION_DELETE", &json!({ "message_id": id.to_string() }));
 	Ok(StatusCode::NO_CONTENT)
 }
 

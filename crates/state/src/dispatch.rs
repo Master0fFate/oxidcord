@@ -14,6 +14,7 @@ use serde_json::value::RawValue;
 
 use crate::changes::Changes;
 use crate::guild::{is_thread, stripped_member};
+use crate::loaded::INBOX_KEY;
 use crate::member_list::MemberSlot;
 use crate::messages::{
 	ReactionChange, add_reaction, apply_poll_vote, apply_update, remove_emoji, remove_reaction,
@@ -256,6 +257,7 @@ impl State {
 				changes.loaded.insert(update.id);
 				changes
 			}
+			DispatchEvent::RecentMentionDelete(delete) => self.dismiss_mention(delete.message_id),
 			DispatchEvent::RelationshipRemove(remove) => {
 				let was_collapsed = self.hides_messages_of(remove.id);
 				let removed = self.relationships.shift_remove(&remove.id).is_some();
@@ -369,6 +371,12 @@ impl State {
 			&& (guild_id.is_none() || self.mentions_me(message, guild_id))
 		{
 			self.bump_mentions(channel_id);
+		}
+		if Some(message.author.id) != self.current_user_id()
+			&& !self.is_silenced(message)
+			&& self.add_live_mention(message, guild_id, shared.clone())
+		{
+			changes.loaded.insert(INBOX_KEY);
 		}
 		if alert {
 			self.push_alert(guild_id, shared.unwrap_or_else(|| Arc::new(message.clone())));
