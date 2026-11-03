@@ -40,9 +40,9 @@ use std::rc::Rc;
 use std::time::Instant;
 
 use gpui::{
-	Anchor, AnyElement, AppContext as _, ClickEvent, Context, Entity, EventEmitter, FocusHandle, Focusable,
-	InteractiveElement as _, IntoElement, MouseButton, NavigationDirection, ParentElement as _, Pixels,
-	Point, Render, SharedString, Styled as _, Subscription, Task, Window, anchored, deferred, div,
+	Anchor, AnyElement, App, AppContext as _, ClickEvent, Context, Entity, EventEmitter, FocusHandle,
+	Focusable, InteractiveElement as _, IntoElement, MouseButton, NavigationDirection, ParentElement as _,
+	Pixels, Point, Render, SharedString, Styled as _, Subscription, Task, Window, anchored, deferred, div,
 	prelude::FluentBuilder as _,
 };
 use gpui_component::WindowExt as _;
@@ -61,7 +61,7 @@ use self::friends::{FriendsEvent, HomePage, HomePages};
 use self::history::{History, Place};
 use self::lightbox::Lightbox;
 use self::member_list::{MemberList, MemberListEvent};
-use self::message::{Gallery, VideoFullscreenTarget, snippet};
+use self::message::{Gallery, Plain, Prefs, VideoFullscreenTarget, preview};
 use self::pickers::PickerTab;
 use self::plugins::{DebugPanel, PluginUi, PluginUiEvent, RightPanel as PluginRightPanel, SidebarPanel};
 use self::profile::{ProfileCard, ProfileEvent};
@@ -81,6 +81,7 @@ use crate::components::IconButton;
 use crate::data::{Data, DataEvent};
 use crate::i18n::Translate as _;
 use crate::icons::{IconKind, channel_icon};
+use crate::lookup::Lookup;
 use crate::model::{Status, status_of};
 use crate::theme::{Theme, rem};
 
@@ -209,7 +210,7 @@ fn selectable_channels(state: &State, guild: Snowflake) -> Vec<Snowflake> {
 		.collect()
 }
 
-fn alert_notification(state: &State, alert: &Alert, show_content: bool) -> Notification {
+fn alert_notification(state: &State, alert: &Alert, show_content: bool, cx: &App) -> Notification {
 	let message = &alert.message;
 	let author = state.display_name(alert.guild_id, message.author.id);
 	let channel = state.channel(message.channel_id);
@@ -227,11 +228,16 @@ fn alert_notification(state: &State, alert: &Alert, show_content: bool) -> Notif
 		_ => author,
 	};
 	let body = if show_content {
-		snippet(
-			&markdown::parse(&message.content),
-			NOTIFICATION_BODY_LIMIT,
-			&markdown::Bare,
-		)
+		let lookup = Lookup {
+			state,
+			guild: alert.guild_id,
+		};
+		let plain = Plain {
+			lookup: &lookup,
+			h24: Prefs::load(cx).time_24h,
+			cx,
+		};
+		preview(message, NOTIFICATION_BODY_LIMIT, &plain)
 	} else {
 		String::new()
 	};
@@ -1168,7 +1174,7 @@ impl Shell {
 				if settings.enabled {
 					notifications.push((
 						alert.message.channel_id,
-						alert_notification(&state, alert, settings.show_content),
+						alert_notification(&state, alert, settings.show_content, cx),
 					));
 				}
 			}
