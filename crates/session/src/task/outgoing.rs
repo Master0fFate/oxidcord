@@ -1,6 +1,7 @@
 use plugin_host::api::model::{OutgoingAttachment, OutgoingFull};
 use protocol::Snowflake;
 use rest::{SPOILER_PREFIX, UploadFile};
+use state::PendingFile;
 
 use crate::command::ReplyTarget;
 
@@ -33,6 +34,16 @@ impl Outgoing {
 
 	pub(crate) fn shows_pending(&self) -> bool {
 		!self.content.is_empty() || !self.files.is_empty()
+	}
+
+	pub(crate) fn pending_files(&self) -> Vec<PendingFile> {
+		self.files
+			.iter()
+			.map(|file| PendingFile {
+				name: plain_name(&file.name).to_owned(),
+				size: file.bytes.len() as u64,
+			})
+			.collect()
 	}
 
 	pub(crate) fn to_full(&self, channel_id: Snowflake) -> OutgoingFull {

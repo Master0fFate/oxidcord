@@ -31,6 +31,7 @@ use super::plugins::{
 use super::poll_create;
 use crate::components::{Avatar, ContextMenuBuilder, Divider, IconButton, unicode_emoji};
 use crate::data::{Data, DataEvent};
+use crate::format;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
 use crate::images::Images;
@@ -140,6 +141,7 @@ pub struct Composer {
 	files: Vec<Pending>,
 	stickers: Vec<Snowflake>,
 	next_file: u64,
+	notice: Option<SharedString>,
 	typing: Vec<SharedString>,
 	autocomplete: Option<Autocomplete>,
 	emoji_candidates: Vec<Suggestion>,
@@ -238,6 +240,7 @@ impl Composer {
 			files: Vec::new(),
 			stickers: Vec::new(),
 			next_file: 0,
+			notice: None,
 			typing: Vec::new(),
 			autocomplete: None,
 			emoji_candidates: Vec::new(),
@@ -476,6 +479,9 @@ impl Composer {
 
 	fn on_change(&mut self, window: &mut Window, cx: &mut Context<Self>) {
 		self.awaiting_draft = false;
+		if self.notice.take().is_some() {
+			cx.notify();
+		}
 		self.emoji_tokens
 			.sync(&self.input, &self.data, self.guild, window, cx);
 		let text = self.input.read(cx).value();
@@ -957,6 +963,11 @@ impl Composer {
 		if text.is_empty() && self.files.is_empty() && self.stickers.is_empty() {
 			return;
 		}
+		if let Some(notice) = self.limit_notice(channel, &text, cx) {
+			self.notice = Some(notice);
+			cx.notify();
+			return;
+		}
 		let stickers = std::mem::take(&mut self.stickers);
 		let files: Vec<UploadFile> = std::mem::take(&mut self.files)
 			.into_iter()
@@ -995,6 +1006,26 @@ impl Composer {
 		self.input.update(cx, |state, cx| state.clean(window, cx));
 		cx.emit(ComposerEvent::Sent);
 		cx.notify();
+	}
+
+	fn limit_notice(&self, channel: Snowflake, text: &str, cx: &Context<Self>) -> Option<SharedString> {
+		let (message_limit, upload_limit) = {
+			let data = self.data.read(cx);
+			let state = data.state();
+			(state.message_limit(), state.upload_limit(channel))
+		};
+		if text.chars().count() > message_limit {
+			return Some(cx.t_args("composer-too-long", &[("max", ArgValue::from(message_limit))]));
+		}
+		self.files
+			.iter()
+			.any(|file| file.bytes.len() as u64 > upload_limit)
+			.then(|| {
+				cx.t_args(
+					"composer-file-limit",
+					&[("size", ArgValue::from(format::file_size(upload_limit)))],
+				)
+			})
 	}
 
 	fn add_file(&mut self, name: String, bytes: Vec<u8>, cx: &mut Context<Self>) {
@@ -1239,6 +1270,7 @@ impl Composer {
 			}
 			CardAction::Remove => {
 				self.files.remove(index);
+				self.notice = None;
 			}
 			CardAction::View => {
 				let file = &self.files[index];
@@ -1416,7 +1448,8 @@ fn typing_dots(theme: &Theme) -> impl IntoElement {
 impl Render for Composer {
 	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
-		let typing = self.typing_line(cx);
+		let notice = self.notice.clone();
+		let typing = self.typing_line(cx).filter(|_| notice.is_none());
 		let weak = cx.weak_entity();
 		let has_reply = self.reply.is_some();
 		let chips = self.file_cards(&theme, cx);
@@ -1620,7 +1653,8 @@ impl Render for Composer {
 							.when_some(typing, |row, line| {
 								row.when(animated, |row| row.child(typing_dots(&theme)))
 									.child(line)
-							}),
+							})
+							.when_some(notice, |row, notice| row.text_color(theme.danger).child(notice)),
 					)
 					.children(slowmode),
 			)

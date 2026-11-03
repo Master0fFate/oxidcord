@@ -17,7 +17,7 @@ use crate::permissions::compute_permissions;
 use crate::state::State;
 use crate::views::{
 	ChannelRow, ChannelTreeNode, DmRow, GuildSummary, JoinBlock, MemberListRow, MemberRow, MessageRow,
-	MessageView, RequestRow,
+	MessageView, PendingUpload, RequestRow,
 };
 
 const GROUPING_WINDOW: TimeDelta = TimeDelta::minutes(7);
@@ -574,6 +574,13 @@ impl State {
 			grouped_with_previous,
 			pending: pending.is_some(),
 			failed: pending.is_some_and(|pending| pending.failed),
+			retryable: pending.is_some_and(|pending| pending.retryable),
+			upload: pending
+				.filter(|pending| !pending.files.is_empty())
+				.map(|pending| PendingUpload {
+					files: Arc::clone(&pending.files),
+					uploaded: pending.uploaded,
+				}),
 			failure_reason: pending.and_then(|pending| pending.failure_reason.clone()),
 			plugin,
 			altered_by,

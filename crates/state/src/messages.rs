@@ -12,10 +12,19 @@ use crate::views::RenderedMessage;
 
 pub const MESSAGE_CAP: usize = 500;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingFile {
+	pub name: String,
+	pub size: u64,
+}
+
 #[derive(Debug, Clone)]
 pub struct PendingMessage {
 	pub message: Arc<Message>,
+	pub files: Arc<[PendingFile]>,
+	pub uploaded: u64,
 	pub failed: bool,
+	pub retryable: bool,
 	pub failure_reason: Option<String>,
 	pub plugin: Option<String>,
 	pub altered_by: Option<String>,
@@ -119,6 +128,7 @@ impl ChannelMessages {
 			self.gaps.clear();
 			self.stale = false;
 		}
+		self.drop_confirmed_pending(&messages);
 		for message in messages {
 			self.insert(message);
 		}
@@ -170,12 +180,16 @@ impl ChannelMessages {
 	pub fn add_pending(
 		&mut self,
 		message: Arc<Message>,
+		files: Arc<[PendingFile]>,
 		plugin: Option<String>,
 		rendered: Arc<RenderedMessage>,
 	) {
 		self.pending.push(PendingMessage {
 			message,
+			files,
+			uploaded: 0,
 			failed: false,
+			retryable: false,
 			failure_reason: None,
 			plugin,
 			altered_by: None,
@@ -196,11 +210,42 @@ impl ChannelMessages {
 		self.take_pending(nonce).is_some()
 	}
 
-	pub fn fail_pending(&mut self, nonce: &Nonce, reason: Option<String>) -> bool {
+	pub fn has_pending(&self, nonce: &Nonce) -> bool {
+		self.pending
+			.iter()
+			.any(|pending| pending.message.nonce.as_ref() == Some(nonce))
+	}
+
+	pub fn fail_pending(&mut self, nonce: &Nonce, reason: Option<String>, retryable: bool) -> bool {
 		match self.pending_mut(nonce) {
 			Some(pending) => {
 				pending.failed = true;
+				pending.retryable = retryable;
 				pending.failure_reason = reason;
+				true
+			}
+			None => false,
+		}
+	}
+
+	pub fn retry_pending(&mut self, nonce: &Nonce) -> bool {
+		match self.pending_mut(nonce) {
+			Some(pending) => {
+				pending.failed = false;
+				pending.retryable = false;
+				pending.failure_reason = None;
+				pending.uploaded = 0;
+				pending.sent_at = Instant::now();
+				true
+			}
+			None => false,
+		}
+	}
+
+	pub fn upload_progress(&mut self, nonce: &Nonce, uploaded: u64) -> bool {
+		match self.pending_mut(nonce) {
+			Some(pending) => {
+				pending.uploaded = uploaded;
 				true
 			}
 			None => false,
@@ -217,6 +262,19 @@ impl ChannelMessages {
 		pending.message = Arc::new(message);
 		pending.altered_by = Some(by);
 		true
+	}
+
+	fn drop_confirmed_pending(&mut self, loaded: &[Arc<Message>]) {
+		if self.pending.is_empty() {
+			return;
+		}
+		self.pending.retain(|pending| {
+			!loaded.iter().any(|message| {
+				message.nonce.is_some()
+					&& message.nonce == pending.message.nonce
+					&& message.author.id == pending.message.author.id
+			})
+		});
 	}
 
 	fn pending_mut(&mut self, nonce: &Nonce) -> Option<&mut PendingMessage> {

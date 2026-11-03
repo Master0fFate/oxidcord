@@ -6,6 +6,7 @@ pub mod player;
 mod provider;
 mod reaction_tip;
 mod selectable;
+mod upload;
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -28,7 +29,7 @@ use lru::LruCache;
 use markdown::Document;
 use plugin_host::ViewContext;
 use plugin_host::api::model::ClickTarget;
-use protocol::{Gif, Message, MessageType, Snowflake};
+use protocol::{Gif, Message, MessageType, Nonce, Snowflake};
 use state::{ClientOptions, MessageRow, MessageView, RenderedMessage};
 
 pub use self::body::snippet;
@@ -185,11 +186,8 @@ pub enum RowAction {
 	Reply(Snowflake),
 	StartEdit(Snowflake),
 	Delete(Snowflake),
-	Resend {
-		channel_id: Snowflake,
-		content: String,
-		reply_to: Option<Snowflake>,
-	},
+	Retry(Nonce),
+	Discard(Nonce),
 	OpenEmoji {
 		message_id: Snowflake,
 		at: Point<Pixels>,
@@ -1229,8 +1227,11 @@ fn content_column(
 	if env.prefs.show_reactions {
 		out.extend(media::reactions(message, &body_env, cx));
 	}
+	if let (Some(upload), Some(nonce)) = (&view.upload, &message.nonce) {
+		out.push(upload::card(upload, nonce, view.pending && !view.failed, env, cx));
+	}
 	if view.failed {
-		out.push(failed_notice(view, env, cx));
+		out.extend(failed_notice(view, env, cx));
 	}
 	out.extend(message_extras(view, effects, theme, cx));
 	out
@@ -1336,41 +1337,42 @@ fn editor(editing: &Editing, env: &RowEnv, cx: &App) -> AnyElement {
 		.into_any_element()
 }
 
-fn failed_notice(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
+fn nonce_key(nonce: &Nonce) -> u64 {
+	nonce.0.parse().unwrap_or_default()
+}
+
+fn failed_notice(view: &MessageView, env: &RowEnv, cx: &App) -> Option<AnyElement> {
 	let theme = env.theme;
-	let message = &view.message;
-	let channel_id = message.channel_id;
-	let content = message.content.clone();
-	let reply_to = message
-		.message_reference
-		.as_ref()
-		.and_then(|reference| reference.message_id);
+	let nonce = view.message.nonce.clone()?;
+	let key = nonce_key(&nonce);
+	let retry = view.retryable.then(|| {
+		let dispatch = env.dispatch.clone();
+		let nonce = nonce.clone();
+		Button::new(("message-retry", key))
+			.small()
+			.danger()
+			.label(cx.t("message-retry"))
+			.on_click(move |_, window, cx| dispatch(RowAction::Retry(nonce.clone()), window, cx))
+	});
 	let dispatch = env.dispatch.clone();
-	div()
-		.flex()
-		.items_center()
-		.gap(theme.space_8)
-		.text_size(theme.font_sm)
-		.text_color(theme.danger)
-		.child(cx.t("message-failed"))
-		.child(
-			Button::new(("message-retry", message.id.get()))
-				.small()
-				.danger()
-				.label(cx.t("message-retry"))
-				.on_click(move |_, window, cx| {
-					dispatch(
-						RowAction::Resend {
-							channel_id,
-							content: content.clone(),
-							reply_to,
-						},
-						window,
-						cx,
-					)
-				}),
-		)
-		.into_any_element()
+	Some(
+		div()
+			.flex()
+			.items_center()
+			.gap(theme.space_8)
+			.text_size(theme.font_sm)
+			.text_color(theme.danger)
+			.child(cx.t("message-failed"))
+			.children(retry)
+			.child(
+				Button::new(("message-dismiss", key))
+					.small()
+					.ghost()
+					.label(cx.t("message-dismiss"))
+					.on_click(move |_, window, cx| dispatch(RowAction::Discard(nonce.clone()), window, cx)),
+			)
+			.into_any_element(),
+	)
 }
 
 fn interactive(

@@ -3,6 +3,7 @@ mod dispatch;
 mod event;
 mod expressions;
 mod guild;
+mod limits;
 mod loaded;
 mod member_list;
 mod messages;
@@ -24,13 +25,14 @@ pub use expressions::{
 	CatalogEmoji, EXPRESSIONS_KEY, EmojiCatalog, EmojiRef, GuildEmojis, RECENT_CAP, UnicodeSection,
 };
 pub use guild::GuildState;
+pub use limits::PREMIUM_UPLOAD_BYTES;
 pub use loaded::{
 	AuditChange, AuditEntry, AuditLog, AuthSession, BanEntry, ConnectedAccount, GuildProfile, INBOX_KEY,
 	InviteInfo, InvitePreview, Loaded, MessageCommand, Pin, ProfileBadge, USER_COMMANDS, UserProfile,
 	audit_action_label,
 };
 pub use member_list::{MemberList, MemberSlot};
-pub use messages::{ChannelMessages, MESSAGE_CAP, PendingMessage, apply_update};
+pub use messages::{ChannelMessages, MESSAGE_CAP, PendingFile, PendingMessage, apply_update};
 pub use notifications::{Alert, AlertVerdict, ChannelUnread};
 pub use permissions::DM_PERMISSIONS;
 pub use plugin_shell::{
@@ -47,7 +49,7 @@ pub use state::{
 pub use threads::ForumPost;
 pub use views::{
 	ChannelRow, ChannelTreeNode, DmRow, GuildSummary, JoinBlock, MemberListRow, MemberRow, MessageRow,
-	MessageView, RelationshipRow, RenderedMessage, RequestRow, UserOverride,
+	MessageView, PendingUpload, RelationshipRow, RenderedMessage, RequestRow, UserOverride,
 };
 pub use voice::{
 	Call, MicTest, StreamInfo, StreamSummary, VideoKind, VoiceLevels, VoiceSession, VoiceStats, VoiceStatus,

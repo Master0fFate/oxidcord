@@ -27,6 +27,11 @@ pub(super) fn timestamp(time: DateTime<Utc>) -> String {
 	time.to_rfc3339()
 }
 
+const CANNOT_MESSAGE_USER: i64 = 50007;
+const MISSING_PERMISSIONS: i64 = 50013;
+const FILE_TOO_LARGE: i64 = 40005;
+const AUTOMOD_BLOCKED: i64 = 200000;
+
 fn failure_reason(what: &str, error: &RestError) -> String {
 	let detail = |fallback: &str| {
 		let message = error
@@ -49,6 +54,22 @@ fn failure_reason(what: &str, error: &RestError) -> String {
 		RestError::Network(reason) => format!("{what}: {reason}"),
 		RestError::Decode(_) => format!("{what}: unreadable response"),
 		_ => format!("{what} failed"),
+	}
+}
+
+pub(super) fn send_failure_reason(error: &RestError) -> String {
+	if let RestError::Slowmode { retry_after } = error {
+		return match retry_after {
+			Some(wait) => format!("Slowmode, wait {}s", wait.as_secs().max(1)),
+			None => "Slowmode is active".to_owned(),
+		};
+	}
+	match error.api().map(|api| api.code) {
+		Some(CANNOT_MESSAGE_USER) => "Can't message this user".to_owned(),
+		Some(MISSING_PERMISSIONS) => "Missing permission to send here".to_owned(),
+		Some(FILE_TOO_LARGE) => "File is too large for this account".to_owned(),
+		Some(AUTOMOD_BLOCKED) => "Blocked by AutoMod".to_owned(),
+		_ => failure_reason("send", error),
 	}
 }
 

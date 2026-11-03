@@ -4,6 +4,7 @@ use std::time::Duration;
 use protocol::{DispatchEvent, Message, Nonce, Ready, ReadySupplemental, Snowflake, StatusKind, User};
 
 use crate::loaded::Loaded;
+use crate::messages::PendingFile;
 use crate::notifications::AlertVerdict;
 use crate::plugin_shell::{ChannelDecoration, ClientOptions, DmSectionView, UiIntent};
 use crate::views::{RenderedMessage, UserOverride};
@@ -22,12 +23,21 @@ pub enum LocalEvent {
 		channel_id: Snowflake,
 		nonce: Nonce,
 		content: String,
+		files: Vec<PendingFile>,
 		author: Box<User>,
 		by_plugin: Option<String>,
 	},
 	PendingFailed {
 		nonce: Nonce,
 		reason: Option<String>,
+		retryable: bool,
+	},
+	PendingRetried {
+		nonce: Nonce,
+	},
+	UploadProgress {
+		nonce: Nonce,
+		uploaded: u64,
 	},
 	PendingAltered {
 		nonce: Nonce,

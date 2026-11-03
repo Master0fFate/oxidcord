@@ -403,6 +403,7 @@ impl State {
 				channel_id,
 				nonce,
 				content,
+				files,
 				author,
 				by_plugin,
 			} => {
@@ -418,14 +419,33 @@ impl State {
 				};
 				self.messages.entry(*channel_id).or_default().add_pending(
 					Arc::new(message),
+					files.as_slice().into(),
 					by_plugin.clone(),
 					rendered,
 				);
 				changes.messages.insert(*channel_id);
 			}
-			LocalEvent::PendingFailed { nonce, reason } => {
+			LocalEvent::PendingFailed {
+				nonce,
+				reason,
+				retryable,
+			} => {
 				for (&channel_id, cache) in &mut self.messages {
-					if cache.fail_pending(nonce, reason.clone()) {
+					if cache.fail_pending(nonce, reason.clone(), *retryable) {
+						changes.messages.insert(channel_id);
+					}
+				}
+			}
+			LocalEvent::PendingRetried { nonce } => {
+				for (&channel_id, cache) in &mut self.messages {
+					if cache.retry_pending(nonce) {
+						changes.messages.insert(channel_id);
+					}
+				}
+			}
+			LocalEvent::UploadProgress { nonce, uploaded } => {
+				for (&channel_id, cache) in &mut self.messages {
+					if cache.upload_progress(nonce, *uploaded) {
 						changes.messages.insert(channel_id);
 					}
 				}

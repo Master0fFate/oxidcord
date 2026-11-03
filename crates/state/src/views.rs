@@ -4,6 +4,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use protocol::{ChannelType, Message, Snowflake, StatusKind};
 use smallvec::SmallVec;
 
+use crate::messages::PendingFile;
 use crate::plugin_shell::PluginBadge;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,12 +98,20 @@ impl UserOverride {
 	}
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingUpload {
+	pub files: Arc<[PendingFile]>,
+	pub uploaded: u64,
+}
+
 #[derive(Debug, Clone)]
 pub struct MessageView {
 	pub message: Arc<Message>,
 	pub grouped_with_previous: bool,
 	pub pending: bool,
 	pub failed: bool,
+	pub retryable: bool,
+	pub upload: Option<PendingUpload>,
 	pub failure_reason: Option<String>,
 	pub plugin: Option<String>,
 	pub altered_by: Option<String>,

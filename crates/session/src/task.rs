@@ -14,9 +14,8 @@ use plugin_host::api::model::DmSection;
 use plugin_host::{FullSendDecision, Invalidation};
 use protocol::gateway::IdentifyProperties;
 use protocol::{
-	AllowedMentions, Channel, ChannelType, CreateMessage, DISCORD_EPOCH_MS, DispatchEvent, EditMessage,
-	Message, MessageAck, MessageFlags, MessageReference, MessagesQuery, Nonce, ProtoCustomStatus, Snowflake,
-	Token, User, VoiceState,
+	Channel, ChannelType, DISCORD_EPOCH_MS, DispatchEvent, EditMessage, Message, MessageAck, MessagesQuery,
+	Nonce, ProtoCustomStatus, Snowflake, Token, User, VoiceState,
 };
 use rest::api::SearchQuery;
 use rest::{RestClient, RestError};
@@ -51,6 +50,7 @@ mod plugin_actions;
 mod plugin_hooks;
 mod plugin_link;
 mod plugin_load;
+mod sending;
 mod streams;
 mod video;
 mod voice_link;
@@ -59,6 +59,7 @@ use actions::rest_failure;
 use mic_test::MicTestRun;
 use outgoing::Outgoing;
 pub(crate) use plugin_load::PluginAnswer;
+use sending::Sending;
 use streams::StreamLink;
 pub(crate) use video::SharedVideo;
 pub(crate) use voice_link::SharedVoice;
@@ -111,10 +112,21 @@ pub(crate) enum Internal {
 		cache: bool,
 	},
 	LoadFinished(Snowflake, Page),
-	SendFailed(Nonce),
+	Sent {
+		nonce: Nonce,
+		message: Box<Message>,
+	},
+	SendFailed {
+		nonce: Nonce,
+		reason: String,
+	},
 	SlowmodeHit {
 		channel_id: Snowflake,
 		retry_after: Option<Duration>,
+	},
+	UploadProgress {
+		nonce: Nonce,
+		uploaded: u64,
 	},
 	Search(SearchResults),
 	DmOpened(Box<Channel>),
@@ -302,6 +314,7 @@ pub(crate) struct Core {
 	plugin_dm_sections: BTreeMap<String, Vec<DmSection>>,
 	invalidated_users: HashSet<Snowflake>,
 	hooks: plugin_hooks::HookState,
+	sending: HashMap<Nonce, Sending>,
 	activity: ActivityHandle,
 	activities: Vec<Value>,
 	identity: IdentifyProperties,
@@ -395,6 +408,7 @@ impl Core {
 			plugin_dm_sections: BTreeMap::new(),
 			invalidated_users: HashSet::new(),
 			hooks: plugin_hooks::HookState::default(),
+			sending: HashMap::new(),
 			activity: parts.activity,
 			activities: Vec::new(),
 			identity: parts.identity,
@@ -682,6 +696,9 @@ impl Core {
 		self.forward_client_events(&event, probe);
 		match event {
 			DispatchEvent::MessageCreate(message) => {
+				if let Some(nonce) = &message.nonce {
+					self.sending.remove(nonce);
+				}
 				self.persist_cached_message(message.channel_id, message.id);
 				self.persist_read_state(message.channel_id);
 			}
@@ -810,9 +827,8 @@ impl Core {
 			Internal::LoadFinished(channel_id, page) => {
 				self.loading.remove(&(channel_id, page));
 			}
-			Internal::SendFailed(nonce) => {
-				self.apply_local(LocalEvent::PendingFailed { nonce, reason: None })
-			}
+			Internal::Sent { nonce, message } => self.on_sent(&nonce, message),
+			Internal::SendFailed { nonce, reason } => self.on_send_failed(nonce, reason),
 			Internal::SlowmodeHit {
 				channel_id,
 				retry_after,
@@ -822,6 +838,7 @@ impl Core {
 					self.apply_local(LocalEvent::SlowmodeStarted { channel_id, wait });
 				}
 			}
+			Internal::UploadProgress { nonce, uploaded } => self.on_upload_progress(nonce, uploaded),
 			Internal::Search(results) => {
 				*self.search.lock() = Some(Arc::new(results));
 				self.notifier.push(Changes {
@@ -988,6 +1005,8 @@ impl Core {
 				by_plugin,
 				None,
 			),
+			Command::RetryPending { nonce } => self.retry_pending(nonce),
+			Command::DiscardPending { nonce } => self.discard_pending(nonce),
 			Command::SendAsUser {
 				plugin_id,
 				channel_id,
@@ -1429,7 +1448,7 @@ impl Core {
 		by_plugin: Option<String>,
 		skip_hook: Option<String>,
 	) {
-		if !self.send_allowed(channel_id) {
+		if !self.send_allowed(channel_id) || !self.within_limits(channel_id, &outgoing) {
 			return;
 		}
 		let Some(author) = self.current_user() else {
@@ -1445,6 +1464,7 @@ impl Core {
 				channel_id,
 				nonce: nonce.clone(),
 				content: outgoing.content.clone(),
+				files: outgoing.pending_files(),
 				author: Box::new(author),
 				by_plugin: by_plugin.clone(),
 			});
@@ -1473,48 +1493,22 @@ impl Core {
 			(Vec::new(), stickers)
 		};
 		self.note_stickers(&inline);
-		let body = CreateMessage {
-			content: (!content.is_empty()).then_some(content),
-			nonce: Some(nonce.0.clone()),
-			message_reference: reply_to.map(|reply| MessageReference {
-				message_id: Some(reply.message),
-				channel_id: Some(channel_id),
-				fail_if_not_exists: Some(false),
-				..MessageReference::default()
-			}),
-			allowed_mentions: reply_to.filter(|reply| !reply.mention).map(|_| AllowedMentions {
-				parse: Some(vec![
-					"users".to_owned(),
-					"roles".to_owned(),
-					"everyone".to_owned(),
-				]),
-				replied_user: Some(false),
-				..AllowedMentions::default()
-			}),
-			flags: silent.then_some(MessageFlags::SUPPRESS_NOTIFICATIONS),
-			sticker_ids: inline,
-			..CreateMessage::default()
+		let outgoing = Outgoing {
+			content,
+			reply_to,
+			files,
+			stickers: inline,
+			silent,
 		};
-		let rest = self.rest.clone();
-		let internal = self.internal.clone();
-		self.runtime.spawn(async move {
-			let sent = if files.is_empty() {
-				rest.create_message(channel_id, body).await
-			} else {
-				rest.create_message_with_files(channel_id, body, files, None)
-					.await
-			};
-			if let Err(error) = sent {
-				tracing::warn!(%error, "message was not sent");
-				if let RestError::Slowmode { retry_after } = error {
-					let _ = internal.send(Internal::SlowmodeHit {
-						channel_id,
-						retry_after,
-					});
-				}
-				let _ = internal.send(Internal::SendFailed(nonce));
-			}
-		});
+		let task = self.spawn_send(&nonce, channel_id, &outgoing);
+		self.sending.insert(
+			nonce,
+			Sending {
+				channel_id,
+				outgoing,
+				task,
+			},
+		);
 		for sticker_id in loose {
 			self.send_sticker(channel_id, sticker_id);
 		}

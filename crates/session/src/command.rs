@@ -9,7 +9,7 @@ use plugin_host::api::model::{
 use plugin_host::api::{HostError, User as PluginUser};
 use plugin_host::{Navigation, Permission, PickedPath, ViewContext};
 use protocol::{
-	ApplicationCommand, ChannelType, ComponentType, Gif, MessageFlags, NotificationLevel,
+	ApplicationCommand, ChannelType, ComponentType, Gif, MessageFlags, Nonce, NotificationLevel,
 	PermissionOverwriteKind, Permissions, PollCreate, Snowflake, StatusKind,
 };
 use rest::UploadFile;
@@ -115,6 +115,12 @@ pub enum Command {
 		stickers: Vec<Snowflake>,
 		by_plugin: Option<String>,
 		silent: bool,
+	},
+	RetryPending {
+		nonce: Nonce,
+	},
+	DiscardPending {
+		nonce: Nonce,
 	},
 	SendAsUser {
 		plugin_id: String,

@@ -3,8 +3,6 @@ use std::path::PathBuf;
 
 use gpui::{ClipboardEntry, ClipboardItem, ImageFormat};
 
-const MAX_UPLOAD_BYTES: u64 = 500 * 1024 * 1024;
-
 pub struct Incoming {
 	pub name: String,
 	pub bytes: Vec<u8>,
@@ -80,7 +78,7 @@ pub fn read_paths(paths: Vec<PathBuf>, limit: usize) -> Vec<Incoming> {
 			if !metadata.is_file() {
 				return None;
 			}
-			if metadata.len() > MAX_UPLOAD_BYTES {
+			if metadata.len() > state::PREMIUM_UPLOAD_BYTES {
 				tracing::warn!(bytes = metadata.len(), "skipped a file over the upload limit");
 				return None;
 			}

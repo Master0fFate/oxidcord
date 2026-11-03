@@ -17,7 +17,7 @@ use gpui_component::input::{Escape, InputEvent, TextareaState};
 use lru::LruCache;
 use plugin_host::api::model::ClickTarget;
 use protocol::{ChannelType, Snowflake};
-use session::{Command, ReplyTarget};
+use session::Command;
 use state::{Changes, MessageRow};
 
 use super::community::act;
@@ -91,6 +91,8 @@ fn same_row(a: &MessageRow, b: &MessageRow) -> bool {
 				&& x.grouped_with_previous == y.grouped_with_previous
 				&& x.pending == y.pending
 				&& x.failed == y.failed
+				&& x.retryable == y.retryable
+				&& x.upload == y.upload
 				&& x.author_color == y.author_color
 				&& x.author_display == y.author_display
 				&& x.author_badge == y.author_badge
@@ -704,22 +706,8 @@ impl Timeline {
 			RowAction::Report => moderation::open_report(),
 			RowAction::StartEdit(message) => self.start_edit(message, window, cx),
 			RowAction::Delete(message) => self.confirm_delete(message, window, cx),
-			RowAction::Resend {
-				channel_id,
-				content,
-				reply_to,
-			} => self.data.read(cx).send(Command::SendMessage {
-				channel_id,
-				content,
-				reply_to: reply_to.map(|message| ReplyTarget {
-					message,
-					mention: true,
-				}),
-				files: Vec::new(),
-				stickers: Vec::new(),
-				by_plugin: None,
-				silent: false,
-			}),
+			RowAction::Retry(nonce) => self.data.read(cx).send(Command::RetryPending { nonce }),
+			RowAction::Discard(nonce) => self.data.read(cx).send(Command::DiscardPending { nonce }),
 			RowAction::OpenEmoji { message_id, at } => cx.emit(TimelineEvent::OpenEmoji { message_id, at }),
 			RowAction::OpenProfile { user, at } => cx.emit(TimelineEvent::OpenProfile { user, at }),
 			RowAction::JumpTo(message) => self.jump_to(message, cx),

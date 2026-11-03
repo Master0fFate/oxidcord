@@ -644,6 +644,7 @@ impl Core {
 					self.apply_local(LocalEvent::PendingFailed {
 						nonce,
 						reason: Some(reason),
+						retryable: false,
 					});
 				} else {
 					self.reject(reason);
