@@ -140,7 +140,7 @@ impl State {
 	fn in_private_thread(&self, channel_id: Snowflake) -> bool {
 		match self.channel(channel_id) {
 			Some(channel) if channel.kind == ChannelType::PrivateThread => {
-				channel.member.is_some() || channel.owner_id == self.current_user_id()
+				channel.member.is_some() || self.current_user_id().is_some_and(|me| channel.owner_id == Some(me))
 			}
 			_ => true,
 		}
