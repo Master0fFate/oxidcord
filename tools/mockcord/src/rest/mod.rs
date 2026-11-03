@@ -181,7 +181,10 @@ pub fn router(shared: Arc<Shared>) -> Router {
 			"/guilds/{id}/scheduled-events",
 			get(events::list).post(events::create),
 		)
-		.route("/guilds/{id}/scheduled-events/{eid}", patch(events::modify))
+		.route(
+			"/guilds/{id}/scheduled-events/{eid}",
+			patch(events::modify).delete(events::delete),
+		)
 		.route(
 			"/guilds/{id}/scheduled-events/{eid}/users/@me",
 			put(events::join).delete(events::leave),

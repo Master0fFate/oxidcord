@@ -621,6 +621,7 @@ pub enum Command {
 	},
 	ResolveInvite {
 		code: String,
+		event_id: Option<Snowflake>,
 	},
 	LoadMemberVerification {
 		guild_id: Snowflake,
@@ -800,6 +801,20 @@ pub enum Command {
 		location: Option<String>,
 		starts_at: DateTime<Utc>,
 		ends_at: Option<DateTime<Utc>>,
+	},
+	EditScheduledEvent {
+		guild_id: Snowflake,
+		event_id: Snowflake,
+		name: String,
+		description: Option<String>,
+		channel_id: Option<Snowflake>,
+		location: Option<String>,
+		starts_at: Option<DateTime<Utc>>,
+		ends_at: Option<DateTime<Utc>>,
+	},
+	DeleteScheduledEvent {
+		guild_id: Snowflake,
+		event_id: Snowflake,
 	},
 	SetScheduledEventStatus {
 		guild_id: Snowflake,

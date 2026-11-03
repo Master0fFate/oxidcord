@@ -1,18 +1,23 @@
+use std::time::Duration;
+
+use chrono::{DateTime, Utc};
 use gpui::{
 	AnyElement, App, AppContext as _, ClickEvent, Context, Entity, EventEmitter, FontWeight,
 	InteractiveElement as _, IntoElement, MouseDownEvent, ParentElement as _, Pixels, Point, Render,
-	SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, prelude::FluentBuilder as _,
-	transparent_black,
+	SharedString, StatefulInteractiveElement as _, Styled as _, Task, Window, div,
+	prelude::FluentBuilder as _, transparent_black,
 };
+use gpui_component::Sizable as _;
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::menu::{ContextMenuExt as _, DropdownMenu as _};
 use gpui_component::scroll::ScrollableElement as _;
-use protocol::{ChannelType, Permissions, ScheduledEventStatus, Snowflake};
+use protocol::{ChannelType, Permissions, ScheduledEventKind, ScheduledEventStatus, Snowflake};
 use session::Command;
 use state::{ChannelRow, ChannelTreeNode, JoinBlock, PluginBadge};
 
 use crate::components::{IconButton, MentionBadge, SectionHeader, badge};
 use crate::data::Data;
+use crate::format;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind, channel_icon};
 use crate::theme::{Theme, rem};
@@ -29,6 +34,7 @@ use super::voice::{Participant, participant_row, participants};
 mod reorder;
 
 const AVATAR_PIXELS: u32 = 48;
+const CLOCK_TICK: Duration = Duration::from_secs(1);
 
 pub enum SidebarEvent {
 	SelectChannel(Snowflake),
@@ -61,8 +67,17 @@ struct ChannelItem {
 	user_limit: u32,
 	occupants: u32,
 	voice_status: Option<SharedString>,
+	voice_started: Option<DateTime<Utc>>,
 	join_block: Option<JoinBlock>,
 	badges: Vec<PluginBadge>,
+}
+
+#[derive(PartialEq)]
+struct LiveEvent {
+	id: Snowflake,
+	name: SharedString,
+	channel: Option<Snowflake>,
+	interested: i64,
 }
 
 #[derive(PartialEq)]
@@ -86,8 +101,9 @@ pub struct ChannelSidebar {
 	unread: bool,
 	muted: bool,
 	events: usize,
-	events_live: bool,
+	live_events: Vec<LiveEvent>,
 	hide_muted: bool,
+	clock: Option<Task<()>>,
 }
 
 impl EventEmitter<SidebarEvent> for ChannelSidebar {}
@@ -116,8 +132,9 @@ impl ChannelSidebar {
 			unread: false,
 			muted: false,
 			events: 0,
-			events_live: false,
+			live_events: Vec::new(),
 			hide_muted: false,
+			clock: None,
 		}
 	}
 
@@ -129,6 +146,7 @@ impl ChannelSidebar {
 
 	pub fn refresh(&mut self, cx: &mut Context<Self>) {
 		let Some(guild) = self.guild else {
+			self.sync_clock(cx);
 			return;
 		};
 		let data = self.data.read(cx);
@@ -162,12 +180,19 @@ impl ChannelSidebar {
 			.is_some_and(|summary| summary.unread || summary.mentions > 0);
 		let muted = summary.is_some_and(|summary| summary.muted);
 		let events = state.scheduled_events(guild);
-		let (event_count, events_live) = (
-			events.len(),
-			events
-				.iter()
-				.any(|event| event.status == ScheduledEventStatus::Active),
-		);
+		let event_count = events.len();
+		let live_events: Vec<LiveEvent> = events
+			.iter()
+			.filter(|event| event.status == ScheduledEventStatus::Active)
+			.map(|event| LiveEvent {
+				id: event.id,
+				name: event.name.clone().into(),
+				channel: event
+					.channel_id
+					.filter(|_| event.entity_type != ScheduledEventKind::External),
+				interested: event.user_count.unwrap_or(0),
+			})
+			.collect();
 		drop(state);
 		let changed = name != self.name
 			|| categories != self.categories
@@ -176,7 +201,7 @@ impl ChannelSidebar {
 			|| unread != self.unread
 			|| muted != self.muted
 			|| event_count != self.events
-			|| events_live != self.events_live
+			|| live_events != self.live_events
 			|| hide_muted != self.hide_muted;
 		if changed {
 			self.name = name;
@@ -186,9 +211,31 @@ impl ChannelSidebar {
 			self.unread = unread;
 			self.muted = muted;
 			self.events = event_count;
-			self.events_live = events_live;
+			self.live_events = live_events;
 			self.hide_muted = hide_muted;
+			self.sync_clock(cx);
 			cx.notify();
+		}
+	}
+
+	fn sync_clock(&mut self, cx: &mut Context<Self>) {
+		let ticking = self.guild.is_some()
+			&& self
+				.categories
+				.iter()
+				.flat_map(|category| &category.channels)
+				.any(|channel| channel.voice_started.is_some());
+		if !ticking {
+			self.clock = None;
+		} else if self.clock.is_none() {
+			self.clock = Some(cx.spawn(async move |this, cx| {
+				loop {
+					cx.background_executor().timer(CLOCK_TICK).await;
+					if this.update(cx, |_, cx| cx.notify()).is_err() {
+						break;
+					}
+				}
+			}));
 		}
 	}
 
@@ -296,7 +343,7 @@ impl ChannelSidebar {
 						.color(theme.text_muted),
 				)
 				.child(div().flex_1().min_w_0().truncate().child(label))
-				.when(self.events_live, |row| {
+				.when(!self.live_events.is_empty(), |row| {
 					row.child(
 						div()
 							.flex_none()
@@ -305,6 +352,77 @@ impl ChannelSidebar {
 							.bg(theme.danger),
 					)
 				})
+				.into_any_element(),
+		)
+	}
+
+	fn live_banner(&self, event: &LiveEvent, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
+		let guild = self.guild?;
+		let id = event.id;
+		let join = event.channel.map(|channel| {
+			Button::new(("live-event-join", id.get()))
+				.success()
+				.small()
+				.label(cx.t("events-join"))
+				.on_click(cx.listener(move |this, _, _, cx| {
+					cx.stop_propagation();
+					this.data.read(cx).send(Command::JoinVoice {
+						guild_id: this.guild,
+						channel_id: channel,
+					});
+					cx.emit(SidebarEvent::SelectChannel(channel));
+				}))
+		});
+		let hover_background = theme.modifier_hover;
+		Some(
+			div()
+				.id(("live-event", id.get()))
+				.flex()
+				.items_center()
+				.gap(theme.space_8)
+				.mt(theme.space_8)
+				.mx(theme.space_8)
+				.p(theme.space_8)
+				.rounded(theme.radius_md)
+				.border_1()
+				.border_color(theme.danger)
+				.bg(theme.background_secondary)
+				.cursor_pointer()
+				.hover(move |style| style.bg(hover_background))
+				.on_click(move |_, window, cx| events::open_details(window, cx, guild, id))
+				.child(
+					div()
+						.flex_none()
+						.size(theme.space_8)
+						.rounded_full()
+						.bg(theme.danger),
+				)
+				.child(
+					div()
+						.flex()
+						.flex_col()
+						.flex_1()
+						.min_w_0()
+						.child(
+							div()
+								.truncate()
+								.text_size(theme.font_md)
+								.font_weight(FontWeight::SEMIBOLD)
+								.text_color(theme.header_primary)
+								.child(event.name.clone()),
+						)
+						.child(
+							div()
+								.truncate()
+								.text_size(theme.font_xs)
+								.text_color(theme.text_muted)
+								.child(cx.t_args(
+									"events-interested-count",
+									&[("count", ArgValue::from(event.interested))],
+								)),
+						),
+				)
+				.children(join)
 				.into_any_element(),
 		)
 	}
@@ -635,6 +753,14 @@ impl ChannelSidebar {
 						.child(format!("{}/{}", channel.occupants, channel.user_limit)),
 				)
 			})
+			.when_some(channel.voice_started, |row, started| {
+				row.child(
+					div()
+						.flex_none()
+						.text_size(theme.font_tiny)
+						.child(format::elapsed_clock((Utc::now() - started).num_seconds())),
+				)
+			})
 			.when(channel.event_live, |row| {
 				row.child(badge(cx.t("voice-live"), theme.danger, theme))
 			})
@@ -745,6 +871,7 @@ fn channel_item(row: &ChannelRow, guild: Snowflake, state: &state::State) -> Cha
 		mentions: row.mentions,
 		user_limit: row.user_limit,
 		voice_status: row.voice_status.clone().map(Into::into),
+		voice_started: row.voice_started,
 		occupants: u32::try_from(row.voice_members.len()).unwrap_or(u32::MAX),
 		join_block: row.join_block,
 		voice: if voice_channel {
@@ -829,6 +956,11 @@ impl Render for ChannelSidebar {
 			.iter()
 			.map(|category| self.category(category, &theme, cx))
 			.collect();
+		let banners: Vec<AnyElement> = self
+			.live_events
+			.iter()
+			.filter_map(|event| self.live_banner(event, &theme, cx))
+			.collect();
 		let events_row = self.events_row(&theme, cx);
 		let top = plugins::mount_column("channel-list-top", cx);
 		div()
@@ -855,6 +987,7 @@ impl Render for ChannelSidebar {
 					.flex()
 					.flex_col()
 					.pb(theme.space_16)
+					.children(banners)
 					.children(events_row)
 					.children(categories)
 					.overflow_y_scrollbar()

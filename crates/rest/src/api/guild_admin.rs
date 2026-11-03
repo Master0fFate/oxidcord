@@ -253,6 +253,13 @@ impl RestClient {
 		self.send(request).await
 	}
 
+	pub async fn delete_scheduled_event(&self, guild_id: Snowflake, event_id: Snowflake) -> Result<()> {
+		self.send_empty(Request::delete(format!(
+			"/guilds/{guild_id}/scheduled-events/{event_id}"
+		)))
+		.await
+	}
+
 	pub async fn set_scheduled_event_interest(
 		&self,
 		guild_id: Snowflake,

@@ -92,6 +92,8 @@ pub struct State {
 	pub(crate) friend_request_count: u64,
 	pub(crate) friend_notice: Option<FriendNotice>,
 	pub(crate) friend_notice_count: u64,
+	pub(crate) event_notice: Option<EventNotice>,
+	pub(crate) event_notice_count: u64,
 	pub(crate) chosen_status: Option<StatusKind>,
 	pub(crate) afk: bool,
 	pub(crate) alerts: VecDeque<Alert>,
@@ -118,6 +120,13 @@ pub struct SentRequest {
 pub struct FriendNotice {
 	pub id: u64,
 	pub user_id: Snowflake,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EventNotice {
+	pub id: u64,
+	pub guild_id: Snowflake,
+	pub event_id: Snowflake,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -317,6 +326,19 @@ impl State {
 
 	pub fn last_friend_notice(&self) -> Option<FriendNotice> {
 		self.friend_notice
+	}
+
+	pub(crate) fn note_event_notice(&mut self, guild_id: Snowflake, event_id: Snowflake) {
+		self.event_notice_count += 1;
+		self.event_notice = Some(EventNotice {
+			id: self.event_notice_count,
+			guild_id,
+			event_id,
+		});
+	}
+
+	pub fn last_event_notice(&self) -> Option<EventNotice> {
+		self.event_notice
 	}
 
 	pub fn selected(&self) -> Option<Selection> {

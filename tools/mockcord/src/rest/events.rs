@@ -27,6 +27,14 @@ pub async fn modify(
 	shared.modify_scheduled_event(id, event_id, &body).map(Json)
 }
 
+pub async fn delete(
+	State(shared): Mock,
+	Path((id, event_id)): Path<(u64, u64)>,
+) -> Result<StatusCode, ApiError> {
+	shared.delete_scheduled_event(id, event_id)?;
+	Ok(StatusCode::NO_CONTENT)
+}
+
 pub async fn join(State(shared): Mock, Path((id, event_id)): Path<(u64, u64)>) -> ApiResult {
 	shared.set_event_interest(id, event_id, true).map(Json)
 }

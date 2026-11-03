@@ -372,6 +372,7 @@ impl State {
 			member: channel.member.is_some(),
 			user_limit,
 			voice_status: channel.voice_status().map(str::to_owned),
+			voice_started: channel.voice_start_time.filter(|_| !voice_members.is_empty()),
 			join_block,
 			voice_members,
 		}

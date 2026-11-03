@@ -80,6 +80,7 @@ pub struct UserGuildSettings {
 	pub suppress_roles: bool,
 	pub mobile_push: Option<bool>,
 	pub hide_muted_channels: bool,
+	pub mute_scheduled_events: bool,
 	pub channel_overrides: LenientVec<ChannelOverride>,
 	pub notify_highlights: Option<i64>,
 	pub flags: Option<u64>,

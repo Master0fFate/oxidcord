@@ -2,6 +2,7 @@ pub mod access;
 pub mod add_server;
 pub mod art;
 pub mod event_create;
+pub mod event_details;
 pub mod events;
 pub mod files;
 pub mod forward;

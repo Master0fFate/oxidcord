@@ -1,8 +1,10 @@
 use std::time::Instant;
 
+use chrono::Utc;
 use protocol::{ScheduledEvent, ScheduledEventStatus, ScheduledEventUser, Snowflake};
 
 use crate::changes::Changes;
+use crate::notifications::guild_muted;
 use crate::state::State;
 
 fn events_loaded(guild_id: Snowflake) -> Changes {
@@ -36,12 +38,35 @@ impl State {
 			.any(|event| event.status == ScheduledEventStatus::Active && event.channel_id == Some(channel_id))
 	}
 
+	fn event_started_for_me(&self, event: &ScheduledEvent) -> bool {
+		let Some(guild) = self.guilds.get(&event.guild_id) else {
+			return false;
+		};
+		let was_scheduled = guild
+			.scheduled_events
+			.iter()
+			.any(|known| known.id == event.id && known.status == ScheduledEventStatus::Scheduled);
+		let settings = self.guild_settings(Some(event.guild_id));
+		was_scheduled
+			&& event.status == ScheduledEventStatus::Active
+			&& guild.interested_events.contains(&event.id)
+			&& event.creator_id != self.current_user_id()
+			&& !settings.is_some_and(|settings| settings.mute_scheduled_events)
+			&& !guild_muted(settings, Utc::now())
+	}
+
 	pub(crate) fn scheduled_event_upserted(&mut self, event: &ScheduledEvent) -> Changes {
+		let started = self.event_started_for_me(event);
 		let Some(guild) = self.guilds.get_mut(&event.guild_id) else {
 			return Changes::default();
 		};
 		guild.upsert_scheduled_event(event);
-		events_changed(event.guild_id)
+		let mut changes = events_changed(event.guild_id);
+		if started {
+			self.note_event_notice(event.guild_id, event.id);
+			changes.event_notice = true;
+		}
+		changes
 	}
 
 	pub(crate) fn scheduled_event_deleted(&mut self, event: &ScheduledEvent) -> Changes {

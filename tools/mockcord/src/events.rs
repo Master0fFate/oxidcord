@@ -144,8 +144,16 @@ impl Shared {
 		if let Some(name) = body["name"].as_str() {
 			event.name = name.to_owned();
 		}
-		if let Some(description) = body["description"].as_str() {
-			event.description = Some(description.to_owned());
+		if let Some(description) = body.get("description") {
+			event.description = description.as_str().map(str::to_owned);
+		}
+		if let Some(channel_id) = parse_id(&body["channel_id"]) {
+			event.channel_id = Some(Snowflake(channel_id));
+		}
+		if let Some(location) = body["entity_metadata"]["location"].as_str() {
+			event.entity_metadata = Some(ScheduledEventMetadata {
+				location: Some(location.to_owned()),
+			});
 		}
 		if let Some(starts_at) = parse_time(&body["scheduled_start_time"]) {
 			event.scheduled_start_time = Some(starts_at);
@@ -157,6 +165,42 @@ impl Shared {
 		drop(store);
 		self.hub.broadcast("GUILD_SCHEDULED_EVENT_UPDATE", &value);
 		Ok(value)
+	}
+
+	pub fn delete_scheduled_event(&self, guild_id: u64, event_id: u64) -> Result<(), ApiError> {
+		let mut store = self.store.lock();
+		self.live_guild(&store, guild_id)?;
+		let events = store
+			.scheduled_events
+			.get_mut(&guild_id)
+			.ok_or_else(ApiError::not_found)?;
+		let position = events
+			.iter()
+			.position(|event| event.id.0 == event_id)
+			.ok_or_else(ApiError::not_found)?;
+		let value = to_json(&events.remove(position));
+		store.event_interest.remove(&event_id);
+		drop(store);
+		self.hub.broadcast("GUILD_SCHEDULED_EVENT_DELETE", &value);
+		Ok(())
+	}
+
+	pub fn invite_event_json(&self, guild_id: u64, event_id: u64) -> Option<Value> {
+		let store = self.store.lock();
+		store
+			.open_scheduled_events(guild_id)
+			.into_iter()
+			.find(|event| event.id.0 == event_id)
+			.map(to_json)
+	}
+
+	pub fn first_open_event_json(&self, guild_id: u64) -> Option<Value> {
+		let store = self.store.lock();
+		store
+			.open_scheduled_events(guild_id)
+			.into_iter()
+			.next()
+			.map(to_json)
 	}
 
 	pub fn set_event_interest(

@@ -562,8 +562,8 @@ impl Core {
 					});
 				}
 			}
-			Command::ResolveInvite { code } => self.spawn_load("invite", move |rest| async move {
-				let raw = rest.invite(&code).await?;
+			Command::ResolveInvite { code, event_id } => self.spawn_load("invite", move |rest| async move {
+				let raw = rest.invite(&code, event_id).await?;
 				Ok(Loaded::InvitePreview { code, raw })
 			}),
 			Command::AcceptInvite { code } => {
@@ -1335,6 +1335,31 @@ impl Core {
 		);
 	}
 
+	pub(super) fn load_scheduled_events(&self, guild_id: Snowflake) {
+		self.spawn_load("events", move |rest| async move {
+			let requested = Instant::now();
+			let events = rest.scheduled_events(guild_id).await?.into_vec();
+			let interested = rest
+				.scheduled_event_rsvps(guild_id)
+				.await
+				.map_err(|error| tracing::warn!(%error, "event interest was not loaded"))
+				.ok()
+				.map(|rsvps| {
+					rsvps
+						.iter()
+						.filter(|rsvp| rsvp.is_interested())
+						.map(|rsvp| rsvp.guild_scheduled_event_id)
+						.collect()
+				});
+			Ok(Loaded::ScheduledEvents {
+				guild_id,
+				events,
+				interested,
+				requested,
+			})
+		});
+	}
+
 	pub(super) fn load_connections(&self) {
 		self.spawn_load("connections", |rest| async move {
 			Ok(Loaded::Connections(rest.connections().await?.into_vec()))
@@ -1698,30 +1723,7 @@ impl Core {
 					});
 				}
 			}
-			Command::LoadScheduledEvents { guild_id } => {
-				self.spawn_load("events", move |rest| async move {
-					let requested = Instant::now();
-					let events = rest.scheduled_events(guild_id).await?.into_vec();
-					let interested = rest
-						.scheduled_event_rsvps(guild_id)
-						.await
-						.map_err(|error| tracing::warn!(%error, "event interest was not loaded"))
-						.ok()
-						.map(|rsvps| {
-							rsvps
-								.iter()
-								.filter(|rsvp| rsvp.is_interested())
-								.map(|rsvp| rsvp.guild_scheduled_event_id)
-								.collect()
-						});
-					Ok(Loaded::ScheduledEvents {
-						guild_id,
-						events,
-						interested,
-						requested,
-					})
-				});
-			}
+			Command::LoadScheduledEvents { guild_id } => self.load_scheduled_events(guild_id),
 			Command::CreateScheduledEvent {
 				guild_id,
 				name,
@@ -1752,6 +1754,44 @@ impl Core {
 					]);
 					self.spawn_action("create event", move |rest| async move {
 						rest.create_scheduled_event(guild_id, body).await.map(drop)
+					});
+				}
+			}
+			Command::EditScheduledEvent {
+				guild_id,
+				event_id,
+				name,
+				description,
+				channel_id,
+				location,
+				starts_at,
+				ends_at,
+			} => {
+				let needed = self.event_permissions(guild_id, event_id);
+				if self.guild_allows(guild_id, needed, "Manage Events") {
+					let body = object([
+						("name", Some(name.into())),
+						("description", Some(description.map_or(Value::Null, Into::into))),
+						("channel_id", channel_id.map(|id| json!(id))),
+						(
+							"entity_metadata",
+							location.map(|location| json!({ "location": location })),
+						),
+						("scheduled_start_time", some(starts_at.map(timestamp))),
+						("scheduled_end_time", some(ends_at.map(timestamp))),
+					]);
+					self.spawn_action("edit event", move |rest| async move {
+						rest.modify_scheduled_event(guild_id, event_id, body)
+							.await
+							.map(drop)
+					});
+				}
+			}
+			Command::DeleteScheduledEvent { guild_id, event_id } => {
+				let needed = self.event_permissions(guild_id, event_id);
+				if self.guild_allows(guild_id, needed, "Manage Events") {
+					self.spawn_action("delete event", move |rest| async move {
+						rest.delete_scheduled_event(guild_id, event_id).await
 					});
 				}
 			}

@@ -93,7 +93,7 @@ use crate::actions::{
 };
 use crate::components::IconButton;
 use crate::data::{Data, DataEvent};
-use crate::i18n::Translate as _;
+use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{IconKind, channel_icon};
 use crate::images::Images;
 use crate::lookup::{Lookup, user_avatar};
@@ -133,7 +133,10 @@ enum RightPanel {
 enum Notified {
 	Channel(Snowflake),
 	Requests,
+	Event { guild: Snowflake, event: Snowflake },
 }
+
+struct EventToast;
 
 enum Overlay {
 	Lightbox(Entity<Lightbox>),
@@ -187,6 +190,7 @@ pub struct Shell {
 	seen_alert: u64,
 	voice_sounds: VoiceSounds,
 	seen_friend_notice: u64,
+	seen_event_notice: u64,
 	seen_intent: u64,
 	notification_clicks: UnboundedSender<Notified>,
 	title_mentions: u32,
@@ -645,13 +649,14 @@ impl Shell {
 				}
 			}
 		});
-		let (seen_alert, seen_intent, seen_friend_notice, voice_sounds) = {
+		let (seen_alert, seen_intent, seen_friend_notice, seen_event_notice, voice_sounds) = {
 			let data = data.read(cx);
 			let state = data.state();
 			(
 				state.last_alert_id(),
 				state.last_intent_id(),
 				state.last_friend_notice().map_or(0, |notice| notice.id),
+				state.last_event_notice().map_or(0, |notice| notice.id),
 				VoiceSounds::new(&state),
 			)
 		};
@@ -676,6 +681,7 @@ impl Shell {
 			seen_alert,
 			voice_sounds,
 			seen_friend_notice,
+			seen_event_notice,
 			seen_intent,
 			notification_clicks,
 			title_mentions: 0,
@@ -1187,6 +1193,9 @@ impl Shell {
 		if changes.friend_notice {
 			self.raise_friend_notice(cx);
 		}
+		if changes.event_notice {
+			self.raise_event_notice(window, cx);
+		}
 		self.voice_sounds
 			.update(changes, self.data.read(cx), &self.backend, cx);
 		if changes.intents {
@@ -1405,6 +1414,63 @@ impl Shell {
 		}
 	}
 
+	fn raise_event_notice(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+		let settings = (self.backend.read)().notifications;
+		let (guild, event, title, message) = {
+			let data = self.data.read(cx);
+			let state = data.state();
+			let Some(notice) = state.last_event_notice() else {
+				return;
+			};
+			if notice.id <= self.seen_event_notice {
+				return;
+			}
+			self.seen_event_notice = notice.id;
+			if state.own_status() == StatusKind::Dnd {
+				return;
+			}
+			let Some(found) = state
+				.scheduled_events(notice.guild_id)
+				.iter()
+				.find(|event| event.id == notice.event_id)
+			else {
+				return;
+			};
+			let guild_name = state
+				.guild(notice.guild_id)
+				.map(|guild| guild.name.clone())
+				.unwrap_or_default();
+			let message = cx.t_args("events-started", &[("name", ArgValue::from(found.name.clone()))]);
+			(notice.guild_id, notice.event_id, guild_name, message)
+		};
+		window.push_notification(
+			gpui_component::notification::Notification::info(message.clone()).id::<EventToast>(),
+			cx,
+		);
+		if settings.sounds && !crate::data::streamer_mode(cx).mutes_sounds() {
+			platform::sound::play(
+				platform::sound::Cue::Message,
+				crate::data::notification_volume(cx),
+			);
+		}
+		if settings.enabled {
+			let clicks = self.notification_clicks.clone();
+			let notification = Notification {
+				title,
+				body: if settings.show_content {
+					message.to_string()
+				} else {
+					String::new()
+				},
+				icon_path: None,
+				app_id: crate::APP_ID.to_owned(),
+			};
+			platform::notifications::show_with_click(notification, move || {
+				clicks.send(Notified::Event { guild, event }).ok();
+			});
+		}
+	}
+
 	fn open_notified(&mut self, target: Notified, window: &mut Window, cx: &mut Context<Self>) {
 		crate::desktop::show_window(window);
 		match target {
@@ -1412,6 +1478,7 @@ impl Shell {
 				let guild = self.data.read(cx).state().channel_guild(channel);
 				self.select(guild, channel, cx);
 			}
+			Notified::Event { guild, event } => community::events::open_details(window, cx, guild, event),
 			Notified::Requests => {
 				self.show_friends(window, cx);
 				self.home_pages

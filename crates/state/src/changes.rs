@@ -72,6 +72,7 @@ pub struct Changes {
 	pub relationships: bool,
 	pub friend_request: bool,
 	pub friend_notice: bool,
+	pub event_notice: bool,
 	pub read_state: bool,
 	pub alerts: bool,
 	pub voice_cues: bool,
@@ -112,6 +113,7 @@ impl Changes {
 			relationships: true,
 			friend_request: true,
 			friend_notice: true,
+			event_notice: true,
 			read_state: true,
 			alerts: true,
 			voice_cues: true,
@@ -151,6 +153,7 @@ impl Changes {
 			|| self.relationships
 			|| self.friend_request
 			|| self.friend_notice
+			|| self.event_notice
 			|| self.read_state
 			|| self.alerts
 			|| self.voice_cues
@@ -189,6 +192,7 @@ impl Changes {
 		self.relationships |= other.relationships;
 		self.friend_request |= other.friend_request;
 		self.friend_notice |= other.friend_notice;
+		self.event_notice |= other.event_notice;
 		self.read_state |= other.read_state;
 		self.alerts |= other.alerts;
 		self.voice_cues |= other.voice_cues;

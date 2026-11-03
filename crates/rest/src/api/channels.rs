@@ -464,9 +464,12 @@ impl RestClient {
 			.await
 	}
 
-	pub async fn invite(&self, code: &str) -> Result<Value> {
-		let request =
+	pub async fn invite(&self, code: &str, event_id: Option<Snowflake>) -> Result<Value> {
+		let mut request =
 			Request::get(format!("/invites/{}", encode_component(code))).query(&[("with_counts", "true")]);
+		if let Some(event_id) = event_id {
+			request = request.query(&[("guild_scheduled_event_id", event_id.to_string())]);
+		}
 		self.send(request).await
 	}
 

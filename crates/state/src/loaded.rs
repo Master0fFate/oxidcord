@@ -230,7 +230,7 @@ pub struct InviteInfo {
 	pub expires_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct InvitePreview {
 	pub code: String,
 	pub guild_id: Option<Snowflake>,
@@ -242,6 +242,7 @@ pub struct InvitePreview {
 	pub channel_id: Option<Snowflake>,
 	pub channel_name: Option<String>,
 	pub inviter_id: Option<Snowflake>,
+	pub event: Option<ScheduledEvent>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -483,6 +484,8 @@ struct RawInvite {
 	expires_at: Option<DateTime<Utc>>,
 	approximate_member_count: i64,
 	approximate_presence_count: i64,
+	#[serde(deserialize_with = "or_default")]
+	guild_scheduled_event: Option<ScheduledEvent>,
 }
 
 #[derive(Deserialize, Default)]
@@ -746,6 +749,7 @@ impl State {
 							channel_id: channel.id,
 							channel_name: channel.name,
 							inviter_id: invite.inviter.map(|user| user.id),
+							event: invite.guild_scheduled_event,
 						},
 					);
 					changes.loaded.insert(guild_id.unwrap_or_default());

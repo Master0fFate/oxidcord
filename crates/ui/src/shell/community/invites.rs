@@ -5,13 +5,16 @@ use std::rc::Rc;
 use gpui::{AnyElement, App, FontWeight, Global, IntoElement as _, ParentElement as _, Styled as _, div};
 use gpui_component::Disableable as _;
 use gpui_component::button::{Button, ButtonVariants as _};
+use protocol::Snowflake;
 use session::Command;
 use state::State;
 
 use super::data_handle;
-use crate::components::Avatar;
+use super::events;
+use crate::components::{Avatar, badge};
 use crate::i18n::{ArgValue, Translate as _};
-use crate::theme::Theme;
+use crate::icons::{Icon, IconKind};
+use crate::theme::{Theme, rem};
 
 const PREFIXES: [&str; 3] = ["discord.gg/", "discord.com/invite/", "discordapp.com/invite/"];
 const MAX_CARDS: usize = 2;
@@ -23,9 +26,27 @@ pub struct InviteRequests(pub Rc<RefCell<HashSet<String>>>);
 
 impl Global for InviteRequests {}
 
-pub fn codes(content: &str) -> Vec<String> {
+#[derive(Debug, PartialEq)]
+pub struct InviteLink {
+	pub code: String,
+	pub event: Option<Snowflake>,
+}
+
+fn event_param(rest: &str) -> Option<Snowflake> {
+	let query = rest
+		.strip_prefix('?')?
+		.split(|character: char| character.is_whitespace() || matches!(character, '#' | '>' | '|' | ')'))
+		.next()?;
+	query
+		.split('&')
+		.find_map(|pair| pair.strip_prefix("event="))
+		.and_then(|id| id.parse::<u64>().ok())
+		.map(Snowflake)
+}
+
+pub fn links(content: &str) -> Vec<InviteLink> {
 	let lowered = content.to_ascii_lowercase();
-	let mut found: Vec<String> = Vec::new();
+	let mut found: Vec<InviteLink> = Vec::new();
 	for prefix in PREFIXES {
 		let mut from = 0;
 		while let Some(offset) = lowered[from..].find(prefix) {
@@ -38,8 +59,9 @@ pub fn codes(content: &str) -> Vec<String> {
 				.take(CODE_MAX)
 				.collect();
 			from = start;
-			if (CODE_MIN..=CODE_MAX).contains(&code.len()) && !found.contains(&code) {
-				found.push(code);
+			if (CODE_MIN..=CODE_MAX).contains(&code.len()) && !found.iter().any(|link| link.code == code) {
+				let event = event_param(&content[start + code.len()..]);
+				found.push(InviteLink { code, event });
 			}
 		}
 	}
@@ -47,13 +69,14 @@ pub fn codes(content: &str) -> Vec<String> {
 	found
 }
 
-fn request_once(code: &str, cx: &App) {
+fn request_once(link: &InviteLink, cx: &App) {
 	let Some(requests) = cx.try_global::<InviteRequests>() else {
 		return;
 	};
-	if requests.0.borrow_mut().insert(code.to_owned()) {
+	if requests.0.borrow_mut().insert(link.code.clone()) {
 		data_handle(cx).read(cx).send(Command::ResolveInvite {
-			code: code.to_owned(),
+			code: link.code.clone(),
+			event_id: link.event,
 		});
 	}
 }
@@ -62,15 +85,48 @@ pub fn cards(content: &str, state: &State, theme: &Theme, cx: &App) -> Vec<AnyEl
 	if !content.contains('/') {
 		return Vec::new();
 	}
-	codes(content)
-		.into_iter()
-		.filter_map(|code| card(&code, state, theme, cx))
+	links(content)
+		.iter()
+		.filter_map(|link| card(link, state, theme, cx))
 		.collect()
 }
 
-fn card(code: &str, state: &State, theme: &Theme, cx: &App) -> Option<AnyElement> {
-	request_once(code, cx);
+fn stage_line(topic: &str, theme: &Theme, cx: &App) -> AnyElement {
+	div()
+		.flex()
+		.items_center()
+		.gap(theme.space_8)
+		.child(
+			Icon::new(IconKind::Stage)
+				.size(rem(16.))
+				.color(theme.interactive_muted),
+		)
+		.child(
+			div()
+				.flex_1()
+				.min_w_0()
+				.truncate()
+				.text_size(theme.font_sm)
+				.text_color(theme.header_primary)
+				.child(topic.to_owned()),
+		)
+		.child(badge(cx.t("voice-live"), theme.danger, theme))
+		.into_any_element()
+}
+
+fn card(link: &InviteLink, state: &State, theme: &Theme, cx: &App) -> Option<AnyElement> {
+	let code = link.code.as_str();
+	request_once(link, cx);
 	let preview = state.invite_preview(code).cloned()?;
+	let stage = preview
+		.guild_id
+		.zip(preview.channel_id)
+		.and_then(|(guild, channel)| state.stage_instance(guild, channel))
+		.map(|instance| stage_line(&instance.topic, theme, cx));
+	let event = preview
+		.event
+		.as_ref()
+		.map(|event| events::summary(event, state, theme, cx));
 	let joined = preview.guild_id.is_some_and(|id| state.guild(id).is_some());
 	let icon = preview
 		.guild_id
@@ -170,6 +226,8 @@ fn card(code: &str, state: &State, theme: &Theme, cx: &App) -> Option<AnyElement
 							}),
 					),
 			)
+			.children(stage)
+			.children(event)
 			.into_any_element(),
 	)
 }

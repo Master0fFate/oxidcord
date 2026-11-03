@@ -59,6 +59,7 @@ fn present(code: Option<&str>, window: &mut Window, cx: &mut App) {
 				.update(cx, |input, cx| input.set_value(code.to_owned(), window, cx));
 			add.data.read(cx).send(Command::ResolveInvite {
 				code: code.to_owned(),
+				event_id: None,
 			});
 		});
 	}
@@ -166,7 +167,10 @@ impl AddServer {
 			return;
 		};
 		match self.joined(&code, cx) {
-			None => self.data.read(cx).send(Command::ResolveInvite { code }),
+			None => self
+				.data
+				.read(cx)
+				.send(Command::ResolveInvite { code, event_id: None }),
 			Some(true) => {}
 			Some(false) => {
 				self.data.read(cx).send(Command::AcceptInvite { code });

@@ -297,6 +297,7 @@ pub(crate) struct Core {
 	member_channel: Option<Snowflake>,
 	member_ranges: Vec<[u32; 2]>,
 	command_scopes: HashSet<Snowflake>,
+	events_requested: HashSet<Snowflake>,
 	completion: Option<(Nonce, u64)>,
 	typing_expiry: Option<Instant>,
 	interaction_due: Option<Instant>,
@@ -395,6 +396,7 @@ impl Core {
 			member_channel: None,
 			member_ranges: member_ranges(0..0),
 			command_scopes: HashSet::new(),
+			events_requested: HashSet::new(),
 			completion: None,
 			typing_expiry: None,
 			interaction_due: None,
@@ -649,6 +651,7 @@ impl Core {
 			GatewayEvent::TokenRefreshed(token) => self.refresh_token(token),
 			GatewayEvent::Ready(ready) => {
 				self.marks.record("ready");
+				self.events_requested.clear();
 				self.attach_cache(ready.user.id);
 				self.apply(Event::Ready(&ready));
 				self.activity.set_user(Some(ready.user.clone()));
@@ -1386,6 +1389,7 @@ impl Core {
 		}
 		if let Some(guild_id) = guild_id {
 			self.subscribe(guild_id, Some(channel_id));
+			self.request_scheduled_events(guild_id);
 		}
 		if self.selected_guild != guild_id {
 			self.schedule_decorations();
@@ -1750,13 +1754,20 @@ impl Core {
 		}
 	}
 
-	fn subscribe_selected(&self) {
+	fn subscribe_selected(&mut self) {
 		let selected = self.state.read().selected();
 		if let Some(selected) = selected
 			&& let Some(guild_id) = selected.guild_id
 		{
 			self.subscribe(guild_id, Some(selected.channel_id));
 			self.request_channel_info(guild_id);
+			self.request_scheduled_events(guild_id);
+		}
+	}
+
+	fn request_scheduled_events(&mut self, guild_id: Snowflake) {
+		if self.events_requested.insert(guild_id) {
+			self.load_scheduled_events(guild_id);
 		}
 	}
 

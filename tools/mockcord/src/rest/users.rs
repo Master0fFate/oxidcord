@@ -14,6 +14,9 @@ use crate::fixtures::CURRENT_USER_ID;
 use crate::json::{parse_id, to_json};
 use crate::state::Shared;
 
+const STAGE_INVITE: &str = "mockstage";
+const EVENT_INVITE: &str = "mockevent";
+
 pub async fn gateway_url(State(shared): State<Arc<Shared>>) -> Json<Value> {
 	Json(json!({ "url": shared.urls.gateway }))
 }
@@ -235,19 +238,44 @@ pub async fn create_dm(State(shared): State<Arc<Shared>>, Json(body): Json<Value
 	Ok(Json(value))
 }
 
-pub async fn invite(State(shared): State<Arc<Shared>>, Path(code): Path<String>) -> ApiResult {
+pub async fn invite(
+	State(shared): State<Arc<Shared>>,
+	Path(code): Path<String>,
+	Query(params): Query<HashMap<String, String>>,
+) -> ApiResult {
 	if let Some(created) = shared.invite_json(&code) {
 		return Ok(Json(created));
 	}
+	let on_stage = code == STAGE_INVITE;
+	let lookup = if on_stage || code == EVENT_INVITE {
+		"mock"
+	} else {
+		code.as_str()
+	};
 	let guild = shared
-		.fixture_invite_guild(&code)
+		.fixture_invite_guild(lookup)
 		.ok_or_else(ApiError::unknown_invite)?;
 	let properties = &guild.properties;
-	let channel = guild
-		.message_channel_ids
-		.first()
-		.and_then(|id| shared.fixtures.channels.get(id));
+	let channel_id = if on_stage {
+		guild
+			.stage_instance
+			.as_ref()
+			.map(|instance| instance.channel_id.0)
+	} else {
+		guild.message_channel_ids.first().copied()
+	};
+	let channel = channel_id.and_then(|id| shared.fixtures.channels.get(&id));
 	let online = shared.store.lock().online_count(guild.id);
+	let event = params
+		.get("guild_scheduled_event_id")
+		.and_then(|id| id.parse::<u64>().ok())
+		.and_then(|id| {
+			if code == EVENT_INVITE {
+				shared.first_open_event_json(guild.id)
+			} else {
+				shared.invite_event_json(guild.id, id)
+			}
+		});
 	Ok(Json(json!({
 		"type": 0,
 		"code": code,
@@ -274,5 +302,6 @@ pub async fn invite(State(shared): State<Arc<Shared>>, Path(code): Path<String>)
 		"inviter": shared.fixtures.users.get(&properties.owner_id.map_or(0, Snowflake::get)),
 		"approximate_member_count": guild.members.len(),
 		"approximate_presence_count": online,
+		"guild_scheduled_event": event,
 	})))
 }

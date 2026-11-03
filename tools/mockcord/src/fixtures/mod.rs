@@ -271,6 +271,7 @@ fn build_user_guild_settings(guilds: &[GuildFixture]) -> Vec<UserGuildSettings> 
 				suppress_roles: false,
 				mobile_push: Some(index != 2),
 				hide_muted_channels: index == 0,
+				mute_scheduled_events: false,
 				channel_overrides: LenientVec::from(channel_overrides),
 				notify_highlights: Some(0),
 				flags: Some(0),
