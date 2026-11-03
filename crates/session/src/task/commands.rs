@@ -284,10 +284,20 @@ impl Core {
 				}
 			}
 			Command::LoadPins { channel_id, before } => self.load_pins(channel_id, before),
-			Command::AckPins { channel_id } => self.spawn_load("ack pins", move |rest| async move {
-				rest.ack_pins(channel_id).await?;
-				Ok(Loaded::PinsAcked(channel_id))
-			}),
+			Command::AckPins { channel_id } => {
+				let pinned_at = self
+					.state
+					.read()
+					.channel(channel_id)
+					.and_then(|channel| channel.last_pin_timestamp);
+				self.spawn_load("ack pins", move |rest| async move {
+					rest.ack_pins(channel_id).await?;
+					Ok(Loaded::PinsAcked {
+						channel_id,
+						pinned_at,
+					})
+				});
+			}
 			Command::LoadMentions => self.spawn_load("mentions", move |rest| async move {
 				let messages = rest.mentions(MENTIONS_PAGE).await?;
 				Ok(Loaded::Mentions(messages.into_vec()))

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
@@ -30,7 +30,10 @@ pub enum Loaded {
 		has_more: bool,
 		append: bool,
 	},
-	PinsAcked(Snowflake),
+	PinsAcked {
+		channel_id: Snowflake,
+		pinned_at: Option<DateTime<Utc>>,
+	},
 	ArchivedThreads {
 		channel_id: Snowflake,
 		threads: Vec<Channel>,
@@ -510,15 +513,17 @@ impl State {
 				if !*append {
 					list.pins.clear();
 				}
-				list.pins.extend(pins);
+				let known: HashSet<Snowflake> = list.pins.iter().map(|pin| pin.message.id).collect();
+				list.pins
+					.extend(pins.into_iter().filter(|pin| !known.contains(&pin.message.id)));
 				list.has_more = *has_more;
 				changes.loaded.insert(*channel_id);
 			}
-			Loaded::PinsAcked(channel_id) => {
-				let pinned_at = self
-					.channel(*channel_id)
-					.and_then(|channel| channel.last_pin_timestamp);
-				self.set_pins_read(*channel_id, pinned_at);
+			Loaded::PinsAcked {
+				channel_id,
+				pinned_at,
+			} => {
+				self.set_pins_read(*channel_id, *pinned_at);
 				changes.read_state = true;
 				changes.loaded.insert(*channel_id);
 			}

@@ -30,7 +30,7 @@ pub enum PinsEvent {
 pub struct PinsPanel {
 	data: Entity<Data>,
 	channel: Snowflake,
-	acking: bool,
+	acking: Option<DateTime<Utc>>,
 }
 
 impl EventEmitter<PinsEvent> for PinsPanel {}
@@ -88,7 +88,7 @@ impl PinsPanel {
 		let mut panel = Self {
 			data,
 			channel,
-			acking: false,
+			acking: None,
 		};
 		panel.ack_unread(cx);
 		panel
@@ -101,13 +101,21 @@ impl PinsPanel {
 
 	fn ack_unread(&mut self, cx: &App) {
 		let data = self.data.read(cx);
-		let unread = data.state().pins_unread(self.channel);
-		if unread && !self.acking {
+		let state = data.state();
+		let pending = state
+			.pins_unread(self.channel)
+			.then(|| {
+				state
+					.channel(self.channel)
+					.and_then(|channel| channel.last_pin_timestamp)
+			})
+			.flatten();
+		if pending.is_some() && pending != self.acking {
 			data.send(Command::AckPins {
 				channel_id: self.channel,
 			});
 		}
-		self.acking = unread;
+		self.acking = pending;
 	}
 
 	fn load_more(&self, before: DateTime<Utc>, cx: &App) {
