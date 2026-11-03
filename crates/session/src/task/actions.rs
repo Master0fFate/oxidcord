@@ -7,6 +7,7 @@ use rest::{RestClient, RestError};
 use serde_json::{Map, Value, json};
 use state::{Loaded, LocalEvent};
 
+use super::commands::confirmed_profile;
 use super::expressions::reaction_emoji;
 use super::{Core, Internal};
 
@@ -299,6 +300,33 @@ impl Core {
 				Err(error) => {
 					let _ = internal.send(rest_failure(what, &error));
 				}
+			}
+		});
+	}
+
+	pub(super) fn spawn_profile_save<F, Fut>(
+		&self,
+		what: &'static str,
+		user_id: Snowflake,
+		guild_id: Option<Snowflake>,
+		call: F,
+	) where
+		F: FnOnce(RestClient) -> Fut,
+		Fut: Future<Output = rest::Result<()>> + Send + 'static,
+	{
+		let request = call(self.rest.clone());
+		let rest = self.rest.clone();
+		let internal = self.internal.clone();
+		self.runtime.spawn(async move {
+			if let Err(error) = request.await {
+				let _ = internal.send(rest_failure(what, &error));
+				return;
+			}
+			match confirmed_profile(&rest, user_id, guild_id).await {
+				Ok(loaded) => {
+					let _ = internal.send(Internal::Loaded(loaded));
+				}
+				Err(error) => tracing::warn!(%error, "saved profile was not reloaded"),
 			}
 		});
 	}

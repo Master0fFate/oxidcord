@@ -64,16 +64,18 @@ fn png(bytes: &[u8]) -> Value {
 	Value::String(image_data_uri(PNG, bytes))
 }
 
-async fn confirmed_profile(
+pub(super) async fn confirmed_profile(
 	rest: &RestClient,
 	user_id: Snowflake,
 	guild_id: Option<Snowflake>,
 ) -> rest::Result<Loaded> {
+	let issued = Instant::now();
 	let raw = rest.user_profile(user_id, guild_id).await?;
 	Ok(Loaded::Profile {
 		user_id,
 		guild_id,
 		raw,
+		issued,
 	})
 }
 
@@ -1116,14 +1118,14 @@ impl Core {
 				let Some(user_id) = self.state.read().current_user_id() else {
 					return;
 				};
-				self.spawn_load("edit profile", move |rest| async move {
+				self.spawn_profile_save("edit profile", user_id, None, move |rest| async move {
 					if account.as_object().is_some_and(|fields| !fields.is_empty()) {
 						rest.patch_current_user(account).await?;
 					}
 					if profile.as_object().is_some_and(|fields| !fields.is_empty()) {
 						rest.patch_current_profile(profile).await?;
 					}
-					confirmed_profile(&rest, user_id, None).await
+					Ok(())
 				});
 			}
 			Command::SetGuildProfile {
@@ -1140,9 +1142,8 @@ impl Core {
 				let Some(user_id) = self.state.read().current_user_id() else {
 					return;
 				};
-				self.spawn_load("server profile", move |rest| async move {
-					rest.modify_current_member(guild_id, body).await?;
-					confirmed_profile(&rest, user_id, Some(guild_id)).await
+				self.spawn_profile_save("server profile", user_id, Some(guild_id), move |rest| async move {
+					rest.modify_current_member(guild_id, body).await.map(drop)
 				});
 			}
 			_ => {}

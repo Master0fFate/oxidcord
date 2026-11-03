@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Instant;
 
 use plugin_host::api::HostError;
 use plugin_host::api::User as PluginUser;
@@ -65,6 +66,7 @@ impl Core {
 		match load {
 			PluginLoad::Profile { user_id, reply } => {
 				self.runtime.spawn(async move {
+					let issued = Instant::now();
 					match rest.user_profile(user_id, None).await {
 						Ok(raw) => apply_then_answer(
 							&internal,
@@ -72,6 +74,7 @@ impl Core {
 								user_id,
 								guild_id: None,
 								raw,
+								issued,
 							},
 							PluginAnswer::Profile { user_id, reply },
 						),

@@ -81,6 +81,7 @@ pub enum Loaded {
 		user_id: Snowflake,
 		guild_id: Option<Snowflake>,
 		raw: Value,
+		issued: Instant,
 	},
 	Note {
 		user_id: Snowflake,
@@ -214,6 +215,7 @@ pub struct GuildProfile {
 	pub accent_color: Option<i64>,
 	pub theme_colors: Option<[u32; 2]>,
 	pub pronouns: Option<String>,
+	pub guild_badges: Vec<ProfileBadge>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -228,7 +230,6 @@ pub struct UserProfile {
 	pub private: bool,
 	pub guild_profile: Option<GuildProfile>,
 	pub badges: Vec<ProfileBadge>,
-	pub guild_badges: Vec<ProfileBadge>,
 	pub profile_effect: Option<ProfileEffect>,
 	pub mutual_guilds: Vec<Snowflake>,
 	pub mutual_friends: Vec<Snowflake>,
@@ -431,6 +432,7 @@ pub(crate) struct Lazy {
 	pub(crate) pins: HashMap<Snowflake, PinList>,
 	pub(crate) archived: HashMap<Snowflake, ArchivedThreads>,
 	pub(crate) profiles: HashMap<Snowflake, UserProfile>,
+	pub(crate) profile_issued: HashMap<Snowflake, Instant>,
 	pub(crate) notes: HashMap<Snowflake, String>,
 	pub(crate) application_icons: HashMap<Snowflake, Option<String>>,
 	pub(crate) invites_created: HashMap<Snowflake, InviteInfo>,
@@ -832,10 +834,27 @@ impl State {
 				user_id,
 				guild_id,
 				raw,
+				issued,
 			} => {
-				if let Some(profile) = self.parse_profile(raw, *guild_id) {
+				if self
+					.lazy
+					.profile_issued
+					.get(user_id)
+					.is_some_and(|latest| latest > issued)
+				{
+					return changes;
+				}
+				if let Some(mut profile) = self.parse_profile(raw, *guild_id) {
+					if guild_id.is_none()
+						&& profile.guild_profile.is_none()
+						&& let Some(earlier) = self.lazy.profiles.get(user_id)
+					{
+						profile.guild_profile.clone_from(&earlier.guild_profile);
+						profile.guild_member.clone_from(&earlier.guild_member);
+					}
 					self.store_profile_member(*user_id, *guild_id, &profile, &mut changes);
 					self.lazy.profiles.insert(*user_id, profile);
+					self.lazy.profile_issued.insert(*user_id, *issued);
 					changes.loaded.insert(*user_id);
 				}
 			}
@@ -1123,10 +1142,12 @@ impl State {
 			.as_ref()
 			.and_then(|guild_meta| guild_meta.profile_effect.as_ref())
 			.or(meta.profile_effect.as_ref())
+			.filter(|effect| effect.id != Snowflake::default())
 			.map(|effect| ProfileEffect {
 				id: effect.id,
 				expires_at: effect.expires_at,
 			});
+		let guild_badges = profile_badges(parsed.guild_badges);
 		let guild_profile = match parsed.guild_member_profile {
 			Some(meta) => meta.guild_id.or(guild_id).map(|guild_id| GuildProfile {
 				guild_id,
@@ -1135,9 +1156,11 @@ impl State {
 				accent_color: meta.accent_color,
 				theme_colors: meta.theme_colors,
 				pronouns: meta.pronouns.filter(|pronouns| !pronouns.is_empty()),
+				guild_badges,
 			}),
 			None => guild_id.map(|guild_id| GuildProfile {
 				guild_id,
+				guild_badges,
 				..GuildProfile::default()
 			}),
 		};
@@ -1154,7 +1177,6 @@ impl State {
 			legacy_username: parsed.legacy_username.filter(|name| !name.is_empty()),
 			private: parsed.private,
 			badges: profile_badges(parsed.badges),
-			guild_badges: profile_badges(parsed.guild_badges),
 			profile_effect,
 			mutual_guilds: parsed
 				.mutual_guilds
