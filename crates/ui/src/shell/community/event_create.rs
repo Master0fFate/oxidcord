@@ -32,6 +32,7 @@ pub struct CreateEvent {
 	guild: Snowflake,
 	kind: usize,
 	channel: usize,
+	channels: Vec<(Snowflake, SharedString)>,
 	name: Entity<InputState>,
 	description: Entity<TextareaState>,
 	location: Entity<InputState>,
@@ -67,8 +68,8 @@ fn picker(
 	(state, subscription)
 }
 
-fn input_changed(
-	input: &Entity<InputState>,
+fn input_changed<T: EventEmitter<InputEvent>>(
+	input: &Entity<T>,
 	window: &mut Window,
 	cx: &mut Context<CreateEvent>,
 ) -> Subscription {
@@ -98,19 +99,17 @@ pub fn open(window: &mut Window, cx: &mut App, guild: Snowflake) {
 		let subscriptions = vec![
 			input_changed(&name, window, cx),
 			input_changed(&location, window, cx),
-			cx.subscribe_in(&description, window, |_, _, event: &InputEvent, _, cx| {
-				if matches!(event, InputEvent::Change) {
-					cx.notify();
-				}
-			}),
+			input_changed(&description, window, cx),
 			starts_subscription,
 			ends_subscription,
 		];
+		let channels = channels_of(&data, guild, KINDS[0].1, cx);
 		CreateEvent {
 			data,
 			guild,
 			kind: 0,
 			channel: 0,
+			channels,
 			name,
 			description,
 			location,
@@ -136,32 +135,52 @@ fn picked(state: &Entity<DatePickerState>, cx: &App) -> Option<DateTime<Utc>> {
 	state.read(cx).date_time().start().and_then(utc)
 }
 
+fn channels_of(
+	data: &Entity<Data>,
+	guild: Snowflake,
+	kind: ScheduledEventKind,
+	cx: &App,
+) -> Vec<(Snowflake, SharedString)> {
+	let wanted = match kind {
+		ScheduledEventKind::Voice => ChannelType::GuildVoice,
+		ScheduledEventKind::StageInstance => ChannelType::GuildStageVoice,
+		_ => return Vec::new(),
+	};
+	let state = data.read(cx).state();
+	let Some(guild) = state.guild(guild) else {
+		return Vec::new();
+	};
+	let mut channels: Vec<_> = guild
+		.channels
+		.values()
+		.filter(|channel| channel.kind == wanted)
+		.collect();
+	channels.sort_by_key(|channel| (channel.position.unwrap_or(0), channel.id));
+	channels
+		.into_iter()
+		.map(|channel| (channel.id, channel.name.clone().unwrap_or_default().into()))
+		.collect()
+}
+
 fn text(value: SharedString, limit: usize) -> Option<String> {
 	let trimmed = value.trim();
 	(!trimmed.is_empty()).then(|| trimmed.chars().take(limit).collect())
 }
 
 impl CreateEvent {
-	fn channels(&self, cx: &App) -> Vec<(Snowflake, SharedString)> {
-		let wanted = match KINDS[self.kind].1 {
-			ScheduledEventKind::Voice => ChannelType::GuildVoice,
-			ScheduledEventKind::StageInstance => ChannelType::GuildStageVoice,
-			_ => return Vec::new(),
+	fn can_create(&self, cx: &App) -> bool {
+		if self.name.read(cx).value().trim().is_empty() {
+			return false;
+		}
+		let Some(starts_at) = picked(&self.starts, cx).filter(|start| *start > Utc::now()) else {
+			return false;
 		};
-		let state = self.data.read(cx).state();
-		let Some(guild) = state.guild(self.guild) else {
-			return Vec::new();
-		};
-		let mut channels: Vec<_> = guild
-			.channels
-			.values()
-			.filter(|channel| channel.kind == wanted)
-			.collect();
-		channels.sort_by_key(|channel| (channel.position.unwrap_or(0), channel.id));
-		channels
-			.into_iter()
-			.map(|channel| (channel.id, channel.name.clone().unwrap_or_default().into()))
-			.collect()
+		if KINDS[self.kind].1 == ScheduledEventKind::External {
+			picked(&self.ends, cx).is_some_and(|end| end > starts_at)
+				&& !self.location.read(cx).value().trim().is_empty()
+		} else {
+			self.channel < self.channels.len()
+		}
 	}
 
 	fn command(&self, cx: &App) -> Option<Command> {
@@ -174,7 +193,7 @@ impl CreateEvent {
 			let location = text(self.location.read(cx).value(), NAME_LIMIT)?;
 			(None, Some(location), Some(ends_at))
 		} else {
-			let channel = self.channels(cx).get(self.channel)?.0;
+			let channel = self.channels.get(self.channel)?.0;
 			(Some(channel), None, None)
 		};
 		Some(Command::CreateScheduledEvent {
@@ -207,6 +226,7 @@ impl Render for CreateEvent {
 				weak.update(cx, |this, cx| {
 					this.kind = index;
 					this.channel = 0;
+					this.channels = channels_of(&this.data, this.guild, KINDS[index].1, cx);
 					cx.notify();
 				})
 				.ok();
@@ -216,8 +236,7 @@ impl Render for CreateEvent {
 		let place = if external {
 			field(cx.t("events-location"), &theme, Input::new(&self.location))
 		} else {
-			let channels = self.channels(cx);
-			let labels: Vec<SharedString> = channels.iter().map(|(_, name)| name.clone()).collect();
+			let labels: Vec<SharedString> = self.channels.iter().map(|(_, name)| name.clone()).collect();
 			let current = labels
 				.get(self.channel)
 				.cloned()
@@ -272,7 +291,7 @@ impl Render for CreateEvent {
 				cx.t("action-cancel"),
 				cx.t("events-create-confirm"),
 				false,
-				self.command(cx).is_some(),
+				self.can_create(cx),
 				&theme,
 				move |_, cx| {
 					weak_cancel.update(cx, |_, cx| cx.emit(Close)).ok();
