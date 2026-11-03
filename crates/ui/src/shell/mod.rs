@@ -27,6 +27,7 @@ mod search_panel;
 mod server_rail;
 mod server_settings;
 mod settings;
+mod shortcuts;
 mod threads;
 mod timeline;
 mod title_bar;
@@ -77,7 +78,10 @@ use self::top_bar::{TopBar, TopBarEvent, TopBarTitle};
 use self::user_panel::{UserPanel, UserPanelEvent};
 use self::voice::{CallToast, RoomEvent, UserMenu, UserMenuEvent, VoicePanel, VoiceRoom};
 use crate::actions::{
-	CloseOverlay, NextChannel, OpenQuickSwitcher, OpenSettings, PreviousChannel, SHELL_CONTEXT,
+	CloseOverlay, MarkGuildRead, NextChannel, NextGuild, NextMentionChannel, NextUnreadChannel,
+	OpenQuickSwitcher, OpenSettings, PreviousChannel, PreviousGuild, PreviousMentionChannel,
+	PreviousUnreadChannel, SHELL_CONTEXT, SearchChannel, ShowFriends, ShowShortcuts, ToggleInbox,
+	ToggleSelfDeafen, ToggleSelfMute,
 };
 use crate::components::IconButton;
 use crate::data::{Data, DataEvent};
@@ -200,6 +204,40 @@ fn place_reachable(state: &State, place: &Place) -> bool {
 		Place::Channel { channel, .. } => state.channel(*channel).is_some(),
 		Place::Home(_) => true,
 	}
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChannelFilter {
+	All,
+	Unread,
+	Mentioned,
+}
+
+impl ChannelFilter {
+	fn admits(self, state: &State, channel: Snowflake) -> bool {
+		let Some(entry) = state.channel_unread(channel) else {
+			return false;
+		};
+		match self {
+			Self::All => true,
+			Self::Unread => entry.mentions > 0 || (entry.unread && !entry.muted),
+			Self::Mentioned => entry.mentions > 0,
+		}
+	}
+}
+
+fn cycle<T: Copy + PartialEq>(items: &[T], current: Option<T>, forward: bool) -> Option<T> {
+	let len = items.len();
+	let index = match (
+		current.and_then(|current| items.iter().position(|item| *item == current)),
+		forward,
+	) {
+		(Some(index), true) => (index + 1) % len,
+		(Some(index), false) => (index + len - 1) % len,
+		(None, true) => 0,
+		(None, false) => len.checked_sub(1)?,
+	};
+	items.get(index).copied()
 }
 
 fn selectable_channels(state: &State, guild: Snowflake) -> Vec<Snowflake> {
@@ -753,20 +791,58 @@ impl Shell {
 		}
 	}
 
-	fn step_channel(&mut self, forward: bool, cx: &mut Context<Self>) {
-		let (Some(guild), Some(current)) = (self.guild, self.channel) else {
+	fn step_channel(&mut self, forward: bool, filter: ChannelFilter, cx: &mut Context<Self>) {
+		let Some(current) = self.channel else {
 			return;
 		};
-		let channels = selectable_channels(&self.data.read(cx).state(), guild);
-		let Some(index) = channels.iter().position(|channel| *channel == current) else {
+		let guild = self.guild;
+		let next = {
+			let data = self.data.read(cx);
+			let state = data.state();
+			let ordered = match guild {
+				Some(guild) => selectable_channels(&state, guild),
+				None => state.dm_rows().iter().map(|row| row.channel_id).collect(),
+			};
+			if !ordered.contains(&current) {
+				return;
+			}
+			let candidates: Vec<Snowflake> = ordered
+				.into_iter()
+				.filter(|channel| *channel == current || filter.admits(&state, *channel))
+				.collect();
+			cycle(&candidates, Some(current), forward)
+		};
+		if let Some(next) = next.filter(|next| *next != current) {
+			self.select(guild, next, cx);
+		}
+	}
+
+	fn step_guild(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
+		let guilds: Vec<Snowflake> = self
+			.data
+			.read(cx)
+			.state()
+			.guild_summaries()
+			.into_iter()
+			.map(|summary| summary.id)
+			.collect();
+		if let Some(next) = cycle(&guilds, self.guild, forward).filter(|next| Some(*next) != self.guild) {
+			self.show_guild(next, window, cx);
+		}
+	}
+
+	fn mark_guild_read(&self, cx: &Context<Self>) {
+		if let Some(guild_id) = self.guild {
+			self.send(Command::MarkGuildRead { guild_id }, cx);
+		}
+	}
+
+	fn search_channel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+		let Some(channel) = self.community.read(cx).thread_or_channel(cx) else {
 			return;
 		};
-		let next = if forward {
-			(index + 1) % channels.len()
-		} else {
-			(index + channels.len() - 1) % channels.len()
-		};
-		self.select(Some(guild), channels[next], cx);
+		self.top_bar
+			.update(cx, |bar, cx| bar.search_in(channel, window, cx));
 	}
 
 	fn ensure_selection(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1833,8 +1909,40 @@ impl Render for Shell {
 			)
 			.on_action(cx.listener(|this, _: &OpenSettings, window, cx| this.open_settings(window, cx)))
 			.on_action(cx.listener(|this, _: &CloseOverlay, window, cx| this.close_overlay(window, cx)))
-			.on_action(cx.listener(|this, _: &PreviousChannel, _, cx| this.step_channel(false, cx)))
-			.on_action(cx.listener(|this, _: &NextChannel, _, cx| this.step_channel(true, cx)))
+			.on_action(cx.listener(|this, _: &PreviousChannel, _, cx| {
+				this.step_channel(false, ChannelFilter::All, cx)
+			}))
+			.on_action(
+				cx.listener(|this, _: &NextChannel, _, cx| this.step_channel(true, ChannelFilter::All, cx)),
+			)
+			.on_action(cx.listener(|this, _: &PreviousUnreadChannel, _, cx| {
+				this.step_channel(false, ChannelFilter::Unread, cx)
+			}))
+			.on_action(cx.listener(|this, _: &NextUnreadChannel, _, cx| {
+				this.step_channel(true, ChannelFilter::Unread, cx)
+			}))
+			.on_action(cx.listener(|this, _: &PreviousMentionChannel, _, cx| {
+				this.step_channel(false, ChannelFilter::Mentioned, cx)
+			}))
+			.on_action(cx.listener(|this, _: &NextMentionChannel, _, cx| {
+				this.step_channel(true, ChannelFilter::Mentioned, cx)
+			}))
+			.on_action(cx.listener(|this, _: &PreviousGuild, window, cx| this.step_guild(false, window, cx)))
+			.on_action(cx.listener(|this, _: &NextGuild, window, cx| this.step_guild(true, window, cx)))
+			.on_action(cx.listener(|this, _: &MarkGuildRead, _, cx| this.mark_guild_read(cx)))
+			.on_action(cx.listener(|this, _: &SearchChannel, window, cx| this.search_channel(window, cx)))
+			.on_action(cx.listener(|this, _: &ShowFriends, window, cx| this.show_friends(window, cx)))
+			.on_action(cx.listener(|this, _: &ToggleInbox, window, cx| {
+				this.community
+					.update(cx, |community, cx| community.toggle_inbox(window, cx))
+			}))
+			.on_action(cx.listener(|this, _: &ToggleSelfMute, _, cx| {
+				this.data.update(cx, |data, cx| data.toggle_mute(cx))
+			}))
+			.on_action(cx.listener(|this, _: &ToggleSelfDeafen, _, cx| {
+				this.data.update(cx, |data, cx| data.toggle_deafen(cx))
+			}))
+			.on_action(cx.listener(|_, _: &ShowShortcuts, window, cx| shortcuts::open(window, cx)))
 			.on_mouse_down(
 				MouseButton::Navigate(NavigationDirection::Back),
 				cx.listener(|this, _, window, cx| this.navigate(NavigationDirection::Back, window, cx)),

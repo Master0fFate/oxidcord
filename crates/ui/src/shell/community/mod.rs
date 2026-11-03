@@ -43,7 +43,7 @@ use super::threads::{
 use super::timeline::TimelineEvent;
 use crate::data::Data;
 use crate::images::Images;
-use crate::theme::rem;
+use crate::theme::{Theme, rem};
 
 const POPOVER_GAP: f32 = 12.;
 const HELP_URL: &str = "https://support.discord.com";
@@ -427,6 +427,22 @@ impl Community {
 			}),
 		);
 		self.float(Content::Inbox(panel), at, window, cx);
+	}
+
+	pub fn toggle_inbox(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+		if matches!(
+			self.floating.as_ref().map(|floating| &floating.content),
+			Some(Content::Inbox(_))
+		) {
+			self.floating = None;
+			cx.notify();
+			return;
+		}
+		let at = point(
+			window.viewport_size().width,
+			cx.global::<Theme>().title_bar_height.to_pixels(window.rem_size()),
+		);
+		self.open_inbox(at, window, cx);
 	}
 
 	pub fn open_help(&mut self, window: &mut Window, cx: &mut Context<Self>) {
