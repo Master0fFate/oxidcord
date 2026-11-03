@@ -105,6 +105,10 @@ fn settled(level: f32) -> f32 {
 	if level < LEVEL_FLOOR { 0.0 } else { level }
 }
 
+pub(super) fn gain(percent: u8) -> f32 {
+	f32::from(percent) / FULL_VOLUME_PERCENT
+}
+
 fn percent(volume: f32) -> u8 {
 	(volume * FULL_VOLUME_PERCENT)
 		.round()
@@ -698,8 +702,8 @@ impl Core {
 		{
 			let settings = self.store.settings.read();
 			let voice = &settings.voice;
-			connection.set_input_volume(f32::from(voice.input_volume) / FULL_VOLUME_PERCENT);
-			connection.set_output_volume(f32::from(voice.output_volume) / FULL_VOLUME_PERCENT);
+			connection.set_input_volume(gain(voice.input_volume));
+			connection.set_output_volume(gain(voice.output_volume));
 			connection.set_noise_suppression(voice.noise_suppression);
 			connection.set_echo_cancellation(voice.echo_cancellation);
 			connection.set_auto_gain(voice.auto_gain);

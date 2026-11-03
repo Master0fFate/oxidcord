@@ -3,7 +3,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use state::LocalEvent;
+use voice::diagnostics::{LoopbackOptions, loopback_with_levels};
 
+use super::voice_link::gain;
 use super::{Core, Internal};
 
 #[derive(Default)]
@@ -27,13 +29,11 @@ impl Core {
 		let generation = self.mic_test.generation;
 		let cancel = self.mic_test.cancel.clone();
 		let internal = self.internal.clone();
+		let options = self.loopback_options();
 		self.apply_local(LocalEvent::MicTestStarted { seconds });
 		self.runtime.spawn_blocking(move || {
 			let started = Instant::now();
 			let report = |level: f32| {
-				if cancel.load(Ordering::Relaxed) {
-					return;
-				}
 				let elapsed = u32::try_from(started.elapsed().as_secs()).unwrap_or(u32::MAX);
 				let _ = internal.send(Internal::MicTestLevel {
 					generation,
@@ -41,12 +41,23 @@ impl Core {
 					remaining_secs: seconds.saturating_sub(elapsed),
 				});
 			};
-			let result = ::voice::diagnostics::loopback_with_levels(seconds, &report);
+			let result = loopback_with_levels(seconds, options, &cancel, &report);
 			let _ = internal.send(Internal::MicTestFinished {
 				generation,
 				result: result.map_err(|error| error.to_string()),
 			});
 		});
+	}
+
+	fn loopback_options(&self) -> LoopbackOptions {
+		let settings = self.store.settings.read();
+		let voice = &settings.voice;
+		LoopbackOptions {
+			input_device: voice.input_device.clone(),
+			output_device: voice.output_device.clone(),
+			gain: gain(voice.input_volume),
+			denoise: voice.noise_suppression,
+		}
 	}
 
 	pub(super) fn stop_mic_test(&mut self) {

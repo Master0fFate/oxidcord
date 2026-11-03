@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
@@ -14,13 +15,46 @@ const PLAYBACK_PRIME_FRAMES: usize = 3;
 const DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
 const LEVEL_INTERVAL: Duration = Duration::from_millis(50);
 
-pub fn loopback(seconds: u32) -> Result<()> {
-	loopback_with_levels(seconds, &|_| {})
+pub struct LoopbackOptions {
+	pub input_device: Option<String>,
+	pub output_device: Option<String>,
+	pub gain: f32,
+	pub denoise: bool,
 }
 
-pub fn loopback_with_levels(seconds: u32, on_level: &(dyn Fn(f32) + Send + Sync)) -> Result<()> {
+impl Default for LoopbackOptions {
+	fn default() -> Self {
+		Self {
+			input_device: None,
+			output_device: None,
+			gain: 1.0,
+			denoise: true,
+		}
+	}
+}
+
+pub fn loopback(seconds: u32) -> Result<()> {
+	loopback_with_levels(
+		seconds,
+		LoopbackOptions::default(),
+		&AtomicBool::new(false),
+		&|_| {},
+	)
+}
+
+pub fn loopback_with_levels(
+	seconds: u32,
+	options: LoopbackOptions,
+	cancel: &AtomicBool,
+	on_level: &(dyn Fn(f32) + Send + Sync),
+) -> Result<()> {
 	let rings = Arc::new(Rings::new());
-	let _engine = AudioEngine::start(rings.clone(), AudioRoute::Call, None, None)?;
+	let _engine = AudioEngine::start(
+		rings.clone(),
+		AudioRoute::Call,
+		options.input_device,
+		options.output_device,
+	)?;
 	if rings.capture_rate() == 0 {
 		return Err(VoiceError::Audio("no input device".to_owned()));
 	}
@@ -40,11 +74,14 @@ pub fn loopback_with_levels(seconds: u32, on_level: &(dyn Fn(f32) + Send + Sync)
 	let deadline = Instant::now() + Duration::from_secs(u64::from(seconds));
 	let mut next_level = Instant::now() + LEVEL_INTERVAL;
 	let mut peak = 0.0f32;
-	while Instant::now() < deadline {
+	while Instant::now() < deadline && !cancel.load(Ordering::Relaxed) {
 		capture.pull(&rings)?;
 		while capture.take_frame(&mut microphone) {
+			microphone.iter_mut().for_each(|sample| *sample *= options.gain);
 			peak = peak.max(meter_level(rms(&microphone)));
-			denoiser.process(&mut microphone);
+			if options.denoise {
+				denoiser.process(&mut microphone);
+			}
 			let packet = encoder.encode(&microphone)?;
 			decoder.decode(packet, false, &mut speaker)?;
 			playback.push(&speaker)?;
@@ -55,6 +92,10 @@ pub fn loopback_with_levels(seconds: u32, on_level: &(dyn Fn(f32) + Send + Sync)
 			next_level += LEVEL_INTERVAL;
 		}
 		sleep(POLL_INTERVAL);
+	}
+	if cancel.load(Ordering::Relaxed) {
+		rings.clear_playback();
+		return Ok(());
 	}
 	let drain_deadline = Instant::now() + DRAIN_TIMEOUT;
 	while rings.playback_len() > 0 && Instant::now() < drain_deadline {
