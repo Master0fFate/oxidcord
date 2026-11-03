@@ -5,6 +5,8 @@ use protocol::{ChannelType, Permissions, Snowflake};
 use session::Command;
 
 use super::access::GuildAccess;
+use super::event_create;
+use super::events::CREATE_PERMISSIONS;
 use super::notify::{self, Scope};
 use super::{act, data_handle, developer_mode};
 use crate::components::ContextMenuBuilder;
@@ -198,6 +200,13 @@ pub fn guild_menu(
 			move |window, cx| {
 				channel::open_create(window, cx, guild, None);
 			},
+		);
+	}
+	if access.has_any(CREATE_PERMISSIONS) {
+		menu = menu.item(
+			cx.t("events-create"),
+			Some(IconKind::Calendar),
+			move |window, cx| event_create::open(window, cx, guild),
 		);
 	}
 	let scope = Scope::Guild(guild);

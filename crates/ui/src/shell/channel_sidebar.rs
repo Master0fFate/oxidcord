@@ -6,18 +6,19 @@ use gpui::{
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::menu::{ContextMenuExt as _, DropdownMenu as _};
 use gpui_component::scroll::ScrollableElement as _;
-use protocol::{ChannelType, Permissions, Snowflake};
+use protocol::{ChannelType, Permissions, ScheduledEventStatus, Snowflake};
 use session::Command;
 use state::{ChannelRow, ChannelTreeNode, JoinBlock, PluginBadge};
 
-use crate::components::{IconButton, MentionBadge, SectionHeader};
+use crate::components::{IconButton, MentionBadge, SectionHeader, badge};
 use crate::data::Data;
-use crate::i18n::Translate as _;
+use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind, channel_icon};
 use crate::theme::{Theme, rem};
 
 use super::community::access::GuildAccess;
 use super::community::act;
+use super::community::events::{self, CREATE_PERMISSIONS};
 use super::community::menus::{ChannelFacts, channel_menu, guild_menu};
 use super::plugins::{self, MenuTarget, PluginMenu as _};
 use super::server_settings::channel as channel_modals;
@@ -41,6 +42,7 @@ struct ChannelItem {
 	joined: bool,
 	icon: IconKind,
 	voice_channel: bool,
+	event_live: bool,
 	can_chat: bool,
 	can_invite: bool,
 	can_manage: bool,
@@ -75,6 +77,8 @@ pub struct ChannelSidebar {
 	invite_channel: Option<Snowflake>,
 	unread: bool,
 	muted: bool,
+	events: usize,
+	events_live: bool,
 }
 
 impl EventEmitter<SidebarEvent> for ChannelSidebar {}
@@ -102,6 +106,8 @@ impl ChannelSidebar {
 			invite_channel: None,
 			unread: false,
 			muted: false,
+			events: 0,
+			events_live: false,
 		}
 	}
 
@@ -140,13 +146,22 @@ impl ChannelSidebar {
 			.as_ref()
 			.is_some_and(|summary| summary.unread || summary.mentions > 0);
 		let muted = summary.is_some_and(|summary| summary.muted);
+		let events = state.scheduled_events(guild);
+		let (event_count, events_live) = (
+			events.len(),
+			events
+				.iter()
+				.any(|event| event.status == ScheduledEventStatus::Active),
+		);
 		drop(state);
 		let changed = name != self.name
 			|| categories != self.categories
 			|| access != self.access
 			|| invite_channel != self.invite_channel
 			|| unread != self.unread
-			|| muted != self.muted;
+			|| muted != self.muted
+			|| event_count != self.events
+			|| events_live != self.events_live;
 		if changed {
 			self.name = name;
 			self.categories = categories;
@@ -154,6 +169,8 @@ impl ChannelSidebar {
 			self.invite_channel = invite_channel;
 			self.unread = unread;
 			self.muted = muted;
+			self.events = event_count;
+			self.events_live = events_live;
 			cx.notify();
 		}
 	}
@@ -228,6 +245,49 @@ impl ChannelSidebar {
 			)
 			.context_menu(menu.build())
 			.into_any_element()
+	}
+
+	fn events_row(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
+		let guild = self.guild?;
+		if self.events == 0 && !self.access.has_any(CREATE_PERMISSIONS) {
+			return None;
+		}
+		let hover_background = theme.modifier_hover;
+		let label = cx.t_args("events-count", &[("count", ArgValue::from(self.events))]);
+		Some(
+			div()
+				.id("guild-events")
+				.flex()
+				.items_center()
+				.gap(rem(6.))
+				.h(theme.channel_row_height)
+				.mt(theme.space_8)
+				.mx(theme.space_8)
+				.px(theme.space_8)
+				.rounded(theme.radius_md)
+				.cursor_pointer()
+				.text_size(theme.font_md)
+				.font_weight(FontWeight::MEDIUM)
+				.text_color(theme.text_muted)
+				.hover(move |style| style.bg(hover_background))
+				.on_click(move |_, window, cx| events::open(window, cx, guild))
+				.child(
+					Icon::new(IconKind::Calendar)
+						.size(rem(20.))
+						.color(theme.text_muted),
+				)
+				.child(div().flex_1().min_w_0().truncate().child(label))
+				.when(self.events_live, |row| {
+					row.child(
+						div()
+							.flex_none()
+							.size(theme.space_8)
+							.rounded_full()
+							.bg(theme.danger),
+					)
+				})
+				.into_any_element(),
+		)
 	}
 
 	fn category(&self, category: &CategoryItem, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
@@ -442,6 +502,9 @@ impl ChannelSidebar {
 						.child(format!("{}/{}", channel.occupants, channel.user_limit)),
 				)
 			})
+			.when(channel.event_live, |row| {
+				row.child(badge(cx.t("voice-live"), theme.danger, theme))
+			})
 			.children(chat_button)
 			.children(plugins::channel_badges(id, &channel.badges, theme, cx))
 			.when(channel.mentions > 0, |row| {
@@ -508,6 +571,7 @@ fn channel_item(row: &ChannelRow, guild: Snowflake, state: &state::State) -> Cha
 		joined: row.member,
 		icon: channel_icon(row.kind),
 		voice_channel,
+		event_live: voice_channel && state.event_live_in(guild, row.id),
 		can_chat: voice_channel
 			&& permissions.contains(Permissions::VIEW_CHANNEL | Permissions::READ_MESSAGE_HISTORY),
 		can_invite: permissions.contains(Permissions::CREATE_INSTANT_INVITE),
@@ -585,6 +649,7 @@ impl Render for ChannelSidebar {
 			.iter()
 			.map(|category| self.category(category, &theme, cx))
 			.collect();
+		let events_row = self.events_row(&theme, cx);
 		let top = plugins::mount_column("channel-list-top", cx);
 		div()
 			.flex()
@@ -610,6 +675,7 @@ impl Render for ChannelSidebar {
 					.flex()
 					.flex_col()
 					.pb(theme.space_16)
+					.children(events_row)
 					.children(categories)
 					.overflow_y_scrollbar()
 					.id("channel-list")

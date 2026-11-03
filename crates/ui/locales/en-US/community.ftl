@@ -673,3 +673,35 @@ stickers-edit-save = Save
 inbox-title = Mentions
 inbox-empty = No recent mentions.
 inbox-loading = Loading mentions...
+
+events-count = { $count ->
+    [one] 1 Event
+   *[other] { $count } Events
+}
+events-title = Events
+events-empty = No upcoming events.
+events-interested-count = { $count } interested
+events-interested = Interested
+events-start = Start
+events-end = End
+events-cancel = Cancel Event
+events-cancel-title = Cancel this event?
+events-cancel-body = { $name } will be removed for everyone.
+events-cancel-confirm = Cancel Event
+events-repeats = Repeats
+events-create = Create Event
+events-create-confirm = Create
+events-kind = Event type
+events-kind-voice = Voice
+events-kind-stage = Stage
+events-kind-external = Elsewhere
+events-channel = Channel
+events-channel-none = No channels
+events-location = Location
+events-name = Event name
+events-description = Description
+events-description-placeholder = What is it about?
+events-starts = Starts
+events-ends = Ends
+events-pick-time = Pick a time
+time-tomorrow = Tomorrow at { $time }

@@ -1,6 +1,8 @@
 pub mod access;
 pub mod add_server;
 pub mod art;
+pub mod event_create;
+pub mod events;
 pub mod files;
 pub mod forward;
 pub mod invites;

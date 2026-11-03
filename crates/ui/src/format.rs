@@ -30,6 +30,19 @@ pub fn message_time(time: DateTime<Utc>, cx: &App) -> SharedString {
 	}
 }
 
+pub fn event_time(time: DateTime<Utc>, cx: &App) -> SharedString {
+	let day = time.with_timezone(&Local).date_naive();
+	let today = Local::now().date_naive();
+	let clock = clock(time);
+	if day == today {
+		cx.t_args("time-today", &[("time", ArgValue::from(clock))])
+	} else if today.succ_opt() == Some(day) {
+		cx.t_args("time-tomorrow", &[("time", ArgValue::from(clock))])
+	} else {
+		format!("{} {clock}", day.format("%a, %b %-d")).into()
+	}
+}
+
 pub fn file_size(bytes: u64) -> String {
 	let mut value = bytes as f64;
 	let mut unit = 0;
