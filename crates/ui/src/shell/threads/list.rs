@@ -3,11 +3,13 @@ use gpui::{
 	ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div,
 	prelude::FluentBuilder as _,
 };
+use gpui_component::Disableable as _;
 use gpui_component::Sizable as _;
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::scroll::ScrollableElement as _;
 use protocol::{Channel, ChannelType, Permissions, Snowflake};
 use session::Command;
+use state::Changes;
 
 use crate::components::{IconButton, PickHandler, segmented};
 use crate::data::Data;
@@ -42,6 +44,7 @@ pub struct ThreadList {
 	guild: Snowflake,
 	channel: Snowflake,
 	tab: Tab,
+	loading_more: bool,
 }
 
 impl EventEmitter<ThreadListEvent> for ThreadList {}
@@ -53,6 +56,7 @@ impl ThreadList {
 			guild,
 			channel,
 			tab: Tab::Active,
+			loading_more: false,
 		};
 		list.reload(cx);
 		list
@@ -67,7 +71,12 @@ impl ThreadList {
 		});
 	}
 
-	fn load_more(&self, cx: &Context<Self>) {
+	fn load_more(&mut self, cx: &mut Context<Self>) {
+		if self.loading_more {
+			return;
+		}
+		self.loading_more = true;
+		cx.notify();
 		self.data.read(cx).send(Command::LoadArchivedThreads {
 			channel_id: self.channel,
 			more: true,
@@ -78,7 +87,10 @@ impl ThreadList {
 		self.tab == Tab::Archived && self.data.read(cx).state().archived_has_more(self.channel)
 	}
 
-	pub fn refresh(&mut self, cx: &mut Context<Self>) {
+	pub fn refresh(&mut self, changes: &Changes, cx: &mut Context<Self>) {
+		if changes.loaded.contains(self.channel) || changes.rejected {
+			self.loading_more = false;
+		}
 		cx.notify();
 	}
 
@@ -228,6 +240,7 @@ impl Render for ThreadList {
 		let entries = self.entries(cx);
 		let empty = entries.is_empty();
 		let has_more = self.has_more(cx);
+		let loading_more = self.loading_more;
 		let rows: Vec<AnyElement> = entries.iter().map(|entry| self.row(entry, &theme, cx)).collect();
 		let weak = cx.weak_entity();
 		let tabs: PickHandler = std::rc::Rc::new(move |index, _, cx| {
@@ -323,6 +336,7 @@ impl Render for ThreadList {
 								Button::new("thread-more")
 									.outline()
 									.label(cx.t("audit-load-more"))
+									.disabled(loading_more)
 									.on_click(cx.listener(|this, _, _, cx| this.load_more(cx))),
 							),
 						)

@@ -1463,6 +1463,11 @@ impl State {
 			.archived
 			.get(&channel_id)
 			.is_some_and(|archived| archived.has_more || archived.private_has_more)
+			&& [false, true].into_iter().any(|private| {
+				self.archived_tail(channel_id, private)
+					.and_then(|tail| tail.thread_metadata.as_ref()?.archive_timestamp)
+					.is_some()
+			})
 	}
 
 	pub fn archived_tail(&self, channel_id: Snowflake, private: bool) -> Option<&Channel> {

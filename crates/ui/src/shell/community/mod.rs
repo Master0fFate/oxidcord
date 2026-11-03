@@ -674,7 +674,7 @@ impl Community {
 		self.forum.update(cx, |forum, cx| forum.refresh(cx));
 		if let Some(floating) = &self.floating {
 			match &floating.content {
-				Content::Threads(list) => list.update(cx, |list, cx| list.refresh(cx)),
+				Content::Threads(list) => list.update(cx, |list, cx| list.refresh(changes, cx)),
 				Content::Pins(pins) => pins.update(cx, |pins, cx| pins.refresh(cx)),
 				Content::Inbox(inbox) => inbox.update(cx, |inbox, cx| inbox.refresh(cx)),
 				Content::Picker(picker) => picker.update(cx, |picker, cx| picker.refresh(cx)),
