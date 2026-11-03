@@ -14,8 +14,14 @@ use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
 use crate::theme::Theme;
 
+struct Listing {
+	current: Option<AuthSession>,
+	others: Vec<AuthSession>,
+}
+
 pub struct DevicesPage {
 	data: Entity<Data>,
+	listing: Option<Listing>,
 	_subscription: Subscription,
 }
 
@@ -29,17 +35,32 @@ fn capitalized(text: &str) -> String {
 
 impl DevicesPage {
 	pub fn new(data: Entity<Data>, cx: &mut Context<Self>) -> Self {
-		let subscription = cx.subscribe(&data, |_, _, event: &DataEvent, cx| {
+		let subscription = cx.subscribe(&data, |this, _, event: &DataEvent, cx| {
 			if let DataEvent::Changed(changes) = event
-				&& !changes.loaded.is_empty()
+				&& (!changes.loaded.is_empty() || changes.session)
 			{
+				this.listing = this.load_listing(cx);
 				cx.notify();
 			}
 		});
-		Self {
+		let mut page = Self {
 			data,
+			listing: None,
 			_subscription: subscription,
-		}
+		};
+		page.listing = page.load_listing(cx);
+		page
+	}
+
+	fn load_listing(&self, cx: &Context<Self>) -> Option<Listing> {
+		let data = self.data.read(cx);
+		let state = data.state();
+		state.auth_sessions().map(|found| {
+			let mut others = found.to_vec();
+			let current = state.current_auth_session().map(|index| others.remove(index));
+			others.sort_by_key(|session| std::cmp::Reverse(session.last_used));
+			Listing { current, others }
+		})
 	}
 
 	pub fn refresh(&self, cx: &Context<Self>) {
@@ -48,6 +69,11 @@ impl DevicesPage {
 
 	fn log_out(&self, hashes: Vec<String>, cx: &Context<Self>) {
 		self.data.read(cx).send(Command::LogoutSessions(hashes));
+	}
+
+	fn log_out_others(&self, cx: &Context<Self>) {
+		let hashes = self.listing.iter().flat_map(|listing| &listing.others);
+		self.log_out(hashes.map(|session| session.id_hash.clone()).collect(), cx);
 	}
 
 	fn device_row(
@@ -112,17 +138,7 @@ impl DevicesPage {
 impl Render for DevicesPage {
 	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
-		let listed = {
-			let data = self.data.read(cx);
-			let state = data.state();
-			state.auth_sessions().map(|found| {
-				let mut sessions = found.to_vec();
-				let current = state.current_auth_session().map(|index| sessions.remove(index));
-				sessions.sort_by_key(|session| std::cmp::Reverse(session.last_used));
-				(current, sessions)
-			})
-		};
-		let Some((current, others)) = listed else {
+		let Some(Listing { current, others }) = &self.listing else {
 			return div()
 				.text_size(theme.font_md)
 				.text_color(theme.text_muted)
@@ -136,7 +152,6 @@ impl Render for DevicesPage {
 				.child(cx.t("devices-empty"))
 				.into_any_element();
 		}
-		let hashes: Vec<String> = others.iter().map(|session| session.id_hash.clone()).collect();
 		let rows: Vec<_> = current
 			.iter()
 			.map(|session| (session, true))
@@ -148,12 +163,12 @@ impl Render for DevicesPage {
 			.flex()
 			.flex_col()
 			.children(rows)
-			.children((current.is_some() && !hashes.is_empty()).then(|| {
+			.children((current.is_some() && !others.is_empty()).then(|| {
 				div().pt(theme.space_16).child(
 					Button::new("devices-log-out-others")
 						.danger()
 						.label(cx.t("devices-log-out-others"))
-						.on_click(cx.listener(move |this, _, _, cx| this.log_out(hashes.clone(), cx))),
+						.on_click(cx.listener(|this, _, _, cx| this.log_out_others(cx))),
 				)
 			}))
 			.into_any_element()
