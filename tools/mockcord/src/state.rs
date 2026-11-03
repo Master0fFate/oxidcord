@@ -214,6 +214,7 @@ pub struct Shared {
 	pub shutdown: watch::Receiver<bool>,
 	pub voice_signals: broadcast::Sender<Signal>,
 	pub voice_join: Mutex<Option<VoiceJoin>>,
+	pub voice_stale: AtomicBool,
 	windows: Mutex<HashMap<String, Window>>,
 	indexed: AtomicBool,
 }
@@ -236,6 +237,7 @@ impl Shared {
 			shutdown,
 			voice_signals,
 			voice_join: Mutex::new(None),
+			voice_stale: AtomicBool::new(false),
 			windows: Mutex::new(HashMap::new()),
 			indexed: AtomicBool::new(false),
 		}
@@ -254,7 +256,7 @@ impl Shared {
 	pub fn account_for_token(&self, token: &str) -> Option<User> {
 		if self.config.accepts(token) {
 			Some(self.store.lock().current_user.clone())
-		} else if token == self.config.second_token {
+		} else if self.config.accepts_second(token) {
 			Some(self.fixtures.second_user.clone())
 		} else {
 			None

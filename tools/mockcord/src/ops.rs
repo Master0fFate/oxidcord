@@ -285,18 +285,23 @@ impl Shared {
 			guild_id.filter(|guild_id| self.fixtures.guild(guild_id.0).is_some_and(|guild| guild.large));
 		match large {
 			Some(guild_id) => {
+				let updated = json!({
+					"id": message["channel_id"],
+					"last_message_id": message["id"],
+				});
 				let passive = json!({
 					"guild_id": guild_id.to_string(),
-					"updated_channels": [{
-						"id": message["channel_id"],
-						"last_message_id": message["id"],
-					}],
+					"updated_channels": [updated],
 					"updated_voice_states": [],
 					"removed_voice_states": [],
 					"updated_members": [],
 				});
+				let unread = json!({
+					"guild_id": guild_id.to_string(),
+					"channel_unread_updates": [updated],
+				});
 				self.hub
-					.broadcast_unless_passive(guild_id.0, "MESSAGE_CREATE", message, &passive);
+					.broadcast_unless_passive(guild_id.0, "MESSAGE_CREATE", message, &passive, &unread);
 			}
 			None => self.hub.broadcast("MESSAGE_CREATE", message),
 		}
@@ -483,8 +488,26 @@ impl Shared {
 		if let Some(guild_id) = guild_id {
 			data["guild_id"] = json!(guild_id.to_string());
 		}
+		let singles: Vec<Value> = user_ids
+			.iter()
+			.map(|user_id| {
+				let mut single = json!({
+					"user_id": user_id.to_string(),
+					"channel_id": channel_id.to_string(),
+					"message_id": id.to_string(),
+					"emoji": { "id": emoji_id, "name": name, "animated": false },
+					"burst": false,
+					"type": 0,
+				});
+				if let Some(guild_id) = guild_id {
+					single["guild_id"] = json!(guild_id.to_string());
+				}
+				single
+			})
+			.collect();
 		drop(store);
-		self.hub.broadcast("MESSAGE_REACTION_ADD_MANY", &data);
+		self.hub
+			.broadcast_batched("MESSAGE_REACTION_ADD_MANY", &data, &singles);
 		Ok(())
 	}
 

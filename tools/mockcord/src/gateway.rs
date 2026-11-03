@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::io::Write;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use axum::body::Bytes;
@@ -219,14 +220,18 @@ impl Connection {
 			return false;
 		}
 		let hub = &self.shared.hub;
-		let session_id = hub.create_session(Link {
-			id: self.link_id,
-			tx: self.tx.clone(),
-		});
 		let capabilities = data["capabilities"].as_u64().unwrap_or_default();
+		let session_id = hub.create_session(
+			Link {
+				id: self.link_id,
+				tx: self.tx.clone(),
+			},
+			capabilities,
+		);
 		let (mut ready, supplemental) = ready::build(&self.shared, &session_id, &user, capabilities);
 		if capabilities & AUTH_TOKEN_REFRESH != 0 {
-			ready["auth_token"] = json!(self.shared.config.rotated_token());
+			let token = data["token"].as_str().unwrap_or_default();
+			ready["auth_token"] = json!(self.shared.config.rotated_token(token));
 		}
 		hub.dispatch_to(&session_id, "READY", &ready);
 		hub.dispatch_to(&session_id, "READY_SUPPLEMENTAL", &supplemental);
@@ -399,7 +404,8 @@ impl Connection {
 	fn broadcast_voice_state(&self, session: &str, data: &Value) {
 		let guild_id = parse_id(&data["guild_id"]);
 		let channel_id = parse_id(&data["channel_id"]);
-		let changed = self.shared.remember_voice(session, guild_id, channel_id);
+		let changed = self.shared.remember_voice(session, guild_id, channel_id)
+			| self.shared.voice_stale.swap(false, Ordering::AcqRel);
 		let event = self.shared.voice_state_event(session, guild_id, channel_id, data);
 		self.shared.hub.broadcast("VOICE_STATE_UPDATE", &event);
 		if let (true, Some(channel_id)) = (changed, channel_id) {

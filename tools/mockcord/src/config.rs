@@ -17,12 +17,17 @@ pub struct MockConfig {
 }
 
 impl MockConfig {
-	pub fn rotated_token(&self) -> String {
-		format!("{}{ROTATED_SUFFIX}", self.token)
+	pub fn rotated_token(&self, token: &str) -> String {
+		let base = token.strip_suffix(ROTATED_SUFFIX).unwrap_or(token);
+		format!("{base}{ROTATED_SUFFIX}")
 	}
 
 	pub fn accepts(&self, token: &str) -> bool {
-		token == self.token || token.strip_prefix(self.token.as_str()) == Some(ROTATED_SUFFIX)
+		token.strip_suffix(ROTATED_SUFFIX).unwrap_or(token) == self.token
+	}
+
+	pub fn accepts_second(&self, token: &str) -> bool {
+		token.strip_suffix(ROTATED_SUFFIX).unwrap_or(token) == self.second_token
 	}
 }
 

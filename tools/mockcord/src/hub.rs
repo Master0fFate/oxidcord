@@ -1,9 +1,11 @@
+use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
+use protocol::gateway::capability::{DEBOUNCE_MESSAGE_REACTIONS, PASSIVE_GUILD_UPDATE_V2};
 use rand::Rng;
 use serde_json::Value;
 use tokio::sync::mpsc::UnboundedSender;
@@ -28,6 +30,7 @@ struct SessionRecord {
 	link: Option<Link>,
 	detached_at: Option<Instant>,
 	subscribed: HashSet<u64>,
+	capabilities: u64,
 }
 
 impl SessionRecord {
@@ -55,7 +58,7 @@ impl Hub {
 		self.next_link.fetch_add(1, Ordering::Relaxed)
 	}
 
-	pub fn create_session(&self, link: Link) -> String {
+	pub fn create_session(&self, link: Link, capabilities: u64) -> String {
 		let session_id = format!("{:032x}", rand::rng().random::<u128>());
 		let mut sessions = self.sessions.lock();
 		sessions.retain(|_, record| record.detached_at.is_none_or(|at| at.elapsed() < DETACHED_TTL));
@@ -67,6 +70,7 @@ impl Hub {
 				link: Some(link),
 				detached_at: None,
 				subscribed: HashSet::new(),
+				capabilities,
 			},
 		);
 		session_id
@@ -78,18 +82,52 @@ impl Hub {
 		}
 	}
 
-	pub fn broadcast_unless_passive(&self, guild_id: u64, name: &str, data: &Value, passive: &Value) {
-		let text = data.to_string();
-		let passive_text = passive.to_string();
+	fn for_each_live(&self, mut visit: impl FnMut(&mut SessionRecord)) {
 		let mut sessions = self.sessions.lock();
 		sessions.retain(|_, record| record.detached_at.is_none_or(|at| at.elapsed() < DETACHED_TTL));
-		for record in sessions.values_mut() {
+		sessions.values_mut().for_each(&mut visit);
+	}
+
+	pub fn broadcast_unless_passive(
+		&self,
+		guild_id: u64,
+		name: &str,
+		data: &Value,
+		passive_v2: &Value,
+		unread: &Value,
+	) {
+		let text = data.to_string();
+		let passive_v2_text = OnceCell::new();
+		let unread_text = OnceCell::new();
+		self.for_each_live(|record| {
 			if record.subscribed.contains(&guild_id) {
 				record.push_event(name, &text);
+			} else if record.capabilities & PASSIVE_GUILD_UPDATE_V2 != 0 {
+				record.push_event(
+					"PASSIVE_UPDATE_V2",
+					passive_v2_text.get_or_init(|| passive_v2.to_string()),
+				);
 			} else {
-				record.push_event("PASSIVE_UPDATE_V2", &passive_text);
+				record.push_event(
+					"CHANNEL_UNREAD_UPDATE",
+					unread_text.get_or_init(|| unread.to_string()),
+				);
 			}
-		}
+		});
+	}
+
+	pub fn broadcast_batched(&self, name: &str, batch: &Value, singles: &[Value]) {
+		let text = batch.to_string();
+		let single_texts: Vec<String> = singles.iter().map(Value::to_string).collect();
+		self.for_each_live(|record| {
+			if record.capabilities & DEBOUNCE_MESSAGE_REACTIONS != 0 {
+				record.push_event(name, &text);
+			} else {
+				for single in &single_texts {
+					record.push_event("MESSAGE_REACTION_ADD", single);
+				}
+			}
+		});
 	}
 
 	pub fn expire_all(&self, code: u16) {
@@ -109,11 +147,7 @@ impl Hub {
 
 	pub fn broadcast(&self, name: &str, data: &Value) {
 		let text = data.to_string();
-		let mut sessions = self.sessions.lock();
-		sessions.retain(|_, record| record.detached_at.is_none_or(|at| at.elapsed() < DETACHED_TTL));
-		for record in sessions.values_mut() {
-			record.push_event(name, &text);
-		}
+		self.for_each_live(|record| record.push_event(name, &text));
 	}
 
 	pub fn resume(&self, session_id: &str, seq: u64, link: Link) -> bool {
