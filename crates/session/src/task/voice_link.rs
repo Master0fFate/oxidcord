@@ -13,7 +13,7 @@ use tokio::task::JoinHandle;
 use tokio::time::{MissedTickBehavior, interval, sleep};
 use voice::close;
 use voice::video::VideoQuality;
-use voice::{InputMode, VoiceConnection, VoiceError, VoiceEvent, VoiceOptions, VoiceParams};
+use voice::{AudioRoute, InputMode, VoiceConnection, VoiceError, VoiceEvent, VoiceOptions, VoiceParams};
 
 use super::{Core, Internal};
 use crate::config::VoiceIo;
@@ -52,7 +52,7 @@ pub(crate) struct VoiceLink {
 	pub(super) generation: u64,
 	pub(super) camera: bool,
 	self_mute: bool,
-	self_deaf: bool,
+	pub(super) self_deaf: bool,
 	server_muted: bool,
 	transmitting: bool,
 	user_volumes: HashMap<Snowflake, f32>,
@@ -89,6 +89,10 @@ impl VoiceLink {
 }
 
 impl VoiceLink {
+	pub(super) fn io(&self) -> VoiceIo {
+		self.io
+	}
+
 	pub(super) fn target(&self) -> Option<Target> {
 		self.target
 	}
@@ -176,6 +180,7 @@ impl Core {
 		if let Some(connection) = &self.voice.connection {
 			connection.set_deaf(deafened);
 		}
+		self.streams.set_deaf(deafened);
 		self.publish_self_state();
 	}
 
@@ -184,6 +189,7 @@ impl Core {
 			connection.set_input_device(input.clone());
 			connection.set_output_device(output.clone());
 		}
+		self.streams.set_output_device(output.clone());
 		self.update_voice_settings(move |settings| {
 			settings.input_device = input;
 			settings.output_device = output;
@@ -618,7 +624,10 @@ impl Core {
 	fn voice_options(&self) -> VoiceOptions {
 		let settings = self.store.settings.read();
 		VoiceOptions {
-			audio_io: self.voice.io == VoiceIo::Hardware,
+			audio: match self.voice.io {
+				VoiceIo::Hardware => AudioRoute::Call,
+				VoiceIo::Silent => AudioRoute::Silent,
+			},
 			input_device: settings.voice.input_device.clone(),
 			output_device: settings.voice.output_device.clone(),
 			identity: Some(self.identity.clone()),

@@ -164,7 +164,7 @@ pub(crate) enum Internal {
 	},
 	StreamVideo {
 		generation: u64,
-		result: Result<(), String>,
+		result: Result<::voice::ShareAudio, String>,
 	},
 	StreamEvent {
 		generation: u64,

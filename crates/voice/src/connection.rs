@@ -6,7 +6,9 @@ use protocol::gateway::IdentifyProperties;
 use protocol::{Snowflake, Token};
 use tokio::sync::{mpsc, watch};
 
-use crate::audio::{AudioEngine, Rings};
+#[cfg(windows)]
+use crate::audio::SystemScope;
+use crate::audio::{AudioEngine, AudioRoute, Rings};
 use crate::dave::DaveSession;
 use crate::error::{Result, VoiceError};
 use crate::event::VoiceEvent;
@@ -31,7 +33,7 @@ pub struct VoiceParams {
 }
 
 pub struct VoiceOptions {
-	pub audio_io: bool,
+	pub audio: AudioRoute,
 	pub input_device: Option<String>,
 	pub output_device: Option<String>,
 	pub transform: Box<dyn FrameTransform>,
@@ -42,7 +44,7 @@ pub struct VoiceOptions {
 impl Default for VoiceOptions {
 	fn default() -> Self {
 		Self {
-			audio_io: true,
+			audio: AudioRoute::Call,
 			input_device: None,
 			output_device: None,
 			transform: Box::new(Passthrough),
@@ -50,6 +52,13 @@ impl Default for VoiceOptions {
 			identity: None,
 		}
 	}
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShareAudio {
+	Off,
+	Live,
+	Unavailable,
 }
 
 pub struct VoiceConnection {
@@ -81,9 +90,9 @@ impl VoiceConnection {
 		let dave = DaveSession::new(params.user_id.get(), dave_group)?;
 		let rings = Arc::new(Rings::new());
 		let shared = Arc::new(Shared::new(rings.clone(), dave.stats(), options.stream));
-		if options.audio_io {
+		if options.audio.uses_devices() {
 			let engine = tokio::task::spawn_blocking(move || {
-				AudioEngine::start(rings, options.input_device, options.output_device)
+				AudioEngine::start(rings, options.audio, options.input_device, options.output_device)
 			})
 			.await
 			.map_err(|error| VoiceError::Audio(error.to_string()))??;
@@ -104,7 +113,7 @@ impl VoiceConnection {
 			shared.clone(),
 			transform,
 			dave,
-			options.audio_io,
+			options.audio,
 			Signals {
 				shutdown: shutdown_receiver,
 				control: control.clone(),
@@ -234,39 +243,44 @@ impl VoiceConnection {
 		target: &ScreenTarget,
 		quality: VideoQuality,
 		with_audio: bool,
-	) -> Result<()> {
-		let target = target.clone();
+	) -> Result<ShareAudio> {
+		let scoped = target.clone();
 		self.start_video(VideoKind::Screen, quality, move || {
-			let source = ScreenSource::open(&target, quality.fps)?;
+			let source = ScreenSource::open(&scoped, quality.fps)?;
 			Ok(Box::new(source))
 		})
 		.await?;
-		if with_audio && let Err(error) = self.set_share_audio(true) {
-			tracing::warn!(%error, "system audio capture failed, sharing video only");
+		if !with_audio {
+			return Ok(ShareAudio::Off);
 		}
-		Ok(())
+		Ok(match self.set_share_audio(Some(target)) {
+			Ok(()) => ShareAudio::Live,
+			Err(error) => {
+				tracing::warn!(%error, "system audio capture failed, sharing video only");
+				ShareAudio::Unavailable
+			}
+		})
 	}
 
 	pub fn stop_screen_share(&self) {
 		self.stop_video(VideoKind::Screen);
 	}
 
-	pub fn set_share_audio(&self, enabled: bool) -> Result<()> {
-		#[cfg(windows)]
-		{
-			match self.shared.engine.lock().as_ref() {
-				Some(engine) => engine.set_system_audio(enabled),
-				None if enabled => Err(VoiceError::Audio("audio is not running".to_owned())),
-				None => Ok(()),
-			}
+	#[cfg(windows)]
+	fn set_share_audio(&self, target: Option<&ScreenTarget>) -> Result<()> {
+		match (self.shared.engine.lock().as_ref(), target) {
+			(Some(engine), _) => engine.set_system_audio(target.map(SystemScope::for_target)),
+			(None, Some(_)) => Err(VoiceError::Audio("audio is not running".to_owned())),
+			(None, None) => Ok(()),
 		}
-		#[cfg(not(windows))]
-		{
-			if enabled {
-				Err(VideoError::Unsupported.into())
-			} else {
-				Ok(())
-			}
+	}
+
+	#[cfg(not(windows))]
+	fn set_share_audio(&self, target: Option<&ScreenTarget>) -> Result<()> {
+		if target.is_some() {
+			Err(VideoError::Unsupported.into())
+		} else {
+			Ok(())
 		}
 	}
 
@@ -339,7 +353,7 @@ impl VoiceConnection {
 		let video = &self.shared.video;
 		if video.active_kind() == kind && video.stop_sender() {
 			if kind == VideoKind::Screen {
-				let _ = self.set_share_audio(false);
+				let _ = self.set_share_audio(None);
 			}
 			let _ = self.control.send(Control::Video(VideoControl::Clear));
 		}

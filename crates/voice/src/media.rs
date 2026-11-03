@@ -10,8 +10,9 @@ use tokio::sync::mpsc;
 use tokio::time::{MissedTickBehavior, interval};
 use tracing::{debug, warn};
 
+use crate::audio::AudioRoute;
 use crate::chain::{CaptureChain, PlaybackChain};
-use crate::codec::{DEFAULT_BITRATE_BPS, FRAME_SAMPLES, SILENCE_FRAME, STEREO_FRAME_SAMPLES, VoiceEncoder};
+use crate::codec::{FRAME_SAMPLES, SILENCE_FRAME, STEREO_FRAME_SAMPLES, VoiceEncoder};
 use crate::crypto::PacketCipher;
 use crate::denoise::Denoiser;
 use crate::gate::{VoiceGate, meter_level, rms, to_db};
@@ -64,7 +65,7 @@ pub(crate) struct Media {
 	shared: Arc<Shared>,
 	control: mpsc::UnboundedSender<Control>,
 	transform: SharedTransform,
-	audio_io: bool,
+	route: AudioRoute,
 	capture: CaptureChain,
 	system: CaptureChain,
 	system_frame: Vec<f32>,
@@ -95,7 +96,7 @@ impl Media {
 		shared: Arc<Shared>,
 		control: mpsc::UnboundedSender<Control>,
 		transform: SharedTransform,
-		audio_io: bool,
+		route: AudioRoute,
 	) -> crate::error::Result<Self> {
 		let now = Instant::now();
 		Ok(Self {
@@ -104,12 +105,12 @@ impl Media {
 			shared,
 			control,
 			transform,
-			audio_io,
+			route,
 			capture: CaptureChain::default(),
 			system: CaptureChain::system(),
-			system_frame: vec![0.0; FRAME_SAMPLES],
-			encoder: VoiceEncoder::new()?,
-			applied_bitrate: DEFAULT_BITRATE_BPS,
+			system_frame: vec![0.0; STEREO_FRAME_SAMPLES],
+			encoder: VoiceEncoder::new(route.profile())?,
+			applied_bitrate: route.profile().bitrate_bps(),
 			processor: VoiceProcessor::new(),
 			denoiser: Denoiser::new(),
 			gate: VoiceGate::default(),
@@ -161,7 +162,7 @@ impl Media {
 	}
 
 	fn capture_tick(&mut self, now: Instant) {
-		if self.audio_io
+		if self.route.captures_microphone()
 			&& let Err(error) = self.capture.pull(&self.shared.rings)
 		{
 			warn!(%error, "capture resampling failed");
@@ -175,6 +176,21 @@ impl Media {
 			self.send_frame(&mut frame);
 		}
 		self.frame = frame;
+		if self.route == AudioRoute::Share {
+			self.share_tick();
+		}
+	}
+
+	fn share_tick(&mut self) {
+		if let Err(error) = self.system.pull(&self.shared.rings) {
+			warn!(%error, "system audio resampling failed");
+		}
+		let mut frame = std::mem::take(&mut self.system_frame);
+		while self.system.take_frame(&mut frame) {
+			let active = to_db(rms(&frame)) > SYSTEM_ACTIVITY_DB;
+			self.transmit(active, &frame);
+		}
+		self.system_frame = frame;
 	}
 
 	#[cfg(feature = "testing")]
@@ -207,15 +223,20 @@ impl Media {
 		if self.shared.noise_suppression.load(Ordering::Relaxed) {
 			self.denoiser.process(frame);
 		}
-		let microphone_active = self.should_transmit(to_db(rms(frame)));
-		let system_active = self.mix_system(frame, microphone_active);
-		if microphone_active || system_active {
+		let active = self.should_transmit(to_db(rms(frame)));
+		if active {
+			self.sync_bitrate();
+		}
+		self.transmit(active, frame);
+	}
+
+	fn transmit(&mut self, active: bool, frame: &[f32]) {
+		if active {
 			self.silence_left = SILENCE_FRAMES_BEFORE_PAUSE;
 			if !self.speaking {
 				self.speaking = true;
-				let _ = self.control.send(Control::Speaking(true));
+				let _ = self.control.send(Control::Speaking(self.route.speaking_flag()));
 			}
-			self.sync_bitrate();
 			match self.encoder.encode(frame) {
 				Ok(packet) if packet.len() > MAX_DTX_PACKET_BYTES => {
 					let packet = packet.to_vec();
@@ -231,7 +252,7 @@ impl Media {
 			}
 			if self.silence_left == 0 {
 				self.speaking = false;
-				let _ = self.control.send(Control::Speaking(false));
+				let _ = self.control.send(Control::Speaking(0));
 			}
 		}
 		self.timestamp = self.timestamp.wrapping_add(FRAME_SAMPLES as u32);
@@ -246,22 +267,6 @@ impl Media {
 		if let Err(error) = self.encoder.set_bitrate(wanted) {
 			warn!(%error, "opus bitrate was not applied");
 		}
-	}
-
-	fn mix_system(&mut self, frame: &mut [f32], microphone_active: bool) -> bool {
-		if let Err(error) = self.system.pull(&self.shared.rings) {
-			warn!(%error, "system audio resampling failed");
-		}
-		if !self.system.take_frame(&mut self.system_frame) {
-			return false;
-		}
-		if !microphone_active {
-			frame.fill(0.0);
-		}
-		for (sample, system) in frame.iter_mut().zip(&self.system_frame) {
-			*sample = soft_clip(*sample + system);
-		}
-		to_db(rms(&self.system_frame)) > SYSTEM_ACTIVITY_DB
 	}
 
 	fn should_transmit(&mut self, level_db: f32) -> bool {
@@ -486,7 +491,7 @@ impl Media {
 	}
 
 	fn playout_tick(&mut self, now: Instant) {
-		if self.audio_io && self.playback.has_device() {
+		if self.route.plays() && self.playback.has_device() {
 			for _ in 0..MAX_FRAMES_PER_TICK {
 				if !self.playback.wants_frame() {
 					break;

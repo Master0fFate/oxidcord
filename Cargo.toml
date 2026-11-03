@@ -89,6 +89,7 @@ windows = { version = "0.62", features = [
 	"Win32_UI_Shell",
 	"Win32_UI_WindowsAndMessaging",
 ] }
+windows-core = "0.62"
 
 wasmtime = { version = "50", default-features = false, features = ["component-model", "cranelift", "runtime", "parallel-compilation", "std"] }
 wit-bindgen = "0.63"

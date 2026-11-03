@@ -22,6 +22,7 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async_with_conf
 use tracing::debug;
 use url::{Host, Url};
 
+use crate::audio::AudioRoute;
 use crate::crypto::{EncryptionMode, PacketCipher};
 use crate::dave::{self, DaveEvent, DaveSession, Outgoing};
 use crate::error::{Result, VoiceError};
@@ -507,7 +508,7 @@ async fn handshake(credentials: &Credentials) -> Result<Established> {
 	let description: SessionDescription = link.expect(opcode::SESSION_DESCRIPTION).await?;
 	let mode = EncryptionMode::from_name(&description.mode).ok_or(VoiceError::NoEncryptionMode)?;
 	let cipher = PacketCipher::new(mode, &description.secret_key)?;
-	link.send(speaking_frame(false, ready.ssrc))
+	link.send(speaking_frame(0, ready.ssrc))
 		.await
 		.map_err(exit_error)?;
 	link.send(sink_wants_frame()).await.map_err(exit_error)?;
@@ -569,10 +570,10 @@ async fn resume(credentials: &Credentials, last_seq: i64) -> Result<Link> {
 		.map_err(|_| VoiceError::Timeout)?
 }
 
-fn speaking_frame(speaking: bool, ssrc: u32) -> Value {
+fn speaking_frame(flags: u8, ssrc: u32) -> Value {
 	json!({
 		"op": opcode::SPEAKING,
-		"d": { "speaking": u8::from(speaking), "delay": 0, "ssrc": ssrc },
+		"d": { "speaking": flags, "delay": 0, "ssrc": ssrc },
 	})
 }
 
@@ -654,7 +655,7 @@ pub(crate) struct Supervisor {
 	ssrc: u32,
 	ssrcs: VideoSsrcs,
 	announced: Option<(VideoKind, VideoQuality)>,
-	speaking: bool,
+	speaking: u8,
 	dave: DaveSession,
 	outbox: Vec<Outgoing>,
 }
@@ -672,7 +673,7 @@ impl Supervisor {
 		shared: Arc<Shared>,
 		transform: SharedTransform,
 		dave: DaveSession,
-		audio_io: bool,
+		route: AudioRoute,
 		signals: Signals,
 	) -> Result<Self> {
 		let Signals {
@@ -685,7 +686,7 @@ impl Supervisor {
 			.video
 			.keyframe_interval_ms
 			.store(established.keyframe_interval_ms, Ordering::Relaxed);
-		let _media = spawn_media(established.transport, &shared, &control, &transform, audio_io)?;
+		let _media = spawn_media(established.transport, &shared, &control, &transform, route)?;
 		shared.hub.emit(VoiceEvent::Connected { ssrc });
 		let mut supervisor = Self {
 			credentials,
@@ -698,7 +699,7 @@ impl Supervisor {
 			ssrc,
 			ssrcs: established.ssrcs,
 			announced: None,
-			speaking: false,
+			speaking: 0,
 			dave,
 			outbox: Vec::new(),
 		};
@@ -750,13 +751,13 @@ impl Supervisor {
 					Err(exit) => return Drive::Exit(exit),
 				},
 				command = self.commands.recv() => match command {
-					Some(Control::Speaking(speaking)) => {
-						self.speaking = speaking;
+					Some(Control::Speaking(flags)) => {
+						self.speaking = flags;
 						self.shared.hub.emit(VoiceEvent::Speaking {
 							user_id: self.credentials.user_id(),
-							speaking,
+							speaking: flags != 0,
 						});
-						if let Err(exit) = self.link.send(speaking_frame(speaking, self.ssrc)).await {
+						if let Err(exit) = self.link.send(speaking_frame(flags, self.ssrc)).await {
 							return Drive::Exit(exit);
 						}
 					}
@@ -1083,14 +1084,14 @@ fn spawn_media(
 	shared: &Arc<Shared>,
 	control: &mpsc::UnboundedSender<Control>,
 	transform: &SharedTransform,
-	audio_io: bool,
+	route: AudioRoute,
 ) -> Result<MediaHandle> {
 	let media = Media::new(
 		transport,
 		shared.clone(),
 		control.clone(),
 		transform.clone(),
-		audio_io,
+		route,
 	)?;
 	Ok(MediaHandle(tokio::spawn(media.run())))
 }

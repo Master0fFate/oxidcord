@@ -16,6 +16,15 @@ enum Source {
 	System,
 }
 
+impl Source {
+	fn channels(self) -> usize {
+		match self {
+			Self::Microphone => 1,
+			Self::System => 2,
+		}
+	}
+}
+
 #[derive(Default)]
 pub(crate) struct CaptureChain {
 	source: Source,
@@ -41,7 +50,7 @@ impl CaptureChain {
 		if rate != self.rate {
 			self.rate = rate;
 			self.resampler = (rate != 0)
-				.then(|| Resampler::new(rate, SAMPLE_RATE, 1))
+				.then(|| Resampler::new(rate, SAMPLE_RATE, self.source.channels()))
 				.transpose()?;
 			self.pending.clear();
 		}
@@ -58,7 +67,7 @@ impl CaptureChain {
 			let excess = self
 				.pending
 				.len()
-				.saturating_sub(FRAME_SAMPLES * SYSTEM_PENDING_FRAMES);
+				.saturating_sub(FRAME_SAMPLES * self.source.channels() * SYSTEM_PENDING_FRAMES);
 			self.pending.drain(..excess);
 		}
 		Ok(())
@@ -70,11 +79,11 @@ impl CaptureChain {
 	}
 
 	pub fn take_frame(&mut self, frame: &mut [f32]) -> bool {
-		if self.pending.len() < FRAME_SAMPLES {
+		if self.pending.len() < frame.len() {
 			return false;
 		}
-		frame.copy_from_slice(&self.pending[..FRAME_SAMPLES]);
-		self.pending.drain(..FRAME_SAMPLES);
+		frame.copy_from_slice(&self.pending[..frame.len()]);
+		self.pending.drain(..frame.len());
 		true
 	}
 }

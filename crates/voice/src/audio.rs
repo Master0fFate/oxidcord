@@ -11,10 +11,58 @@ use cpal::{
 use parking_lot::Mutex;
 use tracing::warn;
 
+use crate::codec::Profile;
 use crate::error::{Result, VoiceError};
+
+#[cfg(windows)]
+mod loopback;
+
+#[cfg(windows)]
+pub(crate) use loopback::SystemScope;
 
 const CAPTURE_LIMIT_SECONDS: usize = 2;
 const PLAYBACK_LIMIT_SECONDS: usize = 1;
+const SPEAKING_MICROPHONE: u8 = 1;
+const SPEAKING_SOUNDSHARE: u8 = 2;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AudioRoute {
+	#[default]
+	Call,
+	Share,
+	Watch,
+	Silent,
+}
+
+impl AudioRoute {
+	pub(crate) fn uses_devices(self) -> bool {
+		self != Self::Silent
+	}
+
+	pub(crate) fn captures_microphone(self) -> bool {
+		self == Self::Call
+	}
+
+	pub(crate) fn plays(self) -> bool {
+		matches!(self, Self::Call | Self::Watch)
+	}
+
+	pub(crate) fn profile(self) -> Profile {
+		if self == Self::Share {
+			Profile::Stream
+		} else {
+			Profile::Voice
+		}
+	}
+
+	pub(crate) fn speaking_flag(self) -> u8 {
+		if self == Self::Share {
+			SPEAKING_SOUNDSHARE
+		} else {
+			SPEAKING_MICROPHONE
+		}
+	}
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeviceInfo {
@@ -125,10 +173,10 @@ impl Rings {
 	}
 
 	#[cfg(windows)]
-	fn push_system(&self, mono: impl Iterator<Item = f32>) {
-		let limit = self.system_rate() as usize * CAPTURE_LIMIT_SECONDS;
+	fn push_system(&self, stereo: impl Iterator<Item = f32>) {
+		let limit = self.system_rate() as usize * 2 * CAPTURE_LIMIT_SECONDS;
 		let mut ring = self.system.lock();
-		ring.extend(mono);
+		ring.extend(stereo);
 		let excess = ring.len().saturating_sub(limit);
 		ring.drain(..excess);
 	}
@@ -144,7 +192,7 @@ enum Command {
 	Input(Option<String>),
 	Output(Option<String>),
 	#[cfg(windows)]
-	SystemAudio(bool, mpsc::Sender<Result<()>>),
+	SystemAudio(Option<SystemScope>, mpsc::Sender<Result<()>>),
 	Stop,
 }
 
@@ -154,12 +202,17 @@ pub(crate) struct AudioEngine {
 }
 
 impl AudioEngine {
-	pub fn start(rings: Arc<Rings>, input: Option<String>, output: Option<String>) -> Result<Self> {
+	pub fn start(
+		rings: Arc<Rings>,
+		route: AudioRoute,
+		input: Option<String>,
+		output: Option<String>,
+	) -> Result<Self> {
 		let (commands, receiver) = mpsc::channel();
 		let (ready_sender, ready) = mpsc::channel();
 		let thread = thread::Builder::new()
 			.name("voice-audio".to_owned())
-			.spawn(move || run(&rings, input, output, &receiver, &ready_sender))
+			.spawn(move || run(&rings, route, input, output, &receiver, &ready_sender))
 			.map_err(|error| VoiceError::Audio(error.to_string()))?;
 		let _ = ready.recv();
 		Ok(Self {
@@ -177,10 +230,10 @@ impl AudioEngine {
 	}
 
 	#[cfg(windows)]
-	pub fn set_system_audio(&self, enabled: bool) -> Result<()> {
+	pub fn set_system_audio(&self, scope: Option<SystemScope>) -> Result<()> {
 		let (reply, result) = mpsc::channel();
 		self.commands
-			.send(Command::SystemAudio(enabled, reply))
+			.send(Command::SystemAudio(scope, reply))
 			.map_err(|_| VoiceError::Audio("audio engine stopped".to_owned()))?;
 		result
 			.recv()
@@ -197,37 +250,56 @@ impl Drop for AudioEngine {
 	}
 }
 
+#[cfg(windows)]
+enum SystemCapture {
+	Device { _stream: Stream },
+	Process { _capture: loopback::ProcessLoopback },
+}
+
 fn run(
 	rings: &Arc<Rings>,
+	route: AudioRoute,
 	input: Option<String>,
 	output: Option<String>,
 	commands: &mpsc::Receiver<Command>,
 	ready: &mpsc::Sender<()>,
 ) {
 	let host = cpal::default_host();
-	let mut input_stream = open_input(&host, input.as_deref(), rings);
-	let mut output_stream = open_output(&host, output.as_deref(), rings);
+	let mut input_stream = route
+		.captures_microphone()
+		.then(|| open_input(&host, input.as_deref(), rings))
+		.flatten();
+	let mut output_stream = route
+		.plays()
+		.then(|| open_output(&host, output.as_deref(), rings))
+		.flatten();
 	#[cfg(windows)]
-	let mut system_stream: Option<Stream> = None;
+	let mut system_capture: Option<SystemCapture> = None;
 	let _ = ready.send(());
 	while let Ok(command) = commands.recv() {
 		match command {
 			Command::Input(id) => {
 				drop(input_stream.take());
-				input_stream = open_input(&host, id.as_deref(), rings);
+				input_stream = route
+					.captures_microphone()
+					.then(|| open_input(&host, id.as_deref(), rings))
+					.flatten();
 			}
 			Command::Output(id) => {
 				drop(output_stream.take());
-				output_stream = open_output(&host, id.as_deref(), rings);
+				output_stream = route
+					.plays()
+					.then(|| open_output(&host, id.as_deref(), rings))
+					.flatten();
 			}
 			#[cfg(windows)]
-			Command::SystemAudio(enabled, reply) => {
-				drop(system_stream.take());
+			Command::SystemAudio(scope, reply) => {
+				drop(system_capture.take());
 				rings.stop_system();
-				let opened = if enabled {
-					open_system(&host, rings).map(|stream| system_stream = Some(stream))
-				} else {
-					Ok(())
+				let opened = match scope {
+					Some(scope) => open_system(&host, scope, output.as_deref(), rings)
+						.map(|capture| system_capture = Some(capture)),
+					None => Ok(()),
 				};
 				let _ = reply.send(opened);
 			}
@@ -279,9 +351,24 @@ fn open_output(host: &Host, id: Option<&str>, rings: &Arc<Rings>) -> Option<Stre
 }
 
 #[cfg(windows)]
-fn open_system(host: &Host, rings: &Arc<Rings>) -> Result<Stream> {
-	let device = host
-		.default_output_device()
+fn open_system(
+	host: &Host,
+	scope: SystemScope,
+	output: Option<&str>,
+	rings: &Arc<Rings>,
+) -> Result<SystemCapture> {
+	match loopback::ProcessLoopback::start(scope, rings) {
+		Ok(capture) => Ok(SystemCapture::Process { _capture: capture }),
+		Err(error) => {
+			warn!(%error, "process audio capture unavailable, capturing the output device");
+			open_system_device(host, output, rings).map(|stream| SystemCapture::Device { _stream: stream })
+		}
+	}
+}
+
+#[cfg(windows)]
+fn open_system_device(host: &Host, output: Option<&str>, rings: &Arc<Rings>) -> Result<Stream> {
+	let device = find_device(host, output, false)
 		.ok_or_else(|| VoiceError::Audio("no output device to capture".to_owned()))?;
 	build_system(&device, rings).map_err(|error| VoiceError::Audio(error.to_string()))
 }
@@ -374,8 +461,10 @@ where
 	device.build_input_stream(
 		config,
 		move |data: &[T], _| {
-			rings.push_system(data.chunks_exact(channels).map(|frame| {
-				frame.iter().map(|sample| sample.to_sample::<f32>()).sum::<f32>() / channels as f32
+			rings.push_system(data.chunks_exact(channels).flat_map(|frame| {
+				let left = frame[0].to_sample::<f32>();
+				let right = frame.get(1).map_or(left, |sample| sample.to_sample::<f32>());
+				[left, right]
 			}));
 		},
 		|error| warn!(%error, "system audio stream error"),

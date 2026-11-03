@@ -474,6 +474,7 @@ pub enum Command {
 	},
 	StopScreenShare,
 	SetStreamQuality(VideoQuality),
+	SetStreamVolume(f32),
 	WatchStream {
 		stream_key: String,
 	},

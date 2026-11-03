@@ -370,6 +370,7 @@ voice-stats-jitter = Jitter
 voice-stats-unknown = Unknown
 voice-user-volume = User Volume
 voice-user-mute = Mute
+voice-stream-volume = Stream Volume
 voice-watch-stream = Watch Stream
 voice-empty = No one is in this channel yet.
 voice-join = Join Voice

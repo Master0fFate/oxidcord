@@ -6,11 +6,13 @@ use state::{LocalEvent, StreamInfo};
 use tokio::time::sleep;
 use voice::video::VideoQuality;
 use voice::video::capture::ScreenTarget;
-use voice::{VoiceConnection, VoiceError, VoiceEvent, VoiceOptions, VoiceParams};
+use voice::{AudioRoute, ShareAudio, VoiceConnection, VoiceError, VoiceEvent, VoiceOptions, VoiceParams};
 
 use super::{Core, Internal};
+use crate::config::VoiceIo;
 
 const STREAM_TIMEOUT: Duration = Duration::from_secs(15);
+const FULL_VOLUME: f32 = 1.0;
 
 #[derive(Debug, Clone)]
 enum Role {
@@ -20,6 +22,20 @@ enum Role {
 		with_audio: bool,
 	},
 	Watch,
+}
+
+fn audio_route(io: VoiceIo, role: &Role) -> AudioRoute {
+	match (io, role) {
+		(VoiceIo::Silent, _)
+		| (
+			_,
+			Role::Share {
+				with_audio: false, ..
+			},
+		) => AudioRoute::Silent,
+		(VoiceIo::Hardware, Role::Share { .. }) => AudioRoute::Share,
+		(VoiceIo::Hardware, Role::Watch) => AudioRoute::Watch,
+	}
 }
 
 struct Server {
@@ -39,11 +55,22 @@ struct StreamSession {
 	pump: Option<tokio::task::JoinHandle<()>>,
 }
 
-#[derive(Default)]
 pub(crate) struct StreamLink {
 	generation: u64,
+	volume: f32,
 	share: Option<StreamSession>,
 	watch: Option<StreamSession>,
+}
+
+impl Default for StreamLink {
+	fn default() -> Self {
+		Self {
+			generation: 0,
+			volume: FULL_VOLUME,
+			share: None,
+			watch: None,
+		}
+	}
 }
 
 impl StreamLink {
@@ -55,6 +82,24 @@ impl StreamLink {
 		{
 			connection.set_video_quality(quality);
 		}
+	}
+
+	pub(super) fn set_deaf(&self, deafened: bool) {
+		if let Some(connection) = self.watched_connection() {
+			connection.set_deaf(deafened);
+		}
+	}
+
+	pub(super) fn set_output_device(&self, output: Option<String>) {
+		if let Some(connection) = self.watched_connection() {
+			connection.set_output_device(output);
+		}
+	}
+
+	fn watched_connection(&self) -> Option<&Arc<VoiceConnection>> {
+		self.watch
+			.as_ref()
+			.and_then(|session| session.connection.as_ref())
 	}
 
 	fn next_generation(&mut self) -> u64 {
@@ -313,13 +358,26 @@ impl Core {
 					let _ = internal.send(Internal::StreamVideo { generation, result });
 				});
 			}
-			Role::Watch => self.apply_local(LocalEvent::Watching(key)),
+			Role::Watch => {
+				connection.set_deaf(self.voice.self_deaf);
+				connection.set_output_volume(self.streams.volume);
+				self.apply_local(LocalEvent::Watching(key));
+			}
 		}
 	}
 
-	pub(super) fn on_stream_video(&mut self, generation: u64, result: Result<(), String>) {
-		if let Err(error) = result {
-			self.fail_stream(generation, &format!("Screen share failed: {error}"));
+	pub(super) fn on_stream_video(&mut self, generation: u64, result: Result<ShareAudio, String>) {
+		match result {
+			Ok(ShareAudio::Unavailable) => self.reject("Sharing without audio"),
+			Ok(_) => {}
+			Err(error) => self.fail_stream(generation, &format!("Screen share failed: {error}")),
+		}
+	}
+
+	pub(super) fn set_stream_volume(&mut self, volume: f32) {
+		self.streams.volume = volume;
+		if let Some(connection) = self.streams.watched_connection() {
+			connection.set_output_volume(volume);
 		}
 	}
 
@@ -389,7 +447,8 @@ impl Core {
 		};
 		session.connecting = true;
 		let options = VoiceOptions {
-			audio_io: false,
+			audio: audio_route(self.voice.io(), &session.role),
+			output_device: self.store.settings.read().voice.output_device.clone(),
 			stream: true,
 			identity: Some(self.identity.clone()),
 			..VoiceOptions::default()

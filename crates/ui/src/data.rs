@@ -41,6 +41,7 @@ struct LocalVoice {
 	talking: bool,
 	volumes: HashMap<Snowflake, f32>,
 	silenced: HashSet<Snowflake>,
+	stream_volume: Option<f32>,
 }
 
 pub struct Data {
@@ -130,6 +131,16 @@ impl Data {
 
 	pub fn user_volume(&self, user_id: Snowflake) -> f32 {
 		self.local_voice.volumes.get(&user_id).copied().unwrap_or(1.0)
+	}
+
+	pub fn stream_volume(&self) -> f32 {
+		self.local_voice.stream_volume.unwrap_or(1.0)
+	}
+
+	pub fn set_stream_volume(&mut self, volume: f32, cx: &mut Context<Self>) {
+		self.local_voice.stream_volume = Some(volume);
+		self.session.send(Command::SetStreamVolume(volume));
+		cx.notify();
 	}
 
 	pub fn is_silenced(&self, user_id: Snowflake) -> bool {

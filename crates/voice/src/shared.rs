@@ -49,7 +49,7 @@ pub(crate) enum VideoControl {
 }
 
 pub(crate) enum Control {
-	Speaking(bool),
+	Speaking(u8),
 	Video(VideoControl),
 }
 

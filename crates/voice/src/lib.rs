@@ -23,8 +23,8 @@ mod transform;
 pub mod video;
 mod wire;
 
-pub use audio::{AudioDevices, DeviceInfo, devices};
-pub use connection::{VoiceConnection, VoiceOptions, VoiceParams};
+pub use audio::{AudioDevices, AudioRoute, DeviceInfo, devices};
+pub use connection::{ShareAudio, VoiceConnection, VoiceOptions, VoiceParams};
 pub use crypto::EncryptionMode;
 pub use denoise::AVAILABLE as NOISE_SUPPRESSION_AVAILABLE;
 pub use error::{Result, VoiceError};

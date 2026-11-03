@@ -211,6 +211,7 @@ impl Core {
 			} => self.start_screen_share(target, quality, with_audio),
 			Command::StopScreenShare => self.stop_screen_share(),
 			Command::SetStreamQuality(quality) => self.streams.set_quality(quality),
+			Command::SetStreamVolume(volume) => self.set_stream_volume(volume),
 			Command::WatchStream { stream_key } => self.watch_stream(stream_key),
 			Command::StopWatchingStream { stream_key } => self.stop_watching_stream(&stream_key),
 			command @ (Command::CreateThread { .. }

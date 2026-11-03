@@ -2,9 +2,9 @@ use std::sync::Arc;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
-use crate::audio::{AudioEngine, Rings};
+use crate::audio::{AudioEngine, AudioRoute, Rings};
 use crate::chain::{CaptureChain, PlaybackChain};
-use crate::codec::{FRAME_SAMPLES, STEREO_FRAME_SAMPLES, VoiceDecoder, VoiceEncoder};
+use crate::codec::{FRAME_SAMPLES, Profile, STEREO_FRAME_SAMPLES, VoiceDecoder, VoiceEncoder};
 use crate::denoise::Denoiser;
 use crate::error::{Result, VoiceError};
 use crate::gate::{meter_level, rms};
@@ -20,7 +20,7 @@ pub fn loopback(seconds: u32) -> Result<()> {
 
 pub fn loopback_with_levels(seconds: u32, on_level: &(dyn Fn(f32) + Send + Sync)) -> Result<()> {
 	let rings = Arc::new(Rings::new());
-	let _engine = AudioEngine::start(rings.clone(), None, None)?;
+	let _engine = AudioEngine::start(rings.clone(), AudioRoute::Call, None, None)?;
 	if rings.capture_rate() == 0 {
 		return Err(VoiceError::Audio("no input device".to_owned()));
 	}
@@ -29,7 +29,7 @@ pub fn loopback_with_levels(seconds: u32, on_level: &(dyn Fn(f32) + Send + Sync)
 	}
 	let mut capture = CaptureChain::default();
 	let mut playback = PlaybackChain::new(rings.clone());
-	let mut encoder = VoiceEncoder::new()?;
+	let mut encoder = VoiceEncoder::new(Profile::Voice)?;
 	let mut decoder = VoiceDecoder::new()?;
 	let mut denoiser = Denoiser::new();
 	let mut microphone = vec![0.0; FRAME_SAMPLES];
