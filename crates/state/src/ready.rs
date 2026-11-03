@@ -115,6 +115,7 @@ impl State {
 		self.typing.clear();
 		self.calls.clear();
 		self.alerts.clear();
+		self.lazy.expressions.guild_sounds.clear();
 		let own_share = self
 			.voice
 			.as_ref()
