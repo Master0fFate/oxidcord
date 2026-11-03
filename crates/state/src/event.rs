@@ -7,6 +7,7 @@ use crate::loaded::Loaded;
 use crate::messages::PendingFile;
 use crate::notifications::AlertVerdict;
 use crate::plugin_shell::{ChannelDecoration, ClientOptions, DmSectionView, UiIntent};
+use crate::settings::RailEntry;
 use crate::views::{RenderedMessage, UserOverride};
 use crate::voice::{E2eeInfo, StreamInfo, VideoKind, VoiceStatus};
 
@@ -122,6 +123,7 @@ pub enum LocalEvent {
 	VoiceE2ee(Option<E2eeInfo>),
 	VoiceE2eeFailed,
 	SettingsEdited,
+	GuildLayout(Vec<RailEntry>),
 	RestorePrivacy {
 		before: Vec<u8>,
 		applied: Vec<u8>,

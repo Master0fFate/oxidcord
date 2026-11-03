@@ -9,7 +9,7 @@ use protocol::{
 	status_with_show_current_game, status_with_value, text_and_images_with_explicit,
 };
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::changes::Changes;
 use crate::event::LocalEvent;
@@ -222,13 +222,25 @@ impl State {
 		if privacy_bytes.is_some() || !partial {
 			changes.merge(self.replace_privacy_settings(privacy_bytes.unwrap_or_default(), partial));
 		}
-		if let Some(ProtoGuildFolders { folders, positions }) = guild_folders {
-			self.guild_folders = folders.into_iter().map(GuildFolder::from).collect();
-			self.guild_positions = positions;
-			self.reorder_guilds();
+		if let Some(guild_folders) = guild_folders {
+			self.replace_guild_folders(guild_folders);
 			changes.guild_list = true;
 		}
 		changes
+	}
+
+	fn replace_guild_folders(&mut self, ProtoGuildFolders { folders, positions }: ProtoGuildFolders) {
+		self.guild_folders = folders.into_iter().map(GuildFolder::from).collect();
+		self.guild_positions = positions;
+		self.reorder_guilds();
+	}
+
+	pub(crate) fn apply_guild_layout(&mut self, layout: &[RailEntry]) -> Changes {
+		self.replace_guild_folders(guild_folders_proto(layout));
+		Changes {
+			guild_list: true,
+			..Changes::default()
+		}
 	}
 
 	fn replace_status_settings(&mut self, bytes: Vec<u8>, partial: bool) -> Changes {
@@ -416,28 +428,37 @@ impl From<ProtoGuildFolder> for GuildFolder {
 	}
 }
 
-pub fn guild_folders_settings(layout: &[RailEntry]) -> Value {
-	let folders: Vec<Value> = layout
+fn guild_folders_proto(layout: &[RailEntry]) -> ProtoGuildFolders {
+	let folders: Vec<ProtoGuildFolder> = layout
 		.iter()
 		.map(|entry| match entry {
-			RailEntry::Guild(id) => json!({
-				"id": null,
-				"name": null,
-				"color": null,
-				"guild_ids": [id.to_string()],
-			}),
+			RailEntry::Guild(id) => ProtoGuildFolder {
+				guild_ids: vec![*id],
+				..ProtoGuildFolder::default()
+			},
 			RailEntry::Folder {
 				id,
 				name,
 				color,
 				guilds,
-			} => json!({
-				"id": id,
-				"name": name,
-				"color": color,
-				"guild_ids": guilds.iter().map(ToString::to_string).collect::<Vec<_>>(),
-			}),
+			} => ProtoGuildFolder {
+				id: Some(*id as i64),
+				name: name.clone(),
+				color: color.map(u64::from),
+				guild_ids: guilds.clone(),
+			},
 		})
 		.collect();
-	json!({ "guild_folders": folders })
+	let positions = folders
+		.iter()
+		.flat_map(|folder| folder.guild_ids.iter().copied())
+		.collect();
+	ProtoGuildFolders { folders, positions }
+}
+
+pub fn guild_layout_patch(layout: &[RailEntry]) -> String {
+	encode_settings(&ProtoSettings {
+		guild_folders: Some(guild_folders_proto(layout)),
+		..ProtoSettings::default()
+	})
 }

@@ -184,6 +184,9 @@ pub async fn patch_settings_proto(State(shared): Mock, Json(body): Json<Value>) 
 		if let Some(text_and_images) = patch.text_and_images_bytes {
 			store.proto_text_and_images = text_and_images;
 		}
+		if let Some(guild_folders) = patch.guild_folders {
+			store.proto_guild_folders = Some(guild_folders);
+		}
 		user_settings_proto(&shared.fixtures, &store)
 	};
 	shared.hub.broadcast(

@@ -718,6 +718,7 @@ impl State {
 			LocalEvent::VoiceE2ee(info) => return self.voice_e2ee(info.clone()),
 			LocalEvent::VoiceE2eeFailed => return self.voice_e2ee_failed(),
 			LocalEvent::SettingsEdited => changes.user_settings = true,
+			LocalEvent::GuildLayout(layout) => return self.apply_guild_layout(layout),
 			LocalEvent::RestorePrivacy { before, applied } => {
 				if self.proto_privacy != *applied {
 					return Changes::default();

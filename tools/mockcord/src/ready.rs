@@ -173,15 +173,12 @@ fn friend_presences<'a>(fixtures: &Fixtures, store: &'a Store) -> Vec<&'a Presen
 }
 
 pub fn user_settings_proto(fixtures: &Fixtures, store: &Store) -> String {
-	let guild_ids = live_guilds(fixtures, store)
-		.take(MOCK_FOLDER_GUILDS)
-		.map(|guild| Snowflake(guild.id))
-		.collect();
-	encode_settings(&ProtoSettings {
-		status_bytes: Some(store.proto_status.clone()),
-		text_and_images_bytes: Some(store.proto_text_and_images.clone()),
-		privacy_bytes: Some(store.proto_privacy.clone()),
-		guild_folders: Some(ProtoGuildFolders {
+	let guild_folders = store.proto_guild_folders.clone().unwrap_or_else(|| {
+		let guild_ids = live_guilds(fixtures, store)
+			.take(MOCK_FOLDER_GUILDS)
+			.map(|guild| Snowflake(guild.id))
+			.collect();
+		ProtoGuildFolders {
 			folders: vec![ProtoGuildFolder {
 				id: Some(MOCK_FOLDER_ID),
 				name: Some(MOCK_FOLDER_NAME.to_owned()),
@@ -189,7 +186,13 @@ pub fn user_settings_proto(fixtures: &Fixtures, store: &Store) -> String {
 				guild_ids,
 			}],
 			positions: Vec::new(),
-		}),
+		}
+	});
+	encode_settings(&ProtoSettings {
+		status_bytes: Some(store.proto_status.clone()),
+		text_and_images_bytes: Some(store.proto_text_and_images.clone()),
+		privacy_bytes: Some(store.proto_privacy.clone()),
+		guild_folders: Some(guild_folders),
 	})
 }
 

@@ -6,9 +6,9 @@ use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
 use protocol::{
 	AutoModRule, Channel, Emoji, FRIEND_SOURCE_MUTUAL_FRIENDS, FRIEND_SOURCE_MUTUAL_GUILDS, GuildProperties,
-	Member, Presence, PrivacyChange, ProtoCustomStatus, ProtoFrecencySettings, ProtoStatus, ReadState,
-	Relationship, Role, ScheduledEvent, Snowflake, SoundboardSound, StageInstance, StatusKind, User,
-	UserGuildSettings, encode_sensitive_media, encode_status, privacy_with,
+	Member, Presence, PrivacyChange, ProtoCustomStatus, ProtoFrecencySettings, ProtoGuildFolders,
+	ProtoStatus, ReadState, Relationship, Role, ScheduledEvent, Snowflake, SoundboardSound, StageInstance,
+	StatusKind, User, UserGuildSettings, encode_sensitive_media, encode_status, privacy_with,
 };
 use serde_json::Value;
 use tokio::sync::{broadcast, watch};
@@ -125,6 +125,7 @@ pub struct Store {
 	pub proto_status: Vec<u8>,
 	pub proto_privacy: Vec<u8>,
 	pub proto_text_and_images: Vec<u8>,
+	pub proto_guild_folders: Option<ProtoGuildFolders>,
 	pub uploads: HashMap<String, u64>,
 	pub nonces: HashMap<(u64, String), u64>,
 	pub stage_instances: HashMap<u64, StageInstance>,
@@ -235,6 +236,7 @@ impl Store {
 			proto_status: seed_status(),
 			proto_privacy: seed_privacy(fixtures),
 			proto_text_and_images: encode_sensitive_media(&MOCK_SENSITIVE_MEDIA),
+			proto_guild_folders: None,
 			frecency: ProtoFrecencySettings {
 				data_version: 1,
 				..ProtoFrecencySettings::default()

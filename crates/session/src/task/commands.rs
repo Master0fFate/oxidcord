@@ -13,7 +13,7 @@ use rest::api::ArchivedScope;
 use rest::api::image_data_uri;
 use rest::{RestClient, RestError, UploadFile};
 use serde_json::{Value, json};
-use state::{Loaded, LocalEvent, USER_COMMANDS, guild_folders_settings};
+use state::{Loaded, LocalEvent, USER_COMMANDS, guild_layout_patch};
 
 use super::actions::{mute_config, object, rest_failure, some, timestamp};
 use super::{Command, Core, Internal, ReadSnapshot};
@@ -1006,7 +1006,7 @@ impl Core {
 				self.patch_settings_proto(patch, "sensitive media", Some(undo));
 			}
 			Command::SetGuildLayout(layout) => {
-				self.set_guild_layout(&layout);
+				self.set_guild_layout(layout);
 				self.note_list_changed();
 			}
 			Command::CreateGuild { name, icon } => {
@@ -2151,19 +2151,11 @@ fn custom_status_activity(custom: &ProtoCustomStatus) -> Value {
 }
 
 impl Core {
-	fn set_guild_layout(&mut self, layout: &[state::RailEntry]) {
-		let previous = guild_folders_settings(&self.state.read().guild_layout());
-		let body = guild_folders_settings(layout);
-		self.apply_local(LocalEvent::Loaded(Box::new(Loaded::UserSettings(body.clone()))));
-		let rest = self.rest.clone();
-		let internal = self.internal.clone();
-		self.runtime.spawn(async move {
-			if let Err(error) = rest.patch_user_settings(body).await {
-				tracing::warn!(%error, "rest call failed");
-				let _ = internal.send(Internal::Loaded(Loaded::UserSettings(previous)));
-				let _ = internal.send(Internal::Rejected("server order failed".to_owned()));
-			}
-		});
+	fn set_guild_layout(&mut self, layout: Vec<state::RailEntry>) {
+		let previous = self.state.read().guild_layout();
+		let patch = guild_layout_patch(&layout);
+		self.apply_local(LocalEvent::GuildLayout(layout));
+		self.patch_settings_proto(patch, "server order", Some(LocalEvent::GuildLayout(previous)));
 	}
 
 	pub(super) fn load_unnamed_applications(&self) {
