@@ -7,7 +7,7 @@ use protocol::{
 	ApplicationCommand, Channel, ChannelFlags, ChannelPosition, ChannelType, CommandAutocomplete,
 	CreateMessage, DispatchEvent, InteractionOption, MessageAck, MessageFlags, MessagePollVote,
 	MessageReference, MessageReferenceKind, Nonce, PermissionOverwriteKind, Permissions, Poll,
-	ProtoCustomStatus, SCHEDULED_EVENT_GUILD_ONLY, Snowflake, StatusKind, ThreadMember,
+	ProtoCustomStatus, SCHEDULED_EVENT_GUILD_ONLY, ScheduledEventRsvp, Snowflake, StatusKind, ThreadMember,
 };
 use rest::api::ArchivedScope;
 use rest::api::image_data_uri;
@@ -77,6 +77,31 @@ pub(super) async fn confirmed_profile(
 		raw,
 		issued,
 	})
+}
+
+async fn fetch_scheduled_events(rest: &RestClient, guild_id: Snowflake) -> rest::Result<Loaded> {
+	let requested = Instant::now();
+	let events = rest.scheduled_events(guild_id).await?.into_vec();
+	let interested = rest
+		.scheduled_event_rsvps(&[guild_id])
+		.await
+		.map_err(|error| tracing::warn!(%error, "event interest was not loaded"))
+		.ok()
+		.map(|rsvps| interested_events(&rsvps));
+	Ok(Loaded::ScheduledEvents {
+		guild_id,
+		events,
+		interested,
+		requested,
+	})
+}
+
+fn interested_events(rsvps: &[ScheduledEventRsvp]) -> Vec<Snowflake> {
+	rsvps
+		.iter()
+		.filter(|rsvp| rsvp.is_interested())
+		.map(|rsvp| rsvp.guild_scheduled_event_id)
+		.collect()
 }
 
 fn private_overwrites(guild_id: Snowflake, creator: Option<Snowflake>) -> Value {
@@ -1473,28 +1498,43 @@ impl Core {
 		);
 	}
 
-	pub(super) fn load_scheduled_events(&self, guild_id: Snowflake) {
-		self.spawn_load("events", move |rest| async move {
-			let requested = Instant::now();
-			let events = rest.scheduled_events(guild_id).await?.into_vec();
-			let interested = rest
-				.scheduled_event_rsvps(guild_id)
-				.await
-				.map_err(|error| tracing::warn!(%error, "event interest was not loaded"))
-				.ok()
-				.map(|rsvps| {
-					rsvps
-						.iter()
-						.filter(|rsvp| rsvp.is_interested())
-						.map(|rsvp| rsvp.guild_scheduled_event_id)
-						.collect()
-				});
-			Ok(Loaded::ScheduledEvents {
-				guild_id,
-				events,
-				interested,
-				requested,
-			})
+	pub(super) fn load_scheduled_events(&self, guild_id: Snowflake, background: bool) {
+		if !background {
+			self.spawn_load("events", move |rest| async move {
+				fetch_scheduled_events(&rest, guild_id).await
+			});
+			return;
+		}
+		let rest = self.rest.clone();
+		let internal = self.internal.clone();
+		self.runtime.spawn(async move {
+			match fetch_scheduled_events(&rest, guild_id).await {
+				Ok(loaded) => {
+					let _ = internal.send(Internal::Loaded(loaded));
+				}
+				Err(error) => {
+					tracing::warn!(%error, "events were not prefetched");
+					let _ = internal.send(Internal::ScheduledEventsFailed(guild_id));
+				}
+			}
+		});
+	}
+
+	pub(super) fn load_event_interest(&self) {
+		let guild_ids: Vec<Snowflake> = self.state.read().guilds().map(|guild| guild.id).collect();
+		if guild_ids.is_empty() {
+			return;
+		}
+		let rest = self.rest.clone();
+		let internal = self.internal.clone();
+		self.runtime.spawn(async move {
+			match rest.scheduled_event_rsvps(&guild_ids).await {
+				Ok(rsvps) => {
+					let interested = interested_events(&rsvps);
+					let _ = internal.send(Internal::Loaded(Loaded::EventInterest(interested)));
+				}
+				Err(error) => tracing::warn!(%error, "event interest was not loaded"),
+			}
 		});
 	}
 
@@ -1885,7 +1925,7 @@ impl Core {
 					});
 				}
 			}
-			Command::LoadScheduledEvents { guild_id } => self.load_scheduled_events(guild_id),
+			Command::LoadScheduledEvents { guild_id } => self.load_scheduled_events(guild_id, false),
 			Command::CreateScheduledEvent {
 				guild_id,
 				name,

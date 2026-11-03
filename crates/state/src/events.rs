@@ -100,6 +100,23 @@ impl State {
 		events_loaded(change.guild_id)
 	}
 
+	pub(crate) fn event_interest_loaded(&mut self, interested: &[Snowflake]) -> Changes {
+		let mut changes = Changes::default();
+		for guild in self.guilds.values_mut() {
+			let known = guild
+				.scheduled_events
+				.iter()
+				.map(|event| event.id)
+				.filter(|id| interested.contains(id));
+			let before = guild.interested_events.len();
+			guild.interested_events.extend(known);
+			if guild.interested_events.len() != before {
+				changes.merge(events_loaded(guild.id));
+			}
+		}
+		changes
+	}
+
 	pub(crate) fn scheduled_events_loaded(
 		&mut self,
 		guild_id: Snowflake,

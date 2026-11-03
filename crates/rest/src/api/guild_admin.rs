@@ -249,9 +249,13 @@ impl RestClient {
 		self.send(request).await
 	}
 
-	pub async fn scheduled_event_rsvps(&self, guild_id: Snowflake) -> Result<LenientVec<ScheduledEventRsvp>> {
-		let request =
-			Request::get("/users/@me/scheduled-events").query(&[("guild_ids", guild_id.to_string())]);
+	pub async fn scheduled_event_rsvps(&self, guild_ids: &[Snowflake]) -> Result<LenientVec<ScheduledEventRsvp>> {
+		let joined = guild_ids
+			.iter()
+			.map(ToString::to_string)
+			.collect::<Vec<_>>()
+			.join(",");
+		let request = Request::get("/users/@me/scheduled-events").query(&[("guild_ids", joined)]);
 		self.send(request).await
 	}
 

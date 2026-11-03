@@ -113,6 +113,7 @@ pub(crate) enum Internal {
 		cache: bool,
 	},
 	LoadFinished(Snowflake, Page),
+	ScheduledEventsFailed(Snowflake),
 	Sent {
 		nonce: Nonce,
 		message: Box<Message>,
@@ -668,6 +669,7 @@ impl Core {
 				self.activity.refresh_connections();
 				self.note_ready();
 				self.load_unnamed_applications();
+				self.load_event_interest();
 				let stale = {
 					let state = self.state.read();
 					state
@@ -900,6 +902,9 @@ impl Core {
 			} => {
 				self.on_messages(channel_id, direction, messages, reached_start, cache);
 				self.prune_sending();
+			}
+			Internal::ScheduledEventsFailed(guild_id) => {
+				self.events_requested.remove(&guild_id);
 			}
 			Internal::LoadFinished(channel_id, page) => {
 				self.loading.remove(&(channel_id, page));
@@ -1792,7 +1797,7 @@ impl Core {
 
 	fn request_scheduled_events(&mut self, guild_id: Snowflake) {
 		if self.events_requested.insert(guild_id) {
-			self.load_scheduled_events(guild_id);
+			self.load_scheduled_events(guild_id, true);
 		}
 	}
 

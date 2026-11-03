@@ -170,6 +170,7 @@ pub enum Loaded {
 		interested: Option<Vec<Snowflake>>,
 		requested: Instant,
 	},
+	EventInterest(Vec<Snowflake>),
 	RecentEmoji(Vec<EmojiRef>),
 	RecentGifs(Vec<Gif>),
 	RecentStickers(Vec<Sticker>),
@@ -1115,6 +1116,7 @@ impl State {
 				interested,
 				requested,
 			} => return self.scheduled_events_loaded(*guild_id, events, interested.as_deref(), *requested),
+			Loaded::EventInterest(interested) => return self.event_interest_loaded(interested),
 			Loaded::RecentEmoji(emoji) => {
 				self.lazy.expressions.recent_emoji.clone_from(emoji);
 				changes.loaded.insert(EXPRESSIONS_KEY);
