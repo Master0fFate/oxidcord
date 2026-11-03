@@ -81,6 +81,7 @@ pub struct ChannelSidebar {
 	muted: bool,
 	events: usize,
 	events_live: bool,
+	hide_muted: bool,
 }
 
 impl EventEmitter<SidebarEvent> for ChannelSidebar {}
@@ -110,6 +111,7 @@ impl ChannelSidebar {
 			muted: false,
 			events: 0,
 			events_live: false,
+			hide_muted: false,
 		}
 	}
 
@@ -132,6 +134,11 @@ impl ChannelSidebar {
 		let mut nodes = state.guild_channel_tree(guild);
 		if !data.session().plugins().reveals_hidden_channels() {
 			nodes.retain_mut(drop_hidden);
+		}
+		let hide_muted = state.hides_muted_channels(guild);
+		if hide_muted {
+			let selected = self.selected;
+			nodes.retain_mut(|node| drop_muted(node, selected));
 		}
 		let categories: Vec<CategoryItem> = nodes
 			.iter()
@@ -163,7 +170,8 @@ impl ChannelSidebar {
 			|| unread != self.unread
 			|| muted != self.muted
 			|| event_count != self.events
-			|| events_live != self.events_live;
+			|| events_live != self.events_live
+			|| hide_muted != self.hide_muted;
 		if changed {
 			self.name = name;
 			self.categories = categories;
@@ -173,6 +181,7 @@ impl ChannelSidebar {
 			self.muted = muted;
 			self.events = event_count;
 			self.events_live = events_live;
+			self.hide_muted = hide_muted;
 			cx.notify();
 		}
 	}
@@ -211,6 +220,7 @@ impl ChannelSidebar {
 			self.invite_channel,
 			self.unread,
 			self.muted,
+			self.hide_muted,
 			&self.access,
 			cx,
 		)
@@ -220,6 +230,7 @@ impl ChannelSidebar {
 			self.invite_channel,
 			self.unread,
 			self.muted,
+			self.hide_muted,
 			&self.access,
 			cx,
 		)
@@ -634,6 +645,19 @@ fn drop_hidden(node: &mut ChannelTreeNode) -> bool {
 	let had_children = !node.children.is_empty();
 	node.children.retain(|row| !row.locked);
 	!had_children || !node.children.is_empty()
+}
+
+fn drop_muted(node: &mut ChannelTreeNode, selected: Option<Snowflake>) -> bool {
+	let mut parent_kept = true;
+	node.children.retain(|row| {
+		if is_thread(row.kind) {
+			return parent_kept;
+		}
+		parent_kept =
+			!row.muted || row.mentions > 0 || Some(row.id) == selected || !row.voice_members.is_empty();
+		parent_kept
+	});
+	!node.category.as_ref().is_some_and(|category| category.muted) || !node.children.is_empty()
 }
 
 fn category_item(node: &ChannelTreeNode, guild: Snowflake, state: &state::State) -> CategoryItem {

@@ -228,6 +228,12 @@ impl State {
 		}
 	}
 
+	pub fn hides_muted_channels(&self, guild_id: Snowflake) -> bool {
+		self.guild_settings
+			.get(&guild_id)
+			.is_some_and(|settings| settings.hide_muted_channels)
+	}
+
 	pub fn messages(&self, channel_id: Snowflake) -> Option<&ChannelMessages> {
 		self.messages.get(&channel_id)
 	}

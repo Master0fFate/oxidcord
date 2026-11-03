@@ -45,16 +45,41 @@ pub enum Scope {
 	},
 }
 
-fn level_only(level: NotificationLevel) -> NotificationSettings {
+fn unchanged() -> NotificationSettings {
 	NotificationSettings {
 		muted: None,
-		level: u8::try_from(i64::from(level)).ok(),
+		level: None,
 		suppress_everyone: None,
 		suppress_roles: None,
 		mobile_push: None,
 		hide_muted: None,
 		mute_until_ms: None,
 	}
+}
+
+fn level_only(level: NotificationLevel) -> NotificationSettings {
+	NotificationSettings {
+		level: u8::try_from(i64::from(level)).ok(),
+		..unchanged()
+	}
+}
+
+pub fn hide_muted_item(
+	menu: ContextMenuBuilder,
+	guild: Snowflake,
+	hidden: bool,
+	cx: &App,
+) -> ContextMenuBuilder {
+	menu.checked_item(cx.t("notify-hide-muted"), hidden, move |_, cx| {
+		data_handle(cx).read(cx).send(Command::SetNotificationSettings {
+			guild_id: Some(guild),
+			channel_id: None,
+			settings: NotificationSettings {
+				hide_muted: Some(!hidden),
+				..unchanged()
+			},
+		});
+	})
 }
 
 fn until(minutes: Option<i64>) -> Option<DateTime<Utc>> {

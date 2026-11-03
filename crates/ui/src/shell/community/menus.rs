@@ -177,6 +177,7 @@ pub fn guild_menu(
 	invite_channel: Option<Snowflake>,
 	unread: bool,
 	muted: bool,
+	hide_muted: bool,
 	access: &GuildAccess,
 	cx: &App,
 ) -> ContextMenuBuilder {
@@ -231,6 +232,7 @@ pub fn guild_menu(
 	let menu = if menu.is_empty() { menu } else { menu.separator() };
 	let menu = notify::mark_read_item(menu, scope, unread, cx);
 	let menu = notify::mute_items(menu, scope, muted, cx);
+	let menu = notify::hide_muted_item(menu, guild, hide_muted, cx);
 	menu.item(
 		cx.t("menu-notification-settings"),
 		Some(IconKind::Bell),
@@ -245,7 +247,7 @@ pub fn guild_menu_for(guild: Snowflake) -> ContextMenuBuilder {
 
 fn guild_menu_now(guild: Snowflake, cx: &App) -> ContextMenuBuilder {
 	let data = data_handle(cx);
-	let (access, invite_channel, unread, muted) = {
+	let (access, invite_channel, unread, muted, hide_muted) = {
 		let state = data.read(cx).state();
 		let invite_channel = state
 			.guild_channel_tree(guild)
@@ -261,7 +263,8 @@ fn guild_menu_now(guild: Snowflake, cx: &App) -> ContextMenuBuilder {
 				.as_ref()
 				.is_some_and(|summary| summary.unread || summary.mentions > 0),
 			summary.is_some_and(|summary| summary.muted),
+			state.hides_muted_channels(guild),
 		)
 	};
-	guild_menu(guild, invite_channel, unread, muted, &access, cx)
+	guild_menu(guild, invite_channel, unread, muted, hide_muted, &access, cx)
 }
