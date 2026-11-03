@@ -83,8 +83,9 @@ pub fn expand(guild: Snowflake, target: Snowflake, name: &str, cx: &App) -> Cont
 		})
 		.map(|channel| (channel.id, channel.name))
 		.collect();
+	let profile_known = state.profile(target).is_some();
 	drop(state);
-	if !own && !member_known {
+	if !own && !member_known && !profile_known {
 		data.read(cx).send(Command::LoadProfile {
 			user_id: target,
 			guild_id: Some(guild),
