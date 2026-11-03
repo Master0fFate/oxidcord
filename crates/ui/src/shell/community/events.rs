@@ -50,8 +50,12 @@ pub fn open(window: &mut Window, cx: &mut App, guild: Snowflake) {
 	data.read(cx)
 		.send(Command::LoadScheduledEvents { guild_id: guild });
 	let view = cx.new(|cx| {
-		let subscription = cx.subscribe(&data, |_, _, event: &DataEvent, cx| {
-			if matches!(event, DataEvent::Changed(_)) {
+		let subscription = cx.subscribe(&data, move |_, _, event: &DataEvent, cx| {
+			if let DataEvent::Changed(changes) = event
+				&& (changes.loaded.contains(guild)
+					|| changes.channel_lists.contains(guild)
+					|| changes.guild_list)
+			{
 				cx.notify();
 			}
 		});
