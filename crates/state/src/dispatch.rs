@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use protocol::{
-	Channel, ChannelLastMessage, ChannelPinsUpdate, ChannelRecipientChange, DispatchEvent,
+	Channel, ChannelLastMessage, ChannelPinsAck, ChannelPinsUpdate, ChannelRecipientChange, DispatchEvent,
 	GuildMemberListUpdate, GuildMembersChunk, GuildRoleChange, Member, MemberListGroup, Message, MessageAck,
 	MessagePollVote, MessageType, MessageUpdate, PassiveUpdate, Presence, RelationshipKind, Snowflake,
 	ThreadDelete, ThreadListSync, TypingStart, UnavailableGuild, UserGuildSettings, VoiceState,
@@ -94,6 +94,7 @@ impl State {
 			DispatchEvent::MessagePollVoteRemove(vote) => self.poll_vote(vote, -1),
 			DispatchEvent::MessageAck(ack) => self.message_ack(ack),
 			DispatchEvent::ChannelPinsUpdate(update) => self.channel_pins_update(update),
+			DispatchEvent::ChannelPinsAck(ack) => self.channel_pins_ack(ack),
 			DispatchEvent::ChannelCreate(channel)
 			| DispatchEvent::ChannelUpdate(channel)
 			| DispatchEvent::ThreadCreate(channel)
@@ -408,12 +409,18 @@ impl State {
 
 	fn channel_pins_update(&mut self, update: &ChannelPinsUpdate) -> Changes {
 		let mut changes = Changes::default();
-		if update.last_pin_timestamp.is_some()
-			&& let Some(channel) = self.channel_mut(update.channel_id)
-		{
+		if let Some(channel) = self.channel_mut(update.channel_id) {
 			channel.last_pin_timestamp = update.last_pin_timestamp;
 			changes.loaded.insert(update.channel_id);
 		}
+		changes
+	}
+
+	fn channel_pins_ack(&mut self, ack: &ChannelPinsAck) -> Changes {
+		let mut changes = Changes::default();
+		self.set_pins_read(ack.channel_id, ack.timestamp);
+		changes.read_state = true;
+		changes.loaded.insert(ack.channel_id);
 		changes
 	}
 

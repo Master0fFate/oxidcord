@@ -509,6 +509,15 @@ pub struct ChannelPinsUpdate {
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
+pub struct ChannelPinsAck {
+	pub channel_id: Snowflake,
+	#[serde(deserialize_with = "timestamp")]
+	pub timestamp: Option<DateTime<Utc>>,
+	pub version: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ChannelLastMessage {
 	pub id: Snowflake,
 	pub last_message_id: Option<Snowflake>,
@@ -704,6 +713,7 @@ pub enum DispatchEvent {
 	ChannelUpdate(Box<Channel>),
 	ChannelDelete(Box<Channel>),
 	ChannelPinsUpdate(ChannelPinsUpdate),
+	ChannelPinsAck(ChannelPinsAck),
 	ChannelUnreadUpdate(ChannelUnreadUpdate),
 	PassiveUpdateV2(Box<PassiveUpdate>),
 	ChannelRecipientAdd(Box<ChannelRecipientChange>),
@@ -784,6 +794,7 @@ impl DispatchEvent {
 			"CHANNEL_UPDATE" => Self::ChannelUpdate(decode(name, data)?),
 			"CHANNEL_DELETE" => Self::ChannelDelete(decode(name, data)?),
 			"CHANNEL_PINS_UPDATE" => Self::ChannelPinsUpdate(decode(name, data)?),
+			"CHANNEL_PINS_ACK" => Self::ChannelPinsAck(decode(name, data)?),
 			"CHANNEL_UNREAD_UPDATE" => Self::ChannelUnreadUpdate(decode(name, data)?),
 			"PASSIVE_UPDATE_V2" => Self::PassiveUpdateV2(decode(name, data)?),
 			"CHANNEL_RECIPIENT_ADD" => Self::ChannelRecipientAdd(decode(name, data)?),

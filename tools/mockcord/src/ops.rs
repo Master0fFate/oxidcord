@@ -638,6 +638,15 @@ impl Shared {
 			.entry(channel_id)
 			.or_insert_with(|| blank_read_state(channel_id))
 			.last_pin_timestamp = last_pin_timestamp;
+		drop(store);
+		self.hub.broadcast(
+			"CHANNEL_PINS_ACK",
+			&json!({
+				"channel_id": channel_id.to_string(),
+				"timestamp": last_pin_timestamp,
+				"version": 1,
+			}),
+		);
 		Ok(())
 	}
 }
