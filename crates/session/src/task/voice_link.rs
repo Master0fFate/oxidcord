@@ -61,6 +61,7 @@ pub(crate) struct VoiceLink {
 	priority: bool,
 	user_volumes: HashMap<Snowflake, f32>,
 	sounds: HashMap<Snowflake, voice::Sound>,
+	pending_sounds: HashMap<Snowflake, Vec<f32>>,
 	pub(super) camera_device: Option<String>,
 	pub(super) camera_quality: VideoQuality,
 	closed_with: Option<u16>,
@@ -93,6 +94,7 @@ impl VoiceLink {
 				.map(|(user_id, saved)| (*user_id, effective_volume(*saved)))
 				.collect(),
 			sounds: HashMap::new(),
+			pending_sounds: HashMap::new(),
 			camera_device: None,
 			camera_quality: VideoQuality::default(),
 			closed_with: None,
@@ -337,48 +339,71 @@ impl Core {
 		}
 		match (&self.voice.connection, self.voice.sounds.get(&sound_id)) {
 			(Some(connection), Some(sound)) => connection.play_sound(sound, volume),
-			(Some(_), None) => self.fetch_sound(sound_id, volume),
+			(Some(_), None) => self.fetch_sound(sound_id, effect.channel_id, volume),
 			(None, _) => {}
 		}
 	}
 
-	fn fetch_sound(&self, sound_id: Snowflake, volume: f32) {
+	fn fetch_sound(&mut self, sound_id: Snowflake, channel_id: Snowflake, volume: f32) {
+		if let Some(volumes) = self.voice.pending_sounds.get_mut(&sound_id) {
+			volumes.push(volume);
+			return;
+		}
 		let Some(fetcher) = self.media.clone() else {
 			return;
 		};
+		self.voice.pending_sounds.insert(sound_id, vec![volume]);
 		let url = match &self.mock_origin {
 			Some(origin) => format!("{origin}soundboard-sounds/{sound_id}"),
 			None => media::cdn::soundboard_url(sound_id.get()),
 		};
 		let internal = self.internal.clone();
 		self.runtime.spawn(async move {
-			let bytes = match fetcher.fetch(&url).await {
-				Ok(bytes) => bytes,
+			let sound = match fetcher.fetch(&url).await {
+				Ok(bytes) => {
+					match tokio::task::spawn_blocking(move || voice::decode_sound(bytes.to_vec())).await {
+						Ok(Ok(sound)) => Some(sound),
+						Ok(Err(error)) => {
+							tracing::warn!(%error, "soundboard sound was not decoded");
+							None
+						}
+						Err(error) => {
+							tracing::warn!(%error, "soundboard decoding stopped");
+							None
+						}
+					}
+				}
 				Err(error) => {
 					tracing::warn!(%error, "soundboard sound was not downloaded");
-					return;
+					None
 				}
 			};
-			match tokio::task::spawn_blocking(move || voice::decode_sound(bytes.to_vec())).await {
-				Ok(Ok(sound)) => {
-					let _ = internal.send(Internal::SoundReady {
-						sound_id,
-						sound,
-						volume,
-					});
-				}
-				Ok(Err(error)) => tracing::warn!(%error, "soundboard sound was not decoded"),
-				Err(error) => tracing::warn!(%error, "soundboard decoding stopped"),
-			}
+			let _ = internal.send(Internal::SoundReady {
+				sound_id,
+				channel_id,
+				sound,
+			});
 		});
 	}
 
-	pub(super) fn sound_ready(&mut self, sound_id: Snowflake, sound: voice::Sound, volume: f32) {
+	pub(super) fn sound_ready(
+		&mut self,
+		sound_id: Snowflake,
+		channel_id: Snowflake,
+		sound: Option<voice::Sound>,
+	) {
+		let volumes = self.voice.pending_sounds.remove(&sound_id).unwrap_or_default();
+		let Some(sound) = sound else {
+			return;
+		};
 		if self.voice.sounds.len() >= MAX_CACHED_SOUNDS {
 			self.voice.sounds.clear();
 		}
-		if let Some(connection) = &self.voice.connection {
-			connection.play_sound(&sound, volume);
+		let in_channel = self.voice.target.map(|target| target.channel_id) == Some(channel_id);
+		if let (true, Some(connection)) = (in_channel, &self.voice.connection) {
+			for volume in volumes {
+				connection.play_sound(&sound, volume);
+			}
 		}
 		self.voice.sounds.insert(sound_id, sound);
 	}

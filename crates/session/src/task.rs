@@ -229,8 +229,8 @@ pub(crate) enum Internal {
 	},
 	SoundReady {
 		sound_id: Snowflake,
-		sound: voice::Sound,
-		volume: f32,
+		channel_id: Snowflake,
+		sound: Option<voice::Sound>,
 	},
 	MicTestFinished {
 		generation: u64,
@@ -983,9 +983,9 @@ impl Core {
 			Internal::MicTestFinished { generation, result } => self.on_mic_test_finished(generation, result),
 			Internal::SoundReady {
 				sound_id,
+				channel_id,
 				sound,
-				volume,
-			} => self.sound_ready(sound_id, sound, volume),
+			} => self.sound_ready(sound_id, channel_id, sound),
 			Internal::AccountSwitch(user_id) => self.apply_local(LocalEvent::AccountSwitchRequested(user_id)),
 			Internal::Invalidate { plugin, target } => self.on_invalidate(&plugin, target),
 			Internal::Command(command) => {
