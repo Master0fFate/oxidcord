@@ -7,7 +7,8 @@ use serde_json::{Value, json};
 use crate::error::ApiError;
 use crate::fixtures::{CURRENT_USER_ID, Fixtures};
 use crate::ids::snowflake_at;
-use crate::json::to_json;
+use crate::json::{parse_id, to_json};
+use crate::scenario::VoiceJoin;
 use crate::state::Shared;
 
 const DEFAULT_EPOCH_MS: i64 = 1_644_000_000_000;
@@ -194,15 +195,30 @@ impl Shared {
 	}
 
 	pub fn send_sound(&self, channel_id: u64, sound_id: u64) -> Result<(), ApiError> {
-		let join = self
-			.voice_join
+		let join = self.joined_channel(channel_id)?;
+		let sound = self.find_sound(sound_id).ok_or_else(ApiError::not_found)?;
+		let emoji = json!({ "id": null, "name": sound.emoji_name, "animated": false });
+		self.broadcast_effect(CURRENT_USER_ID, channel_id, join.guild_id, emoji, Some(&sound));
+		Ok(())
+	}
+
+	pub fn send_effect(&self, channel_id: u64, body: &Value) -> Result<(), ApiError> {
+		let join = self.joined_channel(channel_id)?;
+		let emoji = json!({
+			"id": parse_id(&body["emoji_id"]).map(|id| id.to_string()),
+			"name": body["emoji_name"],
+			"animated": false,
+		});
+		self.broadcast_effect(CURRENT_USER_ID, channel_id, join.guild_id, emoji, None);
+		Ok(())
+	}
+
+	fn joined_channel(&self, channel_id: u64) -> Result<VoiceJoin, ApiError> {
+		self.voice_join
 			.lock()
 			.clone()
 			.filter(|join| join.channel_id == channel_id)
-			.ok_or_else(|| ApiError::invalid_body("Not in that voice channel"))?;
-		let sound = self.find_sound(sound_id).ok_or_else(ApiError::not_found)?;
-		self.broadcast_effect(CURRENT_USER_ID, channel_id, join.guild_id, &sound);
-		Ok(())
+			.ok_or_else(|| ApiError::invalid_body("Not in that voice channel"))
 	}
 
 	pub fn broadcast_effect(
@@ -210,21 +226,22 @@ impl Shared {
 		user_id: u64,
 		channel_id: u64,
 		guild_id: Option<u64>,
-		sound: &SoundboardSound,
+		emoji: Value,
+		sound: Option<&SoundboardSound>,
 	) {
-		self.hub.broadcast(
-			"VOICE_CHANNEL_EFFECT_SEND",
-			&json!({
-				"channel_id": channel_id.to_string(),
-				"guild_id": guild_id.map(|id| id.to_string()),
-				"user_id": user_id.to_string(),
-				"emoji": { "id": null, "name": sound.emoji_name, "animated": false },
-				"animation_type": 1,
-				"animation_id": 0,
-				"sound_id": sound.sound_id.to_string(),
-				"sound_volume": sound.volume,
-			}),
-		);
+		let mut payload = json!({
+			"channel_id": channel_id.to_string(),
+			"guild_id": guild_id.map(|id| id.to_string()),
+			"user_id": user_id.to_string(),
+			"emoji": emoji,
+			"animation_type": 1,
+			"animation_id": 0,
+		});
+		if let Some(sound) = sound {
+			payload["sound_id"] = json!(sound.sound_id.to_string());
+			payload["sound_volume"] = json!(sound.volume);
+		}
+		self.hub.broadcast("VOICE_CHANNEL_EFFECT_SEND", &payload);
 	}
 
 	pub fn play_fixture_sound(&self) {
@@ -251,7 +268,8 @@ impl Shared {
 		let mut rng = rand::rng();
 		let speaker = speakers[rng.random_range(0..speakers.len())];
 		let sound = &sounds[rng.random_range(0..sounds.len())];
-		self.broadcast_effect(speaker, join.channel_id, Some(guild_id), sound);
+		let emoji = json!({ "id": null, "name": sound.emoji_name, "animated": false });
+		self.broadcast_effect(speaker, join.channel_id, Some(guild_id), emoji, Some(sound));
 		tracing::info!(channel_id = join.channel_id, "live soundboard effect");
 	}
 }

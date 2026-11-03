@@ -16,6 +16,8 @@ use crate::persist::{self, Job};
 const GIF_MEDIA_FORMAT: &str = "gif";
 const GIF_PAGE: u16 = 50;
 const GIF_SUGGESTIONS: u8 = 10;
+const VOICE_EFFECT_BASIC: i64 = 1;
+const VOICE_EFFECT_ANIMATION: i64 = 0;
 
 fn promote<T>(list: &mut Vec<T>, item: T, is_same: impl Fn(&T, &T) -> bool) {
 	list.retain(|entry| !is_same(entry, &item));
@@ -252,6 +254,11 @@ impl Core {
 				})
 			}
 			Command::SendSound { channel_id, sound_id } => self.send_sound(channel_id, sound_id),
+			Command::SendVoiceEffect {
+				channel_id,
+				emoji_id,
+				emoji_name,
+			} => self.send_voice_effect(channel_id, emoji_id, emoji_name),
 			Command::CreateSound { guild_id, name, file } => self.create_sound(guild_id, name, file),
 			Command::EditSound {
 				guild_id,
@@ -325,18 +332,47 @@ impl Core {
 			self.reject("That sound is unavailable");
 			return;
 		};
-		if let Some(block) = block {
-			self.reject(match block {
-				SoundBlock::NotConnected => "Join the voice channel first",
-				SoundBlock::NoPermission => "You need the Use Soundboard permission",
-				SoundBlock::ExternalLocked => "You need the Use External Sounds permission",
-				SoundBlock::Silenced => "You can't play sounds while muted or deafened",
-			});
+		if self.reject_sound_block(block) {
 			return;
 		}
 		self.spawn_action("send sound", move |rest| async move {
 			rest.send_sound(channel_id, sound_id, sound.guild_id).await
 		});
+	}
+
+	fn send_voice_effect(
+		&mut self,
+		channel_id: Snowflake,
+		emoji_id: Option<Snowflake>,
+		emoji_name: Option<String>,
+	) {
+		let block = self.state.read().effect_block();
+		if self.reject_sound_block(block) {
+			return;
+		}
+		self.spawn_action("send voice effect", move |rest| async move {
+			rest.send_voice_effect(
+				channel_id,
+				emoji_id,
+				emoji_name.as_deref(),
+				VOICE_EFFECT_BASIC,
+				VOICE_EFFECT_ANIMATION,
+			)
+			.await
+		});
+	}
+
+	fn reject_sound_block(&mut self, block: Option<SoundBlock>) -> bool {
+		let Some(block) = block else {
+			return false;
+		};
+		self.reject(match block {
+			SoundBlock::NotConnected => "Join the voice channel first",
+			SoundBlock::NoPermission => "You need the Use Soundboard permission",
+			SoundBlock::ExternalLocked => "You need the Use External Sounds permission",
+			SoundBlock::Silenced => "You can't play sounds while muted or deafened",
+		});
+		true
 	}
 
 	fn create_sound(&mut self, guild_id: Snowflake, name: String, file: Vec<u8>) {

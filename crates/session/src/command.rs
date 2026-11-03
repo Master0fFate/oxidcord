@@ -1045,6 +1045,11 @@ pub enum Command {
 		channel_id: Snowflake,
 		sound_id: Snowflake,
 	},
+	SendVoiceEffect {
+		channel_id: Snowflake,
+		emoji_id: Option<Snowflake>,
+		emoji_name: Option<String>,
+	},
 	CreateSound {
 		guild_id: Snowflake,
 		name: String,

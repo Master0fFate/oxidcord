@@ -281,6 +281,7 @@ impl Core {
 			| Command::LoadSoundboard { .. }
 			| Command::LoadGuildSounds { .. }
 			| Command::SendSound { .. }
+			| Command::SendVoiceEffect { .. }
 			| Command::CreateSound { .. }
 			| Command::EditSound { .. }
 			| Command::DeleteSound { .. }

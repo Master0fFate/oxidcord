@@ -240,11 +240,24 @@ impl State {
 		if external && (!self.has_nitro() || !permissions.contains(Permissions::USE_EXTERNAL_SOUNDS)) {
 			return Some(SoundBlock::ExternalLocked);
 		}
-		let silenced = session.self_deaf
+		self.silenced(session).then_some(SoundBlock::Silenced)
+	}
+
+	pub fn effect_block(&self) -> Option<SoundBlock> {
+		let Some(session) = self
+			.voice()
+			.filter(|voice| voice.status == VoiceStatus::Connected)
+		else {
+			return Some(SoundBlock::NotConnected);
+		};
+		self.silenced(session).then_some(SoundBlock::Silenced)
+	}
+
+	fn silenced(&self, session: &VoiceSession) -> bool {
+		session.self_deaf
 			|| self
 				.own_voice_state()
-				.is_some_and(|voice| voice.mute || voice.deaf || voice.suppress);
-		silenced.then_some(SoundBlock::Silenced)
+				.is_some_and(|voice| voice.mute || voice.deaf || voice.suppress)
 	}
 
 	pub fn calls(&self) -> impl Iterator<Item = &Call> {

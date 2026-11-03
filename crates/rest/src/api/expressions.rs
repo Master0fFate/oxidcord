@@ -345,4 +345,21 @@ impl RestClient {
 			.json(&json!({ "sound_id": sound_id, "source_guild_id": source_guild_id }));
 		self.send_empty(request).await
 	}
+
+	pub async fn send_voice_effect(
+		&self,
+		channel_id: Snowflake,
+		emoji_id: Option<Snowflake>,
+		emoji_name: Option<&str>,
+		animation_type: i64,
+		animation_id: i64,
+	) -> Result<()> {
+		let request = Request::post(format!("/channels/{channel_id}/voice-channel-effects")).json(&json!({
+			"emoji_id": emoji_id,
+			"emoji_name": emoji_name,
+			"animation_type": animation_type,
+			"animation_id": animation_id,
+		}));
+		self.send_empty(request).await
+	}
 }

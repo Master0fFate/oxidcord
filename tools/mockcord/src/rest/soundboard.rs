@@ -28,6 +28,7 @@ pub fn routes() -> Router<Arc<Shared>> {
 			get(get_guild).patch(edit_guild).delete(delete_guild),
 		)
 		.route("/channels/{id}/send-soundboard-sound", post(send))
+		.route("/channels/{id}/voice-channel-effects", post(send_effect))
 }
 
 pub async fn file(State(shared): Mock, Path(id): Path<u64>, headers: HeaderMap) -> Response {
@@ -75,5 +76,10 @@ async fn send(State(shared): Mock, Path(id): Path<u64>, Json(body): Json<Value>)
 	let sound_id =
 		parse_id(&body["sound_id"]).ok_or_else(|| ApiError::invalid_body("sound_id is required"))?;
 	shared.send_sound(id, sound_id)?;
+	Ok(StatusCode::NO_CONTENT)
+}
+
+async fn send_effect(State(shared): Mock, Path(id): Path<u64>, Json(body): Json<Value>) -> NoContent {
+	shared.send_effect(id, &body)?;
 	Ok(StatusCode::NO_CONTENT)
 }
