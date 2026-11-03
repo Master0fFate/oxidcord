@@ -285,7 +285,7 @@ fn now_ms() -> i64 {
 
 fn playing(rng: &mut StdRng) -> Activity {
 	let id = corpus::hex_hash(rng);
-	let request = if id.as_bytes()[0] % 2 == 0 {
+	let request = if id.as_bytes()[0].is_multiple_of(2) {
 		Activity::FLAG_JOIN_REQUEST
 	} else {
 		0
