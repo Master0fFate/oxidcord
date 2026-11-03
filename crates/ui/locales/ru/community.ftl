@@ -371,6 +371,7 @@ mod-timeout-10m = 10 мин
 mod-timeout-1h = 1 час
 mod-timeout-1d = 1 день
 mod-timeout-1w = 1 неделя
+mod-timeout-28d = 28 дней
 mod-kick = Исключить
 mod-kick-title = Исключить { $name }
 mod-kick-body = { $name } будет удалён(а) с сервера, но сможет вернуться по новому приглашению.

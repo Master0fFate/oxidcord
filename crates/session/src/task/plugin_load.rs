@@ -68,7 +68,11 @@ impl Core {
 					match rest.user_profile(user_id, None).await {
 						Ok(raw) => apply_then_answer(
 							&internal,
-							Loaded::Profile { user_id, raw },
+							Loaded::Profile {
+								user_id,
+								guild_id: None,
+								raw,
+							},
 							PluginAnswer::Profile { user_id, reply },
 						),
 						Err(error) => reply.send(answer_error(&error, None)),

@@ -21,6 +21,7 @@ const MAX_VOICE_STATUS: usize = 500;
 const VOICE_SESSION_AGE_SECONDS: i64 = 600;
 const SEED_AUDIT_ENTRIES: i64 = 3;
 const MINUTE_MS: i64 = 60_000;
+const MAX_TIMEOUT_DAYS: i64 = 28;
 const ACTION_CHANNEL_CREATE: i64 = 10;
 const ACTION_CHANNEL_UPDATE: i64 = 11;
 const ACTION_CHANNEL_DELETE: i64 = 12;
@@ -981,6 +982,9 @@ impl Shared {
 		let mut member = store
 			.member_now(guild, user_id)
 			.ok_or_else(ApiError::unknown_member)?;
+		let target_admin = guild
+			.permissions_for(&member)
+			.contains(Permissions::ADMINISTRATOR);
 		if let Some(nick) = body.get("nick") {
 			member.nick = nick.as_str().filter(|nick| !nick.is_empty()).map(str::to_owned);
 		}
@@ -1001,10 +1005,18 @@ impl Shared {
 			member.deaf = deaf;
 		}
 		if let Some(until) = body.get("communication_disabled_until") {
-			member.communication_disabled_until =
-				serde_json::from_value::<Option<DateTime<Utc>>>(until.clone())
-					.ok()
-					.flatten();
+			let until = serde_json::from_value::<Option<DateTime<Utc>>>(until.clone())
+				.ok()
+				.flatten();
+			if let Some(until) = until {
+				if target_admin {
+					return Err(ApiError::missing_permissions());
+				}
+				if until - Utc::now() > Duration::days(MAX_TIMEOUT_DAYS) {
+					return Err(ApiError::invalid_body("Timeout is longer than 28 days"));
+				}
+			}
+			member.communication_disabled_until = until;
 		}
 		member.guild_id = Some(Snowflake(guild_id));
 		let value = to_json(&member);

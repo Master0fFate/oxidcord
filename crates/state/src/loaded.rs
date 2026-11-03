@@ -13,6 +13,7 @@ use serde_json::Value;
 
 use crate::changes::Changes;
 use crate::expressions::{EXPRESSIONS_KEY, EmojiRef, Expressions, stamped_stickers};
+use crate::guild::stripped_member;
 use crate::state::{State, intern_user};
 
 pub const INBOX_KEY: Snowflake = Snowflake(1);
@@ -51,6 +52,7 @@ pub enum Loaded {
 	ThreadMember(Box<ThreadMember>),
 	Profile {
 		user_id: Snowflake,
+		guild_id: Option<Snowflake>,
 		raw: Value,
 	},
 	Note {
@@ -613,8 +615,13 @@ impl State {
 				self.lazy.application_icons.insert(*application_id, icon.clone());
 				changes.loaded.insert(*application_id);
 			}
-			Loaded::Profile { user_id, raw } => {
+			Loaded::Profile {
+				user_id,
+				guild_id,
+				raw,
+			} => {
 				if let Some(profile) = self.parse_profile(raw) {
+					self.store_profile_member(*user_id, *guild_id, &profile, &mut changes);
 					self.lazy.profiles.insert(*user_id, profile);
 					changes.loaded.insert(*user_id);
 				}
@@ -875,6 +882,22 @@ impl State {
 			premium_since: parsed.premium_since,
 			user,
 		})
+	}
+
+	fn store_profile_member(
+		&mut self,
+		user_id: Snowflake,
+		guild_id: Option<Snowflake>,
+		profile: &UserProfile,
+		changes: &mut Changes,
+	) {
+		let (Some(guild_id), Some(member)) = (guild_id, &profile.guild_member) else {
+			return;
+		};
+		if let Some(guild) = self.guilds.get_mut(&guild_id) {
+			guild.members.insert(user_id, stripped_member(member));
+			changes.members.insert(guild_id);
+		}
 	}
 
 	fn parse_audit_log(&mut self, raw: &Value) -> Vec<AuditEntry> {

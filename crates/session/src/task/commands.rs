@@ -339,7 +339,11 @@ impl Core {
 			Command::LoadProfile { user_id, guild_id } => {
 				self.spawn_load("profile", move |rest| async move {
 					let raw = rest.user_profile(user_id, guild_id).await?;
-					Ok(Loaded::Profile { user_id, raw })
+					Ok(Loaded::Profile {
+						user_id,
+						guild_id,
+						raw,
+					})
 				});
 				if self.state.read().current_user_id() != Some(user_id) {
 					self.spawn_load("note", move |rest| async move {

@@ -357,6 +357,7 @@ mod-timeout-10m = 10 min
 mod-timeout-1h = 1 heure
 mod-timeout-1d = 1 jour
 mod-timeout-1w = 1 semaine
+mod-timeout-28d = 28 jours
 mod-kick = Expulser
 mod-kick-title = Expulser { $name }
 mod-kick-body = { $name } sera retiré du serveur mais pourra revenir avec une nouvelle invitation.

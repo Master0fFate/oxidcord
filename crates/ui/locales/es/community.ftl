@@ -357,6 +357,7 @@ mod-timeout-10m = 10 min
 mod-timeout-1h = 1 hora
 mod-timeout-1d = 1 día
 mod-timeout-1w = 1 semana
+mod-timeout-28d = 28 días
 mod-kick = Echar
 mod-kick-title = Echar a { $name }
 mod-kick-body = { $name } saldrá del servidor, pero podrá volver con una invitación nueva.

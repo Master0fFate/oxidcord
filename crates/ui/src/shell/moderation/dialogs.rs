@@ -18,13 +18,14 @@ use crate::theme::Theme;
 
 const NICK_LIMIT: usize = 32;
 const REASON_LIMIT: usize = 512;
-const TIMEOUTS: [(&str, i64); 6] = [
+const TIMEOUTS: [(&str, i64); 7] = [
 	("mod-timeout-60s", 60),
 	("mod-timeout-5m", 300),
 	("mod-timeout-10m", 600),
 	("mod-timeout-1h", 3600),
 	("mod-timeout-1d", 86_400),
 	("mod-timeout-1w", 604_800),
+	("mod-timeout-28d", 2_419_200),
 ];
 const HISTORY: [(&str, u32); 7] = [
 	("mod-history-none", 0),

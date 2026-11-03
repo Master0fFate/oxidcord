@@ -336,6 +336,7 @@ mod-timeout-10m = 10 分钟
 mod-timeout-1h = 1 小时
 mod-timeout-1d = 1 天
 mod-timeout-1w = 1 周
+mod-timeout-28d = 28 天
 mod-kick = 踢出
 mod-kick-title = 踢出 { $name }
 mod-kick-body = { $name } 将被移出服务器，但可以通过新邀请重新加入。

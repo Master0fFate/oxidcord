@@ -51,6 +51,11 @@ pub fn expand(guild: Snowflake, target: Snowflake, name: &str, cx: &App) -> Cont
 	let own = me == target;
 	let outranks = !own && access.outranks(&state, guild, target);
 	let member = found.members.get(&target);
+	let member_known = member.is_some();
+	let manageable = outranks && member_known;
+	let target_admin = state
+		.guild_permissions(guild, target)
+		.contains(Permissions::ADMINISTRATOR);
 	let current_nick = member.and_then(|member| member.nick.clone()).unwrap_or_default();
 	let timed_out = member
 		.and_then(|member| member.communication_disabled_until)
@@ -79,11 +84,17 @@ pub fn expand(guild: Snowflake, target: Snowflake, name: &str, cx: &App) -> Cont
 		.map(|channel| (channel.id, channel.name))
 		.collect();
 	drop(state);
+	if !own && !member_known {
+		data.read(cx).send(Command::LoadProfile {
+			user_id: target,
+			guild_id: Some(guild),
+		});
+	}
 	let mut menu = menu;
 	let can_nick = if own {
 		access.has(Permissions::CHANGE_NICKNAME)
 	} else {
-		outranks && access.has(Permissions::MANAGE_NICKNAMES)
+		manageable && access.has(Permissions::MANAGE_NICKNAMES)
 	};
 	if can_nick {
 		let nick = current_nick.clone();
@@ -95,7 +106,7 @@ pub fn expand(guild: Snowflake, target: Snowflake, name: &str, cx: &App) -> Cont
 			},
 		);
 	}
-	if (outranks || own) && access.has(Permissions::MANAGE_ROLES) {
+	if (manageable || own) && access.has(Permissions::MANAGE_ROLES) {
 		let mut submenu = ContextMenuBuilder::new();
 		for (role_id, role_name, position) in roles {
 			if !access.owner && position >= access.top_role {
@@ -124,7 +135,7 @@ pub fn expand(guild: Snowflake, target: Snowflake, name: &str, cx: &App) -> Cont
 		}
 	}
 	if let Some(voice) = voice.filter(|voice| voice.channel_id.is_some()) {
-		if outranks && access.has(Permissions::MOVE_MEMBERS) {
+		if manageable && access.has(Permissions::MOVE_MEMBERS) {
 			let mut submenu = ContextMenuBuilder::new();
 			for (channel, channel_name) in voice_channels {
 				let current = voice.channel_id == Some(channel);
@@ -147,7 +158,7 @@ pub fn expand(guild: Snowflake, target: Snowflake, name: &str, cx: &App) -> Cont
 				});
 			menu = menu.submenu(cx.t("mod-move-to"), Some(IconKind::Volume), submenu);
 		}
-		if outranks && access.has(Permissions::MUTE_MEMBERS) {
+		if manageable && access.has(Permissions::MUTE_MEMBERS) {
 			let muted = voice.mute;
 			menu = menu.item(
 				cx.t(if muted {
@@ -165,7 +176,7 @@ pub fn expand(guild: Snowflake, target: Snowflake, name: &str, cx: &App) -> Cont
 				},
 			);
 		}
-		if outranks && access.has(Permissions::DEAFEN_MEMBERS) {
+		if manageable && access.has(Permissions::DEAFEN_MEMBERS) {
 			let deafened = voice.deaf;
 			menu = menu.item(
 				cx.t(if deafened {
@@ -194,7 +205,7 @@ pub fn expand(guild: Snowflake, target: Snowflake, name: &str, cx: &App) -> Cont
 		});
 	}
 	let mut punish = ContextMenuBuilder::new();
-	if outranks && access.has(Permissions::MODERATE_MEMBERS) {
+	if manageable && !target_admin && access.has(Permissions::MODERATE_MEMBERS) {
 		if timed_out {
 			punish = punish.item(cx.t("mod-remove-timeout"), Some(IconKind::Timer), move |_, cx| {
 				data_handle(cx).read(cx).send(Command::TimeoutMember {
@@ -210,7 +221,7 @@ pub fn expand(guild: Snowflake, target: Snowflake, name: &str, cx: &App) -> Cont
 			});
 		}
 	}
-	if outranks && access.has(Permissions::KICK_MEMBERS) {
+	if manageable && access.has(Permissions::KICK_MEMBERS) {
 		let label = name.to_owned();
 		punish = punish.danger_item(cx.t("mod-kick"), Some(IconKind::UserX), move |window, cx| {
 			dialogs::open_kick(window, cx, guild, target, label.clone());

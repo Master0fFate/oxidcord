@@ -364,6 +364,7 @@ mod-timeout-10m = 10 min
 mod-timeout-1h = 1 hodina
 mod-timeout-1d = 1 den
 mod-timeout-1w = 1 týden
+mod-timeout-28d = 28 dní
 mod-kick = Vyhodit
 mod-kick-title = Vyhodit { $name }
 mod-kick-body = { $name } bude ze serveru odebrán(a), ale s novou pozvánkou se může vrátit.

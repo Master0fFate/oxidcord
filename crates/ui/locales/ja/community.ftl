@@ -336,6 +336,7 @@ mod-timeout-10m = 10分
 mod-timeout-1h = 1時間
 mod-timeout-1d = 1日
 mod-timeout-1w = 1週間
+mod-timeout-28d = 28日
 mod-kick = キック
 mod-kick-title = { $name } をキック
 mod-kick-body = { $name } はサーバーから外されますが、新しい招待で再参加できます。

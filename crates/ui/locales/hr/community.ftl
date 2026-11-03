@@ -364,6 +364,7 @@ mod-timeout-10m = 10 minuta
 mod-timeout-1h = 1 sat
 mod-timeout-1d = 1 dan
 mod-timeout-1w = 1 tjedan
+mod-timeout-28d = 28 dana
 mod-kick = Izbaci
 mod-kick-title = Izbaci korisnika { $name }
 mod-kick-body = { $name } bit će uklonjen/a s poslužitelja, ali se može vratiti s novom pozivnicom.
