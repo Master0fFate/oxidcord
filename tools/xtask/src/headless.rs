@@ -429,7 +429,9 @@ async fn scenario(
 
 	harness
 		.until("the gateway to become ready", |state| {
-			state.current_user().is_some() && state.session().connected
+			state.current_user().is_some()
+				&& state.session().connected
+				&& Counts::measure(state).channels == expected.channels
 		})
 		.await?;
 	let baseline = Counts::measure(&harness.state.read());
