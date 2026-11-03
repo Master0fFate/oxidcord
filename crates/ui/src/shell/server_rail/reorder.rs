@@ -139,6 +139,34 @@ pub(super) fn rearranged(
 	(next != layout).then_some(next)
 }
 
+pub(super) fn ungrouped(layout: &[RailEntry], folder: Id) -> Option<Vec<RailEntry>> {
+	let at = layout
+		.iter()
+		.position(|entry| matches!(entry, RailEntry::Folder { id, .. } if *id == folder))?;
+	let mut next = layout.to_vec();
+	let RailEntry::Folder { guilds, .. } = next.remove(at) else {
+		return None;
+	};
+	next.splice(at..at, guilds.into_iter().map(RailEntry::Guild));
+	Some(next)
+}
+
+pub(super) fn restyled(
+	layout: &[RailEntry],
+	folder: Id,
+	name: Option<String>,
+	color: Option<u32>,
+) -> Option<Vec<RailEntry>> {
+	let mut next = layout.to_vec();
+	let (current_name, current_color) = next.iter_mut().find_map(|entry| match entry {
+		RailEntry::Folder { id, name, color, .. } if *id == folder => Some((name, color)),
+		_ => None,
+	})?;
+	*current_name = name;
+	*current_color = color;
+	(next != layout).then_some(next)
+}
+
 pub(super) fn new_folder_id() -> Id {
 	chrono::Utc::now().timestamp_millis().unsigned_abs()
 }

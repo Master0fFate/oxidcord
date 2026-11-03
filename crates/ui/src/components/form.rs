@@ -1,8 +1,9 @@
 use std::rc::Rc;
 
 use gpui::{
-	AnyElement, App, ElementId, FontWeight, Hsla, InteractiveElement as _, IntoElement, ParentElement as _,
-	SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, prelude::FluentBuilder as _,
+	AnyElement, App, ClickEvent, ElementId, FontWeight, Hsla, InteractiveElement as _, IntoElement,
+	ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div,
+	prelude::FluentBuilder as _,
 };
 use gpui_component::Disableable as _;
 use gpui_component::button::{Button, ButtonVariants as _};
@@ -11,11 +12,46 @@ use gpui_component::switch::Switch;
 
 use super::context_menu::ContextMenuBuilder;
 use crate::icons::{Icon, IconKind};
+use crate::model::role_color;
 use crate::theme::{Theme, rem, with_alpha};
+
+pub const COLOR_PALETTE: [u32; 20] = [
+	0x1abc9c, 0x2ecc71, 0x3498db, 0x9b59b6, 0xe91e63, 0xf1c40f, 0xe67e22, 0xe74c3c, 0x95a5a6, 0x607d8b,
+	0x11806a, 0x1f8b4c, 0x206694, 0x71368a, 0xad1457, 0xc27c0e, 0xa84300, 0x992d22, 0x979c9f, 0x546e7a,
+];
 
 pub type PickHandler = Rc<dyn Fn(usize, &mut Window, &mut App)>;
 pub type TriHandler = Rc<dyn Fn(Tri, &mut Window, &mut App)>;
 pub type ToggleHandler = Rc<dyn Fn(bool, &mut Window, &mut App)>;
+
+pub fn parse_hex_color(text: &str) -> Option<u32> {
+	let digits = text.trim().trim_start_matches('#');
+	(digits.len() == 6)
+		.then(|| u32::from_str_radix(digits, 16).ok())
+		.flatten()
+}
+
+pub fn color_swatch(
+	color: u32,
+	active: bool,
+	theme: &Theme,
+	on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> AnyElement {
+	div()
+		.id(("color-swatch", color as usize))
+		.size(theme.settings_swatch)
+		.rounded(theme.radius_sm)
+		.cursor_pointer()
+		.bg(role_color(color))
+		.border_2()
+		.border_color(if active {
+			theme.interactive_active
+		} else {
+			theme.background_primary
+		})
+		.on_click(on_click)
+		.into_any_element()
+}
 
 pub fn caption(text: impl Into<SharedString>, theme: &Theme) -> AnyElement {
 	div()

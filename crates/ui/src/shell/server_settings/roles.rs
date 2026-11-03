@@ -14,7 +14,10 @@ use session::Command;
 
 use super::kit;
 use super::rights::GROUPS;
-use crate::components::{IconButton, PickHandler, ToggleHandler, field, hint, segmented, switch_row};
+use crate::components::{
+	COLOR_PALETTE, IconButton, PickHandler, ToggleHandler, color_swatch, field, hint, parse_hex_color,
+	segmented, switch_row,
+};
 use crate::data::Data;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
@@ -22,10 +25,6 @@ use crate::model::role_color;
 use crate::shell::community::access::GuildAccess;
 use crate::theme::Theme;
 
-const PALETTE: [u32; 20] = [
-	0x1abc9c, 0x2ecc71, 0x3498db, 0x9b59b6, 0xe91e63, 0xf1c40f, 0xe67e22, 0xe74c3c, 0x95a5a6, 0x607d8b,
-	0x11806a, 0x1f8b4c, 0x206694, 0x71368a, 0xad1457, 0xc27c0e, 0xa84300, 0x992d22, 0x979c9f, 0x546e7a,
-];
 const NEW_ROLE_NAME: &str = "new role";
 const NAME_LIMIT: usize = 100;
 
@@ -67,13 +66,6 @@ fn color_of(role: &Role) -> u32 {
 	u32::try_from(value).unwrap_or(0)
 }
 
-fn parse_hex(text: &str) -> Option<u32> {
-	let digits = text.trim().trim_start_matches('#');
-	(digits.len() == 6)
-		.then(|| u32::from_str_radix(digits, 16).ok())
-		.flatten()
-}
-
 impl RolesPage {
 	pub fn new(data: Entity<Data>, guild: Snowflake, window: &mut Window, cx: &mut Context<Self>) -> Self {
 		let name = cx.new(|cx| InputState::new(window, cx));
@@ -88,7 +80,7 @@ impl RolesPage {
 			}),
 			cx.subscribe_in(&hex, window, |this, input, event: &InputEvent, _, cx| {
 				if matches!(event, InputEvent::Change)
-					&& let Some(color) = parse_hex(&input.read(cx).value())
+					&& let Some(color) = parse_hex_color(&input.read(cx).value())
 					&& let Some(draft) = &mut this.draft
 				{
 					draft.color = color;
@@ -412,19 +404,11 @@ impl RolesPage {
 	}
 
 	fn swatch(&self, color: u32, active: bool, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
-		div()
-			.id(("role-swatch", color as usize))
-			.size(theme.settings_swatch)
-			.rounded(theme.radius_sm)
-			.cursor_pointer()
-			.bg(role_color(color))
-			.border_2()
-			.border_color(if active {
-				theme.interactive_active
-			} else {
-				theme.background_primary
-			})
-			.on_click(cx.listener(move |this, _, window, cx| {
+		color_swatch(
+			color,
+			active,
+			theme,
+			cx.listener(move |this, _, window, cx| {
 				if let Some(draft) = &mut this.draft {
 					draft.color = color;
 				}
@@ -432,12 +416,12 @@ impl RolesPage {
 					state.set_value(format!("#{color:06x}"), window, cx)
 				});
 				cx.notify();
-			}))
-			.into_any_element()
+			}),
+		)
 	}
 
 	fn display_tab(&self, draft: &Draft, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
-		let swatches: Vec<AnyElement> = PALETTE
+		let swatches: Vec<AnyElement> = COLOR_PALETTE
 			.iter()
 			.map(|color| self.swatch(*color, draft.color == *color, theme, cx))
 			.collect();

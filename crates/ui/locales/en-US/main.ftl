@@ -5,6 +5,15 @@ rail-home = Direct Messages
 rail-add-server = Add a Server
 rail-explore = Explore Discoverable Servers
 
+folder-settings = Folder Settings
+folder-mark-read = Mark Folder As Read
+folder-ungroup = Ungroup
+folder-name = Folder Name
+folder-color = Folder Color
+folder-save = Save
+folder-move = Move to Folder
+folder-none = No Folder
+
 menu-mark-as-read = Mark As Read
 menu-mute-server = Mute Server
 menu-mute-channel = Mute Channel

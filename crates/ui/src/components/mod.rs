@@ -18,8 +18,8 @@ pub use context_menu::{ContextMenuBuilder, MenuEntry};
 pub use divider::Divider;
 pub use emoji::unicode_emoji;
 pub use form::{
-	PickHandler, ToggleHandler, Tri, TriHandler, badge, caption, card, dialog_footer, field, hint, segmented,
-	select, switch_row, tri_state,
+	COLOR_PALETTE, PickHandler, ToggleHandler, Tri, TriHandler, badge, caption, card, color_swatch,
+	dialog_footer, field, hint, parse_hex_color, segmented, select, switch_row, tri_state,
 };
 pub use icon_button::IconButton;
 pub use mention_badge::MentionBadge;

@@ -26,8 +26,10 @@ use crate::images::Images;
 use crate::model::role_color;
 use crate::theme::{Theme, rem, with_alpha};
 
+use folder::{folder_menu, move_menu};
 use reorder::{DragPreview, DraggedGuild, Drop, new_folder_id, rearranged};
 
+mod folder;
 mod reorder;
 
 type Id = u64;
@@ -475,6 +477,7 @@ impl ServerRail {
 			acronym: acronym(&guild.name),
 		};
 		let menu = guild_menu_for(id)
+			.lazy(move |cx| move_menu(id, cx))
 			.plugin_items("server-context-menu", MenuTarget::server(id), cx)
 			.build();
 		let target = Target::Guild(id.get());
@@ -635,7 +638,8 @@ impl ServerRail {
 					cx,
 				)
 				.on_click(cx.listener(move |this, _, _, cx| this.toggle_folder(id, cx)))
-				.tooltip(tooltip(folder.name.clone()));
+				.tooltip(tooltip(folder.name.clone()))
+				.context_menu(folder_menu(folder, cx).build());
 			let inset = (theme.server_rail_width - theme.server_icon) / 2.;
 			return self.drop_slot(
 				tile,
@@ -667,7 +671,8 @@ impl ServerRail {
 				cx,
 			)
 			.on_click(cx.listener(move |this, _, _, cx| this.toggle_folder(id, cx)))
-			.tooltip(tooltip(folder.name.clone()));
+			.tooltip(tooltip(folder.name.clone()))
+			.context_menu(folder_menu(folder, cx).build());
 		let header = self.drop_slot(
 			header,
 			Target::Folder(id),
@@ -922,6 +927,11 @@ fn guild_item(summary: &state::GuildSummary) -> GuildItem {
 	}
 }
 
+fn folder_title<'a>(name: Option<String>, guilds: impl Iterator<Item = &'a str>) -> String {
+	name.filter(|name| !name.is_empty())
+		.unwrap_or_else(|| guilds.take(FOLDER_NAME_GUILDS).collect::<Vec<_>>().join(", "))
+}
+
 fn rail_entries(state: &State) -> Vec<RailEntry> {
 	let summaries = state.guild_summaries();
 	let by_id: HashMap<Snowflake, &state::GuildSummary> =
@@ -947,14 +957,7 @@ fn rail_entries(state: &State) -> Vec<RailEntry> {
 				if guilds.is_empty() {
 					return None;
 				}
-				let name = name.unwrap_or_else(|| {
-					guilds
-						.iter()
-						.take(FOLDER_NAME_GUILDS)
-						.map(|guild| guild.name.to_string())
-						.collect::<Vec<_>>()
-						.join(", ")
-				});
+				let name = folder_title(name, guilds.iter().map(|guild| guild.name.as_ref()));
 				Some(RailEntry::Folder(FolderItem {
 					id,
 					name: name.into(),
