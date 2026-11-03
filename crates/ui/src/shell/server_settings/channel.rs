@@ -84,6 +84,7 @@ const VOICE_ONLY: Permissions = Permissions::CONNECT
 	.union(Permissions::SPEAK)
 	.union(Permissions::STREAM)
 	.union(Permissions::USE_SOUNDBOARD)
+	.union(Permissions::SET_VOICE_CHANNEL_STATUS)
 	.union(Permissions::USE_EXTERNAL_SOUNDS)
 	.union(Permissions::USE_VAD)
 	.union(Permissions::PRIORITY_SPEAKER)

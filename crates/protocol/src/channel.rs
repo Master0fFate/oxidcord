@@ -57,7 +57,10 @@ bitflags! {
 	pub struct ChannelFlags: u64 {
 		const PINNED = 1 << 1;
 		const REQUIRE_TAG = 1 << 4;
+		const IS_SPAM = 1 << 5;
 		const HIDE_MEDIA_DOWNLOAD_OPTIONS = 1 << 15;
+		const CHANNEL_OBFUSCATED = 1 << 17;
+		const IS_SPOILER_CHANNEL = 1 << 21;
 	}
 }
 

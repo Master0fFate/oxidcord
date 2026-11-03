@@ -52,6 +52,7 @@ bitflags! {
 		const CREATE_EVENTS = 1 << 44;
 		const USE_EXTERNAL_SOUNDS = 1 << 45;
 		const SEND_VOICE_MESSAGES = 1 << 46;
+		const SET_VOICE_CHANNEL_STATUS = 1 << 48;
 		const SEND_POLLS = 1 << 49;
 		const USE_EXTERNAL_APPS = 1 << 50;
 		const PIN_MESSAGES = 1 << 51;

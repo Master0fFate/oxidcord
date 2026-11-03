@@ -211,6 +211,11 @@ pub const GROUPS: &[RightGroup] = &[
 				hint: "right-use-soundboard-hint",
 			},
 			Right {
+				flag: Permissions::SET_VOICE_CHANNEL_STATUS,
+				name: "right-set-voice-status",
+				hint: "right-set-voice-status-hint",
+			},
+			Right {
 				flag: Permissions::USE_EXTERNAL_SOUNDS,
 				name: "right-use-external-sounds",
 				hint: "right-use-external-sounds-hint",

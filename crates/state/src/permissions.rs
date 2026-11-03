@@ -17,6 +17,8 @@ pub const DM_PERMISSIONS: Permissions = Permissions::VIEW_CHANNEL
 	.union(Permissions::SEND_VOICE_MESSAGES)
 	.union(Permissions::SEND_POLLS);
 
+const FULL_ACCESS: Permissions = Permissions::from_bits_retain(u64::MAX);
+
 const TIMEOUT_PERMISSIONS: Permissions = Permissions::VIEW_CHANNEL.union(Permissions::READ_MESSAGE_HISTORY);
 
 pub(crate) fn compute_permissions(
@@ -26,7 +28,7 @@ pub(crate) fn compute_permissions(
 	now: DateTime<Utc>,
 ) -> Permissions {
 	if guild.owner_id == Some(user_id) {
-		return Permissions::all();
+		return FULL_ACCESS;
 	}
 	let member = guild.members.get(&user_id);
 	let member_roles = member.map_or(&[][..], |member| member.roles.as_slice());
@@ -40,7 +42,7 @@ pub(crate) fn compute_permissions(
 		}
 	}
 	if permissions.contains(Permissions::ADMINISTRATOR) {
-		return Permissions::all();
+		return FULL_ACCESS;
 	}
 	if let Some(channel) = overwrite_source(guild, channel) {
 		permissions = apply_overwrites(guild, channel, member_roles, user_id, permissions);
