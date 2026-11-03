@@ -596,6 +596,9 @@ impl State {
 			LocalEvent::SlowmodeStarted { channel_id, wait } => {
 				return self.start_slowmode(*channel_id, *wait);
 			}
+			LocalEvent::ThreadCooldownStarted { parent_id, wait } => {
+				return self.start_thread_cooldown(*parent_id, *wait);
+			}
 			LocalEvent::DraftChanged { channel_id, content } => {
 				if content.is_empty() {
 					self.drafts.remove(channel_id);

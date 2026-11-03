@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use plugin_host::api::model::NotificationSettings;
@@ -201,20 +202,20 @@ impl Core {
 			return false;
 		}
 		let cooldown = self.state.read().slowmode_remaining(channel_id);
-		if let Some(remaining) = cooldown {
-			self.reject(format!("Slowmode: {}s", remaining.as_secs() + 1));
-			return false;
-		}
-		true
+		self.cooldown_clear(cooldown)
+	}
+
+	fn cooldown_clear(&mut self, remaining: Option<Duration>) -> bool {
+		let Some(remaining) = remaining else {
+			return true;
+		};
+		self.reject(format!("Slowmode: {}s", remaining.as_secs() + 1));
+		false
 	}
 
 	pub(super) fn thread_cooldown_clear(&mut self, parent_id: Snowflake) -> bool {
 		let cooldown = self.state.read().thread_cooldown_remaining(parent_id);
-		if let Some(remaining) = cooldown {
-			self.reject(format!("Slowmode: {}s", remaining.as_secs() + 1));
-			return false;
-		}
-		true
+		self.cooldown_clear(cooldown)
 	}
 
 	pub(super) fn channel_guild_allows(
@@ -331,7 +332,7 @@ impl Core {
 		});
 	}
 
-	pub(super) fn spawn_open<F, Fut>(&self, what: &'static str, call: F)
+	pub(super) fn spawn_open<F, Fut>(&self, what: &'static str, slowmode_parent: Option<Snowflake>, call: F)
 	where
 		F: FnOnce(RestClient) -> Fut,
 		Fut: Future<Output = rest::Result<protocol::Channel>> + Send + 'static,
@@ -349,6 +350,12 @@ impl Core {
 					let _ = internal.send(message);
 				}
 				Err(error) => {
+					if let (Some(parent_id), RestError::Slowmode { retry_after }) = (slowmode_parent, &error) {
+						let _ = internal.send(Internal::ThreadCooldownHit {
+							parent_id,
+							retry_after: *retry_after,
+						});
+					}
 					let _ = internal.send(rest_failure(what, &error));
 				}
 			}

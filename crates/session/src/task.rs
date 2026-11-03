@@ -125,6 +125,10 @@ pub(crate) enum Internal {
 		channel_id: Snowflake,
 		retry_after: Option<Duration>,
 	},
+	ThreadCooldownHit {
+		parent_id: Snowflake,
+		retry_after: Option<Duration>,
+	},
 	UploadProgress {
 		nonce: Nonce,
 		uploaded: u64,
@@ -906,6 +910,15 @@ impl Core {
 				let wait = retry_after.or_else(|| self.state.read().slowmode_interval(channel_id));
 				if let Some(wait) = wait {
 					self.apply_local(LocalEvent::SlowmodeStarted { channel_id, wait });
+				}
+			}
+			Internal::ThreadCooldownHit {
+				parent_id,
+				retry_after,
+			} => {
+				let wait = retry_after.or_else(|| self.state.read().slowmode_interval(parent_id));
+				if let Some(wait) = wait {
+					self.apply_local(LocalEvent::ThreadCooldownStarted { parent_id, wait });
 				}
 			}
 			Internal::UploadProgress { nonce, uploaded } => self.on_upload_progress(nonce, uploaded),

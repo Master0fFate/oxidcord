@@ -382,7 +382,7 @@ impl Core {
 				let (kind, needed, what) = self.thread_start(channel_id, message_id.is_none() && private);
 				if self.channel_allows(channel_id, needed, what) && self.thread_cooldown_clear(channel_id) {
 					let invitable = (kind == ChannelType::PrivateThread).then_some(invitable);
-					self.spawn_open("create thread", move |rest| async move {
+					self.spawn_open("create thread", Some(channel_id), move |rest| async move {
 						rest.start_thread(
 							channel_id,
 							message_id,
@@ -495,7 +495,7 @@ impl Core {
 					&& self.thread_cooldown_clear(channel_id)
 				{
 					let body = forum_body(name, content, tags, &files);
-					self.spawn_open("create post", move |rest| async move {
+					self.spawn_open("create post", Some(channel_id), move |rest| async move {
 						rest.create_forum_post(channel_id, body, files).await
 					});
 				}
@@ -909,7 +909,7 @@ impl Core {
 				rest.leave_guild(guild_id).await
 			}),
 			Command::CreateGroupDm { recipient_ids } => {
-				self.spawn_open("create group", move |rest| async move {
+				self.spawn_open("create group", None, move |rest| async move {
 					rest.create_group_dm(&recipient_ids).await
 				});
 			}
