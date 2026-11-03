@@ -225,7 +225,11 @@ fn alert_notification(state: &State, alert: &Alert, show_content: bool) -> Notif
 		_ => author,
 	};
 	let body = if show_content {
-		snippet(&markdown::parse(&message.content), NOTIFICATION_BODY_LIMIT)
+		snippet(
+			&markdown::parse(&message.content),
+			NOTIFICATION_BODY_LIMIT,
+			&markdown::Bare,
+		)
 	} else {
 		String::new()
 	};

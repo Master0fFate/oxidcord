@@ -121,6 +121,7 @@ impl Flatten {
 			Node::UserMention(id) => MdNode::UserMention(*id),
 			Node::RoleMention(id) => MdNode::RoleMention(*id),
 			Node::ChannelMention(id) => MdNode::ChannelMention(*id),
+			Node::GameMention(id) => MdNode::Text(format!("<@${id}>")),
 			Node::Everyone => MdNode::Everyone,
 			Node::Here => MdNode::Here,
 			Node::CustomEmoji { name, id, animated } => MdNode::CustomEmoji(MdEmoji {
@@ -173,6 +174,8 @@ pub(crate) fn style_code(style: TimestampStyle) -> &'static str {
 		TimestampStyle::LongDate => "D",
 		TimestampStyle::ShortDateTime => "f",
 		TimestampStyle::LongDateTime => "F",
+		TimestampStyle::NumericDateTime => "s",
+		TimestampStyle::NumericDateTimeSeconds => "S",
 		TimestampStyle::Relative => "R",
 	}
 }
@@ -184,6 +187,8 @@ pub(crate) fn style_from_code(code: &str) -> TimestampStyle {
 		"d" => TimestampStyle::ShortDate,
 		"D" => TimestampStyle::LongDate,
 		"F" => TimestampStyle::LongDateTime,
+		"s" => TimestampStyle::NumericDateTime,
+		"S" => TimestampStyle::NumericDateTimeSeconds,
 		"R" => TimestampStyle::Relative,
 		_ => TimestampStyle::ShortDateTime,
 	}

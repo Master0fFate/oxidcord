@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use crate::ast::{GuildNavKind, Node, for_each};
+use crate::ast::{GuildNavKind, Node, TimestampStyle, for_each};
 
 const JUMBO_EMOJI_LIMIT: usize = 30;
 
@@ -18,10 +18,46 @@ pub struct Mentions {
 	pub here: bool,
 }
 
+pub trait Resolve {
+	fn user(&self, id: u64) -> String;
+	fn role(&self, id: u64) -> String;
+	fn channel(&self, id: u64) -> String;
+	fn game(&self, id: u64) -> String;
+	fn timestamp(&self, unix: i64, style: TimestampStyle) -> String;
+}
+
+pub struct Bare;
+
+impl Resolve for Bare {
+	fn user(&self, id: u64) -> String {
+		format!("@{id}")
+	}
+
+	fn role(&self, id: u64) -> String {
+		format!("@{id}")
+	}
+
+	fn channel(&self, id: u64) -> String {
+		format!("#{id}")
+	}
+
+	fn game(&self, id: u64) -> String {
+		format!("@{id}")
+	}
+
+	fn timestamp(&self, unix: i64, _: TimestampStyle) -> String {
+		unix.to_string()
+	}
+}
+
 impl Document {
 	pub fn plain_text(&self) -> String {
+		self.plain_text_with(&Bare)
+	}
+
+	pub fn plain_text_with(&self, resolve: &dyn Resolve) -> String {
 		let mut out = String::new();
-		write_plain(&self.nodes, &mut out);
+		write_plain(&self.nodes, resolve, &mut out);
 		out
 	}
 
@@ -74,7 +110,7 @@ fn push_unique(ids: &mut Vec<u64>, id: u64) {
 	}
 }
 
-fn write_plain(nodes: &[Node], out: &mut String) {
+fn write_plain(nodes: &[Node], resolve: &dyn Resolve, out: &mut String) {
 	for (index, node) in nodes.iter().enumerate() {
 		if index > 0 && (node.is_block() || nodes[index - 1].is_block()) {
 			out.push('\n');
@@ -88,7 +124,7 @@ fn write_plain(nodes: &[Node], out: &mut String) {
 			| Node::Quote(children)
 			| Node::Subtext(children)
 			| Node::Styled { children, .. }
-			| Node::Heading { children, .. } => write_plain(children, out),
+			| Node::Heading { children, .. } => write_plain(children, resolve, out),
 			Node::InlineImage { alt, .. } => out.push_str(alt),
 			Node::Spoiler(_) => out.push_str("[spoiler]"),
 			Node::CodeBlock { code, .. } => out.push_str(code),
@@ -106,23 +142,19 @@ fn write_plain(nodes: &[Node], out: &mut String) {
 					} else {
 						out.push_str("- ");
 					}
-					write_plain(item, out);
+					write_plain(item, resolve, out);
 				}
 			}
-			Node::UserMention(id) | Node::RoleMention(id) => {
-				let _ = write!(out, "@{id}");
-			}
-			Node::ChannelMention(id) => {
-				let _ = write!(out, "#{id}");
-			}
+			Node::UserMention(id) => out.push_str(&resolve.user(*id)),
+			Node::RoleMention(id) => out.push_str(&resolve.role(*id)),
+			Node::ChannelMention(id) => out.push_str(&resolve.channel(*id)),
+			Node::GameMention(id) => out.push_str(&resolve.game(*id)),
 			Node::Everyone => out.push_str("@everyone"),
 			Node::Here => out.push_str("@here"),
 			Node::CustomEmoji { name, .. } => {
 				let _ = write!(out, ":{name}:");
 			}
-			Node::Timestamp { unix, .. } => {
-				let _ = write!(out, "{unix}");
-			}
+			Node::Timestamp { unix, style } => out.push_str(&resolve.timestamp(*unix, *style)),
 			Node::CommandMention { name, .. } => {
 				let _ = write!(out, "/{name}");
 			}
@@ -134,7 +166,7 @@ fn write_plain(nodes: &[Node], out: &mut String) {
 			}),
 			Node::Link {
 				text: Some(children), ..
-			} => write_plain(children, out),
+			} => write_plain(children, resolve, out),
 			Node::Link { url, text: None, .. } => out.push_str(url),
 			Node::LineBreak => out.push('\n'),
 		}

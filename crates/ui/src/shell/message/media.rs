@@ -653,7 +653,11 @@ pub fn embeds(items: &[Embed], env: &BodyEnv, previews: bool, cx: &App) -> Vec<A
 		.iter()
 		.enumerate()
 		.filter(|(_, embed)| {
-			previews || matches!(embed.kind, None | Some(EmbedKind::Rich | EmbedKind::PollResult))
+			previews
+				|| matches!(
+					embed.kind,
+					None | Some(EmbedKind::Rich | EmbedKind::PollResult | EmbedKind::AutoModerationMessage)
+				)
 		})
 		.filter_map(|(index, embed)| {
 			let card = embed_card(index, embed, env, cx)?;
@@ -920,6 +924,7 @@ fn embed_card(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<An
 		Some(EmbedKind::Gifv) => return gifv(index, embed, env, cx),
 		Some(EmbedKind::Image) => return bare_media(index, embed, env, cx),
 		Some(EmbedKind::Components) => return None,
+		Some(EmbedKind::AutoModerationMessage) => return Some(automod_card(embed, env, cx)),
 		_ => {}
 	}
 	if let Some(video) = direct_video(embed)
@@ -1091,6 +1096,96 @@ fn embed_card(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<An
 			)
 			.into_any_element(),
 	)
+}
+
+fn automod_card(embed: &Embed, env: &BodyEnv, cx: &App) -> AnyElement {
+	let theme = env.theme;
+	let field = |name: &str| {
+		embed
+			.fields
+			.iter()
+			.find(|field| field.name == name)
+			.map(|field| field.value.as_str())
+			.filter(|value| !value.is_empty())
+	};
+	let blocked = field("decision_outcome") == Some("blocked");
+	let tint = if blocked { theme.danger } else { theme.warning };
+	let channel = field("channel_id")
+		.and_then(|id| id.parse::<u64>().ok())
+		.map(|id| {
+			let name = env
+				.lookup
+				.channel(id)
+				.unwrap_or_else(|| cx.t("mention-channel-unknown").to_string());
+			format!("#{name}")
+		});
+	let detail = |label: &'static str, value: Option<String>| {
+		value.map(|value| {
+			div()
+				.flex()
+				.gap(theme.space_8)
+				.text_size(theme.font_sm)
+				.child(div().flex_none().text_color(theme.text_muted).child(cx.t(label)))
+				.child(div().min_w_0().text_color(theme.text_normal).child(value))
+		})
+	};
+	let body = BodyEnv::new(
+		env.theme,
+		env.lookup,
+		env.dispatch,
+		env.message_id,
+		env.revealed,
+		env.prefs,
+	)
+	.text_size(theme.font_sm);
+	div()
+		.mt(theme.space_4)
+		.flex()
+		.flex_col()
+		.gap(theme.space_4)
+		.w(rem(EMBED_WIDTH))
+		.max_w_full()
+		.py(theme.space_8)
+		.pl(theme.space_12)
+		.pr(theme.space_16)
+		.rounded_r(theme.radius_sm)
+		.border_l_4()
+		.border_color(tint)
+		.bg(theme.background_secondary)
+		.child(
+			div()
+				.flex()
+				.items_center()
+				.gap(theme.space_8)
+				.child(Icon::new(IconKind::Shield).size(rem(16.)).color(tint))
+				.child(
+					div()
+						.text_size(theme.font_sm)
+						.font_weight(FontWeight::SEMIBOLD)
+						.text_color(theme.header_primary)
+						.child(cx.t("automod-title")),
+				)
+				.child(
+					div()
+						.text_size(theme.font_tiny)
+						.text_color(tint)
+						.child(cx.t(if blocked {
+							"automod-blocked"
+						} else {
+							"automod-flagged"
+						})),
+				),
+		)
+		.children(
+			embed
+				.description
+				.as_ref()
+				.map(|description| render_body(&parse(description), &body, cx)),
+		)
+		.children(detail("automod-rule", field("rule_name").map(str::to_owned)))
+		.children(detail("automod-keyword", field("keyword").map(str::to_owned)))
+		.children(detail("automod-channel", channel))
+		.into_any_element()
 }
 
 fn fields(embed: &Embed, env: &BodyEnv, cx: &App) -> AnyElement {

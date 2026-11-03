@@ -1,4 +1,7 @@
-use chrono::{DateTime, Datelike, Local, TimeDelta, Utc};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
+
+use chrono::{DateTime, Datelike, Local, TimeDelta, Timelike as _, Utc};
 use gpui::{App, SharedString};
 use markdown::TimestampStyle;
 
@@ -58,20 +61,45 @@ pub fn duration_label(seconds: f64) -> String {
 	format!("{}:{:02}", total / 60, total % 60)
 }
 
-pub fn timestamp(unix: i64, style: TimestampStyle, cx: &App) -> String {
+static RELATIVE_SEEN: AtomicBool = AtomicBool::new(false);
+
+pub fn take_relative_seen() -> bool {
+	RELATIVE_SEEN.swap(false, Ordering::Relaxed)
+}
+
+pub fn until_next_minute() -> Duration {
+	Duration::from_secs(u64::from(60 - Utc::now().second()))
+}
+
+fn pattern(style: TimestampStyle, h24: bool) -> &'static str {
+	match (style, h24) {
+		(TimestampStyle::ShortTime, false) => "%-I:%M %p",
+		(TimestampStyle::ShortTime, true) => "%H:%M",
+		(TimestampStyle::LongTime, false) => "%-I:%M:%S %p",
+		(TimestampStyle::LongTime, true) => "%H:%M:%S",
+		(TimestampStyle::ShortDate, _) => "%m/%d/%Y",
+		(TimestampStyle::LongDate, _) => "%B %-d, %Y",
+		(TimestampStyle::ShortDateTime, false) => "%B %-d, %Y %-I:%M %p",
+		(TimestampStyle::ShortDateTime, true) => "%B %-d, %Y %H:%M",
+		(TimestampStyle::LongDateTime, false) => "%A, %B %-d, %Y %-I:%M %p",
+		(TimestampStyle::LongDateTime, true) => "%A, %B %-d, %Y %H:%M",
+		(TimestampStyle::NumericDateTime, false) => "%m/%d/%Y, %-I:%M %p",
+		(TimestampStyle::NumericDateTime, true) => "%m/%d/%Y, %H:%M",
+		(TimestampStyle::NumericDateTimeSeconds, false) => "%m/%d/%Y, %-I:%M:%S %p",
+		(TimestampStyle::NumericDateTimeSeconds, true) => "%m/%d/%Y, %H:%M:%S",
+		(TimestampStyle::Relative, _) => "%A, %B %-d, %Y %-I:%M %p",
+	}
+}
+
+pub fn timestamp(unix: i64, style: TimestampStyle, h24: bool, cx: &App) -> String {
 	let Some(time) = DateTime::from_timestamp(unix, 0) else {
 		return unix.to_string();
 	};
-	let local = time.with_timezone(&Local);
-	match style {
-		TimestampStyle::ShortTime => local.format("%-I:%M %p").to_string(),
-		TimestampStyle::LongTime => local.format("%-I:%M:%S %p").to_string(),
-		TimestampStyle::ShortDate => local.format("%m/%d/%Y").to_string(),
-		TimestampStyle::LongDate => local.format("%B %-d, %Y").to_string(),
-		TimestampStyle::ShortDateTime => local.format("%B %-d, %Y %-I:%M %p").to_string(),
-		TimestampStyle::LongDateTime => local.format("%A, %B %-d, %Y %-I:%M %p").to_string(),
-		TimestampStyle::Relative => relative(time, cx).to_string(),
+	if style == TimestampStyle::Relative {
+		RELATIVE_SEEN.store(true, Ordering::Relaxed);
+		return relative(time, cx).to_string();
 	}
+	time.with_timezone(&Local).format(pattern(style, h24)).to_string()
 }
 
 pub fn relative(time: DateTime<Utc>, cx: &App) -> SharedString {

@@ -29,11 +29,11 @@ use lru::LruCache;
 use markdown::Document;
 use plugin_host::ViewContext;
 use plugin_host::api::model::ClickTarget;
-use protocol::{Gif, Message, MessageType, Nonce, Snowflake};
+use protocol::{Gif, Message, MessageType, Nonce, Snowflake, UserFlags};
 use state::{ClientOptions, MessageRow, MessageView, RenderedMessage};
 
-pub use self::body::snippet;
 use self::body::{BodyEnv, render_body};
+pub use self::body::{Plain, preview, snippet};
 use self::menu::{MenuSource, capabilities, capture_pointer};
 pub(in crate::shell) use self::menu::{
 	can_edit, point_link, point_media, with_attachment_menu, with_link_menu,
@@ -197,6 +197,8 @@ pub enum RowAction {
 		at: Point<Pixels>,
 	},
 	JumpTo(Snowflake),
+	OpenChannel(Snowflake),
+	PrefillCommand(String),
 	ToggleGifFavorite(Gif),
 	CreateThread(Snowflake),
 	OpenThread(Snowflake),
@@ -335,20 +337,34 @@ pub fn render_row(row: &MessageRow, env: &RowEnv, cx: &App) -> AnyElement {
 			count,
 			revealed,
 		} => blocked_run(*first, *count, *revealed, env, cx),
-		MessageRow::Message(view) => match view.message.kind {
-			MessageType::Default
-			| MessageType::Reply
-			| MessageType::ChatInputCommand
-			| MessageType::ContextMenuCommand
-			| MessageType::PollResult => {
-				if env.compact {
-					compact_message(view, env, cx)
-				} else {
-					message_row(view, env, cx)
-				}
+		MessageRow::Message(view) if renders_as_message(&view.message) => {
+			if env.compact {
+				compact_message(view, env, cx)
+			} else {
+				message_row(view, env, cx)
 			}
-			_ => system_row(view, env, cx),
-		},
+		}
+		MessageRow::Message(view) => system_row(view, env, cx),
+	}
+}
+
+fn renders_as_message(message: &Message) -> bool {
+	match message.kind {
+		MessageType::Default
+		| MessageType::Reply
+		| MessageType::ChatInputCommand
+		| MessageType::ContextMenuCommand
+		| MessageType::PollResult
+		| MessageType::ThreadStarterMessage
+		| MessageType::AutoModerationAction => true,
+		MessageType::Unknown(_) => {
+			!message.content.is_empty()
+				|| !message.embeds.is_empty()
+				|| !message.attachments.is_empty()
+				|| !message.sticker_items.is_empty()
+				|| !message.components.is_empty()
+		}
+		_ => false,
 	}
 }
 
@@ -522,6 +538,7 @@ fn system_text(view: &MessageView, env: &RowEnv, cx: &App) -> (IconKind, Hsla, S
 	let theme = env.theme;
 	let message = &view.message;
 	let name = || ArgValue::from(view.author_display.clone());
+	let content = || ArgValue::from(message.content.clone());
 	let target = || {
 		let user = message.mentions.first();
 		ArgValue::from(user.map_or_else(String::new, |user| env.lookup.user(user.id.get())))
@@ -604,6 +621,100 @@ fn system_text(view: &MessageView, env: &RowEnv, cx: &App) -> (IconKind, Hsla, S
 			theme.interactive_normal,
 			cx.t_args("system-icon", &[("name", name())]),
 		),
+		MessageType::ChannelFollowAdd => (
+			IconKind::Link,
+			theme.interactive_normal,
+			cx.t_args("system-follow", &[("name", name()), ("channel", content())]),
+		),
+		MessageType::GuildInviteReminder => (
+			IconKind::Join,
+			theme.interactive_normal,
+			cx.t("system-invite-reminder"),
+		),
+		MessageType::GuildDiscoveryDisqualified => (
+			IconKind::Compass,
+			theme.danger,
+			cx.t("system-discovery-disqualified"),
+		),
+		MessageType::GuildDiscoveryRequalified => (
+			IconKind::Compass,
+			theme.success,
+			cx.t("system-discovery-requalified"),
+		),
+		MessageType::GuildDiscoveryGracePeriodInitialWarning => (
+			IconKind::Compass,
+			theme.warning,
+			cx.t("system-discovery-warning-initial"),
+		),
+		MessageType::GuildDiscoveryGracePeriodFinalWarning => (
+			IconKind::Compass,
+			theme.danger,
+			cx.t("system-discovery-warning-final"),
+		),
+		MessageType::StageStart => (
+			IconKind::Stage,
+			theme.success,
+			cx.t_args("system-stage-start", &[("name", name()), ("topic", content())]),
+		),
+		MessageType::StageEnd => (
+			IconKind::Stage,
+			theme.interactive_normal,
+			cx.t_args("system-stage-end", &[("name", name()), ("topic", content())]),
+		),
+		MessageType::StageSpeaker => (
+			IconKind::Stage,
+			theme.success,
+			cx.t_args("system-stage-speaker", &[("name", name())]),
+		),
+		MessageType::StageTopic => (
+			IconKind::Stage,
+			theme.interactive_normal,
+			cx.t_args("system-stage-topic", &[("name", name()), ("topic", content())]),
+		),
+		MessageType::RoleSubscriptionPurchase => {
+			let subscription = message.role_subscription_data.as_ref();
+			let key = if subscription.is_some_and(|data| data.is_renewal) {
+				"system-role-renewal"
+			} else {
+				"system-role-subscription"
+			};
+			let tier = subscription.map_or_else(String::new, |data| data.tier_name.clone());
+			(
+				IconKind::Star,
+				theme.brand,
+				cx.t_args(key, &[("name", name()), ("tier", ArgValue::from(tier))]),
+			)
+		}
+		MessageType::GuildApplicationPremiumSubscription => (
+			IconKind::Nitro,
+			theme.brand,
+			cx.t_args("system-app-premium", &[("name", name())]),
+		),
+		MessageType::PurchaseNotification => (
+			IconKind::Shop,
+			theme.brand,
+			cx.t_args("system-purchase", &[("name", name())]),
+		),
+		MessageType::GuildIncidentAlertModeEnabled => (
+			IconKind::Shield,
+			theme.warning,
+			cx.t_args("system-incident-enabled", &[("name", name())]),
+		),
+		MessageType::GuildIncidentAlertModeDisabled => (
+			IconKind::Shield,
+			theme.success,
+			cx.t_args("system-incident-disabled", &[("name", name())]),
+		),
+		MessageType::GuildIncidentReportRaid => (
+			IconKind::Shield,
+			theme.danger,
+			cx.t_args("system-incident-raid", &[("name", name())]),
+		),
+		MessageType::GuildIncidentReportFalseAlarm => (
+			IconKind::Shield,
+			theme.success,
+			cx.t_args("system-incident-false-alarm", &[("name", name())]),
+		),
 		_ => (
 			IconKind::Chat,
 			theme.interactive_normal,
@@ -667,17 +778,41 @@ fn system_row(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 		.into_any_element()
 }
 
-fn bot_tag(label: SharedString, theme: &Theme) -> impl IntoElement {
-	div()
-		.flex_none()
-		.px(rem(5.))
-		.rounded(theme.radius_sm)
-		.bg(theme.brand)
-		.text_size(rem(10.))
-		.line_height(rem(15.))
-		.font_weight(FontWeight::BOLD)
-		.text_color(theme.text_on_brand)
-		.child(label)
+fn app_tag(message: &Message, theme: &Theme, cx: &App) -> Option<AnyElement> {
+	let author = &message.author;
+	let (label, verified) = if author.system == Some(true) {
+		(cx.t("badge-official"), true)
+	} else if author.bot == Some(true) || message.webhook_id.is_some() {
+		(
+			cx.t("badge-app"),
+			author.public_flags.contains(UserFlags::VERIFIED_BOT),
+		)
+	} else {
+		return None;
+	};
+	Some(
+		div()
+			.flex_none()
+			.flex()
+			.items_center()
+			.gap(rem(2.))
+			.px(rem(5.))
+			.rounded(theme.radius_sm)
+			.bg(theme.brand)
+			.text_size(rem(10.))
+			.line_height(rem(15.))
+			.font_weight(FontWeight::BOLD)
+			.text_color(theme.text_on_brand)
+			.child(label)
+			.when(verified, |tag| {
+				tag.child(
+					Icon::new(IconKind::Check)
+						.size(rem(10.))
+						.color(theme.text_on_brand),
+				)
+			})
+			.into_any_element(),
+	)
 }
 
 fn silent_mark(message: &Message, theme: &Theme, cx: &App) -> Option<Stateful<Div>> {
@@ -709,7 +844,7 @@ fn reply_header(
 ) -> Option<AnyElement> {
 	let theme = env.theme;
 	let message = &view.message;
-	if message.is_forward() {
+	if message.is_forward() || message.kind == MessageType::ThreadStarterMessage {
 		return None;
 	}
 	message.message_reference.as_ref()?.message_id?;
@@ -759,12 +894,12 @@ fn reply_header(
 		.and_then(|over| over.avatar.clone())
 		.unwrap_or_else(|| user_avatar(author, 32));
 	let suffix = over.and_then(|over| over.suffix.clone());
-	let document = markdown::parse(&referenced.content);
-	let text = if referenced.content.is_empty() {
-		cx.t("message-reply-attachment").to_string()
-	} else {
-		snippet(&document, SNIPPET_LENGTH)
+	let plain = Plain {
+		lookup: env.lookup,
+		h24: env.prefs.time_24h,
+		cx,
 	};
+	let text = preview(referenced, SNIPPET_LENGTH, &plain);
 	let annotation = effects
 		.and_then(PatchEffects::reply_annotation)
 		.map(str::to_owned);
@@ -1230,6 +1365,16 @@ fn content_column(
 	if let (Some(upload), Some(nonce)) = (&view.upload, &message.nonce) {
 		out.push(upload::card(upload, nonce, view.pending && !view.failed, env, cx));
 	}
+	if out.is_empty() && message.kind == MessageType::ThreadStarterMessage {
+		out.push(
+			div()
+				.italic()
+				.text_size(theme.font_sm)
+				.text_color(theme.text_muted)
+				.child(cx.t("message-reply-deleted"))
+				.into_any_element(),
+		);
+	}
 	if view.failed {
 		out.extend(failed_notice(view, env, cx));
 	}
@@ -1489,6 +1634,7 @@ fn message_row(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 	let avatar_profile = env.dispatch.clone();
 	let author_message = message.clone();
 	let avatar_color = view.author_color.map_or(theme.brand, role_display_color);
+	let profile_enabled = message.webhook_id.is_none();
 	let row = container
 		.mt(theme.space_16)
 		.children(reply)
@@ -1498,16 +1644,17 @@ fn message_row(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 				.absolute()
 				.left(theme.space_16)
 				.top(if has_reply { rem(24.) } else { rem(4.) })
-				.cursor_pointer()
-				.on_click(move |event, window, cx| {
-					avatar_profile(
-						RowAction::OpenProfile {
-							user: author_id,
-							at: event.position(),
-						},
-						window,
-						cx,
-					)
+				.when(profile_enabled, |avatar| {
+					avatar.cursor_pointer().on_click(move |event, window, cx| {
+						avatar_profile(
+							RowAction::OpenProfile {
+								user: author_id,
+								at: event.position(),
+							},
+							window,
+							cx,
+						)
+					})
 				})
 				.child(
 					Avatar::new(name.clone())
@@ -1526,31 +1673,31 @@ fn message_row(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 				.child(
 					div()
 						.id(("message-author", id))
-						.cursor_pointer()
 						.text_size(theme.font_md)
 						.font_weight(FontWeight::SEMIBOLD)
 						.text_color(author_color(view, theme))
-						.hover(|style| style.underline())
-						.on_click(move |event, window, cx| {
-							if message_click(&author_message, guild, event, ClickTarget::Author, cx) {
-								cx.stop_propagation();
-								return;
-							}
-							profile(
-								RowAction::OpenProfile {
-									user: author_id,
-									at: event.position(),
+						.when(profile_enabled, |author| {
+							author.cursor_pointer().hover(|style| style.underline()).on_click(
+								move |event, window, cx| {
+									if message_click(&author_message, guild, event, ClickTarget::Author, cx) {
+										cx.stop_propagation();
+										return;
+									}
+									profile(
+										RowAction::OpenProfile {
+											user: author_id,
+											at: event.position(),
+										},
+										window,
+										cx,
+									)
 								},
-								window,
-								cx,
 							)
 						})
 						.child(name),
 				)
 				.children(author_tags)
-				.when(message.author.bot == Some(true), |header| {
-					header.child(bot_tag(cx.t("badge-bot"), theme))
-				})
+				.children(app_tag(message, theme, cx))
 				.children(author_badge(view, theme))
 				.child(
 					div()
@@ -1635,6 +1782,15 @@ fn compact_message(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 				.pr(theme.space_4)
 				.h(theme.compact_row)
 				.children(author_tags)
+		}))
+		.children(app_tag(message, theme, cx).map(|tag| {
+			div()
+				.flex()
+				.flex_none()
+				.items_center()
+				.pr(theme.space_4)
+				.h(theme.compact_row)
+				.child(tag)
 		}))
 		.children(author_badge(view, theme).map(|badge| div().flex_none().pr(theme.space_8).child(badge)))
 		.child(div().flex().flex_col().flex_1().min_w_0().children(content));

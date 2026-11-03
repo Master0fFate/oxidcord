@@ -52,6 +52,10 @@ fn id_then_close(bytes: &[u8], start: usize) -> Option<(u64, usize)> {
 }
 
 fn mention(bytes: &[u8], start: usize) -> Option<(Node, usize)> {
+	if bytes.get(start) == Some(&b'$') {
+		let (id, end) = id_then_close(bytes, start + 1)?;
+		return Some((Node::GameMention(id), end));
+	}
 	let (role, digits_start) = match bytes.get(start)? {
 		b'!' => (false, start + 1),
 		b'&' => (true, start + 1),

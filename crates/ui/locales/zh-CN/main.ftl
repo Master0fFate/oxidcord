@@ -1,5 +1,5 @@
 app-name = Oxidcord
-badge-bot = 机器人
+badge-app = 应用
 
 rail-home = 私信
 rail-add-server = 添加服务器

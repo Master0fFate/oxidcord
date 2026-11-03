@@ -7,8 +7,9 @@ use std::time::{Duration, Instant};
 
 use gpui::{
 	AppContext as _, ClickEvent, Context, Entity, EventEmitter, FontWeight, InteractiveElement as _,
-	IntoElement, ListOffset, ParentElement as _, Pixels, Point, Render, SharedString, Styled as _,
-	Subscription, Task, Window, div, prelude::FluentBuilder as _, px,
+	IntoElement, ListOffset, ParentElement as _, Pixels, Point, Render, SharedString,
+	StatefulInteractiveElement as _, Styled as _, Subscription, Task, Window, div,
+	prelude::FluentBuilder as _, px,
 };
 use gpui_component::Sizable as _;
 use gpui_component::WindowExt as _;
@@ -18,7 +19,7 @@ use lru::LruCache;
 use plugin_host::api::model::ClickTarget;
 use protocol::{ChannelType, Snowflake};
 use session::Command;
-use state::{Changes, MessageRow};
+use state::{Changes, MessageRow, UnreadSince};
 
 use super::community::act;
 use super::inline_emoji::{self, EmojiTokens};
@@ -30,7 +31,8 @@ use super::moderation;
 use super::plugins::{self, LinkOrigin, PluginBridge};
 use crate::components::{ChatList, ChatListState};
 use crate::data::Data;
-use crate::i18n::Translate as _;
+use crate::format;
+use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::IconKind;
 use crate::lookup::Lookup;
 use crate::playback::Playback;
@@ -79,6 +81,12 @@ pub struct Timeline {
 	flash_reset: Option<Task<()>>,
 	scroll_anchor: Option<ListOffset>,
 	own_update: bool,
+	read_anchor: Option<Snowflake>,
+	anchor_resolved: bool,
+	unread: Option<UnreadSince>,
+	marker_index: Option<usize>,
+	banner: bool,
+	relative_tick: Option<Task<()>>,
 	_subscriptions: Vec<Subscription>,
 }
 
@@ -158,6 +166,12 @@ impl Timeline {
 			flash_reset: None,
 			scroll_anchor: None,
 			own_update: false,
+			read_anchor: None,
+			anchor_resolved: false,
+			unread: None,
+			marker_index: None,
+			banner: false,
+			relative_tick: None,
 			_subscriptions: vec![observe, rescale],
 		}
 	}
@@ -222,6 +236,11 @@ impl Timeline {
 		self.flash_reset = None;
 		self.revealed.borrow_mut().clear();
 		self.poll_picks.borrow_mut().clear();
+		self.read_anchor = None;
+		self.anchor_resolved = false;
+		self.unread = None;
+		self.marker_index = None;
+		self.banner = false;
 		self.rows = Rc::new(Vec::new());
 		self.drive(cx, |scroll, cx| scroll.reset(0, cx));
 		self.refresh(window, cx);
@@ -249,14 +268,27 @@ impl Timeline {
 		let Some(channel) = self.channel else {
 			return;
 		};
-		let (rows, detached) = {
+		let (rows, detached, unread) = {
 			let data = self.data.read(cx);
 			let state = data.state();
+			if !self.anchor_resolved && state.messages(channel).is_some() {
+				self.anchor_resolved = true;
+				self.read_anchor = state
+					.read_state(channel)
+					.and_then(|read| read.last_message_id)
+					.filter(|anchor| state.unread_since(channel, *anchor).is_some());
+			}
 			(
-				state.channel_rows(channel),
+				state.channel_rows_after(channel, self.read_anchor),
 				state.messages(channel).is_some_and(|cache| cache.is_detached()),
+				self.read_anchor
+					.and_then(|anchor| state.unread_since(channel, anchor)),
 			)
 		};
+		self.unread = unread;
+		self.marker_index = rows
+			.iter()
+			.position(|row| matches!(row, MessageRow::UnreadMarker));
 		let flipped = self.detached != detached;
 		self.detached = detached;
 		let anchor = self.top_message(cx);
@@ -282,9 +314,49 @@ impl Timeline {
 		}
 		self.finish_jump(cx);
 		self.acknowledge(channel, window, cx);
-		if changed || flipped {
+		if changed || flipped || self.sync_banner(cx) {
 			cx.notify();
 		}
+	}
+
+	fn sync_banner(&mut self, cx: &Context<Self>) -> bool {
+		let top = self.scroll.read(cx).logical_scroll_top().item_ix;
+		let banner = self.unread.is_some() && self.marker_index.is_none_or(|marker| marker < top);
+		std::mem::replace(&mut self.banner, banner) != banner
+	}
+
+	fn mark_read(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+		let Some(channel) = self.channel else {
+			return;
+		};
+		let newest = self
+			.data
+			.read(cx)
+			.state()
+			.messages(channel)
+			.and_then(|cache| cache.newest_id());
+		if let Some(message_id) = newest {
+			self.data.read(cx).send(Command::AckChannel {
+				channel_id: channel,
+				message_id,
+			});
+		}
+		self.read_anchor = None;
+		self.refresh(window, cx);
+	}
+
+	fn schedule_relative_refresh(&mut self, cx: &mut Context<Self>) {
+		if self.relative_tick.is_some() || !format::take_relative_seen() {
+			return;
+		}
+		self.relative_tick = Some(cx.spawn(async move |this, cx| {
+			cx.background_executor().timer(format::until_next_minute()).await;
+			this.update(cx, |this, cx| {
+				this.relative_tick = None;
+				cx.notify();
+			})
+			.ok();
+		}));
 	}
 
 	fn acknowledge(&mut self, channel: Snowflake, window: &Window, cx: &mut Context<Self>) {
@@ -417,6 +489,9 @@ impl Timeline {
 		let Some(channel) = self.channel else {
 			return;
 		};
+		if self.sync_banner(cx) {
+			cx.notify();
+		}
 		if self.snap_when_stuck(cx) {
 			return;
 		}
@@ -711,6 +786,19 @@ impl Timeline {
 			RowAction::OpenEmoji { message_id, at } => cx.emit(TimelineEvent::OpenEmoji { message_id, at }),
 			RowAction::OpenProfile { user, at } => cx.emit(TimelineEvent::OpenProfile { user, at }),
 			RowAction::JumpTo(message) => self.jump_to(message, cx),
+			RowAction::OpenChannel(channel_id) => {
+				let data = self.data.read(cx);
+				let guild_id = data.state().channel_guild(channel_id);
+				data.send(Command::SelectChannel { guild_id, channel_id });
+			}
+			RowAction::PrefillCommand(name) => {
+				if let Some(channel_id) = self.channel {
+					self.data.read(cx).send(Command::SetComposerText {
+						channel_id,
+						content: format!("/{name} "),
+					});
+				}
+			}
 		}
 	}
 
@@ -998,6 +1086,57 @@ impl Timeline {
 			)
 	}
 
+	fn unread_bar(&self, unread: UnreadSince, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
+		let key = if unread.more {
+			"timeline-unread-more"
+		} else {
+			"timeline-unread"
+		};
+		let label = cx.t_args(
+			key,
+			&[
+				("count", ArgValue::from(unread.count)),
+				(
+					"time",
+					ArgValue::from(format::message_time(unread.since, cx).to_string()),
+				),
+			],
+		);
+		div()
+			.absolute()
+			.top_0()
+			.left_0()
+			.right_0()
+			.flex()
+			.items_center()
+			.justify_between()
+			.gap(theme.space_12)
+			.h(rem(32.))
+			.px(theme.space_16)
+			.bg(theme.brand)
+			.text_size(theme.font_sm)
+			.font_weight(FontWeight::SEMIBOLD)
+			.text_color(theme.text_on_brand)
+			.child(
+				div()
+					.id("timeline-unread-jump")
+					.flex_1()
+					.min_w_0()
+					.truncate()
+					.cursor_pointer()
+					.on_click(cx.listener(move |this, _, _, cx| this.jump_to(unread.jump_to, cx)))
+					.child(label),
+			)
+			.child(
+				div()
+					.id("timeline-mark-read")
+					.flex_none()
+					.cursor_pointer()
+					.on_click(cx.listener(|this, _, window, cx| this.mark_read(window, cx)))
+					.child(cx.t("menu-mark-as-read")),
+			)
+	}
+
 	fn banner(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
 		let data = self.data.clone();
 		div()
@@ -1025,6 +1164,9 @@ impl Timeline {
 impl Render for Timeline {
 	fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		Theme::ensure_code_shift(window, cx);
+		if self.relative_tick.is_none() {
+			cx.on_next_frame(window, |this, _, cx| this.schedule_relative_refresh(cx));
+		}
 		let theme = Theme::current(cx);
 		let data = self.data.clone();
 		let dispatch = self.dispatcher(cx);
@@ -1107,6 +1249,9 @@ impl Render for Timeline {
 					.flex_1()
 					.min_h_0()
 					.child(scroller)
+					.when_some(self.unread.filter(|_| self.banner), |area, unread| {
+						area.child(self.unread_bar(unread, &theme, cx))
+					})
 					.when(detached, |area| area.child(self.present_pill(&theme, cx))),
 			)
 			.when(!self.selection.is_empty(), |timeline| {

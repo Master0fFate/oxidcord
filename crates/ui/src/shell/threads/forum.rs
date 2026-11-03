@@ -18,9 +18,9 @@ use crate::data::Data;
 use crate::format;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
-use crate::lookup::avatar_for;
+use crate::lookup::{Lookup, avatar_for};
 use crate::shell::community::art::cover;
-use crate::shell::message::snippet;
+use crate::shell::message::{Plain, Prefs, snippet};
 use crate::theme::{Theme, rem, with_alpha};
 
 const EXCERPT_LENGTH: usize = 180;
@@ -199,9 +199,18 @@ impl ForumView {
 
 	fn card(&self, post: &ForumPost, tags: &[ForumTag], state: &State, cx: &gpui::App) -> Card {
 		let starter = state.forum_starter(post.id).cloned();
+		let lookup = Lookup {
+			state,
+			guild: state.channel_guild(post.id),
+		};
+		let plain = Plain {
+			lookup: &lookup,
+			h24: Prefs::load(cx).time_24h,
+			cx,
+		};
 		let excerpt: SharedString = starter
 			.as_ref()
-			.map(|message| snippet(&markdown::parse(&message.content), EXCERPT_LENGTH))
+			.map(|message| snippet(&markdown::parse(&message.content), EXCERPT_LENGTH, &plain))
 			.unwrap_or_default()
 			.into();
 		let thumbnail = starter

@@ -1,5 +1,6 @@
 app-name = Oxidcord
-badge-bot = BOT
+badge-app = APP
+badge-official = OFFICIAL
 
 rail-home = Direct Messages
 rail-add-server = Add a Server
@@ -91,6 +92,11 @@ timeline-blocked = { $count ->
 timeline-blocked-show = Show
 timeline-blocked-hide = Hide
 timeline-jump-latest = Jump to latest
+timeline-unread = { $count ->
+    [one] { $count } new message since { $time }
+   *[other] { $count } new messages since { $time }
+}
+timeline-unread-more = { $count }+ new messages since { $time }
 
 message-react = Add Reaction
 message-reply = Reply
@@ -251,7 +257,39 @@ system-recipient-remove = { $name } removed { $target } from the group.
 system-call = { $name } started a call.
 system-rename = { $name } changed the channel name: { $channel }
 system-icon = { $name } changed the group icon.
+system-follow = { $name } followed { $channel } into this channel.
+system-invite-reminder = Wondering who to invite? Start by inviting anyone who can help you build the server!
+system-discovery-disqualified = This server was removed from Server Discovery because it no longer meets the requirements.
+system-discovery-requalified = This server is eligible for Server Discovery again and was relisted.
+system-discovery-warning-initial = This server has failed Discovery activity requirements for 1 week.
+system-discovery-warning-final = This server has failed Discovery activity requirements for 3 weeks. It will be removed from Discovery if it fails once more.
+system-stage-start = { $name } started { $topic }
+system-stage-end = { $name } ended { $topic }
+system-stage-speaker = { $name } is now a speaker.
+system-stage-topic = { $name } changed the Stage topic: { $topic }
+system-role-subscription = { $name } joined { $tier }.
+system-role-renewal = { $name } renewed { $tier }.
+system-app-premium = { $name } upgraded an app to premium for this server.
+system-purchase = { $name } purchased a server product.
+system-incident-enabled = { $name } turned on security actions.
+system-incident-disabled = { $name } turned off security actions.
+system-incident-raid = { $name } reported a raid.
+system-incident-false-alarm = { $name } reported a false alarm.
 system-generic = { $name } sent a system message.
+
+automod-title = AutoMod
+automod-rule = Rule
+automod-keyword = Keyword
+automod-channel = Channel
+automod-blocked = Blocked
+automod-flagged = Flagged
+
+mention-channel-unknown = unknown
+mention-role-unknown = deleted-role
+mention-game = Game
+mention-message = Message
+message-preview-poll = Poll: { $question }
+message-preview-sticker = Sticker
 
 delete-title = Delete Message
 delete-body = Are you sure you want to delete this message? This cannot be undone.

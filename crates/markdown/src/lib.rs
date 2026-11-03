@@ -8,7 +8,7 @@ mod inline;
 mod link;
 
 pub use ast::{Color, GuildNavKind, Node, TimestampStyle};
-pub use document::{Document, Mentions};
+pub use document::{Bare, Document, Mentions, Resolve};
 
 pub fn parse(input: &str) -> Document {
 	Document {

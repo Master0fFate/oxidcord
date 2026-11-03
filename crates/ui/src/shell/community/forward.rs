@@ -15,7 +15,8 @@ use crate::components::{ToggleHandler, switch_row};
 use crate::data::Data;
 use crate::i18n::Translate as _;
 use crate::icons::{Icon, IconKind, channel_icon};
-use crate::shell::message::snippet;
+use crate::lookup::Lookup;
+use crate::shell::message::{Plain, Prefs, preview};
 use crate::shell::quick_switcher::fuzzy_score;
 use crate::theme::Theme;
 
@@ -92,15 +93,24 @@ impl ForwardPicker {
 		window: &mut Window,
 		cx: &mut Context<Self>,
 	) -> Self {
-		let (preview, destinations) = {
+		let (text, destinations) = {
 			let guard = data.read(cx);
 			let state = guard.state();
-			let preview = state
+			let lookup = Lookup {
+				state: &state,
+				guild: state.channel_guild(source),
+			};
+			let plain = Plain {
+				lookup: &lookup,
+				h24: Prefs::load(cx).time_24h,
+				cx,
+			};
+			let text = state
 				.messages(source)
 				.and_then(|cache| cache.by_id.get(&message))
-				.map(|found| snippet(&markdown::parse(&found.content), PREVIEW_LENGTH))
+				.map(|found| preview(found, PREVIEW_LENGTH, &plain))
 				.unwrap_or_default();
-			(preview, destinations(&state))
+			(text, destinations(&state))
 		};
 		let placeholder = cx.t("forward-placeholder");
 		let input = cx.new(|cx| InputState::new(window, cx).placeholder(placeholder));
@@ -125,7 +135,7 @@ impl ForwardPicker {
 			data,
 			source,
 			message,
-			preview: preview.into(),
+			preview: text.into(),
 			destinations,
 			input,
 			query: String::new(),

@@ -1,5 +1,4 @@
 app-name = Oxidcord
-badge-bot = BOT
 
 rail-home = Messages privés
 rail-add-server = Ajouter un serveur

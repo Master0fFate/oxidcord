@@ -651,7 +651,7 @@ impl MemberList {
 		let element = match found {
 			Some(Row::Group { id, name, count }) => self.group_header(id, name, *count, theme, cx),
 			Some(Row::Member(member)) => {
-				let bot_label = cx.t("badge-bot");
+				let bot_label = cx.t("badge-app");
 				self.row(member, &bot_label, developer_mode(cx), theme, cx)
 			}
 			None => Self::placeholder_row(theme),

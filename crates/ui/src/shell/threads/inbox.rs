@@ -14,8 +14,8 @@ use crate::data::Data;
 use crate::format;
 use crate::i18n::Translate as _;
 use crate::icons::{Icon, IconKind};
-use crate::lookup::user_avatar;
-use crate::shell::message::snippet;
+use crate::lookup::{Lookup, user_avatar};
+use crate::shell::message::{Plain, Prefs, preview};
 use crate::theme::Theme;
 
 const SNIPPET_LENGTH: usize = 260;
@@ -44,7 +44,7 @@ impl InboxPanel {
 	fn card(&self, message: &Arc<Message>, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
 		let id = message.id;
 		let channel = message.channel_id;
-		let (name, place) = {
+		let (name, place, text) = {
 			let data = self.data.read(cx);
 			let state = data.state();
 			let guild = state.channel_guild(channel);
@@ -56,12 +56,14 @@ impl InboxPanel {
 				(Some(channel_name), None) => channel_name,
 				(None, _) => String::new(),
 			};
-			(state.display_name(guild, message.author.id), place)
-		};
-		let text = if message.content.is_empty() {
-			cx.t("message-reply-attachment").to_string()
-		} else {
-			snippet(&markdown::parse(&message.content), SNIPPET_LENGTH)
+			let lookup = Lookup { state: &state, guild };
+			let plain = Plain {
+				lookup: &lookup,
+				h24: Prefs::load(cx).time_24h,
+				cx,
+			};
+			let text = preview(message, SNIPPET_LENGTH, &plain);
+			(state.display_name(guild, message.author.id), place, text)
 		};
 		let when = format::message_time(message.timestamp.unwrap_or_else(|| id.timestamp()), cx);
 		div()

@@ -1,5 +1,4 @@
 app-name = Oxidcord
-badge-bot = BOT
 
 rail-home = Izravne poruke
 rail-add-server = Dodaj poslužitelj

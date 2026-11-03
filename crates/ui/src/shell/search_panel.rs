@@ -10,13 +10,13 @@ use rest::api::SearchQuery;
 use session::Command;
 use state::State;
 
-use super::message::snippet;
+use super::message::{Plain, Prefs, preview};
 use crate::components::{Avatar, IconButton, badge};
 use crate::data::Data;
 use crate::format;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::IconKind;
-use crate::lookup::user_avatar;
+use crate::lookup::{Lookup, user_avatar};
 use crate::theme::{Theme, rem};
 
 const SNIPPET_LENGTH: usize = 220;
@@ -376,6 +376,7 @@ impl SearchPanel {
 	}
 
 	pub fn refresh(&mut self, cx: &mut Context<Self>) {
+		let h24 = Prefs::load(cx).time_24h;
 		let data = self.data.read(cx);
 		let Some(results) = data
 			.search_results()
@@ -394,6 +395,12 @@ impl SearchPanel {
 					.guild_id
 					.or_else(|| state.channel_guild(message.channel_id));
 				let channel = state.channel(message.channel_id);
+				let lookup = Lookup { state: &state, guild };
+				let plain = Plain {
+					lookup: &lookup,
+					h24,
+					cx,
+				};
 				let place = channel
 					.and_then(|channel| channel.name.clone())
 					.map_or_else(String::new, |name| format!("#{name}"));
@@ -407,7 +414,7 @@ impl SearchPanel {
 						cx,
 					),
 					place: place.into(),
-					text: snippet(&markdown::parse(&message.content), SNIPPET_LENGTH).into(),
+					text: preview(message, SNIPPET_LENGTH, &plain).into(),
 				}
 			})
 			.collect();

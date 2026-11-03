@@ -10,12 +10,14 @@ use gpui_base::TextSelection;
 use protocol::{Message, MessageFlags, MessageType, Snowflake};
 use state::MessageCommand;
 
-use super::body::snippet;
-use super::{Dispatch, ImageTarget, MessageAccess, RowAction, RowEnv, media};
+use super::body::{Plain, snippet};
+use super::{Dispatch, ImageTarget, MessageAccess, Prefs, RowAction, RowEnv, media};
 use crate::components::{ContextMenuBuilder, unicode_emoji};
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::IconKind;
 use crate::images::Images;
+use crate::lookup::Lookup;
+use crate::shell::community::CommunityHandle;
 use crate::shell::plugins::{MenuTarget, PluginMenu as _, client_options};
 use crate::theme::{Theme, rem};
 
@@ -225,6 +227,25 @@ impl MenuSource {
 		move |window, cx| dispatch(action.clone(), window, cx)
 	}
 
+	fn spoken_text(&self, content: &str, cx: &App) -> String {
+		let document = markdown::parse(content);
+		let Some(handle) = cx.try_global::<CommunityHandle>() else {
+			return snippet(&document, usize::MAX, &markdown::Bare);
+		};
+		let data = handle.data.read(cx);
+		let state = data.state();
+		let lookup = Lookup {
+			state: &state,
+			guild: self.guild,
+		};
+		let plain = Plain {
+			lookup: &lookup,
+			h24: Prefs::load(cx).time_24h,
+			cx,
+		};
+		snippet(&document, usize::MAX, &plain)
+	}
+
 	fn build(&self, cx: &App) -> ContextMenuBuilder {
 		let message = &self.message;
 		let id = message.id;
@@ -329,7 +350,7 @@ impl MenuSource {
 			})
 			.extend(self.image_search(cx));
 		if platform::speech::available() && !content.is_empty() {
-			let spoken = snippet(&markdown::parse(&content), usize::MAX);
+			let spoken = self.spoken_text(&content, cx);
 			menu = menu.item(cx.t("menu-speak"), Some(IconKind::Volume), move |_, _| {
 				platform::speech::speak(&spoken)
 			});

@@ -1,5 +1,5 @@
 app-name = Oxidcord
-badge-bot = BOT
+badge-app = アプリ
 
 rail-home = ダイレクトメッセージ
 rail-add-server = サーバーを追加

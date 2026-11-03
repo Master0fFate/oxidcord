@@ -25,6 +25,7 @@ pub enum Node {
 	UserMention(u64),
 	RoleMention(u64),
 	ChannelMention(u64),
+	GameMention(u64),
 	Everyone,
 	Here,
 	CustomEmoji {
@@ -76,6 +77,8 @@ pub enum TimestampStyle {
 	#[default]
 	ShortDateTime,
 	LongDateTime,
+	NumericDateTime,
+	NumericDateTimeSeconds,
 	Relative,
 }
 
@@ -88,6 +91,8 @@ impl TimestampStyle {
 			b'D' => Some(Self::LongDate),
 			b'f' => Some(Self::ShortDateTime),
 			b'F' => Some(Self::LongDateTime),
+			b's' => Some(Self::NumericDateTime),
+			b'S' => Some(Self::NumericDateTimeSeconds),
 			b'R' => Some(Self::Relative),
 			_ => None,
 		}

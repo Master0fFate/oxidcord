@@ -1076,7 +1076,12 @@ impl RenderOnce for TimestampLabel {
 			.rounded(theme.radius_sm)
 			.bg(theme.code_background)
 			.text_size(theme.font_sm)
-			.child(format::timestamp(self.unix, self.style, cx))
+			.child(format::timestamp(
+				self.unix,
+				self.style,
+				crate::shell::message::Prefs::load(cx).time_24h,
+				cx,
+			))
 	}
 }
 

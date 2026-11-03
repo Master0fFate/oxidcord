@@ -2,24 +2,25 @@ use std::cell::Cell;
 use std::collections::HashSet;
 use std::ops::Range;
 
-use chrono::{DateTime, Local};
 use gpui::{
-	AnyElement, App, ElementId, FontStyle, FontWeight, HighlightStyle, IntoElement, ParentElement as _,
-	SharedString, StrikethroughStyle, Styled as _, StyledText, UnderlineStyle, div, img,
-	prelude::FluentBuilder as _, px,
+	AnyElement, App, ElementId, FontStyle, FontWeight, HighlightStyle, InteractiveElement as _, IntoElement,
+	ParentElement as _, SharedString, StatefulInteractiveElement as _, StrikethroughStyle, Styled as _,
+	StyledText, UnderlineStyle, div, img, prelude::FluentBuilder as _, px,
 };
 use markdown::highlight::{TokenKind, highlight};
-use markdown::{Color, Document, GuildNavKind, Node, TimestampStyle};
+use markdown::{Color, Document, GuildNavKind, Node, Resolve, TimestampStyle};
 use media::SizeHint;
 use plugin_host::api::model::{CodeBlockNode, EmojiRef};
-use protocol::{ChannelFlags, Snowflake};
+use protocol::{ChannelFlags, Message, Snowflake};
 
 use super::selectable::SelectableRun;
 use super::{Dispatch, Prefs, RowAction};
+use crate::components::tooltip;
 use crate::format;
-use crate::i18n::Translate as _;
+use crate::i18n::{ArgValue, Translate as _};
 use crate::images::Images;
 use crate::lookup::Lookup;
+use crate::shell::links::{DiscordLink, discord_link};
 use crate::shell::plugins::{MenuTarget, PatchEffects, plugin_menu, resolve_color};
 use crate::theme::{Theme, rem, with_alpha};
 
@@ -45,6 +46,7 @@ pub struct BodyEnv<'a> {
 	patch: Option<&'a PatchEffects>,
 	channel_id: Option<u64>,
 	emoji_menus: Cell<u32>,
+	timestamps: Cell<u32>,
 	spoilers: Cell<usize>,
 	paragraphs: Cell<u64>,
 	code_blocks: Cell<u32>,
@@ -73,6 +75,7 @@ impl<'a> BodyEnv<'a> {
 			patch: None,
 			channel_id: None,
 			emoji_menus: Cell::new(0),
+			timestamps: Cell::new(0),
 			spoilers: Cell::new(0),
 			paragraphs: Cell::new(0),
 			code_blocks: Cell::new(0),
@@ -114,6 +117,12 @@ impl<'a> BodyEnv<'a> {
 	pub(super) fn next_emoji_menu(&self) -> u32 {
 		let index = self.emoji_menus.get();
 		self.emoji_menus.set(index + 1);
+		index
+	}
+
+	fn next_timestamp(&self) -> u32 {
+		let index = self.timestamps.get();
+		self.timestamps.set(index + 1);
 		index
 	}
 
@@ -206,6 +215,8 @@ enum Click {
 	Link(String),
 	Spoiler(usize),
 	User(Snowflake),
+	Channel(Snowflake),
+	Command(String),
 }
 
 #[derive(Clone)]
@@ -221,6 +232,10 @@ enum Glyph {
 		height: f32,
 	},
 	Unicode(String),
+	Timestamp {
+		unix: i64,
+		style: TimestampStyle,
+	},
 }
 
 #[derive(Clone)]
@@ -244,6 +259,8 @@ struct Style {
 	spoiler: Option<usize>,
 	link: Option<String>,
 	user: Option<Snowflake>,
+	channel: Option<Snowflake>,
+	command: Option<String>,
 }
 
 fn intersect(range: &Range<usize>, window: &Range<usize>) -> Option<Range<usize>> {
@@ -269,6 +286,10 @@ impl Inline {
 			self.clicks.push((range, Click::Link(url.clone())));
 		} else if let Some(user) = style.user {
 			self.clicks.push((range, Click::User(user)));
+		} else if let Some(channel) = style.channel {
+			self.clicks.push((range, Click::Channel(channel)));
+		} else if let Some(command) = &style.command {
+			self.clicks.push((range, Click::Command(command.clone())));
 		}
 	}
 
@@ -345,6 +366,8 @@ impl Inline {
 					user: *user,
 					at: window.mouse_position(),
 				},
+				Click::Channel(channel) => RowAction::OpenChannel(*channel),
+				Click::Command(name) => RowAction::PrefillCommand(name.clone()),
 			};
 			dispatch(action, window, cx);
 		})
@@ -385,6 +408,7 @@ impl Inline {
 				),
 				Glyph::Image { url, width, height } => image_element(url, *width, *height, cx),
 				Glyph::Unicode(url) => unicode_element(url, size, cx),
+				Glyph::Timestamp { unix, style } => timestamp_element(*unix, *style, env, cx),
 			});
 			cursor = emoji.at;
 		}
@@ -448,6 +472,25 @@ fn unicode_element(url: &str, size: f32, cx: &App) -> AnyElement {
 		.size(rem(size))
 		.mx(rem(1.))
 		.when_some(image, |slot, image| slot.child(img(image).size_full()))
+		.into_any_element()
+}
+
+fn timestamp_element(unix: i64, style: TimestampStyle, env: &BodyEnv, cx: &App) -> AnyElement {
+	let theme = env.theme;
+	let h24 = env.prefs.time_24h;
+	let full = format::timestamp(unix, TimestampStyle::LongDateTime, h24, cx);
+	div()
+		.id(ElementId::NamedInteger(
+			"timestamp".into(),
+			(env.message_id << 16) ^ u64::from(env.next_timestamp()),
+		))
+		.flex_none()
+		.mx(rem(1.))
+		.px(theme.space_2)
+		.rounded(theme.radius_sm)
+		.bg(theme.code_background)
+		.tooltip(tooltip(full))
+		.child(format::timestamp(unix, style, h24, cx))
 		.into_any_element()
 }
 
@@ -554,6 +597,17 @@ impl<'a> Blocks<'a> {
 		self.inline.push(&label, &mention);
 	}
 
+	fn channel_link_label(&self, url: &str) -> Option<String> {
+		let DiscordLink::Channel { channel, message, .. } = discord_link(url)? else {
+			return None;
+		};
+		let name = self.env.lookup.channel(channel.get())?;
+		Some(match message {
+			Some(_) => format!("#{name} \u{203a} {}", self.cx.t("mention-message")),
+			None => format!("#{name}"),
+		})
+	}
+
 	fn inline_node(&mut self, node: &Node, style: &Style) {
 		let theme = self.env.theme;
 		match node {
@@ -616,20 +670,35 @@ impl<'a> Blocks<'a> {
 					.env
 					.lookup
 					.role(*id)
-					.unwrap_or_else(|| (id.to_string(), None));
+					.unwrap_or_else(|| (self.cx.t("mention-role-unknown").to_string(), None));
 				self.mention(
 					format!("@{name}"),
 					color.map(crate::model::role_display_color),
 					style,
 				);
 			}
-			Node::ChannelMention(id) => {
-				let name = self.env.lookup.channel(*id).unwrap_or_else(|| id.to_string());
-				self.mention(format!("#{name}"), None, style);
+			Node::ChannelMention(id) => match self.env.lookup.channel(*id) {
+				Some(name) => {
+					let mut next = style.clone();
+					next.channel = Some(Snowflake::from(*id));
+					self.mention(format!("#{name}"), None, &next);
+				}
+				None => {
+					let name = self.cx.t("mention-channel-unknown");
+					self.mention(format!("#{name}"), None, style);
+				}
+			},
+			Node::GameMention(_) => {
+				let label = self.cx.t("mention-game").to_string();
+				self.mention(label, None, style);
 			}
 			Node::Everyone => self.mention("@everyone".to_owned(), None, style),
 			Node::Here => self.mention("@here".to_owned(), None, style),
-			Node::CommandMention { name, .. } => self.mention(format!("/{name}"), None, style),
+			Node::CommandMention { name, .. } => {
+				let mut next = style.clone();
+				next.command = Some(name.clone());
+				self.mention(format!("/{name}"), None, &next);
+			}
 			Node::CustomEmoji { id, animated, name } => self.inline.emoji.push(EmojiAt {
 				at: self.inline.text.len(),
 				glyph: Glyph::Emoji {
@@ -668,17 +737,26 @@ impl<'a> Blocks<'a> {
 					self.inline.codes.push(start..self.inline.text.len());
 				}
 			}
-			Node::Timestamp { unix, style: kind } => {
-				let label = timestamp_label(*unix, *kind, self.env.prefs.time_24h, self.cx);
-				let next = Self::styled(style, |h| h.background_color = Some(theme.code_background));
-				self.inline.push(&label, &next);
+			Node::Timestamp { unix, style: kind } if style.spoiler.is_some() => {
+				let label = format::timestamp(*unix, *kind, self.env.prefs.time_24h, self.cx);
+				self.inline.push(&label, style);
 			}
+			Node::Timestamp { unix, style: kind } => self.inline.emoji.push(EmojiAt {
+				at: self.inline.text.len(),
+				glyph: Glyph::Timestamp {
+					unix: *unix,
+					style: *kind,
+				},
+			}),
 			Node::Link { url, text, .. } => {
 				let mut next = Self::styled(style, |h| h.color = Some(theme.link));
 				next.link = Some(url.clone());
 				match text {
 					Some(children) => self.children(children, &next),
-					None => self.inline.push(url, &next),
+					None => match self.channel_link_label(url) {
+						Some(label) => self.mention(label, None, &next),
+						None => self.inline.push(url, &next),
+					},
 				}
 			}
 			Node::GuildNav(kind) => {
@@ -838,25 +916,89 @@ fn plugin_runs(block: &CodeBlockNode, theme: &Theme) -> (String, Vec<(Range<usiz
 	(text, runs)
 }
 
-fn timestamp_label(unix: i64, style: TimestampStyle, h24: bool, cx: &App) -> String {
-	let pattern = match (h24, style) {
-		(true, TimestampStyle::ShortTime) => "%H:%M",
-		(true, TimestampStyle::LongTime) => "%H:%M:%S",
-		(true, TimestampStyle::ShortDateTime) => "%B %-d, %Y %H:%M",
-		(true, TimestampStyle::LongDateTime) => "%A, %B %-d, %Y %H:%M",
-		_ => return format::timestamp(unix, style, cx),
-	};
-	DateTime::from_timestamp(unix, 0).map_or_else(
-		|| unix.to_string(),
-		|time| time.with_timezone(&Local).format(pattern).to_string(),
-	)
+pub struct Plain<'a> {
+	pub lookup: &'a Lookup<'a>,
+	pub h24: bool,
+	pub cx: &'a App,
 }
 
-pub fn snippet(document: &Document, limit: usize) -> String {
+impl Resolve for Plain<'_> {
+	fn user(&self, id: u64) -> String {
+		format!("@{}", self.lookup.user(id))
+	}
+
+	fn role(&self, id: u64) -> String {
+		let name = self
+			.lookup
+			.role(id)
+			.map_or_else(|| self.cx.t("mention-role-unknown").to_string(), |(name, _)| name);
+		format!("@{name}")
+	}
+
+	fn channel(&self, id: u64) -> String {
+		let name = self
+			.lookup
+			.channel(id)
+			.unwrap_or_else(|| self.cx.t("mention-channel-unknown").to_string());
+		format!("#{name}")
+	}
+
+	fn game(&self, _: u64) -> String {
+		self.cx.t("mention-game").to_string()
+	}
+
+	fn timestamp(&self, unix: i64, style: TimestampStyle) -> String {
+		format::timestamp(unix, style, self.h24, self.cx)
+	}
+}
+
+pub fn snippet(document: &Document, limit: usize, resolve: &dyn Resolve) -> String {
 	let flat = document
-		.plain_text()
+		.plain_text_with(resolve)
 		.split_whitespace()
 		.collect::<Vec<_>>()
 		.join(" ");
 	flat.chars().take(limit).collect()
+}
+
+pub fn preview(message: &Message, limit: usize, plain: &Plain) -> String {
+	let (content, attachments, embeds, stickers) = match message.forwarded_message() {
+		Some(source) => (
+			&source.content,
+			&source.attachments,
+			&source.embeds,
+			&source.sticker_items,
+		),
+		None => (
+			&message.content,
+			&message.attachments,
+			&message.embeds,
+			&message.sticker_items,
+		),
+	};
+	let cx = plain.cx;
+	if !content.is_empty() {
+		return snippet(&markdown::parse(content), limit, plain);
+	}
+	if let Some(question) = message.poll.as_ref().and_then(|poll| poll.question.text.clone()) {
+		return cx
+			.t_args("message-preview-poll", &[("question", ArgValue::from(question))])
+			.to_string();
+	}
+	if !stickers.is_empty() {
+		return cx.t("message-preview-sticker").to_string();
+	}
+	if !attachments.is_empty() {
+		return cx.t("message-reply-attachment").to_string();
+	}
+	let embedded = embeds
+		.iter()
+		.find_map(|embed| embed.title.as_ref().or(embed.description.as_ref()));
+	if let Some(text) = embedded {
+		return snippet(&markdown::parse(text), limit, plain);
+	}
+	if message.is_forward() {
+		return cx.t("message-forwarded").to_string();
+	}
+	String::new()
 }
