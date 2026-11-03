@@ -134,13 +134,7 @@ impl Shared {
 		*slot = decode(merged)?;
 		let value = to_json(&*slot);
 		let changes = json!([{ "key": "name", "new_value": slot.name }]);
-		store.push_audit(
-			guild_id,
-			ACTION_AUTOMOD_RULE_UPDATE,
-			Some(rule_id),
-			changes,
-			None,
-		);
+		store.push_audit(guild_id, ACTION_AUTOMOD_RULE_UPDATE, Some(rule_id), changes, None);
 		Ok(value)
 	}
 
