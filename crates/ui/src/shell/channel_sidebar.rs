@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
@@ -32,6 +33,34 @@ use super::server_settings::channel as channel_modals;
 use super::voice::{Participant, participant_row, participants};
 
 mod reorder;
+
+struct VoiceClock {
+	started: DateTime<Utc>,
+	_tick: Task<()>,
+}
+
+impl VoiceClock {
+	fn new(started: DateTime<Utc>, cx: &mut Context<Self>) -> Self {
+		let tick = cx.spawn(async move |this, cx| {
+			loop {
+				cx.background_executor().timer(CLOCK_TICK).await;
+				if this.update(cx, |_, cx| cx.notify()).is_err() {
+					break;
+				}
+			}
+		});
+		Self {
+			started,
+			_tick: tick,
+		}
+	}
+}
+
+impl Render for VoiceClock {
+	fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+		format::elapsed_clock((Utc::now() - self.started).num_seconds())
+	}
+}
 
 const AVATAR_PIXELS: u32 = 48;
 const CLOCK_TICK: Duration = Duration::from_secs(1);
@@ -105,7 +134,7 @@ pub struct ChannelSidebar {
 	events: usize,
 	live_events: Vec<LiveEvent>,
 	hide_muted: bool,
-	clock: Option<Task<()>>,
+	clocks: HashMap<Snowflake, Entity<VoiceClock>>,
 	list_scroll: ScrollHandle,
 	edge_scroll: f32,
 }
@@ -153,7 +182,7 @@ impl ChannelSidebar {
 			events: 0,
 			live_events: Vec::new(),
 			hide_muted: false,
-			clock: None,
+			clocks: HashMap::new(),
 			list_scroll: ScrollHandle::new(),
 			edge_scroll: 0.,
 		}
@@ -190,7 +219,7 @@ impl ChannelSidebar {
 
 	pub fn refresh(&mut self, cx: &mut Context<Self>) {
 		let Some(guild) = self.guild else {
-			self.sync_clock(cx);
+			self.sync_clocks(cx);
 			return;
 		};
 		let data = self.data.read(cx);
@@ -257,29 +286,26 @@ impl ChannelSidebar {
 			self.events = event_count;
 			self.live_events = live_events;
 			self.hide_muted = hide_muted;
-			self.sync_clock(cx);
+			self.sync_clocks(cx);
 			cx.notify();
 		}
 	}
 
-	fn sync_clock(&mut self, cx: &mut Context<Self>) {
-		let ticking = self.guild.is_some()
-			&& self
-				.categories
+	fn sync_clocks(&mut self, cx: &mut Context<Self>) {
+		let started: HashMap<Snowflake, DateTime<Utc>> = if self.guild.is_some() {
+			self.categories
 				.iter()
 				.flat_map(|category| &category.channels)
-				.any(|channel| channel.voice_started.is_some());
-		if !ticking {
-			self.clock = None;
-		} else if self.clock.is_none() {
-			self.clock = Some(cx.spawn(async move |this, cx| {
-				loop {
-					cx.background_executor().timer(CLOCK_TICK).await;
-					if this.update(cx, |_, cx| cx.notify()).is_err() {
-						break;
-					}
-				}
-			}));
+				.filter_map(|channel| Some((channel.id, channel.voice_started?)))
+				.collect()
+		} else {
+			HashMap::new()
+		};
+		self.clocks.retain(|id, _| started.contains_key(id));
+		for (id, at) in started {
+			if self.clocks.get(&id).is_none_or(|clock| clock.read(cx).started != at) {
+				self.clocks.insert(id, cx.new(|cx| VoiceClock::new(at, cx)));
+			}
 		}
 	}
 
@@ -797,12 +823,12 @@ impl ChannelSidebar {
 						.child(format!("{}/{}", channel.occupants, channel.user_limit)),
 				)
 			})
-			.when_some(channel.voice_started, |row, started| {
+			.when_some(self.clocks.get(&id), |row, clock| {
 				row.child(
 					div()
 						.flex_none()
 						.text_size(theme.font_tiny)
-						.child(format::elapsed_clock((Utc::now() - started).num_seconds())),
+						.child(clock.clone()),
 				)
 			})
 			.when(channel.event_live, |row| {
