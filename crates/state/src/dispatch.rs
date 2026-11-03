@@ -190,6 +190,9 @@ impl State {
 				let was_blocked = self.is_blocked(relationship.id);
 				let notify = relationship.should_notify
 					&& relationship.kind == RelationshipKind::IncomingRequest
+					&& !relationship.is_spam_request
+					&& !relationship.user_ignored
+					&& !self.is_ignored(relationship.id)
 					&& self
 						.relationship(relationship.id)
 						.is_none_or(|stored| stored.kind != RelationshipKind::IncomingRequest);
