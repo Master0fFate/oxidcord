@@ -162,6 +162,7 @@ pub struct Component {
 	pub max_length: Option<u32>,
 	pub required: Option<bool>,
 	pub default: bool,
+	pub file_types: LenientVec<String>,
 }
 
 impl Component {

@@ -1,24 +1,36 @@
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use bytes::Bytes;
 use gpui::{
 	AnyElement, App, AppContext as _, Context, Entity, EventEmitter, Focusable as _, InteractiveElement as _,
 	IntoElement, ParentElement as _, Render, SharedString, Styled as _, Subscription, Window, div,
 };
+use gpui_component::Disableable as _;
+use gpui_component::Sizable as _;
+use gpui_component::button::Button;
 use gpui_component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
 use protocol::rest::{ModalAnswer, ModalValue};
 use protocol::{Component, ComponentType, InteractionModal, SelectOption, TextInputStyle};
+use rest::UploadFile;
 use session::{Command, ModalSubmit};
 
+use super::incoming;
 use crate::components::{
-	PickHandler, ToggleHandler, dialog_footer, field, hint, segmented, select, switch_row,
+	IconButton, PickHandler, ToggleHandler, dialog_footer, field, hint, segmented, select, switch_row,
 };
 use crate::data::Data;
 use crate::i18n::Translate as _;
+use crate::icons::IconKind;
 use crate::shell::community::modal::{self, Close};
 use crate::theme::Theme;
 
 const TEXT_LIMIT: usize = 4000;
+const UPLOAD_LIMIT: usize = 10;
+const IMAGE_TYPES: [&str; 8] = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "avif", "heic"];
+const VIDEO_TYPES: [&str; 4] = ["mp4", "mov", "webm", "mkv"];
+const AUDIO_TYPES: [&str; 6] = ["mp3", "ogg", "wav", "flac", "m4a", "opus"];
 
 enum TextBox {
 	Short(Entity<InputState>),
@@ -41,8 +53,61 @@ struct Choices {
 	max: usize,
 }
 
+struct Upload {
+	files: Vec<UploadFile>,
+	extensions: Vec<String>,
+	min: usize,
+	max: usize,
+}
+
+impl Upload {
+	fn of(component: &Component) -> Self {
+		let extensions = component
+			.file_types
+			.iter()
+			.flat_map(|kind| match kind.as_str() {
+				"image" => IMAGE_TYPES
+					.iter()
+					.map(|extension| (*extension).to_owned())
+					.collect(),
+				"video" => VIDEO_TYPES
+					.iter()
+					.map(|extension| (*extension).to_owned())
+					.collect(),
+				"audio" => AUDIO_TYPES
+					.iter()
+					.map(|extension| (*extension).to_owned())
+					.collect(),
+				other => vec![other.trim_start_matches('.').to_ascii_lowercase()],
+			})
+			.collect();
+		Self {
+			files: Vec::new(),
+			extensions,
+			min: component
+				.min_values
+				.map_or(usize::from(component.is_required()), |min| min as usize),
+			max: component
+				.max_values
+				.map_or(1, |max| (max as usize).min(UPLOAD_LIMIT)),
+		}
+	}
+
+	fn accepts(&self, name: &str) -> bool {
+		self.extensions.is_empty()
+			|| name
+				.rsplit_once('.')
+				.is_some_and(|(_, extension)| self.extensions.contains(&extension.to_ascii_lowercase()))
+	}
+
+	fn room(&self) -> usize {
+		self.max.saturating_sub(self.files.len())
+	}
+}
+
 enum Control {
 	Text { input: TextBox, min: usize, max: usize },
+	Files(Upload),
 	Dropdown(Choices),
 	Radio(Choices),
 	Toggles(Choices),
@@ -173,6 +238,7 @@ impl ModalForm {
 			ComponentType::RadioGroup => Control::Radio(choices(component, true)),
 			ComponentType::CheckboxGroup => Control::Toggles(choices(component, false)),
 			ComponentType::Checkbox => Control::Flag(component.default),
+			ComponentType::FileUpload => Control::Files(Upload::of(component)),
 			_ if component.is_required() => Control::Unsupported,
 			_ => return,
 		};
@@ -262,6 +328,7 @@ impl ModalForm {
 				let count = picks.picked.iter().filter(|picked| **picked).count();
 				count >= picks.min && count <= picks.max
 			}
+			Control::Files(upload) => upload.files.len() >= upload.min && upload.files.len() <= upload.max,
 			Control::Flag(_) => true,
 			Control::Unsupported => false,
 		}
@@ -271,7 +338,7 @@ impl ModalForm {
 		self.items.iter().all(|item| Self::item_ready(item, cx))
 	}
 
-	fn answer(item: &Item, cx: &App) -> ModalAnswer {
+	fn answer(item: &Item, files: &mut Vec<UploadFile>, cx: &App) -> ModalAnswer {
 		let mut answer = ModalAnswer {
 			custom_id: Some(item.custom_id.clone()),
 			..ModalAnswer::new(item.kind, item.component_id)
@@ -289,14 +356,26 @@ impl ModalForm {
 			Control::Text { input, .. } => answer.value = Some(ModalValue::Text(Some(input.value(cx)))),
 			Control::Dropdown(picks) | Control::Toggles(picks) => answer.values = Some(chosen(picks)),
 			Control::Radio(picks) => answer.value = Some(ModalValue::Text(chosen(picks).into_iter().next())),
+			Control::Files(upload) => {
+				answer.values = Some(
+					upload
+						.files
+						.iter()
+						.map(|file| {
+							files.push(file.clone());
+							(files.len() - 1).to_string()
+						})
+						.collect(),
+				);
+			}
 			Control::Flag(flag) => answer.value = Some(ModalValue::Flag(*flag)),
 			Control::Unsupported => {}
 		}
 		answer
 	}
 
-	fn wrapped(item: &Item, cx: &App) -> ModalAnswer {
-		let answer = Self::answer(item, cx);
+	fn wrapped(item: &Item, files: &mut Vec<UploadFile>, cx: &App) -> ModalAnswer {
+		let answer = Self::answer(item, files, cx);
 		match item.wrapper {
 			Some((ComponentType::ActionRow, id)) => ModalAnswer {
 				components: vec![answer],
@@ -314,13 +393,19 @@ impl ModalForm {
 		if !self.ready(cx) {
 			return;
 		}
-		let components = self.items.iter().map(|item| Self::wrapped(item, cx)).collect();
+		let mut files = Vec::new();
+		let components = self
+			.items
+			.iter()
+			.map(|item| Self::wrapped(item, &mut files, cx))
+			.collect();
 		self.data.read(cx).send(Command::SubmitModal(ModalSubmit {
 			interaction_id: self.modal.id,
 			application_id: self.modal.application.id,
 			channel_id: self.modal.channel_id,
 			custom_id: self.modal.custom_id.clone(),
 			components,
+			files,
 		}));
 		cx.emit(Close);
 	}
@@ -344,8 +429,118 @@ impl ModalForm {
 		cx.notify();
 	}
 
+	fn add_files(&mut self, index: usize, cx: &mut Context<Self>) {
+		let Some(Control::Files(upload)) = self.items.get(index).map(|item| &item.control) else {
+			return;
+		};
+		let room = upload.room();
+		let extensions = upload.extensions.clone();
+		cx.spawn(async move |this, cx| {
+			let mut dialog = rfd::AsyncFileDialog::new();
+			if !extensions.is_empty() {
+				dialog = dialog.add_filter(" ", &extensions);
+			}
+			let Some(handles) = dialog.pick_files().await else {
+				return;
+			};
+			let paths: Vec<PathBuf> = handles.iter().map(|handle| handle.path().to_path_buf()).collect();
+			let loaded = cx
+				.background_executor()
+				.spawn(async move { incoming::read_paths(paths, room) })
+				.await;
+			this.update(cx, |this, cx| this.attach(index, loaded, cx)).ok();
+		})
+		.detach();
+	}
+
+	fn attach(&mut self, index: usize, loaded: Vec<incoming::Incoming>, cx: &mut Context<Self>) {
+		let Some(Control::Files(upload)) = self.items.get_mut(index).map(|item| &mut item.control) else {
+			return;
+		};
+		let room = upload.room();
+		let accepted: Vec<UploadFile> = loaded
+			.into_iter()
+			.filter(|file| upload.accepts(&file.name))
+			.take(room)
+			.map(|file| UploadFile {
+				content_type: rest::content_type_for(&file.name).to_owned(),
+				name: file.name,
+				bytes: Bytes::from(file.bytes),
+				description: None,
+			})
+			.collect();
+		upload.files.extend(accepted);
+		cx.notify();
+	}
+
+	fn drop_file(&mut self, index: usize, file: usize, cx: &mut Context<Self>) {
+		if let Some(Control::Files(upload)) = self.items.get_mut(index).map(|item| &mut item.control)
+			&& file < upload.files.len()
+		{
+			upload.files.remove(file);
+		}
+		cx.notify();
+	}
+
+	fn files_control(
+		&self,
+		index: usize,
+		upload: &Upload,
+		theme: &Theme,
+		cx: &mut Context<Self>,
+	) -> AnyElement {
+		let add = cx.weak_entity();
+		div()
+			.flex()
+			.flex_col()
+			.gap(theme.space_8)
+			.children(upload.files.iter().enumerate().map(|(file, found)| {
+				let remove = cx.weak_entity();
+				div()
+					.flex()
+					.items_center()
+					.gap(theme.space_8)
+					.px(theme.space_12)
+					.py(theme.space_4)
+					.rounded(theme.radius_md)
+					.bg(theme.background_secondary)
+					.child(
+						div()
+							.flex_1()
+							.min_w_0()
+							.truncate()
+							.text_size(theme.font_sm)
+							.child(found.name.clone()),
+					)
+					.child(
+						IconButton::new(
+							("modal-file-remove", index * UPLOAD_LIMIT + file),
+							IconKind::Close,
+						)
+						.tooltip(cx.t("attachment-remove"))
+						.on_click(move |_, _, cx| {
+							remove.update(cx, |this, cx| this.drop_file(index, file, cx)).ok();
+						}),
+					)
+			}))
+			.child(
+				div().flex().child(
+					Button::new(("modal-file-add", index))
+						.small()
+						.outline()
+						.disabled(upload.room() == 0)
+						.label(cx.t("interaction-modal-files"))
+						.on_click(move |_, _, cx| {
+							add.update(cx, |this, cx| this.add_files(index, cx)).ok();
+						}),
+				),
+			)
+			.into_any_element()
+	}
+
 	fn control(&self, index: usize, item: &Item, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
 		match &item.control {
+			Control::Files(upload) => self.files_control(index, upload, theme, cx),
 			Control::Text {
 				input: TextBox::Short(input),
 				..

@@ -585,8 +585,17 @@ impl RestClient {
 		self.send_empty(Request::post("/interactions").json(body)).await
 	}
 
-	pub async fn submit_modal(&self, body: &ModalSubmission) -> Result<()> {
-		self.send_empty(Request::post("/interactions").json(body)).await
+	pub async fn submit_modal(&self, mut body: ModalSubmission, files: Vec<UploadFile>) -> Result<()> {
+		let request = Request::post("/interactions");
+		if files.is_empty() {
+			return self.send_empty(request.json(&body)).await;
+		}
+		body.data.attachments = files
+			.iter()
+			.enumerate()
+			.map(|(index, file)| descriptor(index, file, None))
+			.collect();
+		self.send_empty(request.multipart(files, &body)).await
 	}
 
 	pub async fn end_poll(&self, channel_id: Snowflake, message_id: Snowflake) -> Result<Message> {

@@ -314,8 +314,9 @@ pub async fn save_message(
 
 pub async fn interaction(
 	State(shared): State<Arc<Shared>>,
-	Json(body): Json<Value>,
+	request: Request,
 ) -> Result<StatusCode, ApiError> {
+	let (body, _) = read_body(&shared, request).await?;
 	let channel = parse_id(&body["channel_id"]).unwrap_or_default();
 	require_channel(&shared.store.lock(), channel)?;
 	super::apps::interact(&shared, &body)?;

@@ -344,6 +344,21 @@ fn upgrade_modal(shared: &Shared, body: &Value) -> Value {
 				"id": 9,
 				"label": "Restart now",
 				"component": { "type": 23, "id": 10, "custom_id": "restart", "default": true }
+			},
+			{
+				"type": 18,
+				"id": 11,
+				"label": "Attachments",
+				"description": "Release notes or screenshots",
+				"component": {
+					"type": 19,
+					"id": 12,
+					"custom_id": "files",
+					"required": false,
+					"min_values": 0,
+					"max_values": 3,
+					"file_types": ["image", ".pdf"]
+				}
 			}
 		],
 	})
@@ -445,9 +460,20 @@ fn submit_modal(shared: &Shared, body: &Value, interaction: u64) -> Result<Reply
 	let restart = modal_field(components, "restart")["value"]
 		.as_bool()
 		.unwrap_or(false);
+	let names: Vec<&str> = body["data"]["attachments"]
+		.as_array()
+		.into_iter()
+		.flatten()
+		.filter_map(|attachment| attachment["filename"].as_str())
+		.collect();
 	let content = format!(
-		"Upgrading to {version} on {channel}{}",
-		if restart { ", restarting after" } else { "" }
+		"Upgrading to {version} on {channel}{}{}",
+		if restart { ", restarting after" } else { "" },
+		if names.is_empty() {
+			String::new()
+		} else {
+			format!(", with {}", names.join(", "))
+		}
 	);
 	let origin = Origin {
 		interaction,

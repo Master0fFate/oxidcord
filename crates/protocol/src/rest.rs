@@ -113,6 +113,8 @@ pub struct ModalSubmissionData {
 	pub id: Snowflake,
 	pub custom_id: String,
 	pub components: Vec<ModalAnswer>,
+	#[serde(skip_serializing_if = "Vec::is_empty")]
+	pub attachments: Vec<AttachmentDescriptor>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

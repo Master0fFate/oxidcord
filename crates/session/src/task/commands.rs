@@ -1395,10 +1395,12 @@ impl Core {
 				id: submit.interaction_id,
 				custom_id: submit.custom_id,
 				components: submit.components,
+				attachments: Vec::new(),
 			},
 		};
+		let files = submit.files;
 		self.spawn_confirmed("submit modal", Some(aborted), move |rest| async move {
-			rest.submit_modal(&body).await
+			rest.submit_modal(body, files).await
 		});
 	}
 

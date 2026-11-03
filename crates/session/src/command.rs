@@ -47,6 +47,7 @@ pub struct ModalSubmit {
 	pub channel_id: Snowflake,
 	pub custom_id: String,
 	pub components: Vec<ModalAnswer>,
+	pub files: Vec<UploadFile>,
 }
 
 #[derive(Debug, Clone, Default)]

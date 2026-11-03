@@ -78,8 +78,10 @@ impl Stretch {
 		let source = &self.input[best * OUTPUT_CHANNELS..(best + HOP) * OUTPUT_CHANNELS];
 		output.extend(
 			self.tail
-				.chunks_exact(OUTPUT_CHANNELS)
-				.zip(source.chunks_exact(OUTPUT_CHANNELS))
+				.as_chunks::<OUTPUT_CHANNELS>()
+				.0
+				.iter()
+				.zip(source.as_chunks::<OUTPUT_CHANNELS>().0)
 				.zip(&self.rise)
 				.flat_map(|((held, fresh), rise)| [held[0] + fresh[0] * rise, held[1] + fresh[1] * rise]),
 		);
@@ -92,7 +94,9 @@ impl Stretch {
 		self.tail.clear();
 		self.tail.extend(
 			self.input[start..start + HOP * OUTPUT_CHANNELS]
-				.chunks_exact(OUTPUT_CHANNELS)
+				.as_chunks::<OUTPUT_CHANNELS>()
+				.0
+				.iter()
 				.zip(&self.rise)
 				.flat_map(|(frame, rise)| [frame[0] * (1. - rise), frame[1] * (1. - rise)]),
 		);
