@@ -46,7 +46,7 @@ use super::plugins::{
 	INLINE, PatchEffects, author_badge, contextual_inline, message_actions, message_click, message_extras,
 	patch_effects, tags,
 };
-use crate::components::{Avatar, IconButton, tooltip};
+use crate::components::{Avatar, IconButton, role_icon, tooltip};
 use crate::cosmetics::{flair, name_text};
 use crate::format;
 use crate::i18n::{ArgValue, Translate as _};
@@ -1768,6 +1768,11 @@ fn message_row(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 						.child(name_text(name.into(), flair.name_style.as_ref())),
 				)
 				.children(flair.tag_chip())
+				.children(
+					view.author_role_icon
+						.as_ref()
+						.map(|icon| role_icon(icon, theme.icon_sm, cx)),
+				)
 				.children(author_tags)
 				.children(app_tag(message, theme, cx))
 				.children(author_badge(view, theme))
@@ -1857,6 +1862,15 @@ fn compact_message(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 				.pr(theme.space_4)
 				.h(theme.compact_row)
 				.child(chip)
+		}))
+		.children(view.author_role_icon.as_deref().map(|icon| {
+			div()
+				.flex()
+				.flex_none()
+				.items_center()
+				.pr(theme.space_4)
+				.h(theme.compact_row)
+				.child(role_icon(icon, theme.icon_sm, cx))
 		}))
 		.children((!author_tags.is_empty()).then(|| {
 			div()

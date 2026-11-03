@@ -1,4 +1,7 @@
-use gpui::{AnyElement, App, IntoElement, ParentElement as _, Rems, Styled as _, div, img};
+use gpui::{
+	AnyElement, App, IntoElement, ParentElement as _, Rems, Styled as _, div, img,
+	prelude::FluentBuilder as _,
+};
 use media::SizeHint;
 
 use crate::images::Images;
@@ -17,4 +20,13 @@ pub fn unicode_emoji(glyph: &str, size: Rems, cx: &App) -> AnyElement {
 			.child(glyph.to_owned())
 			.into_any_element(),
 	}
+}
+
+pub fn remote_icon(url: &str, size: Rems, pixels: u32, cx: &App) -> AnyElement {
+	let image = cx.global::<Images>().get(url, SizeHint::square(pixels));
+	div()
+		.flex_none()
+		.size(size)
+		.when_some(image, |slot, image| slot.child(img(image).size_full()))
+		.into_any_element()
 }

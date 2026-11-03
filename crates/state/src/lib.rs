@@ -27,7 +27,7 @@ pub use event::{Event, LoadDirection, LocalEvent};
 pub use expressions::{
 	CatalogEmoji, EXPRESSIONS_KEY, EmojiCatalog, EmojiRef, GuildEmojis, RECENT_CAP, UnicodeSection,
 };
-pub use guild::GuildState;
+pub use guild::{ENHANCED_ROLE_COLORS, GuildState, ROLE_ICONS};
 pub use limits::{ExpressionLimits, PREMIUM_UPLOAD_BYTES};
 pub use loaded::{
 	AuditChange, AuditEntry, AuditLog, AuthSession, BanEntry, ConnectedAccount, GuildProfile, INBOX_KEY,
@@ -52,7 +52,8 @@ pub use state::{
 pub use threads::ForumPost;
 pub use views::{
 	ChannelRow, ChannelTreeNode, DmRow, GuildSummary, JoinBlock, MemberListRow, MemberRow, MessageRow,
-	MessageView, PendingUpload, RelationshipRow, RenderedMessage, RequestRow, UnreadSince, UserOverride,
+	MessageView, PendingUpload, RelationshipRow, RenderedMessage, RequestRow, RoleIcon, UnreadSince,
+	UserOverride,
 };
 pub use voice::{
 	Call, MicTest, StreamInfo, StreamSummary, VideoKind, VoiceLevels, VoiceSession, VoiceStats, VoiceStatus,

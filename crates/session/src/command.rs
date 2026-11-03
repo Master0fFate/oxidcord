@@ -10,8 +10,8 @@ use plugin_host::api::{HostError, User as PluginUser};
 use plugin_host::{Navigation, Permission, PickedPath, ViewContext};
 use protocol::{
 	ApplicationCommand, AutoModRule, ChannelType, ComponentType, Gif, MemberVerification, MessageFlags,
-	Nonce, NotificationLevel, PermissionOverwriteKind, Permissions, PollCreate, ScheduledEventKind,
-	ScheduledEventStatus, Snowflake, StatusKind, VideoQualityMode,
+	Nonce, NotificationLevel, PermissionOverwriteKind, Permissions, PollCreate, Role, RoleColors,
+	ScheduledEventKind, ScheduledEventStatus, Snowflake, StatusKind, VideoQualityMode,
 };
 use rest::UploadFile;
 use rest::api::SearchQuery;
@@ -40,6 +40,60 @@ pub struct VoiceChannelEdit {
 	pub user_limit: Option<u32>,
 	pub rtc_region: Option<Option<String>>,
 	pub video_quality_mode: Option<VideoQualityMode>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RoleColorsEdit {
+	pub primary: u32,
+	pub secondary: Option<u32>,
+	pub tertiary: Option<u32>,
+}
+
+impl RoleColorsEdit {
+	pub const HOLOGRAPHIC: Self = Self {
+		primary: 11_127_295,
+		secondary: Some(16_759_788),
+		tertiary: Some(16_761_760),
+	};
+
+	pub const fn solid(primary: u32) -> Self {
+		Self {
+			primary,
+			secondary: None,
+			tertiary: None,
+		}
+	}
+}
+
+impl From<&Role> for RoleColorsEdit {
+	fn from(role: &Role) -> Self {
+		let colors = role.colors.as_ref();
+		let part = |pick: fn(&RoleColors) -> Option<i64>| {
+			colors.and_then(pick).and_then(|color| u32::try_from(color).ok())
+		};
+		Self {
+			primary: role.primary_color(),
+			secondary: part(|colors| colors.secondary_color),
+			tertiary: part(|colors| colors.tertiary_color),
+		}
+	}
+}
+
+impl From<RoleColorsEdit> for RoleColors {
+	fn from(colors: RoleColorsEdit) -> Self {
+		Self {
+			primary_color: Some(i64::from(colors.primary)),
+			secondary_color: colors.secondary.map(i64::from),
+			tertiary_color: colors.tertiary.map(i64::from),
+		}
+	}
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RoleIconEdit {
+	Remove,
+	Image(Vec<u8>),
+	Emoji(String),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -569,7 +623,7 @@ pub enum Command {
 	CreateRole {
 		guild_id: Snowflake,
 		name: String,
-		color: u32,
+		colors: RoleColorsEdit,
 		permissions: Permissions,
 		hoist: bool,
 		mentionable: bool,
@@ -578,7 +632,8 @@ pub enum Command {
 		guild_id: Snowflake,
 		role_id: Snowflake,
 		name: Option<String>,
-		color: Option<u32>,
+		colors: Option<RoleColorsEdit>,
+		icon: Option<RoleIconEdit>,
 		permissions: Option<Permissions>,
 		hoist: Option<bool>,
 		mentionable: Option<bool>,

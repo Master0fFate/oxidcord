@@ -3,32 +3,36 @@ use std::rc::Rc;
 
 use gpui::{
 	AnyElement, App, AppContext as _, Context, Entity, FontWeight, InteractiveElement as _, IntoElement,
-	ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription,
-	Window, div, prelude::FluentBuilder as _,
+	ObjectFit, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _,
+	StyledImage as _, Subscription, Window, div, img, prelude::FluentBuilder as _,
 };
 use gpui_component::WindowExt as _;
 use gpui_component::button::{Button, ButtonVariant, ButtonVariants as _};
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::scroll::ScrollableElement as _;
 use protocol::{Permissions, Role, Snowflake};
-use session::Command;
+use session::{Command, RoleColorsEdit, RoleIconEdit};
+use state::{ENHANCED_ROLE_COLORS, ROLE_ICONS, RoleIcon};
 
 use super::kit;
 use super::rights::GROUPS;
 use crate::components::{
 	COLOR_PALETTE, IconButton, PickHandler, ToggleHandler, color_swatch, field, hint, parse_hex_color,
-	segmented, switch_row,
+	role_icon, segmented, switch_row, unicode_emoji,
 };
 use crate::data::{Data, DataEvent};
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
 use crate::model::role_color;
 use crate::shell::community::access::GuildAccess;
+use crate::shell::community::files::{Fit, IMAGE_TYPES, Picked, pick_image};
+use crate::shell::emoji_picker::{EmojiChoice, EmojiPicker, EmojiPickerEvent};
 use crate::theme::Theme;
 
 const NEW_ROLE_NAME: &str = "new role";
 const NAME_LIMIT: usize = 100;
 const EMPTY_COUNT: &str = "-";
+const ICON_SIDE: u32 = 128;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Tab {
@@ -36,13 +40,75 @@ enum Tab {
 	Permissions,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Style {
+	Solid,
+	Gradient,
+	Holographic,
+}
+
+impl Style {
+	const ALL: [Self; 3] = [Self::Solid, Self::Gradient, Self::Holographic];
+
+	fn of(colors: RoleColorsEdit) -> Self {
+		if colors.tertiary.is_some() {
+			Self::Holographic
+		} else if colors.secondary.is_some() {
+			Self::Gradient
+		} else {
+			Self::Solid
+		}
+	}
+
+	fn label(self) -> &'static str {
+		match self {
+			Self::Solid => "roles-style-solid",
+			Self::Gradient => "roles-style-gradient",
+			Self::Holographic => "roles-style-holographic",
+		}
+	}
+}
+
+enum IconDraft {
+	Keep,
+	Remove,
+	Image(Picked),
+	Emoji(String),
+}
+
 struct Draft {
 	id: Snowflake,
 	original: Role,
 	color: u32,
+	secondary: u32,
+	style: Style,
+	icon: IconDraft,
 	hoist: bool,
 	mentionable: bool,
 	permissions: Permissions,
+}
+
+impl Draft {
+	fn colors(&self) -> RoleColorsEdit {
+		match self.style {
+			Style::Solid => RoleColorsEdit::solid(self.color),
+			Style::Gradient => RoleColorsEdit {
+				primary: self.color,
+				secondary: Some(self.secondary),
+				tertiary: None,
+			},
+			Style::Holographic => RoleColorsEdit::HOLOGRAPHIC,
+		}
+	}
+
+	fn icon_edit(&self) -> Option<RoleIconEdit> {
+		match &self.icon {
+			IconDraft::Keep => None,
+			IconDraft::Remove => Some(RoleIconEdit::Remove),
+			IconDraft::Image(picked) => Some(RoleIconEdit::Image(picked.bytes.clone())),
+			IconDraft::Emoji(glyph) => Some(RoleIconEdit::Emoji(glyph.clone())),
+		}
+	}
 }
 
 pub struct RolesPage {
@@ -53,19 +119,9 @@ pub struct RolesPage {
 	name: Entity<InputState>,
 	hex: Entity<InputState>,
 	search: Entity<InputState>,
+	picker: Entity<EmojiPicker>,
+	picker_open: bool,
 	_subscriptions: Vec<Subscription>,
-}
-
-fn color_of(role: &Role) -> u32 {
-	let value = if role.color != 0 {
-		role.color
-	} else {
-		role.colors
-			.as_ref()
-			.and_then(|colors| colors.primary_color)
-			.unwrap_or(0)
-	};
-	u32::try_from(value).unwrap_or(0)
 }
 
 impl RolesPage {
@@ -75,9 +131,22 @@ impl RolesPage {
 		let hex = cx.new(|cx| InputState::new(window, cx).placeholder("#99aab5"));
 		let search_placeholder = cx.t("roles-search-permissions");
 		let search = cx.new(|cx| InputState::new(window, cx).placeholder(search_placeholder));
+		let picker = cx.new(|cx| EmojiPicker::new(window, cx));
+		picker.update(cx, |picker, cx| picker.open(Vec::new(), window, cx));
 		let subscriptions = vec![
-			cx.subscribe(&data, |_, _, event: &DataEvent, cx| {
+			cx.subscribe(&data, |this, _, event: &DataEvent, cx| {
 				if matches!(event, DataEvent::Changed(_)) {
+					this.sync_original(cx);
+					cx.notify();
+				}
+			}),
+			cx.subscribe(&picker, |this, _, event: &EmojiPickerEvent, cx| {
+				let EmojiPickerEvent::Pick(choice) = event;
+				if let EmojiChoice::Unicode(glyph) = choice
+					&& let Some(draft) = &mut this.draft
+				{
+					draft.icon = IconDraft::Emoji(glyph.clone());
+					this.picker_open = false;
 					cx.notify();
 				}
 			}),
@@ -109,6 +178,8 @@ impl RolesPage {
 			name,
 			hex,
 			search,
+			picker,
+			picker_open: false,
 			_subscriptions: subscriptions,
 		}
 	}
@@ -138,7 +209,8 @@ impl RolesPage {
 
 	fn begin(&mut self, role: Role, window: &mut Window, cx: &mut Context<Self>) {
 		let name = role.name.clone();
-		let color = color_of(&role);
+		let colors = RoleColorsEdit::from(&role);
+		let color = colors.primary;
 		self.name
 			.update(cx, |state, cx| state.set_value(name, window, cx));
 		self.hex.update(cx, |state, cx| {
@@ -155,15 +227,33 @@ impl RolesPage {
 		self.search
 			.update(cx, |state, cx| state.set_value("", window, cx));
 		self.tab = Tab::Display;
+		self.picker_open = false;
 		self.draft = Some(Draft {
 			id: role.id,
 			color,
+			secondary: colors.secondary.unwrap_or(COLOR_PALETTE[0]),
+			style: Style::of(colors),
+			icon: IconDraft::Keep,
 			hoist: role.hoist,
 			mentionable: role.mentionable,
 			permissions: role.permissions,
 			original: role,
 		});
 		cx.notify();
+	}
+
+	fn sync_original(&mut self, cx: &App) {
+		let Some(draft) = &mut self.draft else {
+			return;
+		};
+		let state = self.data.read(cx).state();
+		if let Some(role) = state
+			.guild(self.guild)
+			.and_then(|guild| guild.roles.get(&draft.id))
+			.filter(|role| **role != draft.original)
+		{
+			draft.original = role.clone();
+		}
 	}
 
 	fn dirty(&self, cx: &App) -> bool {
@@ -174,7 +264,8 @@ impl RolesPage {
 		let name = name.trim();
 		let name_changed = draft.original.id != self.guild && name != draft.original.name;
 		name_changed
-			|| draft.color != color_of(&draft.original)
+			|| draft.colors() != RoleColorsEdit::from(&draft.original)
+			|| !matches!(draft.icon, IconDraft::Keep)
 			|| draft.hoist != draft.original.hoist
 			|| draft.mentionable != draft.original.mentionable
 			|| draft.permissions != draft.original.permissions
@@ -192,25 +283,19 @@ impl RolesPage {
 		let Some(draft) = &mut self.draft else {
 			return;
 		};
-		let original = draft.original.clone();
+		let original = &draft.original;
+		let colors = draft.colors();
 		self.data.read(cx).send(Command::EditRole {
 			guild_id: self.guild,
 			role_id: draft.id,
-			name: (name != original.name && !name.is_empty() && original.id != self.guild)
-				.then_some(name.clone()),
-			color: (draft.color != color_of(&original)).then_some(draft.color),
+			name: (name != original.name && !name.is_empty() && original.id != self.guild).then_some(name),
+			colors: (colors != RoleColorsEdit::from(original)).then_some(colors),
+			icon: draft.icon_edit(),
 			permissions: (draft.permissions != original.permissions).then_some(draft.permissions),
 			hoist: (draft.hoist != original.hoist).then_some(draft.hoist),
 			mentionable: (draft.mentionable != original.mentionable).then_some(draft.mentionable),
 		});
-		draft.original.permissions = draft.permissions;
-		draft.original.hoist = draft.hoist;
-		draft.original.mentionable = draft.mentionable;
-		draft.original.color = i64::from(draft.color);
-		draft.original.colors = None;
-		if !name.is_empty() && original.id != self.guild {
-			draft.original.name = name;
-		}
+		draft.icon = IconDraft::Keep;
 		cx.notify();
 	}
 
@@ -231,7 +316,7 @@ impl RolesPage {
 		self.data.read(cx).send(Command::CreateRole {
 			guild_id: self.guild,
 			name: NEW_ROLE_NAME.to_owned(),
-			color: 0,
+			colors: RoleColorsEdit::solid(0),
 			permissions,
 			hoist: false,
 			mentionable: false,
@@ -298,7 +383,7 @@ impl RolesPage {
 		cx: &mut Context<Self>,
 	) -> AnyElement {
 		let id = role.id;
-		let color = match color_of(role) {
+		let color = match role.primary_color() {
 			0 => theme.interactive_muted,
 			value => role_color(value),
 		};
@@ -427,11 +512,167 @@ impl RolesPage {
 		)
 	}
 
-	fn display_tab(&self, draft: &Draft, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+	fn second_swatch(&self, color: u32, active: bool, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+		color_swatch(
+			color,
+			active,
+			theme,
+			cx.listener(move |this, _, _, cx| {
+				if let Some(draft) = &mut this.draft {
+					draft.secondary = color;
+				}
+				cx.notify();
+			}),
+		)
+	}
+
+	fn style_field(&self, draft: &Draft, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+		let labels: Vec<SharedString> = Style::ALL.iter().map(|style| cx.t(style.label())).collect();
+		let weak = cx.weak_entity();
+		let pick: PickHandler = Rc::new(move |index, _, cx| {
+			weak.update(cx, |this, cx| {
+				if let Some(draft) = &mut this.draft {
+					draft.style = Style::ALL[index];
+				}
+				cx.notify();
+			})
+			.ok();
+		});
+		let selected = Style::ALL
+			.iter()
+			.position(|style| *style == draft.style)
+			.unwrap_or(0);
+		field(
+			cx.t("roles-style"),
+			theme,
+			segmented("roles-style", &labels, selected, theme, pick),
+		)
+	}
+
+	fn color_fields(&self, draft: &Draft, theme: &Theme, cx: &mut Context<Self>) -> Vec<AnyElement> {
+		if draft.style == Style::Holographic {
+			return Vec::new();
+		}
 		let swatches: Vec<AnyElement> = COLOR_PALETTE
 			.iter()
 			.map(|color| self.swatch(*color, draft.color == *color, theme, cx))
 			.collect();
+		let mut fields = vec![field(
+			cx.t("roles-color"),
+			theme,
+			div()
+				.flex()
+				.flex_col()
+				.gap(theme.space_12)
+				.child(div().flex().flex_wrap().gap(theme.space_8).children(swatches))
+				.child(div().w(theme.settings_nav_width).child(Input::new(&self.hex))),
+		)];
+		if draft.style == Style::Gradient {
+			let second: Vec<AnyElement> = COLOR_PALETTE
+				.iter()
+				.map(|color| self.second_swatch(*color, draft.secondary == *color, theme, cx))
+				.collect();
+			fields.push(field(
+				cx.t("roles-color-second"),
+				theme,
+				div().flex().flex_wrap().gap(theme.space_8).children(second),
+			));
+		}
+		fields
+	}
+
+	fn icon_field(&self, draft: &Draft, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+		let current = RoleIcon::of(&draft.original);
+		let shown = match &draft.icon {
+			IconDraft::Keep => current.as_ref().map(|icon| role_icon(icon, theme.icon_lg, cx)),
+			IconDraft::Remove => None,
+			IconDraft::Image(picked) => Some(
+				div()
+					.size(theme.icon_lg)
+					.child(
+						img(picked.preview.clone())
+							.size_full()
+							.object_fit(ObjectFit::Contain),
+					)
+					.into_any_element(),
+			),
+			IconDraft::Emoji(glyph) => Some(unicode_emoji(glyph, theme.icon_lg, cx)),
+		};
+		let removable = shown.is_some();
+		let keeps_current = current.is_some();
+		field(
+			cx.t("roles-icon"),
+			theme,
+			div()
+				.flex()
+				.flex_col()
+				.gap(theme.space_12)
+				.child(
+					div()
+						.flex()
+						.items_center()
+						.gap(theme.space_12)
+						.child(
+							div()
+								.flex()
+								.flex_none()
+								.items_center()
+								.justify_center()
+								.size(theme.field_height)
+								.rounded(theme.radius_sm)
+								.bg(theme.input_background)
+								.children(shown),
+						)
+						.child(
+							Button::new("role-icon-upload")
+								.outline()
+								.label(cx.t("roles-icon-upload"))
+								.on_click(cx.listener(|_, _, _, cx| {
+									pick_image(
+										cx,
+										Fit::Square(ICON_SIDE),
+										IMAGE_TYPES,
+										|this: &mut Self, picked, cx| {
+											if let Some(draft) = &mut this.draft {
+												draft.icon = IconDraft::Image(picked);
+												cx.notify();
+											}
+										},
+									)
+								})),
+						)
+						.child(
+							Button::new("role-icon-emoji")
+								.outline()
+								.label(cx.t("roles-icon-emoji"))
+								.on_click(cx.listener(|this, _, _, cx| {
+									this.picker_open = !this.picker_open;
+									cx.notify();
+								})),
+						)
+						.when(removable, |row| {
+							row.child(
+								Button::new("role-icon-remove")
+									.ghost()
+									.label(cx.t("roles-icon-remove"))
+									.on_click(cx.listener(move |this, _, _, cx| {
+										if let Some(draft) = &mut this.draft {
+											draft.icon = if keeps_current {
+												IconDraft::Remove
+											} else {
+												IconDraft::Keep
+											};
+										}
+										cx.notify();
+									})),
+							)
+						}),
+				)
+				.when(self.picker_open, |column| column.child(self.picker.clone())),
+		)
+	}
+
+	fn display_tab(&self, draft: &Draft, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
 		let weak = cx.weak_entity();
 		let hoist: ToggleHandler = {
 			let weak = weak.clone();
@@ -455,6 +696,17 @@ impl RolesPage {
 			.ok();
 		});
 		let everyone = draft.id == self.guild;
+		let (enhanced_colors, icons) =
+			self.data
+				.read(cx)
+				.state()
+				.guild(self.guild)
+				.map_or((false, false), |guild| {
+					(
+						guild.has_feature(ENHANCED_ROLE_COLORS),
+						guild.has_feature(ROLE_ICONS),
+					)
+				});
 		div()
 			.flex()
 			.flex_col()
@@ -462,16 +714,13 @@ impl RolesPage {
 			.when(!everyone, |tab| {
 				tab.child(field(cx.t("roles-name"), theme, Input::new(&self.name)))
 			})
-			.child(field(
-				cx.t("roles-color"),
-				theme,
-				div()
-					.flex()
-					.flex_col()
-					.gap(theme.space_12)
-					.child(div().flex().flex_wrap().gap(theme.space_8).children(swatches))
-					.child(div().w(theme.settings_nav_width).child(Input::new(&self.hex))),
-			))
+			.when(enhanced_colors, |tab| {
+				tab.child(self.style_field(draft, theme, cx))
+			})
+			.children(self.color_fields(draft, theme, cx))
+			.when(icons && !everyone, |tab| {
+				tab.child(self.icon_field(draft, theme, cx))
+			})
 			.child(switch_row(
 				"roles-hoist",
 				cx.t("roles-hoist"),
@@ -654,17 +903,7 @@ impl Render for RolesPage {
 		let theme = Theme::current(cx);
 		let access = GuildAccess::of(&self.data.read(cx).state(), self.guild);
 		match &self.draft {
-			Some(draft) => {
-				let draft_view = Draft {
-					id: draft.id,
-					original: draft.original.clone(),
-					color: draft.color,
-					hoist: draft.hoist,
-					mentionable: draft.mentionable,
-					permissions: draft.permissions,
-				};
-				self.editor(&draft_view, &theme, cx)
-			}
+			Some(draft) => self.editor(draft, &theme, cx),
 			None => self.list(&access, &theme, cx),
 		}
 	}

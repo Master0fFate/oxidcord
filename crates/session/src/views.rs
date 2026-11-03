@@ -103,18 +103,6 @@ pub(crate) fn read_state(unread: ChannelUnread) -> ReadState {
 	}
 }
 
-fn role_color(role: &protocol::Role) -> u32 {
-	let primary = if role.color != 0 {
-		role.color
-	} else {
-		role.colors
-			.as_ref()
-			.and_then(|colors| colors.primary_color)
-			.unwrap_or(0)
-	};
-	count(primary)
-}
-
 pub(crate) fn roles(state: &State, guild_id: Snowflake) -> Option<Vec<RoleInfo>> {
 	let guild = state.guild(guild_id)?;
 	Some(
@@ -124,7 +112,7 @@ pub(crate) fn roles(state: &State, guild_id: Snowflake) -> Option<Vec<RoleInfo>>
 			.map(|role| RoleInfo {
 				id: role.id.get(),
 				name: role.name.clone(),
-				color: role_color(role),
+				color: role.primary_color(),
 				position: i32::try_from(role.position).unwrap_or(0),
 				hoist: role.hoist,
 				icon: role.icon.clone(),

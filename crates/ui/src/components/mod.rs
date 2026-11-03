@@ -6,6 +6,7 @@ mod emoji;
 mod form;
 mod icon_button;
 mod mention_badge;
+mod role_icon;
 mod section_header;
 mod status_dot;
 mod status_emoji;
@@ -24,6 +25,7 @@ pub use form::{
 };
 pub use icon_button::IconButton;
 pub use mention_badge::MentionBadge;
+pub use role_icon::role_icon;
 pub use section_header::SectionHeader;
 pub use status_dot::{StatusDot, status_color};
 pub use status_emoji::StatusEmoji;

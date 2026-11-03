@@ -121,6 +121,7 @@ pub struct MessageView {
 	pub author_color: Option<u32>,
 	pub author_display: String,
 	pub author_badge: Option<String>,
+	pub author_role_icon: Option<Arc<RoleIcon>>,
 	pub member_roles: SmallVec<[Snowflake; 4]>,
 	pub mentions_me: bool,
 }
@@ -146,6 +147,27 @@ pub enum MessageRow {
 	},
 	HistoryStart,
 	Loading,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RoleIcon {
+	Image { role_id: Snowflake, hash: String },
+	Emoji(String),
+}
+
+impl RoleIcon {
+	pub fn of(role: &protocol::Role) -> Option<Self> {
+		if let Some(hash) = role.icon.as_deref().filter(|hash| !hash.is_empty()) {
+			return Some(Self::Image {
+				role_id: role.id,
+				hash: hash.to_owned(),
+			});
+		}
+		role.unicode_emoji
+			.as_deref()
+			.filter(|emoji| !emoji.is_empty())
+			.map(|emoji| Self::Emoji(emoji.to_owned()))
+	}
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

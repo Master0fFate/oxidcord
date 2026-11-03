@@ -137,6 +137,17 @@ fn role(id: u64, name: &str, color: i64, hoist: bool, position: i64, permissions
 	}
 }
 
+const MODS_GRADIENT: i64 = 0x00c2ff;
+const ADMIN_ICON: &str = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
+const MODS_EMOJI: &str = "\u{1F6E1}\u{FE0F}";
+
+fn gradient(mut role: Role, secondary: i64) -> Role {
+	if let Some(colors) = role.colors.as_mut() {
+		colors.secondary_color = Some(secondary);
+	}
+	role
+}
+
 fn build_roles(ids: &RoleIds) -> Vec<Role> {
 	let mut everyone = role(ids.everyone, "@everyone", 0, false, 0, base_permissions());
 	everyone.mentionable = false;
@@ -151,26 +162,35 @@ fn build_roles(ids: &RoleIds) -> Vec<Role> {
 			2,
 			Permissions::EMBED_LINKS | Permissions::ATTACH_FILES,
 		),
-		role(
-			ids.mods,
-			"Mods",
-			MODS_COLOR,
-			true,
-			3,
-			Permissions::MANAGE_MESSAGES
-				| Permissions::KICK_MEMBERS
-				| Permissions::BAN_MEMBERS
-				| Permissions::MODERATE_MEMBERS
-				| Permissions::MANAGE_THREADS,
-		),
-		role(
-			ids.admin,
-			"Admin",
-			ADMIN_COLOR,
-			true,
-			4,
-			Permissions::ADMINISTRATOR,
-		),
+		Role {
+			unicode_emoji: Some(MODS_EMOJI.to_owned()),
+			..gradient(
+				role(
+					ids.mods,
+					"Mods",
+					MODS_COLOR,
+					true,
+					3,
+					Permissions::MANAGE_MESSAGES
+						| Permissions::KICK_MEMBERS
+						| Permissions::BAN_MEMBERS
+						| Permissions::MODERATE_MEMBERS
+						| Permissions::MANAGE_THREADS,
+				),
+				MODS_GRADIENT,
+			)
+		},
+		Role {
+			icon: Some(ADMIN_ICON.to_owned()),
+			..role(
+				ids.admin,
+				"Admin",
+				ADMIN_COLOR,
+				true,
+				4,
+				Permissions::ADMINISTRATOR,
+			)
+		},
 	]
 }
 

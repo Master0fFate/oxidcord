@@ -14,13 +14,13 @@ use gpui_component::scroll::ScrollableElement as _;
 use plugin_host::ViewContext;
 use protocol::Snowflake;
 use session::{Command, MEMBER_LIST_WINDOW};
-use state::{MemberListRow, State, UserOverride};
+use state::{MemberListRow, RoleIcon, State, UserOverride};
 
 use super::account::{Relation, manage_items, primary_items, relation_facts};
 use super::community::developer_mode;
 use super::moderation;
 use super::plugins::{self, MenuTarget, PluginMenu as _};
-use crate::components::{Avatar, ContextMenuBuilder, IconButton};
+use crate::components::{Avatar, ContextMenuBuilder, IconButton, role_icon};
 use crate::cosmetics::{Flair, flair, name_text, nameplate_backdrop};
 use crate::data::Data;
 use crate::i18n::{ArgValue, Translate as _};
@@ -52,6 +52,7 @@ struct MemberItem {
 	avatar: String,
 	bot: bool,
 	badge: Option<SharedString>,
+	role_icon: Option<RoleIcon>,
 	over: Option<UserOverride>,
 	flair: Flair,
 }
@@ -497,6 +498,9 @@ impl MemberList {
 									.text_color(name_color)
 									.child(name_text(member.name.clone(), member.flair.name_style.as_ref())),
 							)
+							.when_some(member.role_icon.as_ref(), |name, icon| {
+								name.child(role_icon(icon, theme.icon_sm, cx))
+							})
 							.when(member.bot, |name| {
 								name.child(
 									div()
@@ -563,6 +567,7 @@ fn member_item(
 		activity: activity.map(Into::into),
 		avatar: plugins::avatar_url(state, Some(guild), id, AVATAR_PIXELS),
 		badge: badge.map(Into::into),
+		role_icon: state.role_icon(guild, id),
 		bot: state.user(id).is_some_and(|user| user.bot == Some(true)),
 		over: state.user_override(Some(guild), id).cloned(),
 		flair: flair(state, Some(guild), id),

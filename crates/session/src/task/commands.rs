@@ -14,7 +14,7 @@ use state::{Loaded, LocalEvent, USER_COMMANDS, guild_folders_settings};
 
 use super::actions::{mute_config, object, rest_failure, some, timestamp};
 use super::{Command, Core, Internal, ReadSnapshot};
-use crate::command::ComponentUse;
+use crate::command::{ComponentUse, RoleColorsEdit, RoleIconEdit};
 
 const COMPONENT_INTERACTION: u8 = 3;
 const APPLICATION_COMMAND_INTERACTION: u8 = 2;
@@ -84,7 +84,36 @@ async fn every_ban(rest: &RestClient, guild_id: Snowflake) -> rest::Result<Value
 	Ok(Value::Array(bans))
 }
 
+fn role_icon_fields(icon: Option<RoleIconEdit>) -> (Option<Value>, Option<Value>) {
+	match icon {
+		None => (None, None),
+		Some(RoleIconEdit::Remove) => (Some(Value::Null), Some(Value::Null)),
+		Some(RoleIconEdit::Image(bytes)) => (Some(png(&bytes)), Some(Value::Null)),
+		Some(RoleIconEdit::Emoji(glyph)) => (Some(Value::Null), Some(Value::String(glyph))),
+	}
+}
+
 impl Core {
+	fn role_colors_field(&self, guild_id: Snowflake, colors: RoleColorsEdit) -> (&'static str, Value) {
+		let enhanced = self
+			.state
+			.read()
+			.guild(guild_id)
+			.is_some_and(|guild| guild.has_feature(state::ENHANCED_ROLE_COLORS));
+		if enhanced {
+			(
+				"colors",
+				json!({
+					"primary_color": colors.primary,
+					"secondary_color": colors.secondary,
+					"tertiary_color": colors.tertiary,
+				}),
+			)
+		} else {
+			("color", json!(colors.primary))
+		}
+	}
+
 	pub(super) fn on_extra(&mut self, command: Command) {
 		match command {
 			Command::StartCamera { device_id, quality } => self.start_camera(device_id, quality),
@@ -1074,15 +1103,16 @@ impl Core {
 			Command::CreateRole {
 				guild_id,
 				name,
-				color,
+				colors,
 				permissions,
 				hoist,
 				mentionable,
 			} => {
 				if self.guild_allows(guild_id, Permissions::MANAGE_ROLES, "Manage Roles") {
+					let (colors_key, colors) = self.role_colors_field(guild_id, colors);
 					let body = json!({
 						"name": name,
-						"color": color,
+						colors_key: colors,
 						"permissions": permissions,
 						"hoist": hoist,
 						"mentionable": mentionable,
@@ -1096,19 +1126,26 @@ impl Core {
 				guild_id,
 				role_id,
 				name,
-				color,
+				colors,
+				icon,
 				permissions,
 				hoist,
 				mentionable,
 			} => {
 				if self.guild_allows(guild_id, Permissions::MANAGE_ROLES, "Manage Roles") {
-					let body = object([
+					let colors = colors.map(|colors| self.role_colors_field(guild_id, colors));
+					let (icon, unicode_emoji) = role_icon_fields(icon);
+					let mut body = object([
 						("name", some(name)),
-						("color", some(color)),
+						("icon", icon),
+						("unicode_emoji", unicode_emoji),
 						("permissions", permissions.map(|permissions| json!(permissions))),
 						("hoist", some(hoist)),
 						("mentionable", some(mentionable)),
 					]);
+					if let Some((key, value)) = colors {
+						body[key] = value;
+					}
 					self.spawn_action("edit role", move |rest| async move {
 						rest.modify_role(guild_id, role_id, body).await.map(drop)
 					});

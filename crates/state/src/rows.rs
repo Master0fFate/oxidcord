@@ -17,7 +17,7 @@ use crate::permissions::compute_permissions;
 use crate::state::State;
 use crate::views::{
 	ChannelRow, ChannelTreeNode, DmRow, GuildSummary, JoinBlock, MemberListRow, MemberRow, MessageRow,
-	MessageView, PendingUpload, RenderedMessage, RequestRow, UnreadSince,
+	MessageView, PendingUpload, RenderedMessage, RequestRow, RoleIcon, UnreadSince,
 };
 
 const GROUPING_WINDOW: TimeDelta = TimeDelta::minutes(7);
@@ -49,15 +49,16 @@ fn groups_with(previous: &Message, message: &Message) -> bool {
 }
 
 fn role_color_value(role: &protocol::Role) -> Option<u32> {
-	let color = if role.color != 0 {
-		role.color
-	} else {
-		role.colors
-			.as_ref()
-			.and_then(|colors| colors.primary_color)
-			.unwrap_or(0)
-	};
-	u32::try_from(color).ok().filter(|&color| color != 0)
+	Some(role.primary_color()).filter(|&color| color != 0)
+}
+
+fn top_role_icon(guild: &GuildState, roles: &[Snowflake]) -> Option<RoleIcon> {
+	roles
+		.iter()
+		.filter_map(|id| guild.roles.get(id))
+		.filter(|role| RoleIcon::of(role).is_some())
+		.max_by_key(|role| role.position)
+		.and_then(RoleIcon::of)
 }
 
 fn top_role_color(guild: &GuildState, roles: &[Snowflake]) -> Option<u32> {
@@ -193,6 +194,11 @@ impl State {
 	pub fn role_color(&self, guild_id: Snowflake, user_id: Snowflake) -> Option<u32> {
 		let guild = self.guilds.get(&guild_id)?;
 		top_role_color(guild, &guild.members.get(&user_id)?.roles)
+	}
+
+	pub fn role_icon(&self, guild_id: Snowflake, user_id: Snowflake) -> Option<RoleIcon> {
+		let guild = self.guilds.get(&guild_id)?;
+		top_role_icon(guild, &guild.members.get(&user_id)?.roles)
 	}
 
 	pub fn avatar_hash(&self, guild_id: Option<Snowflake>, user_id: Snowflake) -> Option<&str> {
@@ -675,6 +681,9 @@ impl State {
 			author_color: over.and_then(|over| over.color).or(role_color),
 			author_display: over.and_then(|over| over.name.clone()).unwrap_or(author_display),
 			author_badge: over.and_then(|over| over.badge.clone()),
+			author_role_icon: guild
+				.and_then(|guild| top_role_icon(guild, &member_roles))
+				.map(Arc::new),
 			member_roles,
 			mentions_me: self.mentions_me(message, guild.map(|guild| guild.id)),
 		}

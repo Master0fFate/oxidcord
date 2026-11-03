@@ -43,3 +43,15 @@ pub struct Role {
 	pub tags: Option<RoleTags>,
 	pub flags: Option<u64>,
 }
+
+impl Role {
+	pub fn primary_color(&self) -> u32 {
+		let value = self
+			.colors
+			.as_ref()
+			.and_then(|colors| colors.primary_color)
+			.filter(|color| *color != 0)
+			.unwrap_or(self.color);
+		u32::try_from(value).unwrap_or(0)
+	}
+}

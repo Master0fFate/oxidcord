@@ -3,8 +3,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use chrono::{DateTime, Duration, Utc};
 use protocol::{
 	Channel, ChannelFlags, ChannelType, Emoji, LenientVec, Member, MessageType, PermissionOverwrite,
-	PermissionOverwriteKind, Permissions, Relationship, RelationshipKind, Role, Snowflake, UserGuildSettings,
-	VideoQualityMode,
+	PermissionOverwriteKind, Permissions, Relationship, RelationshipKind, Role, RoleColors, Snowflake,
+	UserGuildSettings, VideoQualityMode,
 };
 use serde_json::{Value, json};
 
@@ -50,6 +50,31 @@ pub const ACTION_AUTOMOD_RULE_DELETE: i64 = 142;
 
 pub fn current_session_hash() -> String {
 	format!("mock-session-{CURRENT_USER_ID}")
+}
+
+fn apply_role_style(role: &mut Role, body: &Value, icon: Option<String>) {
+	if let Some(color) = body["color"].as_i64() {
+		role.color = color;
+		role.colors = Some(RoleColors {
+			primary_color: Some(color),
+			..RoleColors::default()
+		});
+	}
+	if body["colors"].is_object() {
+		let colors = RoleColors {
+			primary_color: body["colors"]["primary_color"].as_i64(),
+			secondary_color: body["colors"]["secondary_color"].as_i64(),
+			tertiary_color: body["colors"]["tertiary_color"].as_i64(),
+		};
+		role.color = colors.primary_color.unwrap_or(0);
+		role.colors = Some(colors);
+	}
+	if body.get("icon").is_some() {
+		role.icon = icon;
+	}
+	if let Some(emoji) = body.get("unicode_emoji") {
+		role.unicode_emoji = emoji.as_str().map(str::to_owned);
+	}
 }
 
 pub fn seed_bans(fixtures: &Fixtures) -> HashMap<u64, BTreeMap<u64, Option<String>>> {
@@ -882,16 +907,19 @@ impl Shared {
 		let mut store = self.store.lock();
 		self.live_guild(&store, guild_id)?;
 		let id = store.next_snowflake();
-		let role = Role {
+		let icon = body["icon"]
+			.is_string()
+			.then(|| format!("{:032x}", store.next_snowflake()));
+		let mut role = Role {
 			id: Snowflake(id),
 			name: body["name"].as_str().unwrap_or("new role").to_owned(),
-			color: body["color"].as_i64().unwrap_or(0),
 			hoist: body["hoist"].as_bool().unwrap_or(false),
 			position: 1,
 			permissions: permissions_of(&body["permissions"]),
 			mentionable: body["mentionable"].as_bool().unwrap_or(false),
 			..Role::default()
 		};
+		apply_role_style(&mut role, body, icon);
 		let value = to_json(&role);
 		store.roles.entry(guild_id).or_default().push(role);
 		store.push_audit(guild_id, ACTION_ROLE_CREATE, Some(id), json!([]), None);
@@ -906,6 +934,9 @@ impl Shared {
 	pub fn modify_role(&self, guild_id: u64, role_id: u64, body: &Value) -> Result<Value, ApiError> {
 		let mut store = self.store.lock();
 		self.live_guild(&store, guild_id)?;
+		let icon = body["icon"]
+			.is_string()
+			.then(|| format!("{:032x}", store.next_snowflake()));
 		let role = store
 			.roles
 			.get_mut(&guild_id)
@@ -914,9 +945,7 @@ impl Shared {
 		if let Some(name) = body["name"].as_str() {
 			role.name = name.to_owned();
 		}
-		if let Some(color) = body["color"].as_i64() {
-			role.color = color;
-		}
+		apply_role_style(role, body, icon);
 		if let Some(hoist) = body["hoist"].as_bool() {
 			role.hoist = hoist;
 		}

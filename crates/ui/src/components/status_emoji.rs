@@ -1,12 +1,7 @@
-use gpui::{
-	AnyElement, App, IntoElement as _, ParentElement as _, Rems, SharedString, Styled as _, div, img,
-	prelude::FluentBuilder as _,
-};
-use media::SizeHint;
+use gpui::{AnyElement, App, Rems, SharedString};
 use protocol::PartialEmoji;
 
-use super::emoji::unicode_emoji;
-use crate::images::Images;
+use super::emoji::{remote_icon, unicode_emoji};
 use crate::theme::rem_to_pixels;
 
 #[derive(Clone, PartialEq)]
@@ -33,13 +28,7 @@ impl StatusEmoji {
 			Self::Unicode(glyph) => unicode_emoji(glyph, size, cx),
 			Self::Custom { id, animated } => {
 				let pixels = (rem_to_pixels(size) * 2.) as u32;
-				let url = media::cdn::emoji_url(*id, *animated, pixels);
-				let image = cx.global::<Images>().get(&url, SizeHint::square(pixels));
-				div()
-					.flex_none()
-					.size(size)
-					.when_some(image, |slot, image| slot.child(img(image).size_full()))
-					.into_any_element()
+				remote_icon(&media::cdn::emoji_url(*id, *animated, pixels), size, pixels, cx)
 			}
 		}
 	}

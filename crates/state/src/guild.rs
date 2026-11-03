@@ -9,6 +9,9 @@ use protocol::{
 
 use crate::member_list::MemberList;
 
+pub const ENHANCED_ROLE_COLORS: &str = "ENHANCED_ROLE_COLORS";
+pub const ROLE_ICONS: &str = "ROLE_ICONS";
+
 #[derive(Debug, Default)]
 pub struct GuildState {
 	pub id: Snowflake,
