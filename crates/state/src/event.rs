@@ -26,6 +26,7 @@ pub enum LocalEvent {
 		files: Vec<PendingFile>,
 		author: Box<User>,
 		by_plugin: Option<String>,
+		silent: bool,
 	},
 	PendingFailed {
 		nonce: Nonce,

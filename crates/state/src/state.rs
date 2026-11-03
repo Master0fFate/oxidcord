@@ -6,8 +6,8 @@ use chrono::Utc;
 use indexmap::IndexMap;
 use parking_lot::RwLock;
 use protocol::{
-	Channel, Message, Presence, ProtoStatus, ReadState, Relationship, Snowflake, StatusKind, User,
-	UserGuildSettings,
+	Channel, Message, MessageFlags, Presence, ProtoStatus, ReadState, Relationship, Snowflake, StatusKind,
+	User, UserGuildSettings,
 };
 use smallvec::SmallVec;
 
@@ -408,6 +408,7 @@ impl State {
 				files,
 				author,
 				by_plugin,
+				silent,
 			} => {
 				let rendered = Arc::new(RenderedMessage::plain(content, false, 0));
 				let message = Message {
@@ -417,6 +418,11 @@ impl State {
 					content: content.clone(),
 					timestamp: Some(Utc::now()),
 					nonce: Some(nonce.clone()),
+					flags: if *silent {
+						MessageFlags::SUPPRESS_NOTIFICATIONS
+					} else {
+						MessageFlags::default()
+					},
 					..Message::default()
 				};
 				self.messages.entry(*channel_id).or_default().add_pending(

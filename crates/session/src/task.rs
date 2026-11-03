@@ -1500,6 +1500,7 @@ impl Core {
 				files: outgoing.pending_files(),
 				author: Box::new(author),
 				by_plugin: by_plugin.clone(),
+				silent: outgoing.silent,
 			});
 		}
 		if by_plugin.is_none() && self.flags.send && outgoing.has_payload() {
