@@ -386,17 +386,52 @@ impl Database {
 		Ok(evicted_paths)
 	}
 
-	pub fn vacuum_if_over(&self, limit_bytes: u64) -> Result<bool> {
+	pub fn shrink_to(&self, limit_bytes: u64) -> Result<bool> {
 		let conn = self.conn.lock();
-		let page_size: i64 = conn.pragma_query_value(None, "page_size", |row| row.get(0))?;
-		let page_count: i64 = conn.pragma_query_value(None, "page_count", |row| row.get(0))?;
-		let free_pages: i64 = conn.pragma_query_value(None, "freelist_count", |row| row.get(0))?;
-		if free_pages == 0 || (page_size * page_count) as u64 <= limit_bytes {
+		if page_usage(&conn)?.file_bytes <= limit_bytes {
+			return Ok(false);
+		}
+		while page_usage(&conn)?.used_bytes > limit_bytes {
+			let stalest: Option<i64> = conn
+				.query_row(
+					"SELECT channel_id FROM messages GROUP BY channel_id ORDER BY MAX(updated_at) LIMIT 1",
+					[],
+					|row| row.get(0),
+				)
+				.optional()?;
+			let Some(channel_id) = stalest else {
+				break;
+			};
+			conn.execute("DELETE FROM messages WHERE channel_id = ?1", [channel_id])?;
+		}
+		if page_usage(&conn)?.free_pages == 0 {
 			return Ok(false);
 		}
 		conn.execute_batch("VACUUM")?;
 		Ok(true)
 	}
+}
+
+struct PageUsage {
+	file_bytes: u64,
+	used_bytes: u64,
+	free_pages: u64,
+}
+
+fn pragma_count(conn: &Connection, name: &str) -> Result<u64> {
+	let value: i64 = conn.pragma_query_value(None, name, |row| row.get(0))?;
+	Ok(u64::try_from(value).unwrap_or_default())
+}
+
+fn page_usage(conn: &Connection) -> Result<PageUsage> {
+	let page_size = pragma_count(conn, "page_size")?;
+	let page_count = pragma_count(conn, "page_count")?;
+	let free_pages = pragma_count(conn, "freelist_count")?;
+	Ok(PageUsage {
+		file_bytes: page_size * page_count,
+		used_bytes: page_size * page_count.saturating_sub(free_pages),
+		free_pages,
+	})
 }
 
 fn read_state_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ReadState> {
