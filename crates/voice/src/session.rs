@@ -713,6 +713,17 @@ impl Supervisor {
 		self.shared.video.stop_sender();
 		self.link.close().await;
 		self.shared.engine.lock().take();
+		let ended: Vec<VideoStream> = self
+			.shared
+			.video
+			.remote
+			.lock()
+			.drain()
+			.map(|(_, stream)| stream)
+			.collect();
+		for stream in ended {
+			self.end_remote_video(stream);
+		}
 		self.shared.hub.emit(VoiceEvent::Disconnected {
 			code,
 			reconnecting: false,

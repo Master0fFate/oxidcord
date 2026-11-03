@@ -7,7 +7,7 @@ use image::{ExtendedColorType, ImageEncoder as _};
 use protocol::{Snowflake, StreamDelete, StreamServerUpdate, StreamState, Token};
 use rest::RestClient;
 use rest::api::image_data_uri;
-use state::{LocalEvent, StreamInfo};
+use state::{LocalEvent, StreamInfo, VideoKind};
 use tokio::time::sleep;
 use voice::video::capture::ScreenTarget;
 use voice::video::{VideoFrame, VideoQuality, scaled_bgra};
@@ -293,7 +293,10 @@ impl Core {
 		let Some(session) = self.streams.session_for_key(&update.stream_key) else {
 			return;
 		};
-		for task in [session.pump.take(), session.uploads.take()].into_iter().flatten() {
+		for task in [session.pump.take(), session.uploads.take()]
+			.into_iter()
+			.flatten()
+		{
 			task.abort();
 		}
 		let connection = session.connection.take();
@@ -614,7 +617,21 @@ impl Core {
 		}
 		match session.role {
 			Role::Share { .. } => self.apply_local(LocalEvent::ScreenShareChanged(None::<StreamInfo>)),
-			Role::Watch => self.apply_local(LocalEvent::Watching(None)),
+			Role::Watch => {
+				let streamer = session
+					.key
+					.as_deref()
+					.and_then(|key| key.rsplit(':').next())
+					.and_then(|id| id.parse::<u64>().ok());
+				if let Some(user_id) = streamer {
+					self.apply_local(LocalEvent::RemoteVideo {
+						user_id: Snowflake::from(user_id),
+						kind: VideoKind::Screen,
+						active: false,
+					});
+				}
+				self.apply_local(LocalEvent::Watching(None));
+			}
 		}
 	}
 }
