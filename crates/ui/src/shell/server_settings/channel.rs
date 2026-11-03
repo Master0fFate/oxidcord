@@ -11,7 +11,7 @@ use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::menu::DropdownMenu as _;
 use gpui_component::scroll::ScrollableElement as _;
 use protocol::{ChannelType, PermissionOverwriteKind, Permissions, Snowflake};
-use session::{Command, VoiceChannelEdit};
+use session::{Command, ForumEdit, VoiceChannelEdit};
 
 use super::channel_voice::VoiceForm;
 use super::rights::GROUPS;
@@ -286,7 +286,7 @@ impl EditChannel {
 			nsfw: (self.text_like() && self.nsfw != *old_nsfw).then_some(self.nsfw),
 			slowmode: (self.text_like() && self.slowmode != *old_slowmode)
 				.then(|| SLOWMODES[self.slowmode].1),
-			position: None,
+			forum: ForumEdit::default(),
 			parent_id: (self.parent != self.original_parent).then_some(self.parent),
 			voice: self
 				.voice

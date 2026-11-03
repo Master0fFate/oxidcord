@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use protocol::{
 	Channel, ChannelType, DefaultMessageNotifications, Emoji, Guild, JoinRequestStatus, Member, Role,
-	ScheduledEvent, Snowflake, StageInstance, VoiceState,
+	ScheduledEvent, Snowflake, StageInstance, SystemChannelFlags, VoiceState,
 };
 
 use crate::member_list::MemberList;
@@ -18,6 +18,7 @@ pub struct GuildState {
 	pub name: String,
 	pub icon: Option<String>,
 	pub banner: Option<String>,
+	pub splash: Option<String>,
 	pub owner_id: Option<Snowflake>,
 	pub features: Vec<String>,
 	pub member_count: Option<i64>,
@@ -30,6 +31,10 @@ pub struct GuildState {
 	pub unavailable: bool,
 	pub join_request: Option<JoinRequestStatus>,
 	pub default_notifications: Option<DefaultMessageNotifications>,
+	pub system_channel_id: Option<Snowflake>,
+	pub system_channel_flags: SystemChannelFlags,
+	pub afk_channel_id: Option<Snowflake>,
+	pub afk_timeout: u32,
 	pub channels: IndexMap<Snowflake, Channel>,
 	pub threads: IndexMap<Snowflake, Channel>,
 	pub roles: IndexMap<Snowflake, Role>,
@@ -110,6 +115,14 @@ impl GuildState {
 		}
 		self.icon.clone_from(&guild.icon);
 		self.banner.clone_from(&guild.banner);
+		self.splash.clone_from(&guild.splash);
+		self.system_channel_id = guild.system_channel_id;
+		self.system_channel_flags = guild.system_channel_flags.unwrap_or_default();
+		self.afk_channel_id = guild.afk_channel_id;
+		self.afk_timeout = guild
+			.afk_timeout
+			.and_then(|seconds| u32::try_from(seconds).ok())
+			.unwrap_or(0);
 		self.description.clone_from(&guild.description);
 		if let Some(tier) = guild.premium_tier {
 			self.premium_tier = u8::try_from(i64::from(tier)).unwrap_or(0);

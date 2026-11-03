@@ -816,6 +816,35 @@ impl Shared {
 		Some(json!({ "guild_id": guild_id.to_string(), "channels": channels }))
 	}
 
+
+	pub fn reorder_channels(&self, guild_id: u64, body: &Value) -> Result<(), ApiError> {
+		let mut store = self.store.lock();
+		self.live_guild(&store, guild_id)?;
+		let mut moved = Vec::new();
+		for entry in body.as_array().into_iter().flatten() {
+			let (Some(id), Some(position)) = (parse_id(&entry["id"]), entry["position"].as_i64()) else {
+				continue;
+			};
+			let Some(channel) = store
+				.channels
+				.get_mut(&id)
+				.filter(|channel| channel.guild_id == Some(Snowflake(guild_id)))
+			else {
+				continue;
+			};
+			channel.position = Some(position);
+			if entry.get("parent_id").is_some() {
+				channel.parent_id = parse_id(&entry["parent_id"]).map(Snowflake);
+			}
+			moved.push(to_json(&*channel));
+		}
+		drop(store);
+		for channel in moved {
+			self.hub.broadcast("CHANNEL_UPDATE", &channel);
+		}
+		Ok(())
+	}
+
 	pub fn delete_channel(&self, channel_id: u64) -> Result<Value, ApiError> {
 		let mut store = self.store.lock();
 		let channel = store

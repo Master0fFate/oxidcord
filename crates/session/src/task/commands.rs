@@ -2,9 +2,9 @@ use activity::ActivityRules;
 use chrono::{DateTime, Utc};
 use protocol::rest::{ComponentInteraction, ComponentInteractionData};
 use protocol::{
-	ApplicationCommand, ChannelType, CreateMessage, DispatchEvent, MessageAck, MessageFlags,
-	MessageReference, MessageReferenceKind, PermissionOverwriteKind, Permissions, ProtoCustomStatus,
-	SCHEDULED_EVENT_GUILD_ONLY, Snowflake, StatusKind, ThreadMember,
+	ApplicationCommand, Channel, ChannelFlags, ChannelPosition, ChannelType, CreateMessage, DispatchEvent,
+	MessageAck, MessageFlags, MessageReference, MessageReferenceKind, PermissionOverwriteKind, Permissions,
+	ProtoCustomStatus, SCHEDULED_EVENT_GUILD_ONLY, Snowflake, StatusKind, ThreadMember,
 };
 use rest::api::ArchivedScope;
 use rest::api::image_data_uri;
@@ -14,7 +14,7 @@ use state::{Loaded, LocalEvent, USER_COMMANDS, guild_folders_settings};
 
 use super::actions::{mute_config, object, rest_failure, some, timestamp};
 use super::{Command, Core, Internal, ReadSnapshot};
-use crate::command::{ComponentUse, RoleColorsEdit, RoleIconEdit};
+use crate::command::{ComponentUse, ForumEdit, ForumTagEdit, GuildEdit, RoleColorsEdit, RoleIconEdit};
 
 const COMPONENT_INTERACTION: u8 = 3;
 const APPLICATION_COMMAND_INTERACTION: u8 = 2;
@@ -51,6 +51,72 @@ fn private_overwrites(guild_id: Snowflake) -> Value {
 		"allow": Permissions::empty(),
 		"deny": Permissions::VIEW_CHANNEL,
 	}])
+}
+
+fn guild_edit_body(edit: GuildEdit) -> Value {
+	object([
+		("name", some(edit.name)),
+		("description", some(edit.description)),
+		("icon", edit.icon_png.as_deref().map(png)),
+		("banner", edit.banner_png.as_deref().map(png)),
+		("splash", edit.splash_png.as_deref().map(png)),
+		("system_channel_id", edit.system_channel_id.map(|id| json!(id))),
+		(
+			"system_channel_flags",
+			edit.system_channel_flags.map(|flags| json!(flags)),
+		),
+		("afk_channel_id", edit.afk_channel_id.map(|id| json!(id))),
+		("afk_timeout", some(edit.afk_timeout)),
+		(
+			"default_message_notifications",
+			edit.default_notifications.map(|level| json!(i64::from(level))),
+		),
+	])
+}
+
+fn forum_tag_body(tag: &ForumTagEdit) -> Value {
+	object([
+		("id", tag.id.map(|id| json!(id))),
+		("name", Some(json!(tag.name))),
+		("moderated", Some(json!(tag.moderated))),
+		("emoji_id", Some(json!(tag.emoji_id))),
+		("emoji_name", Some(json!(tag.emoji_name))),
+	])
+}
+
+fn forum_edit_fields(forum: ForumEdit, flags: ChannelFlags) -> [(&'static str, Option<Value>); 6] {
+	[
+		(
+			"available_tags",
+			forum
+				.available_tags
+				.map(|tags| tags.iter().map(forum_tag_body).collect()),
+		),
+		(
+			"default_reaction_emoji",
+			forum.default_reaction.map(|reaction| json!(reaction)),
+		),
+		(
+			"default_sort_order",
+			forum.default_sort_order.map(|order| json!(i64::from(order))),
+		),
+		(
+			"default_forum_layout",
+			forum.default_layout.map(|layout| json!(i64::from(layout))),
+		),
+		(
+			"default_thread_rate_limit_per_user",
+			some(forum.default_thread_slowmode),
+		),
+		(
+			"flags",
+			forum.require_tag.map(|required| {
+				let mut flags = flags;
+				flags.set(ChannelFlags::REQUIRE_TAG, required);
+				json!(flags)
+			}),
+		),
+	]
 }
 
 fn forum_body(name: String, content: String, tags: Vec<Snowflake>, files: &[UploadFile]) -> Value {
@@ -1019,21 +1085,21 @@ impl Core {
 
 	fn on_admin_command(&mut self, command: Command) {
 		match command {
-			Command::EditGuild {
-				guild_id,
-				name,
-				icon_png,
-				description,
-			} => {
+			Command::EditGuild { guild_id, edit } => {
 				if self.guild_allows(guild_id, Permissions::MANAGE_GUILD, "Manage Server") {
-					let body = object([
-						("name", some(name)),
-						("icon", icon_png.as_deref().map(png)),
-						("description", some(description)),
-					]);
+					let body = guild_edit_body(edit);
 					self.spawn_action("edit server", move |rest| async move {
 						rest.modify_guild(guild_id, body).await.map(drop)
 					});
+				}
+			}
+			Command::DeleteGuild { guild_id } => {
+				if self.owns_guild(guild_id) {
+					self.spawn_action("delete server", move |rest| async move {
+						rest.delete_guild(guild_id).await
+					});
+				} else {
+					self.reject("Only the owner can delete a server");
 				}
 			}
 			Command::CreateChannel {
@@ -1064,29 +1130,38 @@ impl Core {
 				topic,
 				nsfw,
 				slowmode,
-				position,
 				parent_id,
 				voice,
+				forum,
 			} => {
 				if self
 					.channel_guild_allows(channel_id, Permissions::MANAGE_CHANNELS, "Manage Channels")
 					.is_some()
 				{
-					let body = object([
-						("name", some(name)),
-						("topic", some(topic)),
-						("nsfw", some(nsfw)),
-						("rate_limit_per_user", some(slowmode)),
-						("position", some(position)),
-						("parent_id", parent_id.map(|id| json!(id))),
-						("bitrate", some(voice.bitrate)),
-						("user_limit", some(voice.user_limit)),
-						("rtc_region", voice.rtc_region.map(|region| json!(region))),
-						(
-							"video_quality_mode",
-							voice.video_quality_mode.map(|mode| json!(i64::from(mode))),
-						),
-					]);
+					let flags = self
+						.state
+						.read()
+						.channel(channel_id)
+						.map(|channel| channel.flags)
+						.unwrap_or_default();
+					let body = object(
+						[
+							("name", some(name)),
+							("topic", some(topic)),
+							("nsfw", some(nsfw)),
+							("rate_limit_per_user", some(slowmode)),
+							("parent_id", parent_id.map(|id| json!(id))),
+							("bitrate", some(voice.bitrate)),
+							("user_limit", some(voice.user_limit)),
+							("rtc_region", voice.rtc_region.map(|region| json!(region))),
+							(
+								"video_quality_mode",
+								voice.video_quality_mode.map(|mode| json!(i64::from(mode))),
+							),
+						]
+						.into_iter()
+						.chain(forum_edit_fields(forum, flags)),
+					);
 					self.spawn_action("edit channel", move |rest| async move {
 						rest.modify_channel(channel_id, body).await.map(drop)
 					});
@@ -1104,6 +1179,12 @@ impl Core {
 			Command::LoadVoiceRegions => self.spawn_load("voice regions", move |rest| async move {
 				Ok(Loaded::VoiceRegions(rest.voice_regions().await?))
 			}),
+			Command::ReorderChannels { guild_id, positions } => {
+				if self.guild_allows(guild_id, Permissions::MANAGE_CHANNELS, "Manage Channels") {
+					self.reorder_channels(guild_id, positions);
+				}
+			}
+			Command::SetPostTags { thread_id, tags } => self.set_post_tags(thread_id, tags),
 			Command::DeleteChannel { channel_id } => {
 				if self
 					.channel_guild_allows(channel_id, Permissions::MANAGE_CHANNELS, "Manage Channels")
@@ -1647,5 +1728,65 @@ impl Core {
 				let _ = internal.send(Internal::Rejected("server order failed".to_owned()));
 			}
 		});
+	}
+
+	fn owns_guild(&self, guild_id: Snowflake) -> bool {
+		let state = self.state.read();
+		state
+			.guild(guild_id)
+			.is_some_and(|guild| guild.owner_id.is_some() && guild.owner_id == state.current_user_id())
+	}
+
+	fn reorder_channels(&mut self, guild_id: Snowflake, positions: Vec<ChannelPosition>) {
+		let (previous, moved): (Vec<Channel>, Vec<Channel>) = {
+			let state = self.state.read();
+			positions
+				.iter()
+				.filter_map(|change| {
+					let before = state.channel(change.id)?.clone();
+					let mut after = before.clone();
+					after.position = Some(change.position);
+					if let Some(parent) = change.parent_id {
+						after.parent_id = parent;
+					}
+					Some((before, after))
+				})
+				.unzip()
+		};
+		for channel in moved {
+			self.apply_dispatch(&DispatchEvent::ChannelUpdate(Box::new(channel)));
+		}
+		let rest = self.rest.clone();
+		let internal = self.internal.clone();
+		self.runtime.spawn(async move {
+			if let Err(error) = rest.modify_channel_positions(guild_id, &positions).await {
+				let _ = internal.send(Internal::RestoreChannels(previous));
+				let _ = internal.send(rest_failure("reorder channels", &error));
+			}
+		});
+	}
+
+	fn set_post_tags(&mut self, thread_id: Snowflake, tags: Vec<Snowflake>) {
+		let (owner, tag_required) = {
+			let state = self.state.read();
+			let thread = state.channel(thread_id);
+			let forum = thread
+				.and_then(|thread| thread.parent_id)
+				.and_then(|parent| state.channel(parent));
+			(
+				thread.is_some_and(|thread| {
+					thread.owner_id.is_some() && thread.owner_id == state.current_user_id()
+				}),
+				forum.is_some_and(|forum| forum.flags.contains(ChannelFlags::REQUIRE_TAG)),
+			)
+		};
+		if tag_required && tags.is_empty() {
+			self.reject("This forum requires a tag");
+		} else if owner || self.channel_allows(thread_id, Permissions::MANAGE_THREADS, "Manage Threads") {
+			let body = json!({ "applied_tags": tags });
+			self.spawn_action("edit post tags", move |rest| async move {
+				rest.modify_channel(thread_id, body).await.map(drop)
+			});
+		}
 	}
 }

@@ -1,8 +1,8 @@
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use protocol::{
-	AutoModRule, AutoModTriggerType, Channel, LenientVec, Role, ScheduledEvent, ScheduledEventRsvp,
-	Snowflake, StageInstance,
+	AutoModRule, AutoModTriggerType, Channel, ChannelPosition, LenientVec, Role, ScheduledEvent,
+	ScheduledEventRsvp, Snowflake, StageInstance,
 };
 use serde_json::{Value, json};
 
@@ -59,8 +59,22 @@ impl RestClient {
 			.await
 	}
 
+	pub async fn delete_guild(&self, guild_id: Snowflake) -> Result<()> {
+		self.send_empty(Request::delete(format!("/guilds/{guild_id}")))
+			.await
+	}
+
 	pub async fn create_guild_channel(&self, guild_id: Snowflake, body: Value) -> Result<Channel> {
 		self.send(Request::post(format!("/guilds/{guild_id}/channels")).json(&body))
+			.await
+	}
+
+	pub async fn modify_channel_positions(
+		&self,
+		guild_id: Snowflake,
+		positions: &[ChannelPosition],
+	) -> Result<()> {
+		self.send_empty(Request::patch(format!("/guilds/{guild_id}/channels")).json(&positions))
 			.await
 	}
 

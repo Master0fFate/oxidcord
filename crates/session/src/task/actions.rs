@@ -10,7 +10,7 @@ use state::{Loaded, LocalEvent};
 use super::expressions::reaction_emoji;
 use super::{Core, Internal};
 
-pub(super) fn object<const N: usize>(fields: [(&str, Option<Value>); N]) -> Value {
+pub(super) fn object<'a>(fields: impl IntoIterator<Item = (&'a str, Option<Value>)>) -> Value {
 	Value::Object(
 		fields
 			.into_iter()

@@ -308,6 +308,15 @@ pub async fn create_channel(State(shared): Mock, Path(id): Path<u64>, Json(body)
 	shared.create_channel(id, &body).map(Json)
 }
 
+pub async fn reorder_channels(
+	State(shared): Mock,
+	Path(id): Path<u64>,
+	Json(body): Json<Value>,
+) -> NoContent {
+	shared.reorder_channels(id, &body)?;
+	Ok(StatusCode::NO_CONTENT)
+}
+
 pub async fn create_role(State(shared): Mock, Path(id): Path<u64>, Json(body): Json<Value>) -> ApiResult {
 	shared.create_role(id, &body).map(Json)
 }

@@ -1,10 +1,11 @@
+use bitflags::bitflags;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::channel::Channel;
 use crate::emoji::{Emoji, Sticker};
-use crate::lenient::{LenientVec, int_enum, timestamp};
+use crate::lenient::{LenientVec, flags_serde, int_enum, timestamp};
 use crate::member::Member;
 use crate::presence::Presence;
 use crate::role::Role;
@@ -137,6 +138,18 @@ impl ScheduledEvent {
 	}
 }
 
+bitflags! {
+	#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+	pub struct SystemChannelFlags: u64 {
+		const SUPPRESS_JOIN_NOTIFICATIONS = 1 << 0;
+		const SUPPRESS_PREMIUM_SUBSCRIPTIONS = 1 << 1;
+		const SUPPRESS_GUILD_REMINDER_NOTIFICATIONS = 1 << 2;
+		const SUPPRESS_JOIN_NOTIFICATION_REPLIES = 1 << 3;
+	}
+}
+
+flags_serde!(SystemChannelFlags, number);
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct UnavailableGuild {
@@ -161,6 +174,7 @@ pub struct GuildProperties {
 	pub features: Vec<String>,
 	pub mfa_level: Option<MfaLevel>,
 	pub system_channel_id: Option<Snowflake>,
+	pub system_channel_flags: Option<SystemChannelFlags>,
 	pub rules_channel_id: Option<Snowflake>,
 	pub max_members: Option<i64>,
 	pub vanity_url_code: Option<String>,
@@ -191,6 +205,7 @@ pub struct Guild {
 	pub features: Vec<String>,
 	pub mfa_level: Option<MfaLevel>,
 	pub system_channel_id: Option<Snowflake>,
+	pub system_channel_flags: Option<SystemChannelFlags>,
 	pub rules_channel_id: Option<Snowflake>,
 	pub max_members: Option<i64>,
 	pub vanity_url_code: Option<String>,
@@ -244,6 +259,7 @@ impl Guild {
 			explicit_content_filter,
 			mfa_level,
 			system_channel_id,
+			system_channel_flags,
 			rules_channel_id,
 			max_members,
 			vanity_url_code,

@@ -6,6 +6,14 @@ use crate::lenient::LenientVec;
 use crate::message::{MessageFlags, MessageReference, PollAnswer, PollLayout, PollMedia};
 use crate::snowflake::Snowflake;
 
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ChannelPosition {
+	pub id: Snowflake,
+	pub position: i64,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub parent_id: Option<Option<Snowflake>>,
+}
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AttachmentDescriptor {

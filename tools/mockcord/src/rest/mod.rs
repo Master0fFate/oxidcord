@@ -104,7 +104,9 @@ pub fn router(shared: Arc<Shared>) -> Router {
 		.route("/guilds/{id}/requests/@me", put(admin::submit_join_request))
 		.route(
 			"/guilds/{id}/channels",
-			get(guilds::channels).post(admin::create_channel),
+			get(guilds::channels)
+				.post(admin::create_channel)
+				.patch(admin::reorder_channels),
 		)
 		.route(
 			"/guilds/{id}/roles",

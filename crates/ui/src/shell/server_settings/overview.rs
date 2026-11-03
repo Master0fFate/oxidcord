@@ -6,7 +6,7 @@ use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
 use gpui_component::scroll::ScrollableElement as _;
 use protocol::Snowflake;
-use session::Command;
+use session::{Command, GuildEdit};
 
 use super::kit;
 use crate::components::{Avatar, field, hint};
@@ -100,9 +100,12 @@ impl OverviewPage {
 		let description = self.current_description(cx);
 		self.data.read(cx).send(Command::EditGuild {
 			guild_id: self.guild,
-			name: (name != self.initial_name && !name.is_empty()).then(|| name.clone()),
-			icon_png: self.icon.take().map(|picked| picked.bytes),
-			description: (description != self.initial_description).then(|| description.clone()),
+			edit: GuildEdit {
+				name: (name != self.initial_name && !name.is_empty()).then(|| name.clone()),
+				icon_png: self.icon.take().map(|picked| picked.bytes),
+				description: (description != self.initial_description).then(|| description.clone()),
+				..GuildEdit::default()
+			},
 		});
 		if !name.is_empty() {
 			self.initial_name = name;

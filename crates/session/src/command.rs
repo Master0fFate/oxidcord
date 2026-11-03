@@ -9,9 +9,10 @@ use plugin_host::api::model::{
 use plugin_host::api::{HostError, User as PluginUser};
 use plugin_host::{Navigation, Permission, PickedPath, ViewContext};
 use protocol::{
-	ApplicationCommand, AutoModRule, ChannelType, ComponentType, Gif, MemberVerification, MessageFlags,
-	Nonce, NotificationLevel, PermissionOverwriteKind, Permissions, PollCreate, Role, RoleColors,
-	ScheduledEventKind, ScheduledEventStatus, Snowflake, StatusKind, VideoQualityMode,
+	ApplicationCommand, AutoModRule, ChannelPosition, ChannelType, ComponentType, DefaultMessageNotifications,
+	DefaultReaction, ForumLayout, ForumSortOrder, Gif, MemberVerification, MessageFlags, Nonce,
+	NotificationLevel, PermissionOverwriteKind, Permissions, PollCreate, Role, RoleColors,
+	ScheduledEventKind, ScheduledEventStatus, Snowflake, StatusKind, SystemChannelFlags, VideoQualityMode,
 };
 use rest::UploadFile;
 use rest::api::SearchQuery;
@@ -148,6 +149,39 @@ pub enum PluginLoad {
 		url: String,
 		reply: Reply<LoadResult<Vec<u8>>>,
 	},
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct GuildEdit {
+	pub name: Option<String>,
+	pub description: Option<String>,
+	pub icon_png: Option<Vec<u8>>,
+	pub banner_png: Option<Vec<u8>>,
+	pub splash_png: Option<Vec<u8>>,
+	pub system_channel_id: Option<Option<Snowflake>>,
+	pub system_channel_flags: Option<SystemChannelFlags>,
+	pub afk_channel_id: Option<Option<Snowflake>>,
+	pub afk_timeout: Option<u32>,
+	pub default_notifications: Option<DefaultMessageNotifications>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ForumTagEdit {
+	pub id: Option<Snowflake>,
+	pub name: String,
+	pub moderated: bool,
+	pub emoji_id: Option<Snowflake>,
+	pub emoji_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ForumEdit {
+	pub available_tags: Option<Vec<ForumTagEdit>>,
+	pub default_reaction: Option<Option<DefaultReaction>>,
+	pub default_sort_order: Option<ForumSortOrder>,
+	pub default_layout: Option<ForumLayout>,
+	pub default_thread_slowmode: Option<u32>,
+	pub require_tag: Option<bool>,
 }
 
 #[derive(Debug)]
@@ -592,9 +626,10 @@ pub enum Command {
 	},
 	EditGuild {
 		guild_id: Snowflake,
-		name: Option<String>,
-		icon_png: Option<Vec<u8>>,
-		description: Option<String>,
+		edit: GuildEdit,
+	},
+	DeleteGuild {
+		guild_id: Snowflake,
 	},
 	CreateChannel {
 		guild_id: Snowflake,
@@ -609,9 +644,17 @@ pub enum Command {
 		topic: Option<String>,
 		nsfw: Option<bool>,
 		slowmode: Option<u32>,
-		position: Option<i64>,
 		parent_id: Option<Option<Snowflake>>,
 		voice: VoiceChannelEdit,
+		forum: ForumEdit,
+	},
+	ReorderChannels {
+		guild_id: Snowflake,
+		positions: Vec<ChannelPosition>,
+	},
+	SetPostTags {
+		thread_id: Snowflake,
+		tags: Vec<Snowflake>,
 	},
 	SetVoiceStatus {
 		channel_id: Snowflake,

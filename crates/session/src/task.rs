@@ -142,6 +142,7 @@ pub(crate) enum Internal {
 		db: Option<Arc<Database>>,
 	},
 	RestoreRead(Vec<ReadSnapshot>),
+	RestoreChannels(Vec<Channel>),
 	FriendRequestSent(String),
 	FriendRequestFailed {
 		username: String,
@@ -874,6 +875,11 @@ impl Core {
 						mention_count: snapshot.mention_count,
 					}));
 					self.persist_read_state(snapshot.channel_id);
+				}
+			}
+			Internal::RestoreChannels(channels) => {
+				for channel in channels {
+					self.apply_dispatch(&DispatchEvent::ChannelUpdate(Box::new(channel)));
 				}
 			}
 			Internal::FriendRequestSent(username) => {

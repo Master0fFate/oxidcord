@@ -1,7 +1,8 @@
 use gpui::{
-	AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, InteractiveElement as _, IntoElement,
-	MouseDownEvent, ParentElement as _, Pixels, Point, Render, SharedString, StatefulInteractiveElement as _,
-	Styled as _, Window, div, prelude::FluentBuilder as _,
+	AnyElement, AppContext as _, ClickEvent, Context, Entity, EventEmitter, FontWeight,
+	InteractiveElement as _, IntoElement, MouseDownEvent, ParentElement as _, Pixels, Point, Render,
+	SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, prelude::FluentBuilder as _,
+	transparent_black,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::menu::{ContextMenuExt as _, DropdownMenu as _};
@@ -16,6 +17,7 @@ use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind, channel_icon};
 use crate::theme::{Theme, rem};
 
+use self::reorder::{DragPreview, DraggedChannel, Drop, Group, Slot, rearranged};
 use super::community::access::GuildAccess;
 use super::community::act;
 use super::community::events::{self, CREATE_PERMISSIONS};
@@ -23,6 +25,8 @@ use super::community::menus::{ChannelFacts, channel_menu, guild_menu};
 use super::plugins::{self, MenuTarget, PluginMenu as _};
 use super::server_settings::channel as channel_modals;
 use super::voice::{Participant, participant_row, participants};
+
+mod reorder;
 
 const AVATAR_PIXELS: u32 = 48;
 
@@ -35,6 +39,7 @@ pub enum SidebarEvent {
 #[derive(PartialEq)]
 struct ChannelItem {
 	id: Snowflake,
+	position: i64,
 	kind: ChannelType,
 	name: SharedString,
 	thread: bool,
@@ -63,6 +68,7 @@ struct ChannelItem {
 #[derive(PartialEq)]
 struct CategoryItem {
 	id: Option<Snowflake>,
+	position: i64,
 	name: SharedString,
 	collapsed: bool,
 	can_create: bool,
@@ -331,16 +337,119 @@ impl ChannelSidebar {
 					)
 					.trailing_on_hover();
 			}
-			div()
+			let wrapper = div()
+				.id(("category-header", id.get()))
+				.relative()
 				.pt(theme.space_16)
-				.child(section.on_click(cx.listener(move |this, _, _, cx| this.toggle(id, cx))))
+				.child(section.on_click(cx.listener(move |this, _, _, cx| this.toggle(id, cx))));
+			if self.access.has(Permissions::MANAGE_CHANNELS) {
+				let dragged = DraggedChannel {
+					id,
+					category: true,
+					name: category.name.clone(),
+					icon: IconKind::ChevronDown,
+				};
+				wrapper
+					.on_drag(dragged, |dragged, _, _, cx| cx.new(|_| DragPreview::new(dragged)))
+					.child(self.header_drop_zone(id, theme, cx))
+					.into_any_element()
+			} else {
+				wrapper.into_any_element()
+			}
 		});
-		div()
+		let block = div()
+			.id(("category-block", category.id.map_or(0, Snowflake::get)))
 			.flex()
 			.flex_col()
 			.children(header)
-			.children(rows)
+			.children(rows);
+		if self.access.has(Permissions::MANAGE_CHANNELS) {
+			let end = category.id;
+			block
+				.on_drop(cx.listener(move |this, dragged: &DraggedChannel, _, cx| {
+					this.drop_dragged(dragged, Drop::EndOf(end), cx)
+				}))
+				.into_any_element()
+		} else {
+			block.into_any_element()
+		}
+	}
+
+	fn header_drop_zone(&self, category: Snowflake, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+		let brand = theme.brand;
+		div()
+			.id(("category-drop", category.get()))
+			.absolute()
+			.bottom_0()
+			.left_0()
+			.right_0()
+			.h(rem(24.))
+			.rounded(theme.radius_sm)
+			.border_color(transparent_black())
+			.drag_over::<DraggedChannel>(move |style, dragged, _, _| {
+				if dragged.category {
+					style.border_t_2().border_color(brand)
+				} else {
+					style.border_2().border_color(brand)
+				}
+			})
+			.on_drop(cx.listener(move |this, dragged: &DraggedChannel, _, cx| {
+				let drop = if dragged.category {
+					Drop::BeforeCategory(category)
+				} else {
+					Drop::StartOf(category)
+				};
+				this.drop_dragged(dragged, drop, cx)
+			}))
 			.into_any_element()
+	}
+
+	fn channel_drop_zone(&self, channel: Snowflake, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+		let brand = theme.brand;
+		div()
+			.id(("channel-drop", channel.get()))
+			.absolute()
+			.top_0()
+			.left_0()
+			.size_full()
+			.border_color(transparent_black())
+			.drag_over::<DraggedChannel>(move |style, _, _, _| style.border_t_2().border_color(brand))
+			.on_drop(cx.listener(move |this, dragged: &DraggedChannel, _, cx| {
+				this.drop_dragged(dragged, Drop::BeforeChannel(channel), cx)
+			}))
+			.into_any_element()
+	}
+
+	fn drop_dragged(&mut self, dragged: &DraggedChannel, drop: Drop, cx: &mut Context<Self>) {
+		let Some(guild) = self.guild else {
+			return;
+		};
+		let positions = rearranged(&self.groups(), dragged, drop);
+		if !positions.is_empty() {
+			self.data.read(cx).send(Command::ReorderChannels {
+				guild_id: guild,
+				positions,
+			});
+		}
+	}
+
+	fn groups(&self) -> Vec<Group> {
+		self.categories
+			.iter()
+			.map(|category| Group {
+				id: category.id,
+				position: category.position,
+				channels: category
+					.channels
+					.iter()
+					.filter(|channel| !channel.thread)
+					.map(|channel| Slot {
+						id: channel.id,
+						position: channel.position,
+					})
+					.collect(),
+			})
+			.collect()
 	}
 
 	fn channel_row(&self, channel: &ChannelItem, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
@@ -439,6 +548,14 @@ impl ChannelSidebar {
 						})),
 				)
 		});
+		let reorder = self.access.has(Permissions::MANAGE_CHANNELS) && !thread;
+		let dragged = reorder.then(|| DraggedChannel {
+			id,
+			category: false,
+			name: channel.name.clone(),
+			icon: channel.icon,
+		});
+		let drop_zone = reorder.then(|| self.channel_drop_zone(id, theme, cx));
 		let row = div()
 			.id(("channel", key))
 			.group(group)
@@ -523,6 +640,10 @@ impl ChannelSidebar {
 			.when(channel.mentions > 0, |row| {
 				row.child(MentionBadge::new(channel.mentions))
 			})
+			.when_some(dragged, |row, dragged| {
+				row.on_drag(dragged, |dragged, _, _, cx| cx.new(|_| DragPreview::new(dragged)))
+			})
+			.children(drop_zone)
 			.context_menu(menu);
 		let topic = channel.topic.clone().map(|topic| {
 			div()
@@ -601,6 +722,7 @@ fn channel_item(row: &ChannelRow, guild: Snowflake, state: &state::State) -> Cha
 	let permissions = state.my_permissions(row.id);
 	ChannelItem {
 		id: row.id,
+		position: row.position,
 		kind: row.kind,
 		name: row.name.clone().into(),
 		thread: is_thread(row.kind),
@@ -663,6 +785,7 @@ fn drop_muted(node: &mut ChannelTreeNode, selected: Option<Snowflake>) -> bool {
 fn category_item(node: &ChannelTreeNode, guild: Snowflake, state: &state::State) -> CategoryItem {
 	CategoryItem {
 		id: node.category.as_ref().map(|category| category.id),
+		position: node.category.as_ref().map_or(0, |category| category.position),
 		name: node
 			.category
 			.as_ref()
