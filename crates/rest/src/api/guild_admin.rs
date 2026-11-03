@@ -1,6 +1,8 @@
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use protocol::{AutoModRule, AutoModTriggerType, Channel, LenientVec, Role, Snowflake};
+use protocol::{
+	AutoModRule, AutoModTriggerType, Channel, LenientVec, Role, ScheduledEvent, ScheduledEventRsvp, Snowflake,
+};
 use serde_json::{Value, json};
 
 use crate::client::RestClient;
@@ -147,6 +149,49 @@ impl RestClient {
 	pub async fn guild_invites(&self, guild_id: Snowflake) -> Result<Value> {
 		self.send(Request::get(format!("/guilds/{guild_id}/invites")))
 			.await
+	}
+
+	pub async fn scheduled_events(&self, guild_id: Snowflake) -> Result<LenientVec<ScheduledEvent>> {
+		let request = Request::get(format!("/guilds/{guild_id}/scheduled-events"))
+			.query(&[("with_user_count", "true")]);
+		self.send(request).await
+	}
+
+	pub async fn scheduled_event_rsvps(&self, guild_id: Snowflake) -> Result<LenientVec<ScheduledEventRsvp>> {
+		let request =
+			Request::get("/users/@me/scheduled-events").query(&[("guild_ids", guild_id.to_string())]);
+		self.send(request).await
+	}
+
+	pub async fn create_scheduled_event(&self, guild_id: Snowflake, body: Value) -> Result<ScheduledEvent> {
+		self.send(Request::post(format!("/guilds/{guild_id}/scheduled-events")).json(&body))
+			.await
+	}
+
+	pub async fn modify_scheduled_event(
+		&self,
+		guild_id: Snowflake,
+		event_id: Snowflake,
+		changes: Value,
+	) -> Result<ScheduledEvent> {
+		let request =
+			Request::patch(format!("/guilds/{guild_id}/scheduled-events/{event_id}")).json(&changes);
+		self.send(request).await
+	}
+
+	pub async fn set_scheduled_event_interest(
+		&self,
+		guild_id: Snowflake,
+		event_id: Snowflake,
+		interested: bool,
+	) -> Result<()> {
+		let path = format!("/guilds/{guild_id}/scheduled-events/{event_id}/users/@me");
+		let request = if interested {
+			Request::put(path)
+		} else {
+			Request::delete(path)
+		};
+		self.send_empty(request).await
 	}
 
 	pub async fn kick_member(

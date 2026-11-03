@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::channel::Channel;
 use crate::emoji::{Emoji, Sticker};
@@ -57,6 +58,73 @@ int_enum! {
 		Explicit = 1,
 		Safe = 2,
 		AgeRestricted = 3,
+	}
+}
+
+int_enum! {
+	pub enum ScheduledEventStatus {
+		Scheduled = 1,
+		Active = 2,
+		Completed = 3,
+		Canceled = 4,
+	}
+}
+
+int_enum! {
+	pub enum ScheduledEventKind {
+		StageInstance = 1,
+		Voice = 2,
+		External = 3,
+	}
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ScheduledEventMetadata {
+	pub location: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ScheduledEvent {
+	pub id: Snowflake,
+	pub guild_id: Snowflake,
+	pub channel_id: Option<Snowflake>,
+	pub creator_id: Option<Snowflake>,
+	pub name: String,
+	pub description: Option<String>,
+	#[serde(deserialize_with = "timestamp")]
+	pub scheduled_start_time: Option<DateTime<Utc>>,
+	#[serde(deserialize_with = "timestamp")]
+	pub scheduled_end_time: Option<DateTime<Utc>>,
+	pub status: ScheduledEventStatus,
+	pub entity_type: ScheduledEventKind,
+	pub entity_metadata: Option<ScheduledEventMetadata>,
+	pub user_count: Option<i64>,
+	pub image: Option<String>,
+	pub recurrence_rule: Option<Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ScheduledEventRsvp {
+	pub guild_scheduled_event_id: Snowflake,
+	pub response: i64,
+}
+
+impl ScheduledEvent {
+	pub fn is_open(&self) -> bool {
+		matches!(
+			self.status,
+			ScheduledEventStatus::Scheduled | ScheduledEventStatus::Active
+		)
+	}
+
+	pub fn location(&self) -> Option<&str> {
+		self.entity_metadata
+			.as_ref()
+			.and_then(|metadata| metadata.location.as_deref())
+			.filter(|location| !location.is_empty())
 	}
 }
 
@@ -127,6 +195,7 @@ pub struct Guild {
 	pub members: LenientVec<Member>,
 	pub voice_states: LenientVec<VoiceState>,
 	pub presences: LenientVec<Presence>,
+	pub guild_scheduled_events: LenientVec<ScheduledEvent>,
 	pub member_count: Option<i64>,
 	#[serde(deserialize_with = "timestamp")]
 	pub joined_at: Option<DateTime<Utc>>,

@@ -1,9 +1,10 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use protocol::{
-	Channel, ChannelType, DefaultMessageNotifications, Emoji, Guild, Member, Role, Snowflake, VoiceState,
+	Channel, ChannelType, DefaultMessageNotifications, Emoji, Guild, Member, Role, ScheduledEvent, Snowflake,
+	VoiceState,
 };
 
 use crate::member_list::MemberList;
@@ -31,6 +32,8 @@ pub struct GuildState {
 	pub members: HashMap<Snowflake, Member>,
 	pub emojis: Vec<Emoji>,
 	pub voice_states: HashMap<Snowflake, VoiceState>,
+	pub scheduled_events: Vec<ScheduledEvent>,
+	pub interested_events: HashSet<Snowflake>,
 	pub member_list: MemberList,
 }
 
@@ -83,6 +86,7 @@ impl GuildState {
 		};
 		state.set_info(guild);
 		state.set_roles_and_emojis(guild);
+		state.set_scheduled_events(&guild.guild_scheduled_events);
 		state
 	}
 
@@ -120,6 +124,38 @@ impl GuildState {
 		if !guild.emojis.is_empty() {
 			self.emojis = guild.emojis.to_vec();
 		}
+	}
+
+	pub fn set_scheduled_events(&mut self, events: &[ScheduledEvent]) {
+		self.scheduled_events = events.iter().filter(|event| event.is_open()).cloned().collect();
+		self.sort_scheduled_events();
+	}
+
+	pub fn upsert_scheduled_event(&mut self, event: &ScheduledEvent) {
+		let known_count = self
+			.scheduled_events
+			.iter()
+			.find(|known| known.id == event.id)
+			.and_then(|known| known.user_count);
+		if !event.is_open() {
+			self.remove_scheduled_event(event.id);
+			return;
+		}
+		self.scheduled_events.retain(|known| known.id != event.id);
+		let mut stored = event.clone();
+		stored.user_count = stored.user_count.or(known_count);
+		self.scheduled_events.push(stored);
+		self.sort_scheduled_events();
+	}
+
+	pub fn remove_scheduled_event(&mut self, id: Snowflake) {
+		self.scheduled_events.retain(|known| known.id != id);
+		self.interested_events.remove(&id);
+	}
+
+	fn sort_scheduled_events(&mut self) {
+		self.scheduled_events
+			.sort_by_key(|event| (event.scheduled_start_time, event.id));
 	}
 
 	pub fn channel(&self, id: Snowflake) -> Option<&Channel> {

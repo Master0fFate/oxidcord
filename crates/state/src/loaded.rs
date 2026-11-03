@@ -5,7 +5,8 @@ use chrono::{DateTime, Utc};
 use protocol::lenient::{or_default, timestamp};
 use protocol::{
 	ApplicationCommand, ApplicationCommandType, AutoModRule, Channel, CommandIndex, Gif, GifFavorites,
-	GifTrending, InteractionContext, LenientVec, Member, Message, Permissions, PinnedMessage, Snowflake,
+	GifTrending, InteractionContext, LenientVec, Member, Message, Permissions, PinnedMessage, ScheduledEvent,
+	Snowflake,
 	Sticker, StickerPack, ThreadMember, User,
 };
 use serde::Deserialize;
@@ -105,6 +106,11 @@ pub enum Loaded {
 	GuildStickers {
 		guild_id: Snowflake,
 		stickers: Vec<Sticker>,
+	},
+	ScheduledEvents {
+		guild_id: Snowflake,
+		events: Vec<ScheduledEvent>,
+		interested: Option<Vec<Snowflake>>,
 	},
 	RecentEmoji(Vec<EmojiRef>),
 	RecentGifs(Vec<Gif>),
@@ -743,6 +749,11 @@ impl State {
 					.insert(*guild_id, stamped_stickers(*guild_id, stickers));
 				changes.loaded.insert(*guild_id);
 			}
+			Loaded::ScheduledEvents {
+				guild_id,
+				events,
+				interested,
+			} => return self.scheduled_events_loaded(*guild_id, events, interested.as_deref()),
 			Loaded::RecentEmoji(emoji) => {
 				self.lazy.expressions.recent_emoji.clone_from(emoji);
 				changes.loaded.insert(EXPRESSIONS_KEY);

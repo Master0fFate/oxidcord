@@ -11,7 +11,7 @@ use serde_json::value::RawValue;
 use crate::channel::{Channel, ChannelType, ThreadMember};
 use crate::emoji::{Emoji, PartialEmoji, Sticker};
 use crate::error::DecodeError;
-use crate::guild::{Guild, UnavailableGuild};
+use crate::guild::{Guild, ScheduledEvent, UnavailableGuild};
 use crate::lenient::{LenientVec, int_enum, or_default, timestamp};
 use crate::member::Member;
 use crate::message::{BURST_REACTION, Message, MessageUpdate};
@@ -638,6 +638,14 @@ pub struct GuildStickersUpdate {
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
+pub struct ScheduledEventUser {
+	pub guild_scheduled_event_id: Snowflake,
+	pub guild_id: Snowflake,
+	pub user_id: Snowflake,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct TypingStart {
 	pub channel_id: Snowflake,
 	pub guild_id: Option<Snowflake>,
@@ -737,6 +745,11 @@ pub enum DispatchEvent {
 	GuildRoleDelete(GuildRoleDelete),
 	GuildEmojisUpdate(GuildEmojisUpdate),
 	GuildStickersUpdate(GuildStickersUpdate),
+	ScheduledEventCreate(Box<ScheduledEvent>),
+	ScheduledEventUpdate(Box<ScheduledEvent>),
+	ScheduledEventDelete(Box<ScheduledEvent>),
+	ScheduledEventUserAdd(ScheduledEventUser),
+	ScheduledEventUserRemove(ScheduledEventUser),
 	PresenceUpdate(Box<Presence>),
 	TypingStart(Box<TypingStart>),
 	UserUpdate(Box<User>),
@@ -818,6 +831,11 @@ impl DispatchEvent {
 			"GUILD_ROLE_DELETE" => Self::GuildRoleDelete(decode(name, data)?),
 			"GUILD_EMOJIS_UPDATE" => Self::GuildEmojisUpdate(decode(name, data)?),
 			"GUILD_STICKERS_UPDATE" => Self::GuildStickersUpdate(decode(name, data)?),
+			"GUILD_SCHEDULED_EVENT_CREATE" => Self::ScheduledEventCreate(decode(name, data)?),
+			"GUILD_SCHEDULED_EVENT_UPDATE" => Self::ScheduledEventUpdate(decode(name, data)?),
+			"GUILD_SCHEDULED_EVENT_DELETE" => Self::ScheduledEventDelete(decode(name, data)?),
+			"GUILD_SCHEDULED_EVENT_USER_ADD" => Self::ScheduledEventUserAdd(decode(name, data)?),
+			"GUILD_SCHEDULED_EVENT_USER_REMOVE" => Self::ScheduledEventUserRemove(decode(name, data)?),
 			"PRESENCE_UPDATE" => Self::PresenceUpdate(decode(name, data)?),
 			"TYPING_START" => Self::TypingStart(decode(name, data)?),
 			"USER_UPDATE" => Self::UserUpdate(decode(name, data)?),

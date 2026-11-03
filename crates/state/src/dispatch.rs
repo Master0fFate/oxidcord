@@ -166,6 +166,12 @@ impl State {
 				changes
 			}
 			DispatchEvent::GuildStickersUpdate(update) => self.guild_stickers_updated(update),
+			DispatchEvent::ScheduledEventCreate(event) | DispatchEvent::ScheduledEventUpdate(event) => {
+				self.scheduled_event_upserted(event)
+			}
+			DispatchEvent::ScheduledEventDelete(event) => self.scheduled_event_deleted(event),
+			DispatchEvent::ScheduledEventUserAdd(change) => self.scheduled_event_interest(change, true),
+			DispatchEvent::ScheduledEventUserRemove(change) => self.scheduled_event_interest(change, false),
 			DispatchEvent::PresenceUpdate(presence) => {
 				let mut changes = Changes::default();
 				if let Some(user_id) = self.apply_presence(presence) {

@@ -2,6 +2,7 @@ mod changes;
 mod cosmetics;
 mod dispatch;
 mod event;
+mod events;
 mod expressions;
 mod guild;
 mod limits;
