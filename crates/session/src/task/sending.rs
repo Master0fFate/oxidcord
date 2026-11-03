@@ -189,6 +189,16 @@ impl Core {
 		self.dispatch_send(nonce, channel_id, sending.outgoing);
 	}
 
+	pub(super) fn prune_sending(&mut self) {
+		let state = self.state.read();
+		self.sending.retain(|nonce, sending| {
+			!sending.task.is_finished()
+				|| state
+					.messages(sending.channel_id)
+					.is_some_and(|cache| cache.has_pending(nonce))
+		});
+	}
+
 	pub(super) fn discard_pending(&mut self, nonce: Nonce) {
 		if let Some(sending) = self.sending.remove(&nonce) {
 			sending.task.abort();

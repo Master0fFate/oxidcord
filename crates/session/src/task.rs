@@ -688,6 +688,7 @@ impl Core {
 		self.apply_dispatch(&event);
 		if !dropped.is_empty() {
 			self.persist.submit(Job::DropChannels(dropped));
+			self.prune_sending();
 		}
 		if let Some(selected) = selected {
 			self.reselect_after_delete(selected, deleted_parent);
@@ -823,7 +824,10 @@ impl Core {
 				messages,
 				reached_start,
 				cache,
-			} => self.on_messages(channel_id, direction, messages, reached_start, cache),
+			} => {
+				self.on_messages(channel_id, direction, messages, reached_start, cache);
+				self.prune_sending();
+			}
 			Internal::LoadFinished(channel_id, page) => {
 				self.loading.remove(&(channel_id, page));
 			}
