@@ -169,6 +169,11 @@ pub struct KeybindSettings {
 	pub toggle_screen_share: Option<String>,
 	pub push_to_mute: Option<String>,
 	pub priority_push_to_talk: Option<String>,
+	pub toggle_input_mode: Option<String>,
+	pub disconnect_voice: Option<String>,
+	pub navigate_back: Option<String>,
+	pub navigate_forward: Option<String>,
+	pub toggle_streamer_mode: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

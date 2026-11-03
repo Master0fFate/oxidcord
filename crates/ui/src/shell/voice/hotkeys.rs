@@ -3,6 +3,8 @@ use std::thread;
 
 use gpui::{App, BorrowAppContext as _, Entity, Global, WeakEntity};
 use platform::hotkeys::{HotkeyEvent, Hotkeys};
+use plugin_host::Navigation;
+use session::Command;
 use store::KeybindSettings;
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -20,10 +22,15 @@ pub enum Bind {
 	ToggleScreenShare,
 	PushToMute,
 	PriorityPushToTalk,
+	ToggleInputMode,
+	DisconnectVoice,
+	NavigateBack,
+	NavigateForward,
+	ToggleStreamerMode,
 }
 
 impl Bind {
-	pub const ALL: [Bind; 7] = [
+	pub const ALL: [Bind; 12] = [
 		Bind::PushToTalk,
 		Bind::PriorityPushToTalk,
 		Bind::PushToMute,
@@ -31,6 +38,11 @@ impl Bind {
 		Bind::ToggleDeafen,
 		Bind::ToggleCamera,
 		Bind::ToggleScreenShare,
+		Bind::ToggleInputMode,
+		Bind::DisconnectVoice,
+		Bind::NavigateBack,
+		Bind::NavigateForward,
+		Bind::ToggleStreamerMode,
 	];
 
 	fn id(self) -> &'static str {
@@ -42,6 +54,11 @@ impl Bind {
 			Self::ToggleScreenShare => "toggle-screen-share",
 			Self::PushToMute => "push-to-mute",
 			Self::PriorityPushToTalk => "priority-push-to-talk",
+			Self::ToggleInputMode => "toggle-input-mode",
+			Self::DisconnectVoice => "disconnect-voice",
+			Self::NavigateBack => "navigate-back",
+			Self::NavigateForward => "navigate-forward",
+			Self::ToggleStreamerMode => "toggle-streamer-mode",
 		}
 	}
 
@@ -58,6 +75,11 @@ impl Bind {
 			Self::ToggleScreenShare => "voice-keybind-toggle-screen-share",
 			Self::PushToMute => "voice-keybind-push-to-mute",
 			Self::PriorityPushToTalk => "voice-keybind-priority-push-to-talk",
+			Self::ToggleInputMode => "voice-keybind-toggle-input-mode",
+			Self::DisconnectVoice => "voice-keybind-disconnect",
+			Self::NavigateBack => "voice-keybind-navigate-back",
+			Self::NavigateForward => "voice-keybind-navigate-forward",
+			Self::ToggleStreamerMode => "voice-keybind-toggle-streamer-mode",
 		}
 	}
 
@@ -70,6 +92,11 @@ impl Bind {
 			Self::ToggleScreenShare => keybinds.toggle_screen_share.as_deref(),
 			Self::PushToMute => keybinds.push_to_mute.as_deref(),
 			Self::PriorityPushToTalk => keybinds.priority_push_to_talk.as_deref(),
+			Self::ToggleInputMode => keybinds.toggle_input_mode.as_deref(),
+			Self::DisconnectVoice => keybinds.disconnect_voice.as_deref(),
+			Self::NavigateBack => keybinds.navigate_back.as_deref(),
+			Self::NavigateForward => keybinds.navigate_forward.as_deref(),
+			Self::ToggleStreamerMode => keybinds.toggle_streamer_mode.as_deref(),
 		}
 	}
 
@@ -82,6 +109,11 @@ impl Bind {
 			Self::ToggleScreenShare => keybinds.toggle_screen_share = binding,
 			Self::PushToMute => keybinds.push_to_mute = binding,
 			Self::PriorityPushToTalk => keybinds.priority_push_to_talk = binding,
+			Self::ToggleInputMode => keybinds.toggle_input_mode = binding,
+			Self::DisconnectVoice => keybinds.disconnect_voice = binding,
+			Self::NavigateBack => keybinds.navigate_back = binding,
+			Self::NavigateForward => keybinds.navigate_forward = binding,
+			Self::ToggleStreamerMode => keybinds.toggle_streamer_mode = binding,
 		}
 	}
 }
@@ -121,8 +153,35 @@ fn dispatch(event: HotkeyEvent, cx: &mut App) {
 		Bind::ToggleScreenShare if event.pressed && in_voice(&data, cx) => {
 			toggle_screen_share(&data, &backend, cx);
 		}
-		Bind::ToggleMute | Bind::ToggleDeafen | Bind::ToggleCamera | Bind::ToggleScreenShare => {}
+		Bind::ToggleInputMode if event.pressed => toggle_input_mode(&data, &backend, cx),
+		Bind::DisconnectVoice if event.pressed && in_voice(&data, cx) => actions::leave(&data, cx),
+		Bind::NavigateBack if event.pressed => data.read(cx).send(Command::Navigate(Navigation::Back)),
+		Bind::NavigateForward if event.pressed => {
+			data.read(cx).send(Command::Navigate(Navigation::Forward));
+		}
+		Bind::ToggleStreamerMode if event.pressed => toggle_streamer_mode(&backend, cx),
+		Bind::ToggleMute
+		| Bind::ToggleDeafen
+		| Bind::ToggleCamera
+		| Bind::ToggleScreenShare
+		| Bind::ToggleInputMode
+		| Bind::DisconnectVoice
+		| Bind::NavigateBack
+		| Bind::NavigateForward
+		| Bind::ToggleStreamerMode => {}
 	}
+}
+
+fn toggle_input_mode(data: &Entity<Data>, backend: &SettingsBackend, cx: &mut App) {
+	let push_to_talk = !data.read(cx).push_to_talk();
+	(backend.write)(&move |settings| settings.voice.push_to_talk = push_to_talk);
+	data.update(cx, |data, cx| data.set_input_mode(push_to_talk, cx));
+}
+
+fn toggle_streamer_mode(backend: &SettingsBackend, cx: &mut App) {
+	let enabled = !(backend.read)().streamer_mode.enabled;
+	(backend.write)(&move |settings| settings.streamer_mode.enabled = enabled);
+	cx.refresh_windows();
 }
 
 fn in_voice(data: &Entity<Data>, cx: &App) -> bool {
