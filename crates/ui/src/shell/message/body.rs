@@ -52,6 +52,7 @@ pub struct BodyEnv<'a> {
 	spoilers: Cell<usize>,
 	paragraphs: Cell<u64>,
 	code_blocks: Cell<u32>,
+	pub(super) relative: Option<&'a Cell<bool>>,
 }
 
 impl<'a> BodyEnv<'a> {
@@ -83,7 +84,22 @@ impl<'a> BodyEnv<'a> {
 			spoilers: Cell::new(0),
 			paragraphs: Cell::new(0),
 			code_blocks: Cell::new(0),
+			relative: None,
 		}
+	}
+
+	pub fn relative(mut self, relative: Option<&'a Cell<bool>>) -> Self {
+		self.relative = relative;
+		self
+	}
+
+	pub(super) fn timestamp_label(&self, unix: i64, style: TimestampStyle, cx: &App) -> String {
+		if style == TimestampStyle::Relative
+			&& let Some(relative) = self.relative
+		{
+			relative.set(true);
+		}
+		format::timestamp(unix, style, self.prefs.time_24h, cx)
 	}
 
 	pub fn patch(mut self, patch: Option<&'a PatchEffects>) -> Self {
@@ -514,7 +530,7 @@ fn timestamp_element(unix: i64, style: TimestampStyle, env: &BodyEnv, cx: &App) 
 		.rounded(theme.radius_sm)
 		.bg(theme.code_background)
 		.tooltip(tooltip(full))
-		.child(format::timestamp(unix, style, h24, cx))
+		.child(env.timestamp_label(unix, style, cx))
 		.into_any_element()
 }
 
@@ -762,7 +778,7 @@ impl<'a> Blocks<'a> {
 				}
 			}
 			Node::Timestamp { unix, style: kind } if style.spoiler.is_some() => {
-				let label = format::timestamp(*unix, *kind, self.env.prefs.time_24h, self.cx);
+				let label = self.env.timestamp_label(*unix, *kind, self.cx);
 				self.inline.push(&label, style);
 			}
 			Node::Timestamp { unix, style: kind } => self.inline.emoji.push(EmojiAt {

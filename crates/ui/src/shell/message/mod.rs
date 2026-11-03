@@ -8,7 +8,7 @@ mod reaction_tip;
 mod selectable;
 mod upload;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -297,6 +297,7 @@ pub struct RowEnv<'a> {
 	pub selection: &'a HashSet<Snowflake>,
 	pub flash: Option<Snowflake>,
 	pub options: ClientOptions,
+	pub relative_seen: &'a Cell<bool>,
 }
 
 pub struct Welcome {
@@ -1027,10 +1028,12 @@ fn forward_block(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 	if !source.content.is_empty() {
 		let document = markdown::parse(&source.content);
 		let body_env = BodyEnv::new(theme, env.lookup, env.dispatch, id, env.revealed, env.prefs)
+			.relative(Some(env.relative_seen))
 			.jumbo(document.is_only_emoji());
 		lines.push(render_body(&document, &body_env, cx));
 	}
 	let body_env = BodyEnv::new(theme, env.lookup, env.dispatch, id, env.revealed, env.prefs)
+		.relative(Some(env.relative_seen))
 		.posted(message.author.id, source.flags);
 	if !source.flags.contains(protocol::MessageFlags::IS_COMPONENTS_V2) {
 		lines.extend(media::attachments(
@@ -1300,6 +1303,7 @@ fn content_column(
 		env.revealed,
 		env.prefs,
 	)
+	.relative(Some(env.relative_seen))
 	.patch(effects)
 	.in_channel(message.channel_id.get());
 	if let Some(editing) = env.editing.filter(|editing| editing.message == message.id) {
@@ -1336,6 +1340,7 @@ fn content_column(
 		env.revealed,
 		env.prefs,
 	)
+	.relative(Some(env.relative_seen))
 	.patch(effects)
 	.posted(message.author.id, message.flags)
 	.in_channel(message.channel_id.get());

@@ -1179,6 +1179,7 @@ fn embed_card(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<An
 			env.revealed,
 			env.prefs,
 		)
+		.relative(env.relative)
 		.text_size(theme.font_sm);
 		column = column.child(render_body(&parse(description), &body, cx));
 	}
@@ -1324,6 +1325,7 @@ fn automod_card(embed: &Embed, env: &BodyEnv, cx: &App) -> AnyElement {
 		env.revealed,
 		env.prefs,
 	)
+	.relative(env.relative)
 	.text_size(theme.font_sm);
 	div()
 		.mt(theme.space_4)
@@ -1390,6 +1392,7 @@ fn fields(embed: &Embed, env: &BodyEnv, cx: &App) -> AnyElement {
 				env.revealed,
 				env.prefs,
 			)
+			.relative(env.relative)
 			.text_size(theme.font_sm);
 			div()
 				.flex()

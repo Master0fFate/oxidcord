@@ -1,4 +1,3 @@
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use chrono::{DateTime, Datelike, Local, TimeDelta, Timelike as _, Utc};
@@ -61,12 +60,6 @@ pub fn duration_label(seconds: f64) -> String {
 	format!("{}:{:02}", total / 60, total % 60)
 }
 
-static RELATIVE_SEEN: AtomicBool = AtomicBool::new(false);
-
-pub fn take_relative_seen() -> bool {
-	RELATIVE_SEEN.swap(false, Ordering::Relaxed)
-}
-
 pub fn until_next_minute() -> Duration {
 	Duration::from_secs(u64::from(60 - Utc::now().second()))
 }
@@ -96,7 +89,6 @@ pub fn timestamp(unix: i64, style: TimestampStyle, h24: bool, cx: &App) -> Strin
 		return unix.to_string();
 	};
 	if style == TimestampStyle::Relative {
-		RELATIVE_SEEN.store(true, Ordering::Relaxed);
 		return relative(time, cx).to_string();
 	}
 	time.with_timezone(&Local).format(pattern(style, h24)).to_string()

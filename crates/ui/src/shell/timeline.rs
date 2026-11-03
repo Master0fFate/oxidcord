@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::num::NonZeroUsize;
 use std::rc::Rc;
@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-	AppContext as _, ClickEvent, Context, Entity, EventEmitter, FontWeight, InteractiveElement as _,
+	App, AppContext as _, ClickEvent, Context, Entity, EventEmitter, FontWeight, InteractiveElement as _,
 	IntoElement, ListOffset, ParentElement as _, Pixels, Point, Render, SharedString,
 	StatefulInteractiveElement as _, Styled as _, Subscription, Task, Window, div,
 	prelude::FluentBuilder as _, px,
@@ -82,11 +82,13 @@ pub struct Timeline {
 	scroll_anchor: Option<ListOffset>,
 	own_update: bool,
 	read_anchor: Option<Snowflake>,
+	own_ack: Option<Snowflake>,
 	anchor_resolved: bool,
 	unread: Option<UnreadSince>,
 	marker_index: Option<usize>,
 	banner: bool,
 	relative_tick: Option<Task<()>>,
+	relative_seen: Rc<Cell<bool>>,
 	_subscriptions: Vec<Subscription>,
 }
 
@@ -169,11 +171,13 @@ impl Timeline {
 			scroll_anchor: None,
 			own_update: false,
 			read_anchor: None,
+			own_ack: None,
 			anchor_resolved: false,
 			unread: None,
 			marker_index: None,
 			banner: false,
 			relative_tick: None,
+			relative_seen: Rc::default(),
 			_subscriptions: vec![observe, rescale],
 		}
 	}
@@ -239,6 +243,7 @@ impl Timeline {
 		self.revealed.borrow_mut().clear();
 		self.poll_picks.borrow_mut().clear();
 		self.read_anchor = None;
+		self.own_ack = None;
 		self.anchor_resolved = false;
 		self.unread = None;
 		self.marker_index = None;
@@ -249,16 +254,27 @@ impl Timeline {
 	}
 
 	pub fn on_changes(&mut self, changes: &Changes, window: &mut Window, cx: &mut Context<Self>) {
-		if self
-			.channel
-			.is_some_and(|channel| changes.messages.contains(channel))
-		{
+		if self.affected_by(changes, cx) {
 			self.refresh(window, cx);
 		}
 		if changes.loaded.contains(state::EXPRESSIONS_KEY) {
 			cx.default_global::<GifFavoriteOverrides>().0.clear();
 			cx.notify();
 		}
+	}
+
+	fn affected_by(&self, changes: &Changes, cx: &App) -> bool {
+		let Some(channel) = self.channel else {
+			return false;
+		};
+		changes.messages.contains(channel)
+			|| self
+				.data
+				.read(cx)
+				.state()
+				.channel(channel)
+				.and_then(|channel| channel.parent_id)
+				.is_some_and(|parent| changes.messages.contains(parent))
 	}
 
 	pub fn rebuild(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -273,6 +289,12 @@ impl Timeline {
 		let (rows, detached, unread) = {
 			let data = self.data.read(cx);
 			let state = data.state();
+			if let Some(anchor) = self.read_anchor {
+				let acked = state.read_state(channel).and_then(|read| read.last_message_id);
+				if acked.is_some_and(|id| id > anchor && self.own_ack.is_none_or(|own| id > own)) {
+					self.read_anchor = None;
+				}
+			}
 			if !self.anchor_resolved && state.messages(channel).is_some() {
 				self.anchor_resolved = true;
 				self.read_anchor = state
@@ -331,24 +353,15 @@ impl Timeline {
 		let Some(channel) = self.channel else {
 			return;
 		};
-		let newest = self
-			.data
+		self.data
 			.read(cx)
-			.state()
-			.messages(channel)
-			.and_then(|cache| cache.newest_id());
-		if let Some(message_id) = newest {
-			self.data.read(cx).send(Command::AckChannel {
-				channel_id: channel,
-				message_id,
-			});
-		}
+			.send(Command::MarkChannelRead { channel_id: channel });
 		self.read_anchor = None;
 		self.refresh(window, cx);
 	}
 
 	fn schedule_relative_refresh(&mut self, cx: &mut Context<Self>) {
-		if self.relative_tick.is_some() || !format::take_relative_seen() {
+		if self.relative_tick.is_some() || !self.relative_seen.take() {
 			return;
 		}
 		self.relative_tick = Some(cx.spawn(async move |this, cx| {
@@ -372,6 +385,7 @@ impl Timeline {
 			.messages(channel)
 			.and_then(|cache| cache.newest_id());
 		if let Some(message_id) = newest {
+			self.own_ack = Some(message_id);
 			self.data.read(cx).send(Command::AckChannel {
 				channel_id: channel,
 				message_id,
@@ -1242,6 +1256,7 @@ impl Render for Timeline {
 		let guild = self.guild;
 		let access = self.access(cx);
 		let selection = self.selection.clone();
+		let relative_seen = self.relative_seen.clone();
 		let flash = self.flash;
 		let row_theme = theme.clone();
 		let jump_label = (!detached).then(|| cx.t("timeline-jump-latest"));
@@ -1279,6 +1294,7 @@ impl Render for Timeline {
 						selection: &selection,
 						flash,
 						options: *state.client_options(),
+						relative_seen: &relative_seen,
 					};
 					render_row(row, &env, cx)
 				},
