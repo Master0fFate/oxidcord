@@ -22,7 +22,12 @@ const CUSTOM_TEXT: u32 = 1;
 const CUSTOM_EMOJI_ID: u32 = 2;
 const CUSTOM_EMOJI_NAME: u32 = 3;
 const CUSTOM_EXPIRES_AT_MS: u32 = 4;
+const PRIVACY_RESTRICTED_GUILD_IDS: u32 = 3;
+const PRIVACY_DEFAULT_GUILDS_RESTRICTED: u32 = 4;
 const PRIVACY_FRIEND_SOURCE_FLAGS: u32 = 11;
+const PRIVACY_REQUEST_RESTRICTED_GUILD_IDS: u32 = 16;
+const PRIVACY_DEFAULT_REQUEST_RESTRICTED: u32 = 17;
+const PRIVACY_PROFILE_VISIBILITY: u32 = 32;
 const FOLDERS: u32 = 1;
 const POSITIONS: u32 = 2;
 const FOLDER_GUILD_IDS: u32 = 1;
@@ -139,6 +144,26 @@ pub struct SensitiveMedia {
 	pub explicit: MediaRedactions,
 	pub gore: MediaRedactions,
 	pub self_harm: MediaRedactions,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ProtoPrivacy {
+	pub friend_source_flags: Option<u32>,
+	pub restricted_guilds: Vec<Snowflake>,
+	pub default_guilds_restricted: bool,
+	pub request_restricted_guilds: Vec<Snowflake>,
+	pub default_request_restricted: bool,
+	pub profile_visibility: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrivacyChange {
+	FriendSources(u32),
+	DefaultGuildDms { restricted: bool },
+	GuildDms { guild_id: Snowflake, restricted: bool },
+	DefaultRequests { restricted: bool },
+	GuildRequests { guild_id: Snowflake, restricted: bool },
+	ProfileVisibility(u32),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -354,16 +379,37 @@ pub fn decode_status(bytes: &[u8]) -> ProtoStatus {
 	status
 }
 
-pub fn decode_friend_source_flags(bytes: &[u8]) -> Option<u32> {
-	Fields::new(bytes)
-		.filter_map(|(number, wire)| match (number, wire) {
-			(PRIVACY_FRIEND_SOURCE_FLAGS, Wire::Bytes(inner)) => Some(match wrapped(inner) {
-				Some(Wire::Varint(flags)) => u32::try_from(flags).unwrap_or_default(),
-				_ => 0,
-			}),
-			_ => None,
-		})
-		.last()
+fn wrapped_flag(inner: &[u8]) -> bool {
+	matches!(wrapped(inner), Some(Wire::Varint(value)) if value != 0)
+}
+
+pub fn decode_privacy(bytes: &[u8]) -> ProtoPrivacy {
+	let mut privacy = ProtoPrivacy::default();
+	for (number, wire) in Fields::new(bytes) {
+		match (number, wire) {
+			(PRIVACY_RESTRICTED_GUILD_IDS, wire) => push_ids(&mut privacy.restricted_guilds, wire),
+			(PRIVACY_DEFAULT_GUILDS_RESTRICTED, Wire::Varint(restricted)) => {
+				privacy.default_guilds_restricted = restricted != 0;
+			}
+			(PRIVACY_FRIEND_SOURCE_FLAGS, Wire::Bytes(inner)) => {
+				privacy.friend_source_flags = Some(match wrapped(inner) {
+					Some(Wire::Varint(flags)) => u32::try_from(flags).unwrap_or_default(),
+					_ => 0,
+				});
+			}
+			(PRIVACY_REQUEST_RESTRICTED_GUILD_IDS, wire) => {
+				push_ids(&mut privacy.request_restricted_guilds, wire);
+			}
+			(PRIVACY_DEFAULT_REQUEST_RESTRICTED, Wire::Bytes(inner)) => {
+				privacy.default_request_restricted = wrapped_flag(inner);
+			}
+			(PRIVACY_PROFILE_VISIBILITY, Wire::Varint(visibility)) => {
+				privacy.profile_visibility = u32::try_from(visibility).unwrap_or_default();
+			}
+			_ => {}
+		}
+	}
+	privacy
 }
 
 fn merge_redactions(base: MediaRedactions, bytes: &[u8]) -> MediaRedactions {
@@ -651,12 +697,93 @@ pub fn status_with_show_current_game(status: &[u8], shown: bool) -> Vec<u8> {
 	)
 }
 
-pub fn privacy_with_friend_sources(privacy: &[u8], flags: u32) -> Vec<u8> {
+fn with_varint(message: &[u8], number: u32, value: u64) -> Vec<u8> {
+	let mut out = with_field(message, number, None);
+	put_uint(&mut out, number, value);
+	out
+}
+
+fn with_listed_guild(message: &[u8], number: u32, guild_id: Snowflake, listed: bool) -> Vec<u8> {
+	let mut ids = Vec::new();
+	for (current, wire) in Fields::new(message) {
+		if current == number {
+			push_ids(&mut ids, wire);
+		}
+	}
+	ids.retain(|id| *id != guild_id);
+	if listed {
+		ids.push(guild_id);
+	}
+	let packed = (!ids.is_empty()).then(|| packed_ids(&ids));
+	with_field(message, number, packed.as_deref())
+}
+
+pub fn privacy_with(privacy: &[u8], change: PrivacyChange) -> Vec<u8> {
+	match change {
+		PrivacyChange::FriendSources(flags) => with_field(
+			privacy,
+			PRIVACY_FRIEND_SOURCE_FLAGS,
+			Some(&uint_wrapper(u64::from(flags))),
+		),
+		PrivacyChange::DefaultGuildDms { restricted } => {
+			with_varint(privacy, PRIVACY_DEFAULT_GUILDS_RESTRICTED, u64::from(restricted))
+		}
+		PrivacyChange::GuildDms { guild_id, restricted } => {
+			with_listed_guild(privacy, PRIVACY_RESTRICTED_GUILD_IDS, guild_id, restricted)
+		}
+		PrivacyChange::DefaultRequests { restricted } => with_field(
+			privacy,
+			PRIVACY_DEFAULT_REQUEST_RESTRICTED,
+			Some(&uint_wrapper(u64::from(restricted))),
+		),
+		PrivacyChange::GuildRequests { guild_id, restricted } => with_listed_guild(
+			privacy,
+			PRIVACY_REQUEST_RESTRICTED_GUILD_IDS,
+			guild_id,
+			restricted,
+		),
+		PrivacyChange::ProfileVisibility(visibility) => {
+			with_varint(privacy, PRIVACY_PROFILE_VISIBILITY, u64::from(visibility))
+		}
+	}
+}
+
+pub fn text_and_images_with_explicit(
+	text_and_images: &[u8],
+	scope: MediaScope,
+	redaction: MediaRedaction,
+) -> Vec<u8> {
+	let current = Fields::new(text_and_images)
+		.filter_map(|(number, wire)| match (number, wire) {
+			(TEXT_EXPLICIT_CONTENT, Wire::Bytes(inner)) => Some(inner),
+			_ => None,
+		})
+		.last();
+	let mut redactions = current.map_or_else(MediaRedactions::default, |inner| {
+		merge_redactions(MediaRedactions::default(), inner)
+	});
+	match scope {
+		MediaScope::Guild => redactions.guilds = redaction,
+		MediaScope::FriendDm => redactions.friend_dm = redaction,
+		MediaScope::NonFriendDm => redactions.non_friend_dm = redaction,
+	}
 	with_field(
-		privacy,
-		PRIVACY_FRIEND_SOURCE_FLAGS,
-		Some(&uint_wrapper(u64::from(flags))),
+		text_and_images,
+		TEXT_EXPLICIT_CONTENT,
+		Some(&encode_redactions(&redactions)),
 	)
+}
+
+pub fn merge_fields(base: &[u8], update: &[u8]) -> Vec<u8> {
+	let replaced: Vec<u32> = Fields::new(update).map(|(number, _)| number).collect();
+	let mut out = Vec::with_capacity(base.len() + update.len());
+	for (number, wire) in Fields::new(base).filter(|(number, _)| !replaced.contains(number)) {
+		put_wire(&mut out, number, wire);
+	}
+	for (number, wire) in Fields::new(update) {
+		put_wire(&mut out, number, wire);
+	}
+	out
 }
 
 fn encode_folder(folder: &ProtoGuildFolder) -> Vec<u8> {

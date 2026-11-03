@@ -727,7 +727,6 @@ group-icon = Change Icon
 group-transfer = Make Owner
 group-members-title = Members — { $count }
 
-settings-note-privacy = Privacy & Safety settings are managed in Discord's web app.
 settings-note-clips = Clips are not supported in Oxidcord.
 
 account-web-note = Change these in Discord's web app.
@@ -1005,3 +1004,25 @@ connections-remove = Disconnect
 connections-confirm = Confirm
 connections-add = Add account
 connections-add-note = New accounts are linked in the Discord web app.
+
+privacy-messages = Direct messages
+privacy-dms-default = New server DMs
+privacy-dms-default-note = Allow direct messages from members of servers you join.
+privacy-requests-default = New server requests
+privacy-requests-default-note = Filter messages from members of servers you join into message requests.
+privacy-dms-short = DMs
+privacy-requests-short = Requests
+privacy-servers = Servers
+privacy-media = Sensitive media
+privacy-media-guilds = In servers
+privacy-media-friends = Friend DMs
+privacy-media-others = Other DMs
+privacy-media-show = Show
+privacy-media-blur = Blur
+privacy-media-block = Block
+privacy-profile = Profile
+privacy-visibility = Profile visibility
+privacy-visibility-note = Who can open your full profile.
+privacy-visibility-friends = Friends only
+privacy-visibility-small = Friends, small servers
+privacy-visibility-all = Friends, all servers

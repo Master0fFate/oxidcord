@@ -2,8 +2,7 @@ use std::collections::BTreeMap;
 
 use protocol::{
 	Channel, ChannelType, MediaRedaction, MediaRedactions, Presence, ProtoGuildFolder, ProtoGuildFolders,
-	ProtoSettings, RelationshipKind, SensitiveMedia, Snowflake, User, encode_sensitive_media,
-	encode_settings,
+	ProtoSettings, RelationshipKind, SensitiveMedia, Snowflake, User, encode_settings,
 };
 use rand::Rng;
 use serde_json::{Value, json};
@@ -27,7 +26,7 @@ const UNSET_REDACTIONS: MediaRedactions = MediaRedactions {
 	friend_dm: MediaRedaction::Unset,
 	non_friend_dm: MediaRedaction::Unset,
 };
-const MOCK_SENSITIVE_MEDIA: SensitiveMedia = SensitiveMedia {
+pub const MOCK_SENSITIVE_MEDIA: SensitiveMedia = SensitiveMedia {
 	explicit: MediaRedactions {
 		guilds: MediaRedaction::Blur,
 		..UNSET_REDACTIONS
@@ -180,7 +179,7 @@ pub fn user_settings_proto(fixtures: &Fixtures, store: &Store) -> String {
 		.collect();
 	encode_settings(&ProtoSettings {
 		status_bytes: Some(store.proto_status.clone()),
-		text_and_images_bytes: Some(encode_sensitive_media(&MOCK_SENSITIVE_MEDIA)),
+		text_and_images_bytes: Some(store.proto_text_and_images.clone()),
 		privacy_bytes: Some(store.proto_privacy.clone()),
 		guild_folders: Some(ProtoGuildFolders {
 			folders: vec![ProtoGuildFolder {

@@ -6,9 +6,9 @@ use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
 use protocol::{
 	AutoModRule, Channel, Emoji, FRIEND_SOURCE_MUTUAL_FRIENDS, FRIEND_SOURCE_MUTUAL_GUILDS, GuildProperties,
-	Member, Presence, ProtoCustomStatus, ProtoFrecencySettings, ProtoStatus, ReadState, Relationship, Role,
-	ScheduledEvent, Snowflake, SoundboardSound, StageInstance, StatusKind, User, UserGuildSettings,
-	encode_status, privacy_with_friend_sources,
+	Member, Presence, PrivacyChange, ProtoCustomStatus, ProtoFrecencySettings, ProtoStatus, ReadState,
+	Relationship, Role, ScheduledEvent, Snowflake, SoundboardSound, StageInstance, StatusKind, User,
+	UserGuildSettings, encode_sensitive_media, encode_status, privacy_with,
 };
 use serde_json::Value;
 use tokio::sync::{broadcast, watch};
@@ -17,6 +17,7 @@ use crate::config::MockConfig;
 use crate::fixtures::{Fixtures, GuildOrigin};
 use crate::hub::Hub;
 use crate::ids::snowflake_at;
+use crate::ready::MOCK_SENSITIVE_MEDIA;
 use crate::scenario::VoiceJoin;
 use crate::stage::Seat;
 use crate::uploads::SendFault;
@@ -25,6 +26,23 @@ use crate::voice::Signal;
 const WINDOW_SECONDS: f64 = 2.0;
 const BUCKET_LIMIT: u32 = 5;
 const MOCK_STATUS_MINUTES: i64 = 30;
+
+fn seed_privacy(fixtures: &Fixtures) -> Vec<u8> {
+	let friends = privacy_with(
+		&[],
+		PrivacyChange::FriendSources(FRIEND_SOURCE_MUTUAL_FRIENDS | FRIEND_SOURCE_MUTUAL_GUILDS),
+	);
+	match fixtures.guilds.get(1) {
+		Some(guild) => privacy_with(
+			&friends,
+			PrivacyChange::GuildDms {
+				guild_id: Snowflake(guild.id),
+				restricted: true,
+			},
+		),
+		None => friends,
+	}
+}
 
 fn seed_connections() -> Vec<Value> {
 	[
@@ -105,6 +123,7 @@ pub struct Store {
 	pub frecency: ProtoFrecencySettings,
 	pub proto_status: Vec<u8>,
 	pub proto_privacy: Vec<u8>,
+	pub proto_text_and_images: Vec<u8>,
 	pub uploads: HashMap<String, u64>,
 	pub nonces: HashMap<(u64, String), u64>,
 	pub stage_instances: HashMap<u64, StageInstance>,
@@ -210,10 +229,8 @@ impl Store {
 			thread_invitees: HashMap::new(),
 			slowmode: HashMap::new(),
 			proto_status: seed_status(),
-			proto_privacy: privacy_with_friend_sources(
-				&[],
-				FRIEND_SOURCE_MUTUAL_FRIENDS | FRIEND_SOURCE_MUTUAL_GUILDS,
-			),
+			proto_privacy: seed_privacy(fixtures),
+			proto_text_and_images: encode_sensitive_media(&MOCK_SENSITIVE_MEDIA),
 			frecency: ProtoFrecencySettings {
 				data_version: 1,
 				..ProtoFrecencySettings::default()

@@ -588,7 +588,7 @@ impl SettingsWindow {
 			Page::Accessibility => self.account_pages.accessibility.clone().into_any_element(),
 			Page::FriendRequests => self.account_pages.friend_requests.clone().into_any_element(),
 			Page::Devices => self.account_pages.devices.clone().into_any_element(),
-			Page::Privacy => note_page(Note::Privacy, cx),
+			Page::Privacy => self.account_pages.privacy.clone().into_any_element(),
 			Page::Connections => self.account_pages.connections.clone().into_any_element(),
 			Page::Clips => note_page(Note::Clips, cx),
 			Page::VoiceVideo => div().children(self.voice_video.clone()).into_any_element(),

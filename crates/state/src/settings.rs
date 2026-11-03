@@ -2,10 +2,11 @@ use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
 use protocol::{
-	AttachmentFlags, FRIEND_SOURCES_ALL, MediaRedaction, MediaScope, ProtoCustomStatus, ProtoGuildFolder,
-	ProtoGuildFolders, ProtoSettings, RelationshipKind, SensitiveMedia, Snowflake, UserGuildSettings,
-	decode_friend_source_flags, decode_settings, decode_status, encode_settings, merge_sensitive_media,
-	privacy_with_friend_sources, status_with_custom, status_with_show_current_game, status_with_value,
+	AttachmentFlags, FRIEND_SOURCES_ALL, MediaRedaction, MediaRedactions, MediaScope, PrivacyChange,
+	ProtoCustomStatus, ProtoGuildFolder, ProtoGuildFolders, ProtoPrivacy, ProtoSettings, RelationshipKind,
+	SensitiveMedia, Snowflake, UserGuildSettings, decode_privacy, decode_settings, decode_status,
+	encode_settings, merge_fields, merge_sensitive_media, privacy_with, status_with_custom,
+	status_with_show_current_game, status_with_value, text_and_images_with_explicit,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -103,7 +104,15 @@ impl State {
 	}
 
 	pub fn friend_source_flags(&self) -> u32 {
-		self.friend_source_flags.unwrap_or(FRIEND_SOURCES_ALL)
+		self.privacy.friend_source_flags.unwrap_or(FRIEND_SOURCES_ALL)
+	}
+
+	pub fn privacy(&self) -> &ProtoPrivacy {
+		&self.privacy
+	}
+
+	pub fn explicit_media(&self) -> MediaRedactions {
+		self.sensitive_media.explicit
 	}
 
 	pub fn custom_status_patch(&mut self, custom: Option<&ProtoCustomStatus>) -> String {
@@ -116,11 +125,21 @@ impl State {
 		self.status_patch(status)
 	}
 
-	pub fn friend_sources_patch(&mut self, flags: u32) -> String {
-		self.proto_privacy = privacy_with_friend_sources(&self.proto_privacy, flags);
-		self.friend_source_flags = decode_friend_source_flags(&self.proto_privacy);
+	pub fn privacy_patch(&mut self, change: PrivacyChange) -> String {
+		self.proto_privacy = privacy_with(&self.proto_privacy, change);
+		self.privacy = decode_privacy(&self.proto_privacy);
 		encode_settings(&ProtoSettings {
 			privacy_bytes: Some(self.proto_privacy.clone()),
+			..ProtoSettings::default()
+		})
+	}
+
+	pub fn explicit_media_patch(&mut self, scope: MediaScope, redaction: MediaRedaction) -> String {
+		self.proto_text_and_images =
+			text_and_images_with_explicit(&self.proto_text_and_images, scope, redaction);
+		self.sensitive_media = merge_sensitive_media(self.sensitive_media, &self.proto_text_and_images);
+		encode_settings(&ProtoSettings {
+			text_and_images_bytes: Some(self.proto_text_and_images.clone()),
 			..ProtoSettings::default()
 		})
 	}
@@ -221,6 +240,11 @@ impl State {
 	}
 
 	fn replace_sensitive_media(&mut self, bytes: &[u8], partial: bool) -> Changes {
+		self.proto_text_and_images = if partial {
+			merge_fields(&self.proto_text_and_images, bytes)
+		} else {
+			bytes.to_vec()
+		};
 		let base = if partial {
 			self.sensitive_media
 		} else {
@@ -236,10 +260,10 @@ impl State {
 	}
 
 	fn replace_privacy_settings(&mut self, bytes: Vec<u8>) -> Changes {
-		let flags = decode_friend_source_flags(&bytes);
-		let changed = flags != self.friend_source_flags;
+		let privacy = decode_privacy(&bytes);
+		let changed = privacy != self.privacy;
 		self.proto_privacy = bytes;
-		self.friend_source_flags = flags;
+		self.privacy = privacy;
 		Changes {
 			user_settings: changed,
 			..Changes::default()

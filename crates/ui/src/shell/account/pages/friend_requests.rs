@@ -2,7 +2,9 @@ use gpui::{
 	Context, Entity, IntoElement, ParentElement as _, Render, Styled as _, Subscription, Window, div,
 };
 use gpui_component::switch::Switch;
-use protocol::{FRIEND_SOURCE_MUTUAL_FRIENDS, FRIEND_SOURCE_MUTUAL_GUILDS, FRIEND_SOURCE_NO_RELATION};
+use protocol::{
+	FRIEND_SOURCE_MUTUAL_FRIENDS, FRIEND_SOURCE_MUTUAL_GUILDS, FRIEND_SOURCE_NO_RELATION, PrivacyChange,
+};
 use session::Command;
 
 use super::widgets::{heading, row};
@@ -85,7 +87,7 @@ impl FriendRequestsPage {
 	fn save(&self, flags: SourceFlags, cx: &Context<Self>) {
 		self.data
 			.read(cx)
-			.send(Command::SetFriendSources(flags.to_bits()));
+			.send(Command::SetPrivacy(PrivacyChange::FriendSources(flags.to_bits())));
 	}
 }
 

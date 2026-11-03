@@ -12,9 +12,9 @@ use plugin_host::{Navigation, Permission, PickedPath, ViewContext};
 use protocol::{
 	ApplicationCommand, AutoModRule, ChannelPosition, ChannelType, ComponentType,
 	DefaultMessageNotifications, DefaultReaction, ForumLayout, ForumSortOrder, Gif, InteractionOption,
-	MemberVerification, MessageFlags, Nonce, NotificationLevel, PermissionOverwriteKind, Permissions,
-	PollCreate, Role, RoleColors, ScheduledEventKind, ScheduledEventStatus, Snowflake, StatusKind,
-	SystemChannelFlags, VideoQualityMode,
+	MediaRedaction, MediaScope, MemberVerification, MessageFlags, Nonce, NotificationLevel,
+	PermissionOverwriteKind, Permissions, PollCreate, PrivacyChange, Role, RoleColors, ScheduledEventKind,
+	ScheduledEventStatus, Snowflake, StatusKind, SystemChannelFlags, VideoQualityMode,
 };
 use rest::UploadFile;
 use rest::api::SearchQuery;
@@ -876,7 +876,11 @@ pub enum Command {
 		message_id: Snowflake,
 	},
 	SetShowCurrentGame(bool),
-	SetFriendSources(u32),
+	SetPrivacy(PrivacyChange),
+	SetExplicitMedia {
+		scope: MediaScope,
+		redaction: MediaRedaction,
+	},
 	SetGuildLayout(Vec<state::RailEntry>),
 	UpdateGuildSettingsRaw {
 		guild_id: Option<Snowflake>,

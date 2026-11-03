@@ -8,6 +8,7 @@ mod friend_requests;
 mod language;
 mod my_account;
 mod notifications;
+mod privacy;
 mod profiles;
 mod streamer;
 mod widgets;
@@ -27,6 +28,7 @@ pub use self::friend_requests::FriendRequestsPage;
 pub use self::language::LanguagePage;
 pub use self::my_account::MyAccountPage;
 pub use self::notifications::NotificationsPage;
+pub use self::privacy::PrivacyPage;
 pub use self::profiles::ProfilesPage;
 pub use self::streamer::streamer_page;
 use crate::data::Data;
@@ -51,21 +53,18 @@ pub enum PageEvent {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Note {
-	Privacy,
 	Clips,
 }
 
 impl Note {
 	fn key(self) -> &'static str {
 		match self {
-			Self::Privacy => "settings-note-privacy",
 			Self::Clips => "settings-note-clips",
 		}
 	}
 
 	fn icon(self) -> IconKind {
 		match self {
-			Self::Privacy => IconKind::Shield,
 			Self::Clips => IconKind::Clips,
 		}
 	}
@@ -84,6 +83,7 @@ pub struct AccountPages {
 	pub advanced: Entity<AdvancedPage>,
 	pub friend_requests: Entity<FriendRequestsPage>,
 	pub connections: Entity<ConnectionsPage>,
+	pub privacy: Entity<PrivacyPage>,
 	pub devices: Entity<DevicesPage>,
 	pub accessibility: Entity<AccessibilityPage>,
 }
@@ -100,6 +100,7 @@ impl AccountPages {
 			my_account: cx.new(|cx| MyAccountPage::new(data.clone(), cx)),
 			friend_requests: cx.new(|cx| FriendRequestsPage::new(data.clone(), cx)),
 			connections: cx.new(|cx| ConnectionsPage::new(data.clone(), cx)),
+			privacy: cx.new(|cx| PrivacyPage::new(data.clone(), cx)),
 			devices: cx.new(|cx| DevicesPage::new(data.clone(), cx)),
 			profiles: cx.new(|cx| ProfilesPage::new(data, window, cx)),
 			language: cx.new(|_| LanguagePage::new(backend.clone())),

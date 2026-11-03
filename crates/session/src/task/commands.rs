@@ -313,7 +313,8 @@ impl Core {
 			| Command::MarkChannelRead { .. }
 			| Command::MarkUnread { .. }
 			| Command::SetShowCurrentGame(_)
-			| Command::SetFriendSources(_)
+			| Command::SetPrivacy(_)
+			| Command::SetExplicitMedia { .. }
 			| Command::SetGuildLayout(_)
 			| Command::CreateGuild { .. }
 			| Command::LoadSessions
@@ -910,9 +911,13 @@ impl Core {
 				let patch = self.state.write().show_current_game_patch(shown);
 				self.patch_settings_proto(patch, "activity sharing");
 			}
-			Command::SetFriendSources(flags) => {
-				let patch = self.state.write().friend_sources_patch(flags);
-				self.patch_settings_proto(patch, "friend requests");
+			Command::SetPrivacy(change) => {
+				let patch = self.state.write().privacy_patch(change);
+				self.patch_settings_proto(patch, "privacy");
+			}
+			Command::SetExplicitMedia { scope, redaction } => {
+				let patch = self.state.write().explicit_media_patch(scope, redaction);
+				self.patch_settings_proto(patch, "sensitive media");
 			}
 			Command::SetGuildLayout(layout) => {
 				self.set_guild_layout(&layout);
