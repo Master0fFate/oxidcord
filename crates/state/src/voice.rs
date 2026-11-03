@@ -1,7 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Utc};
-use protocol::{LenientVec, Snowflake, StageInstance, StreamDelete, StreamState, VoiceState};
+use protocol::{
+	Channel, ChannelInfo, LenientVec, Permissions, Snowflake, StageInstance, StreamDelete, StreamState,
+	VoiceChannelStartTimeUpdate, VoiceChannelStatusUpdate, VoiceState,
+};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -446,5 +449,60 @@ fn stream_changes(voice_changed: bool) -> Changes {
 		streams: true,
 		voice_session: voice_changed,
 		..Changes::default()
+	}
+}
+
+impl State {
+	pub(crate) fn voice_channel_status(&mut self, update: &VoiceChannelStatusUpdate) -> Changes {
+		self.edit_voice_channel(update.guild_id, update.id, |channel| {
+			channel.status.clone_from(&update.status);
+		})
+	}
+
+	pub(crate) fn voice_channel_start_time(&mut self, update: &VoiceChannelStartTimeUpdate) -> Changes {
+		self.edit_voice_channel(update.guild_id, update.id, |channel| {
+			channel.voice_start_time = update.voice_start_time;
+		})
+	}
+
+	pub(crate) fn channel_info(&mut self, info: &ChannelInfo) -> Changes {
+		let mut changes = Changes::default();
+		for entry in info.channels.iter() {
+			changes.merge(self.edit_voice_channel(info.guild_id, entry.id, |channel| {
+				channel.status.clone_from(&entry.status);
+				channel.voice_start_time = entry.voice_start_time;
+			}));
+		}
+		changes
+	}
+
+	fn edit_voice_channel(
+		&mut self,
+		guild_id: Snowflake,
+		channel_id: Snowflake,
+		edit: impl FnOnce(&mut Channel),
+	) -> Changes {
+		let mut changes = Changes::default();
+		if let Some(channel) = self
+			.guilds
+			.get_mut(&guild_id)
+			.and_then(|guild| guild.channel_mut(channel_id))
+		{
+			edit(channel);
+			changes.channel_lists.insert(guild_id);
+			changes.voice.insert(guild_id);
+		}
+		changes
+	}
+}
+
+impl State {
+	pub fn can_set_voice_status(&self, channel_id: Snowflake) -> bool {
+		let permissions = self.my_permissions(channel_id);
+		let connected = self.voice.as_ref().is_some_and(|session| {
+			session.channel_id == channel_id && session.status == VoiceStatus::Connected
+		});
+		permissions.contains(Permissions::SET_VOICE_CHANNEL_STATUS)
+			&& (connected || permissions.contains(Permissions::MANAGE_CHANNELS))
 	}
 }

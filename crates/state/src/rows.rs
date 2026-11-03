@@ -364,6 +364,7 @@ impl State {
 			locked: !viewable,
 			member: channel.member.is_some(),
 			user_limit,
+			voice_status: channel.voice_status().map(str::to_owned),
 			join_block,
 			voice_members,
 		}

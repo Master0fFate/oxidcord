@@ -104,6 +104,9 @@ impl State {
 				self.channels_last_message(update.guild_id, &update.channel_unread_updates)
 			}
 			DispatchEvent::PassiveUpdateV2(update) => self.passive_update(update),
+			DispatchEvent::VoiceChannelStatusUpdate(update) => self.voice_channel_status(update),
+			DispatchEvent::VoiceChannelStartTimeUpdate(update) => self.voice_channel_start_time(update),
+			DispatchEvent::ChannelInfo(info) => self.channel_info(info),
 			DispatchEvent::ChannelRecipientAdd(change) => self.recipient_added(change),
 			DispatchEvent::ChannelRecipientRemove(change) => self.recipient_removed(change),
 			DispatchEvent::ThreadDelete(delete) => self.thread_delete(delete),
@@ -457,6 +460,12 @@ impl State {
 			stored.member = guild
 				.channel(stored.id)
 				.and_then(|existing| existing.member.clone());
+		}
+		if let Some(existing) = guild.channel(stored.id) {
+			if stored.status.is_none() {
+				stored.status.clone_from(&existing.status);
+			}
+			stored.voice_start_time = stored.voice_start_time.or(existing.voice_start_time);
 		}
 		self.channel_guilds.insert(stored.id, Some(guild_id));
 		guild.insert_channel(stored);

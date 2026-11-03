@@ -9,6 +9,7 @@ mod quality;
 mod room;
 mod settings_page;
 mod stage;
+pub mod status;
 mod user_menu;
 mod video_sink;
 mod widgets;

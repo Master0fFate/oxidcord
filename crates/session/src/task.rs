@@ -1282,6 +1282,9 @@ impl Core {
 		}
 		if self.selected_guild != guild_id {
 			self.schedule_decorations();
+			if let Some(guild_id) = guild_id {
+				self.request_channel_info(guild_id);
+			}
 		}
 		self.selected_guild = guild_id;
 		let (has_messages, stale, has_draft) = {
@@ -1634,12 +1637,19 @@ impl Core {
 		}
 	}
 
+	fn request_channel_info(&self, guild_id: Snowflake) {
+		if let Err(error) = self.gateway.request_channel_info(guild_id) {
+			tracing::warn!(%error, "channel info request was not sent");
+		}
+	}
+
 	fn subscribe_selected(&self) {
 		let selected = self.state.read().selected();
 		if let Some(selected) = selected
 			&& let Some(guild_id) = selected.guild_id
 		{
 			self.subscribe(guild_id, Some(selected.channel_id));
+			self.request_channel_info(guild_id);
 		}
 	}
 

@@ -284,6 +284,11 @@ impl Connection {
 					hub.dispatch_to(session, "GUILD_MEMBERS_CHUNK", &chunk);
 				}
 			}
+			Opcode::RequestChannelInfo => {
+				if let Some(info) = self.shared.channel_info(data) {
+					hub.dispatch_to(session, "CHANNEL_INFO", &info);
+				}
+			}
 			Opcode::PresenceUpdate => self.broadcast_presence(data),
 			Opcode::VoiceStateUpdate => self.broadcast_voice_state(session, data),
 			Opcode::StreamCreate => self.stream_create(session, data),

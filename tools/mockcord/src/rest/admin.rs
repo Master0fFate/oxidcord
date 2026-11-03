@@ -388,6 +388,15 @@ pub async fn delete_channel(State(shared): Mock, Path(id): Path<u64>) -> ApiResu
 	shared.delete_channel(id).map(Json)
 }
 
+pub async fn set_voice_status(
+	State(shared): Mock,
+	Path(id): Path<u64>,
+	Json(body): Json<Value>,
+) -> NoContent {
+	shared.set_voice_status(id, &body)?;
+	Ok(StatusCode::NO_CONTENT)
+}
+
 pub async fn put_overwrite(
 	State(shared): Mock,
 	Path((id, target_id)): Path<(u64, u64)>,

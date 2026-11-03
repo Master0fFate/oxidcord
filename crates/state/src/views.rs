@@ -37,6 +37,7 @@ pub struct ChannelRow {
 	pub locked: bool,
 	pub member: bool,
 	pub user_limit: u32,
+	pub voice_status: Option<String>,
 	pub join_block: Option<JoinBlock>,
 	pub voice_members: Vec<Snowflake>,
 }

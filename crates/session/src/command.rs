@@ -542,6 +542,10 @@ pub enum Command {
 		position: Option<i64>,
 		parent_id: Option<Snowflake>,
 	},
+	SetVoiceStatus {
+		channel_id: Snowflake,
+		status: Option<String>,
+	},
 	DeleteChannel {
 		channel_id: Snowflake,
 	},

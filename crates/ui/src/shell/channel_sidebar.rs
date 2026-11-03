@@ -55,6 +55,7 @@ struct ChannelItem {
 	topic: Option<SharedString>,
 	user_limit: u32,
 	occupants: u32,
+	voice_status: Option<SharedString>,
 	join_block: Option<JoinBlock>,
 	badges: Vec<PluginBadge>,
 }
@@ -523,12 +524,25 @@ impl ChannelSidebar {
 				.child(topic)
 		});
 		let spine = thread.then(|| thread_spine(channel.last_thread, theme));
+		let status_line = channel.voice_status.clone().map(|status| {
+			div()
+				.min_w_0()
+				.truncate()
+				.ml(theme.space_32 - theme.space_4)
+				.mr(theme.space_8)
+				.px(theme.space_8)
+				.pb(theme.space_4)
+				.text_size(theme.font_tiny)
+				.text_color(theme.text_muted)
+				.child(status)
+		});
 		div()
 			.relative()
 			.flex()
 			.flex_col()
 			.children(spine)
 			.child(row)
+			.children(status_line)
 			.children(topic)
 			.children(participants)
 			.into_any_element()
@@ -594,6 +608,7 @@ fn channel_item(row: &ChannelRow, guild: Snowflake, state: &state::State) -> Cha
 		muted: row.muted,
 		mentions: row.mentions,
 		user_limit: row.user_limit,
+		voice_status: row.voice_status.clone().map(Into::into),
 		occupants: u32::try_from(row.voice_members.len()).unwrap_or(u32::MAX),
 		join_block: row.join_block,
 		voice: if voice_channel {

@@ -993,6 +993,15 @@ impl Core {
 					});
 				}
 			}
+			Command::SetVoiceStatus { channel_id, status } => {
+				if self.state.read().can_set_voice_status(channel_id) {
+					self.spawn_action("set voice status", move |rest| async move {
+						rest.set_voice_status(channel_id, status.as_deref()).await
+					});
+				} else {
+					self.reject("You can't set the voice status");
+				}
+			}
 			Command::DeleteChannel { channel_id } => {
 				if self
 					.channel_guild_allows(channel_id, Permissions::MANAGE_CHANNELS, "Manage Channels")

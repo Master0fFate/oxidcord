@@ -16,6 +16,8 @@ use crate::ready::is_thread;
 use crate::state::{Shared, Store};
 
 const AUDIT_PAGE: usize = 50;
+const MAX_VOICE_STATUS: usize = 500;
+const VOICE_SESSION_AGE_SECONDS: i64 = 600;
 const SEED_AUDIT_ENTRIES: i64 = 3;
 const MINUTE_MS: i64 = 60_000;
 const ACTION_CHANNEL_CREATE: i64 = 10;
@@ -654,6 +656,69 @@ impl Shared {
 		self.hub
 			.broadcast(if thread { "THREAD_UPDATE" } else { "CHANNEL_UPDATE" }, &value);
 		Ok(value)
+	}
+
+	pub fn set_voice_status(&self, channel_id: u64, body: &Value) -> Result<(), ApiError> {
+		let status = body["status"].as_str().filter(|status| !status.is_empty());
+		if status.is_some_and(|status| status.chars().count() > MAX_VOICE_STATUS) {
+			return Err(ApiError::invalid_body("status is too long"));
+		}
+		let mut store = self.store.lock();
+		let channel = store
+			.channels
+			.get_mut(&channel_id)
+			.filter(|channel| channel.kind == ChannelType::GuildVoice)
+			.ok_or_else(ApiError::unknown_channel)?;
+		channel.status = status.map(str::to_owned);
+		let guild_id = channel.guild_id.ok_or_else(ApiError::unknown_channel)?;
+		drop(store);
+		self.hub.broadcast(
+			"VOICE_CHANNEL_STATUS_UPDATE",
+			&json!({
+				"id": channel_id.to_string(),
+				"guild_id": guild_id.to_string(),
+				"status": status,
+			}),
+		);
+		Ok(())
+	}
+
+	pub fn channel_info(&self, data: &Value) -> Option<Value> {
+		let guild_id = parse_id(&data["guild_id"])?;
+		let guild = self.fixtures.guild(guild_id)?;
+		let wants = |field: &str| {
+			data["fields"]
+				.as_array()
+				.is_some_and(|fields| fields.iter().any(|name| name.as_str() == Some(field)))
+		};
+		let started = Utc::now().timestamp() - VOICE_SESSION_AGE_SECONDS;
+		let store = self.store.lock();
+		let mut voice: Vec<&Channel> = store
+			.channels
+			.values()
+			.filter(|channel| {
+				channel.guild_id == Some(Snowflake(guild_id)) && channel.kind == ChannelType::GuildVoice
+			})
+			.collect();
+		voice.sort_by_key(|channel| channel.id);
+		let channels: Vec<Value> = voice
+			.into_iter()
+			.map(|channel| {
+				let occupied = guild
+					.voice_states
+					.iter()
+					.any(|state| state.channel_id == Some(channel.id));
+				let mut entry = json!({ "id": channel.id.to_string() });
+				if wants("status") {
+					entry["status"] = json!(channel.status);
+				}
+				if wants("voice_start_time") {
+					entry["voice_start_time"] = json!(occupied.then_some(started));
+				}
+				entry
+			})
+			.collect();
+		Some(json!({ "guild_id": guild_id.to_string(), "channels": channels }))
 	}
 
 	pub fn delete_channel(&self, channel_id: u64) -> Result<Value, ApiError> {

@@ -12,7 +12,7 @@ use crate::channel::{Channel, ChannelType, ThreadMember};
 use crate::emoji::{Emoji, PartialEmoji, Sticker};
 use crate::error::DecodeError;
 use crate::guild::{Guild, ScheduledEvent, UnavailableGuild};
-use crate::lenient::{LenientVec, int_enum, or_default, timestamp};
+use crate::lenient::{LenientVec, int_enum, or_default, timestamp, timestamp_or_seconds};
 use crate::member::Member;
 use crate::message::{BURST_REACTION, Message, MessageUpdate};
 use crate::presence::Presence;
@@ -47,6 +47,7 @@ int_enum! {
 		GuildSubscriptions = 14,
 		GuildSubscriptionsBulk = 37,
 		QosHeartbeat = 40,
+		RequestChannelInfo = 43,
 	}
 }
 
@@ -544,6 +545,39 @@ pub struct ChannelUnreadUpdate {
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
+pub struct VoiceChannelStatusUpdate {
+	pub id: Snowflake,
+	pub guild_id: Snowflake,
+	pub status: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct VoiceChannelStartTimeUpdate {
+	pub id: Snowflake,
+	pub guild_id: Snowflake,
+	#[serde(deserialize_with = "timestamp_or_seconds")]
+	pub voice_start_time: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ChannelInfoEntry {
+	pub id: Snowflake,
+	pub status: Option<String>,
+	#[serde(deserialize_with = "timestamp_or_seconds")]
+	pub voice_start_time: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ChannelInfo {
+	pub guild_id: Snowflake,
+	pub channels: LenientVec<ChannelInfoEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ThreadDelete {
 	pub id: Snowflake,
 	pub guild_id: Option<Snowflake>,
@@ -723,6 +757,9 @@ pub enum DispatchEvent {
 	ChannelPinsUpdate(ChannelPinsUpdate),
 	ChannelPinsAck(ChannelPinsAck),
 	ChannelUnreadUpdate(ChannelUnreadUpdate),
+	VoiceChannelStatusUpdate(VoiceChannelStatusUpdate),
+	VoiceChannelStartTimeUpdate(VoiceChannelStartTimeUpdate),
+	ChannelInfo(ChannelInfo),
 	PassiveUpdateV2(Box<PassiveUpdate>),
 	ChannelRecipientAdd(Box<ChannelRecipientChange>),
 	ChannelRecipientRemove(Box<ChannelRecipientChange>),
@@ -812,6 +849,9 @@ impl DispatchEvent {
 			"CHANNEL_PINS_UPDATE" => Self::ChannelPinsUpdate(decode(name, data)?),
 			"CHANNEL_PINS_ACK" => Self::ChannelPinsAck(decode(name, data)?),
 			"CHANNEL_UNREAD_UPDATE" => Self::ChannelUnreadUpdate(decode(name, data)?),
+			"VOICE_CHANNEL_STATUS_UPDATE" => Self::VoiceChannelStatusUpdate(decode(name, data)?),
+			"VOICE_CHANNEL_START_TIME_UPDATE" => Self::VoiceChannelStartTimeUpdate(decode(name, data)?),
+			"CHANNEL_INFO" => Self::ChannelInfo(decode(name, data)?),
 			"PASSIVE_UPDATE_V2" => Self::PassiveUpdateV2(decode(name, data)?),
 			"CHANNEL_RECIPIENT_ADD" => Self::ChannelRecipientAdd(decode(name, data)?),
 			"CHANNEL_RECIPIENT_REMOVE" => Self::ChannelRecipientRemove(decode(name, data)?),

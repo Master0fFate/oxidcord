@@ -303,7 +303,19 @@ pub fn bits<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error>
 	deserializer.deserialize_any(BitsVisitor)
 }
 
-struct TimestampVisitor;
+struct TimestampVisitor {
+	unix_seconds: bool,
+}
+
+impl TimestampVisitor {
+	fn seconds_to_time(&self, seconds: i64) -> Option<DateTime<Utc>> {
+		if self.unix_seconds {
+			DateTime::from_timestamp(seconds, 0)
+		} else {
+			None
+		}
+	}
+}
 
 impl<'de> Visitor<'de> for TimestampVisitor {
 	type Value = Option<DateTime<Utc>>;
@@ -334,12 +346,14 @@ impl<'de> Visitor<'de> for TimestampVisitor {
 		Ok(None)
 	}
 
-	fn visit_i64<E: de::Error>(self, _: i64) -> Result<Self::Value, E> {
-		Ok(None)
+	fn visit_i64<E: de::Error>(self, value: i64) -> Result<Self::Value, E> {
+		Ok(self.seconds_to_time(value))
 	}
 
-	fn visit_u64<E: de::Error>(self, _: u64) -> Result<Self::Value, E> {
-		Ok(None)
+	fn visit_u64<E: de::Error>(self, value: u64) -> Result<Self::Value, E> {
+		Ok(i64::try_from(value)
+			.ok()
+			.and_then(|seconds| self.seconds_to_time(seconds)))
 	}
 
 	fn visit_f64<E: de::Error>(self, _: f64) -> Result<Self::Value, E> {
@@ -358,7 +372,13 @@ impl<'de> Visitor<'de> for TimestampVisitor {
 }
 
 pub fn timestamp<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<DateTime<Utc>>, D::Error> {
-	deserializer.deserialize_any(TimestampVisitor)
+	deserializer.deserialize_any(TimestampVisitor { unix_seconds: false })
+}
+
+pub fn timestamp_or_seconds<'de, D: Deserializer<'de>>(
+	deserializer: D,
+) -> Result<Option<DateTime<Utc>>, D::Error> {
+	deserializer.deserialize_any(TimestampVisitor { unix_seconds: true })
 }
 
 pub fn present<'de, D: Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {

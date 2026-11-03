@@ -94,6 +94,7 @@ menu-delete-selected = Delete { $count } Selected
 menu-report = Report Message
 menu-invite-channel = Invite to Channel
 menu-edit-channel = Edit Channel
+menu-voice-status = Set Status
 menu-delete-channel = Delete Channel
 timeline-selected = { $count } selected
 

@@ -2,7 +2,7 @@ use bitflags::bitflags;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::lenient::{LenientVec, flags_serde, int_enum, timestamp};
+use crate::lenient::{LenientVec, flags_serde, int_enum, timestamp, timestamp_or_seconds};
 use crate::member::Member;
 use crate::permissions::Permissions;
 use crate::settings::{MuteConfig, NotificationLevel};
@@ -172,6 +172,9 @@ pub struct Channel {
 	#[serde(deserialize_with = "timestamp")]
 	pub last_pin_timestamp: Option<DateTime<Utc>>,
 	pub rtc_region: Option<String>,
+	pub status: Option<String>,
+	#[serde(deserialize_with = "timestamp_or_seconds")]
+	pub voice_start_time: Option<DateTime<Utc>>,
 	pub message_count: Option<i64>,
 	pub member_count: Option<i64>,
 	pub thread_metadata: Option<ThreadMetadata>,
@@ -191,6 +194,10 @@ pub struct Channel {
 }
 
 impl Channel {
+	pub fn voice_status(&self) -> Option<&str> {
+		self.status.as_deref().filter(|status| !status.is_empty())
+	}
+
 	pub fn is_spam_request(&self) -> bool {
 		self.is_spam == Some(true) || self.flags.contains(ChannelFlags::IS_SPAM)
 	}

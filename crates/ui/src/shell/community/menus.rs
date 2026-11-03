@@ -13,6 +13,7 @@ use crate::components::ContextMenuBuilder;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::IconKind;
 use crate::shell::server_settings::channel;
+use crate::shell::voice;
 
 pub struct ChannelFacts {
 	pub id: Snowflake,
@@ -53,6 +54,15 @@ fn channel_menu_now(guild: Option<Snowflake>, facts: &ChannelFacts, cx: &App) ->
 			Some(IconKind::Members),
 			move |window, cx| {
 				crate::shell::server_settings::invites::open_create(window, cx, id);
+			},
+		);
+	}
+	if facts.kind == ChannelType::GuildVoice && data_handle(cx).read(cx).state().can_set_voice_status(id) {
+		menu = menu.item(
+			cx.t("menu-voice-status"),
+			Some(IconKind::Edit),
+			move |window, cx| {
+				voice::status::open(window, cx, id);
 			},
 		);
 	}

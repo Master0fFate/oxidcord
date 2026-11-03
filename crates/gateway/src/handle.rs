@@ -101,6 +101,13 @@ impl GatewayHandle {
 		self.queue(Opcode::RequestGuildMembers, data)
 	}
 
+	pub fn request_channel_info(&self, guild_id: Snowflake) -> Result<(), SendError> {
+		self.queue(
+			Opcode::RequestChannelInfo,
+			json!({ "guild_id": guild_id, "fields": ["status", "voice_start_time"] }),
+		)
+	}
+
 	pub fn voice_state(
 		&self,
 		guild_id: Option<Snowflake>,

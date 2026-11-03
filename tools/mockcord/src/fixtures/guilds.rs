@@ -90,6 +90,7 @@ fn base_permissions() -> Permissions {
 		| Permissions::ATTACH_FILES
 		| Permissions::USE_EXTERNAL_EMOJIS
 		| Permissions::CONNECT
+		| Permissions::SET_VOICE_CHANNEL_STATUS
 		| Permissions::SPEAK
 		| Permissions::USE_VAD
 		| Permissions::CHANGE_NICKNAME
@@ -462,7 +463,10 @@ fn build_channels(builder: &mut Builder, guild_id: u64, roles: &RoleIds) -> Chan
 		None,
 	);
 	add_channel(builder, &mut layout.all, category);
-	for (name, limit) in [("Lounge", 0), ("Gaming", 2)] {
+	for (name, limit, status) in [
+		("Lounge", 0, Some("movie night, bring snacks")),
+		("Gaming", 2, None),
+	] {
 		let id = builder.ids.next();
 		let mut voice = guild_channel(
 			id,
@@ -474,6 +478,7 @@ fn build_channels(builder: &mut Builder, guild_id: u64, roles: &RoleIds) -> Chan
 		);
 		voice.bitrate = Some(64_000);
 		voice.user_limit = Some(limit);
+		voice.status = status.map(str::to_owned);
 		if limit == 0 {
 			voice.permission_overwrites = LenientVec::from(vec![role_overwrite(
 				roles.members,

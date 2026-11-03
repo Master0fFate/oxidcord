@@ -488,6 +488,11 @@ impl RestClient {
 		self.send(Request::patch(format!("/channels/{id}")).json(&changes))
 			.await
 	}
+
+	pub async fn set_voice_status(&self, id: Snowflake, status: Option<&str>) -> Result<()> {
+		let request = Request::put(format!("/channels/{id}/voice-status")).json(&json!({ "status": status }));
+		self.send_empty(request).await
+	}
 }
 
 impl RestClient {

@@ -20,6 +20,7 @@ use super::participants::{Participant, participants};
 use super::picker;
 use super::quality::Preset;
 use super::stage::open_topic;
+use super::status;
 use super::video_sink::Textures;
 use super::widgets::{ControlButton, live_badge, speaking_avatar, state_icons};
 use crate::components::{ContextMenuBuilder, IconButton};
@@ -79,6 +80,8 @@ struct Snapshot {
 	can_speak: bool,
 	streams: HashMap<Snowflake, String>,
 	can_chat: bool,
+	voice_status: Option<SharedString>,
+	can_edit_status: bool,
 }
 
 enum TileSize {
@@ -123,6 +126,11 @@ fn snapshot(data: &Data) -> Option<Snapshot> {
 		participants,
 		streams: stream_keys(&state, channel),
 		can_chat: permissions.contains(Permissions::VIEW_CHANNEL | Permissions::READ_MESSAGE_HISTORY),
+		voice_status: state
+			.channel(channel)
+			.and_then(|found| found.voice_status())
+			.map(|status| SharedString::from(status.to_owned())),
+		can_edit_status: kind == Some(ChannelType::GuildVoice) && state.can_set_voice_status(channel),
 	})
 }
 
@@ -988,6 +996,39 @@ impl VoiceRoom {
 			.into_any_element()
 	}
 
+	fn status_chip(&self, snapshot: &Snapshot, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+		let channel = snapshot.channel;
+		div()
+			.absolute()
+			.top(theme.space_8)
+			.left(theme.space_8)
+			.max_w(rem(24.))
+			.flex()
+			.items_center()
+			.gap(theme.space_4)
+			.pl(theme.space_8)
+			.rounded(theme.radius_sm)
+			.bg(theme.overlay)
+			.text_size(theme.font_xs)
+			.font_weight(FontWeight::MEDIUM)
+			.text_color(theme.interactive_active)
+			.children(
+				snapshot
+					.voice_status
+					.clone()
+					.map(|status| div().min_w_0().truncate().child(status)),
+			)
+			.when(snapshot.can_edit_status, |chip| {
+				chip.child(
+					IconButton::new("voice-status-edit", IconKind::Edit)
+						.filled_hover()
+						.tooltip(cx.t("voice-status-edit"))
+						.on_click(move |_, window, cx| status::open(window, cx, channel)),
+				)
+			})
+			.into_any_element()
+	}
+
 	fn join_prompt(&self, snapshot: &Snapshot, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
 		let data = self.data.clone();
 		let (guild, channel) = (snapshot.guild, snapshot.channel);
@@ -1125,6 +1166,10 @@ impl Render for VoiceRoom {
 							.p(theme.space_16)
 							.child(measure)
 							.child(content)
+							.when(
+								snapshot.voice_status.is_some() || snapshot.can_edit_status,
+								|stage| stage.child(self.status_chip(&snapshot, &theme, cx)),
+							)
 							.when(snapshot.can_chat, |stage| {
 								stage.child(
 									div().absolute().top(theme.space_8).right(theme.space_8).child(
