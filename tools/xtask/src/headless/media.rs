@@ -89,6 +89,7 @@ fn play(fetcher: &MediaFetcher, url: String, seek: bool) -> Result<Played> {
 			autoplay: true,
 			looping: false,
 			volume: 0.,
+			speed: 1.,
 			max_size: MAX_SIZE,
 		},
 		Arc::new(|| {}),

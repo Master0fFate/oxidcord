@@ -44,6 +44,8 @@ const AUDIO_ICON: f32 = 32.;
 const VOICE_WIDTH: f32 = 300.;
 const VOICE_HEIGHT: f32 = 48.;
 const VOICE_BUTTON: f32 = 32.;
+const VOICE_SPEED_WIDTH: f32 = 32.;
+const VOICE_SPEED_HEIGHT: f32 = 24.;
 const VOICE_BARS: usize = 44;
 const VOICE_BAR_WIDTH: f32 = 3.;
 const VOICE_BAR_MIN: f32 = 2.;
@@ -1057,6 +1059,7 @@ pub fn voice_message(source: VoiceSource, env: &BodyEnv, cx: &App) -> AnyElement
 	let levels = waveform_levels(source.waveform);
 	let count = levels.len() as f32;
 	let url = source.url.clone();
+	let speed = playback.speed(key);
 	div()
 		.id(element_id("media-voice", key))
 		.relative()
@@ -1134,6 +1137,30 @@ pub fn voice_message(source: VoiceSource, env: &BodyEnv, cx: &App) -> AnyElement
 				.font_weight(FontWeight::MEDIUM)
 				.text_color(theme.header_secondary)
 				.child(label),
+		)
+		.child(
+			div()
+				.id(element_id("media-voice-speed", key))
+				.flex()
+				.flex_none()
+				.items_center()
+				.justify_center()
+				.min_w(rem(VOICE_SPEED_WIDTH))
+				.h(rem(VOICE_SPEED_HEIGHT))
+				.rounded_full()
+				.cursor_pointer()
+				.bg(theme.background_tertiary)
+				.hover(|style| style.bg(theme.modifier_hover))
+				.text_size(theme.font_tiny)
+				.font_weight(FontWeight::MEDIUM)
+				.text_color(theme.header_secondary)
+				.tooltip(crate::components::tooltip(cx.t("media-speed")))
+				.on_click(move |_, window, cx| {
+					cx.stop_propagation();
+					cx.global::<Playback>().cycle_speed(key);
+					window.refresh();
+				})
+				.child(format!("{speed}x")),
 		)
 		.into_any_element()
 }

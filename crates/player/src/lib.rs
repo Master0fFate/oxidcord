@@ -3,6 +3,7 @@ mod engine;
 mod error;
 mod output;
 mod source;
+mod stretch;
 mod video;
 
 use std::sync::Arc;
@@ -51,6 +52,7 @@ pub struct Options {
 	pub autoplay: bool,
 	pub looping: bool,
 	pub volume: f32,
+	pub speed: f32,
 	pub max_size: (u32, u32),
 }
 
@@ -59,6 +61,7 @@ pub(crate) enum Command {
 	Pause,
 	Seek(Duration),
 	Resize((u32, u32)),
+	Speed(f32),
 }
 
 pub(crate) struct Shared {
@@ -145,6 +148,10 @@ impl Player {
 
 	pub fn resize(&self, max_size: (u32, u32)) {
 		self.send(Command::Resize(max_size));
+	}
+
+	pub fn set_speed(&self, speed: f32) {
+		self.send(Command::Speed(speed));
 	}
 
 	pub fn set_volume(&self, volume: f32) {

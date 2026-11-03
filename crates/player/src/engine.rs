@@ -23,6 +23,7 @@ use crate::audio::AudioTrack;
 use crate::error::{PlayerError, Result};
 use crate::output::{OUTPUT_CHANNELS, Output};
 use crate::source::HttpSource;
+use crate::stretch::Stretch;
 use crate::video::VideoTrack;
 use crate::{Command, Frame, Options, Shared, State};
 
@@ -100,12 +101,14 @@ struct AudioLane {
 	time_base: Option<TimeBase>,
 	track: AudioTrack,
 	resampler: Resampler,
+	stretch: Stretch,
 	output: Output,
+	stretched: Vec<f32>,
 	resampled: Vec<f32>,
 }
 
 impl AudioLane {
-	fn open(track: &Track, shared: &Shared) -> Result<Self> {
+	fn open(track: &Track, shared: &Shared, speed: f32) -> Result<Self> {
 		let params = track
 			.codec_params
 			.as_ref()
@@ -118,7 +121,9 @@ impl AudioLane {
 			time_base: track.time_base,
 			track: decoder,
 			resampler,
+			stretch: Stretch::new(speed),
 			output,
+			stretched: Vec::new(),
 			resampled: Vec::new(),
 		})
 	}
@@ -128,12 +133,13 @@ impl AudioLane {
 	}
 
 	fn played(&self) -> Duration {
-		self.output.played()
+		self.output.played().mul_f32(self.stretch.speed())
 	}
 
 	fn reset(&mut self, from_start: bool) -> Result<()> {
 		self.track.reset(from_start);
 		self.output.reset();
+		self.stretch.reset();
 		self.resampler = Resampler::new(self.track.rate(), self.output.rate(), OUTPUT_CHANNELS)?;
 		Ok(())
 	}
@@ -153,9 +159,15 @@ impl AudioLane {
 			((target - start).as_secs_f64() * f64::from(rate)) as usize
 		});
 		let skip_samples = (skip_frames * OUTPUT_CHANNELS).min(decoded.len());
+		let decoded = &decoded[skip_samples..];
 		self.resampled.clear();
-		self.resampler
-			.process(&decoded[skip_samples..], &mut self.resampled)?;
+		if self.stretch.active() {
+			self.stretched.clear();
+			self.stretch.process(decoded, &mut self.stretched);
+			self.resampler.process(&self.stretched, &mut self.resampled)?;
+		} else {
+			self.resampler.process(decoded, &mut self.resampled)?;
+		}
 		self.output.push(&self.resampled);
 		Ok(())
 	}
@@ -249,16 +261,15 @@ impl<'a> Engine<'a> {
 			}
 			None => None,
 		};
-		let audio =
-			format
-				.default_track(TrackType::Audio)
-				.and_then(|track| match AudioLane::open(track, shared) {
-					Ok(lane) => Some(lane),
-					Err(error) => {
-						tracing::debug!(%error, "media audio unavailable");
-						None
-					}
-				});
+		let audio = format.default_track(TrackType::Audio).and_then(|track| {
+			match AudioLane::open(track, shared, options.speed) {
+				Ok(lane) => Some(lane),
+				Err(error) => {
+					tracing::debug!(%error, "media audio unavailable");
+					None
+				}
+			}
+		});
 		if audio.is_none() && video.is_none() {
 			return Err(PlayerError::Unsupported("no playable track".to_owned()));
 		}
@@ -391,6 +402,19 @@ impl<'a> Engine<'a> {
 				}
 			}
 			Command::Resize(max_size) => self.max_size = max_size,
+			Command::Speed(speed) => self.change_speed(speed)?,
+		}
+		Ok(())
+	}
+
+	fn change_speed(&mut self, speed: f32) -> Result<()> {
+		let at = self.position();
+		let Some(lane) = &mut self.audio else {
+			return Ok(());
+		};
+		lane.stretch.set_speed(speed);
+		if self.state != State::Ended {
+			self.seek(at)?;
 		}
 		Ok(())
 	}

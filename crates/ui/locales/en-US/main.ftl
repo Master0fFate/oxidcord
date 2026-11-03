@@ -258,6 +258,7 @@ media-replay = Replay
 media-mute = Mute
 media-unmute = Unmute
 media-fullscreen = Fullscreen
+media-speed = Playback speed
 media-fullscreen-exit = Exit fullscreen
 media-unsupported = Can't play this file
 media-missing-codec = No { $codec } decoder

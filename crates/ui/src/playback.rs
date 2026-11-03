@@ -26,6 +26,7 @@ const FRAME_SWEEP: Duration = Duration::from_millis(100);
 const LOOP_FRAME_INTERVAL: Duration = Duration::from_millis(40);
 const VOLUME_LINGER: Duration = Duration::from_millis(450);
 const SIZE_HINT: f32 = 2.;
+const VOICE_SPEEDS: [f32; 3] = [1., 1.5, 2.];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct MediaKey {
@@ -67,6 +68,7 @@ pub struct Playback {
 	slots: RefCell<HashMap<MediaKey, Slot>>,
 	volume: Cell<f32>,
 	muted: Cell<bool>,
+	speeds: RefCell<HashMap<MediaKey, f32>>,
 	volume_bar: Cell<Option<Bounds<Pixels>>>,
 	volume_button_hover: Cell<bool>,
 	volume_slider_hover: Cell<bool>,
@@ -128,6 +130,7 @@ impl Playback {
 			slots: RefCell::new(HashMap::new()),
 			volume: Cell::new(1.),
 			muted: Cell::new(false),
+			speeds: RefCell::new(HashMap::new()),
 			volume_bar: Cell::new(None),
 			volume_button_hover: Cell::new(false),
 			volume_slider_hover: Cell::new(false),
@@ -324,6 +327,7 @@ impl Playback {
 			} else {
 				self.effective_volume()
 			},
+			speed: self.speed(key),
 			max_size,
 		};
 		let player = Player::open(
@@ -403,6 +407,22 @@ impl Playback {
 			.borrow()
 			.get(&key)
 			.and_then(|slot| slot.player.failure())
+	}
+
+	pub fn speed(&self, key: MediaKey) -> f32 {
+		self.speeds.borrow().get(&key).copied().unwrap_or(VOICE_SPEEDS[0])
+	}
+
+	pub fn cycle_speed(&self, key: MediaKey) {
+		let current = self.speed(key);
+		let next = VOICE_SPEEDS
+			.iter()
+			.position(|speed| *speed == current)
+			.map_or(VOICE_SPEEDS[0], |index| {
+				VOICE_SPEEDS[(index + 1) % VOICE_SPEEDS.len()]
+			});
+		self.speeds.borrow_mut().insert(key, next);
+		self.with(key, |slot| slot.player.set_speed(next));
 	}
 
 	pub fn volume(&self) -> (f32, bool) {
@@ -555,6 +575,7 @@ impl Playback {
 
 	pub fn stop_all(&self) {
 		self.slots.borrow_mut().clear();
+		self.speeds.borrow_mut().clear();
 		let mut frames = self.frames.borrow_mut();
 		if let Some(host) = self.host.borrow().as_ref() {
 			for slot in frames.values() {
