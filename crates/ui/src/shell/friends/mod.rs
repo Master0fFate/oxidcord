@@ -9,11 +9,13 @@ use gpui::{
 	StatefulInteractiveElement as _, Styled as _, Subscription, Window, div, prelude::FluentBuilder as _,
 };
 use gpui_component::Sizable as _;
+use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::scroll::ScrollableElement as _;
 use protocol::Snowflake;
-use state::RelationshipRow;
+use session::Command;
 use state::{Changes, IdSet};
+use state::{RelationshipRow, RequestRow};
 
 pub use self::feature::{FeatureKind, FeaturePage};
 use super::plugins;
@@ -33,19 +35,21 @@ enum Tab {
 	Online,
 	All,
 	Pending,
+	Requests,
 	Blocked,
 	Plugin(usize),
 	Add,
 }
 
 impl Tab {
-	const LIST: [Tab; 4] = [Tab::Online, Tab::All, Tab::Pending, Tab::Blocked];
+	const LIST: [Tab; 5] = [Tab::Online, Tab::All, Tab::Pending, Tab::Requests, Tab::Blocked];
 
 	fn key(self) -> &'static str {
 		match self {
 			Self::Online => "friends-tab-online",
 			Self::All => "friends-tab-all",
 			Self::Pending => "friends-tab-pending",
+			Self::Requests => "friends-tab-requests",
 			Self::Blocked => "friends-tab-blocked",
 			Self::Plugin(_) => "friends-tab-plugin",
 			Self::Add => "friends-tab-add",
@@ -75,6 +79,7 @@ pub struct FriendsPage {
 	outgoing: Vec<RelationshipRow>,
 	blocked: Vec<RelationshipRow>,
 	ignored: Vec<RelationshipRow>,
+	requests: Vec<RequestRow>,
 	add_outcome: AddOutcome,
 	_subscriptions: Vec<Subscription>,
 }
@@ -111,6 +116,7 @@ impl FriendsPage {
 			outgoing: Vec::new(),
 			blocked: Vec::new(),
 			ignored: Vec::new(),
+			requests: Vec::new(),
 			add_outcome: AddOutcome::Idle,
 			_subscriptions: subscriptions,
 		};
@@ -126,13 +132,28 @@ impl FriendsPage {
 		self.outgoing = state.pending_outgoing();
 		self.blocked = state.blocked();
 		self.ignored = state.ignored();
+		self.requests = state.message_requests();
 		drop(state);
 		cx.notify();
+	}
+
+	fn refresh_requests(&mut self, cx: &mut Context<Self>) {
+		let requests = self.data.read(cx).state().message_requests();
+		if requests != self.requests {
+			self.requests = requests;
+			cx.notify();
+		}
+	}
+
+	pub fn show_requests(&mut self, cx: &mut Context<Self>) {
+		self.select(Tab::Requests, cx);
 	}
 
 	pub fn on_changes(&mut self, changes: &Changes, cx: &mut Context<Self>) {
 		if changes.relationships || self.presence_matters(&changes.presence) {
 			self.refresh(cx);
+		} else if changes.private_channels {
+			self.refresh_requests(cx);
 		}
 		if changes.friend_request {
 			self.settle_request(cx);
@@ -170,19 +191,42 @@ impl FriendsPage {
 			|| row.username.to_lowercase().contains(&self.filter)
 	}
 
-	fn visible(&self, rows: &[RelationshipRow], online_only: bool) -> Vec<RelationshipRow> {
+	fn visible(
+		&self,
+		rows: &[RelationshipRow],
+		online_only: bool,
+		kind: row::Kind,
+	) -> Vec<(RelationshipRow, row::Kind)> {
 		rows.iter()
 			.filter(|row| !online_only || is_online(&row.status))
 			.filter(|row| self.matches(row))
-			.cloned()
+			.map(|row| (row.clone(), kind))
+			.collect()
+	}
+
+	fn requested(&self, spam: bool) -> Vec<(RelationshipRow, row::Kind)> {
+		self.requests
+			.iter()
+			.filter(|request| request.spam == spam && self.matches(&request.person))
+			.map(|request| {
+				let kind = if spam {
+					row::Kind::Spam(request.channel_id)
+				} else {
+					row::Kind::Request(request.channel_id)
+				};
+				(request.person.clone(), kind)
+			})
 			.collect()
 	}
 
 	fn tab_button(&self, tab: Tab, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
 		let selected = self.tab == tab;
-		let count = (tab == Tab::Pending)
-			.then_some(self.incoming.len())
-			.filter(|n| *n > 0);
+		let count = match tab {
+			Tab::Pending => Some(self.incoming.len()),
+			Tab::Requests => Some(self.requests.len()),
+			_ => None,
+		}
+		.filter(|n| *n > 0);
 		let add = tab == Tab::Add;
 		let (id, label): (ElementId, SharedString) = match tab {
 			Tab::Plugin(index) => (
@@ -278,6 +322,26 @@ impl FriendsPage {
 			.into_any_element()
 	}
 
+	fn ignore_all(&self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+		div()
+			.flex()
+			.justify_end()
+			.px(theme.space_8)
+			.pt(theme.space_8)
+			.child(
+				Button::new("requests-ignore-all")
+					.ghost()
+					.label(cx.t("requests-ignore-all"))
+					.on_click(cx.listener(|this, _, _, cx| {
+						let channel_ids = this.requests.iter().map(|request| request.channel_id).collect();
+						this.data
+							.read(cx)
+							.send(Command::RejectMessageRequests { channel_ids });
+					})),
+			)
+			.into_any_element()
+	}
+
 	fn empty(&self, key: &str, icon: IconKind, theme: &Theme, cx: &Context<Self>) -> AnyElement {
 		div()
 			.flex()
@@ -298,39 +362,37 @@ impl FriendsPage {
 	}
 
 	fn list_body(&self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
-		let sections: Vec<(&str, Vec<RelationshipRow>, row::Kind)> = match self.tab {
+		let sections: Vec<(&str, Vec<(RelationshipRow, row::Kind)>)> = match self.tab {
 			Tab::Online => vec![(
 				"friends-online-count",
-				self.visible(&self.friends, true),
-				row::Kind::Friend,
+				self.visible(&self.friends, true, row::Kind::Friend),
 			)],
 			Tab::All => vec![(
 				"friends-all-count",
-				self.visible(&self.friends, false),
-				row::Kind::Friend,
+				self.visible(&self.friends, false, row::Kind::Friend),
 			)],
 			Tab::Pending => vec![
 				(
 					"friends-incoming-count",
-					self.visible(&self.incoming, false),
-					row::Kind::Incoming,
+					self.visible(&self.incoming, false, row::Kind::Incoming),
 				),
 				(
 					"friends-outgoing-count",
-					self.visible(&self.outgoing, false),
-					row::Kind::Outgoing,
+					self.visible(&self.outgoing, false, row::Kind::Outgoing),
 				),
+			],
+			Tab::Requests => vec![
+				("friends-requests-count", self.requested(false)),
+				("friends-spam-count", self.requested(true)),
 			],
 			Tab::Blocked => vec![
 				(
 					"friends-blocked-count",
-					self.visible(&self.blocked, false),
-					row::Kind::Blocked,
+					self.visible(&self.blocked, false, row::Kind::Blocked),
 				),
 				(
 					"friends-ignored-count",
-					self.visible(&self.ignored, false),
-					row::Kind::Ignored,
+					self.visible(&self.ignored, false, row::Kind::Ignored),
 				),
 			],
 			Tab::Add | Tab::Plugin(_) => Vec::new(),
@@ -339,19 +401,23 @@ impl FriendsPage {
 			Tab::Online => "friends-empty-online",
 			Tab::All => "friends-empty-all",
 			Tab::Pending => "friends-empty-pending",
+			Tab::Requests => "friends-empty-requests",
 			_ => "friends-empty-blocked",
 		};
-		let any = sections.iter().any(|(_, rows, _)| !rows.is_empty());
+		let any = sections.iter().any(|(_, rows)| !rows.is_empty());
 		if !any {
 			return self.empty(empty_key, IconKind::Friends, theme, cx);
 		}
 		let mut children: Vec<AnyElement> = Vec::new();
-		for (title, rows, kind) in sections {
+		if self.tab == Tab::Requests {
+			children.push(self.ignore_all(theme, cx));
+		}
+		for (title, rows) in sections {
 			if rows.is_empty() {
 				continue;
 			}
 			children.push(self.section_title(title, rows.len(), theme, cx));
-			for item in rows {
+			for (item, kind) in rows {
 				children.push(self.row(&item, kind, theme, cx));
 			}
 		}

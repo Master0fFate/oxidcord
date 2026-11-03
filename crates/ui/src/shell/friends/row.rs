@@ -27,6 +27,8 @@ pub(super) enum Kind {
 	Outgoing,
 	Blocked,
 	Ignored,
+	Request(Snowflake),
+	Spam(Snowflake),
 }
 
 pub(super) fn status_key(status: Status) -> &'static str {
@@ -88,6 +90,8 @@ impl FriendsPage {
 			Kind::Outgoing => cx.t("friends-outgoing-request"),
 			Kind::Blocked => cx.t("friends-blocked"),
 			Kind::Ignored => cx.t("friends-ignored"),
+			Kind::Request(_) => cx.t("friends-request"),
+			Kind::Spam(_) => cx.t("friends-spam"),
 			Kind::Friend => item
 				.activity
 				.clone()
@@ -155,6 +159,48 @@ impl FriendsPage {
 				theme,
 				send(|user_id| Command::RemoveRelationship { user_id }),
 			)],
+			Kind::Request(channel_id) | Kind::Spam(channel_id) => {
+				let weak = cx.weak_entity();
+				let message: Handler = Box::new(move |_, _, cx| {
+					weak.update(cx, |this, cx| this.message(user, cx)).ok();
+				});
+				let data = self.data.clone();
+				let accept: Handler = Box::new(move |_, _, cx| {
+					data.read(cx).send(Command::AcceptMessageRequest { channel_id });
+				});
+				let data = self.data.clone();
+				let ignore: Handler = Box::new(move |_, _, cx| {
+					data.read(cx).send(Command::RejectMessageRequests {
+						channel_ids: vec![channel_id],
+					});
+				});
+				vec![
+					circle_button(
+						key("request-message"),
+						IconKind::Chat,
+						cx.t("friends-message"),
+						theme.interactive_hover,
+						theme,
+						message,
+					),
+					circle_button(
+						key("request-accept"),
+						IconKind::Check,
+						cx.t("friends-accept"),
+						theme.success,
+						theme,
+						accept,
+					),
+					circle_button(
+						key("request-ignore"),
+						IconKind::Close,
+						cx.t("friends-ignore"),
+						theme.danger,
+						theme,
+						ignore,
+					),
+				]
+			}
 			Kind::Blocked => vec![circle_button(
 				key("friend-unblock"),
 				IconKind::Close,

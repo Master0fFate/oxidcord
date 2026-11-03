@@ -25,6 +25,7 @@ const AVATAR_PIXELS: u32 = 64;
 
 pub enum DmSidebarEvent {
 	OpenFriends,
+	OpenRequests,
 	OpenDm(Snowflake),
 	Search,
 	OpenNitro,
@@ -46,7 +47,6 @@ struct DmItem {
 	unread: bool,
 	mentions: u32,
 	muted: bool,
-	request: bool,
 	over: Option<UserOverride>,
 	badges: Vec<PluginBadge>,
 }
@@ -54,6 +54,7 @@ struct DmItem {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Selection {
 	Friends,
+	Requests,
 	Nitro,
 	Shop,
 	Dm(Snowflake),
@@ -62,10 +63,10 @@ enum Selection {
 pub struct DmSidebar {
 	data: Entity<Data>,
 	dms: Vec<DmItem>,
+	requests: usize,
 	sections: Vec<DmSectionView>,
 	pending: u32,
 	folded: HashSet<(String, String)>,
-	requests_open: bool,
 	selected: Option<Selection>,
 }
 
@@ -76,10 +77,10 @@ impl DmSidebar {
 		let mut sidebar = Self {
 			data,
 			dms: Vec::new(),
+			requests: 0,
 			sections: Vec::new(),
 			pending: 0,
 			folded: HashSet::new(),
-			requests_open: false,
 			selected: None,
 		};
 		sidebar.refresh(cx);
@@ -119,7 +120,6 @@ impl DmSidebar {
 					unread: row.unread,
 					mentions: row.mentions,
 					muted: row.muted,
-					request: row.request,
 					over,
 					badges: state
 						.channel_decorations(row.channel_id)
@@ -131,11 +131,17 @@ impl DmSidebar {
 			.collect();
 		let sections = state.dm_sections().to_vec();
 		let pending = state.pending_incoming_count();
+		let requests = state.message_request_count();
 		drop(state);
-		if dms != self.dms || sections != self.sections || pending != self.pending {
+		if dms != self.dms
+			|| sections != self.sections
+			|| pending != self.pending
+			|| requests != self.requests
+		{
 			self.dms = dms;
 			self.sections = sections;
 			self.pending = pending;
+			self.requests = requests;
 			cx.notify();
 		}
 	}
@@ -158,6 +164,11 @@ impl DmSidebar {
 		cx: &mut Context<Self>,
 	) -> AnyElement {
 		let selected = self.selected == Some(target);
+		let badge = match target {
+			Selection::Friends => self.pending,
+			Selection::Requests => self.requests as u32,
+			_ => 0,
+		};
 		let (rest, hover) = if selected {
 			(theme.interactive_active, theme.interactive_active)
 		} else {
@@ -184,6 +195,7 @@ impl DmSidebar {
 				this.selected = Some(target);
 				match target {
 					Selection::Friends => cx.emit(DmSidebarEvent::OpenFriends),
+					Selection::Requests => cx.emit(DmSidebarEvent::OpenRequests),
 					Selection::Nitro => cx.emit(DmSidebarEvent::OpenNitro),
 					Selection::Shop => cx.emit(DmSidebarEvent::OpenShop),
 					Selection::Dm(_) => {}
@@ -197,9 +209,7 @@ impl DmSidebar {
 					.group_hover(group, hover),
 			)
 			.child(div().flex_1().min_w_0().truncate().child(label))
-			.when(target == Selection::Friends && self.pending > 0, |row| {
-				row.child(MentionBadge::new(self.pending))
-			})
+			.when(badge > 0, |row| row.child(MentionBadge::new(badge)))
 			.into_any_element()
 	}
 
@@ -422,29 +432,6 @@ impl DmSidebar {
 }
 
 impl DmSidebar {
-	fn request_rows(&self, theme: &Theme, cx: &mut Context<Self>) -> Vec<AnyElement> {
-		let requests: Vec<&DmItem> = self.dms.iter().filter(|dm| dm.request).collect();
-		if requests.is_empty() {
-			return Vec::new();
-		}
-		let header = div()
-			.pt(theme.space_16)
-			.child(
-				SectionHeader::new("dm-requests", cx.t("dm-requests"))
-					.collapsible(!self.requests_open)
-					.on_click(cx.listener(|this, _, _, cx| {
-						this.requests_open = !this.requests_open;
-						cx.notify();
-					})),
-			)
-			.into_any_element();
-		let rows = requests
-			.into_iter()
-			.filter(|_| self.requests_open)
-			.map(|dm| self.dm_row(dm, theme, cx));
-		std::iter::once(header).chain(rows).collect()
-	}
-
 	fn section_rows(&self, theme: &Theme, cx: &mut Context<Self>) -> (Vec<AnyElement>, HashSet<Snowflake>) {
 		let mut placed: HashSet<Snowflake> = HashSet::new();
 		let mut out: Vec<AnyElement> = Vec::new();
@@ -493,10 +480,9 @@ impl Render for DmSidebar {
 		let rows: Vec<AnyElement> = self
 			.dms
 			.iter()
-			.filter(|dm| !dm.request && !placed.contains(&dm.id))
+			.filter(|dm| !placed.contains(&dm.id))
 			.map(|dm| self.dm_row(dm, &theme, cx))
 			.collect();
-		let requests = self.request_rows(&theme, cx);
 		let top = plugins::mount_column("channel-list-top", cx);
 		let friends = self.nav_row(
 			"dm-friends",
@@ -506,6 +492,16 @@ impl Render for DmSidebar {
 			&theme,
 			cx,
 		);
+		let requests = (self.requests > 0).then(|| {
+			self.nav_row(
+				"dm-requests",
+				IconKind::Mail,
+				cx.t("dm-requests"),
+				Selection::Requests,
+				&theme,
+				cx,
+			)
+		});
 		div()
 			.flex()
 			.flex_col()
@@ -557,6 +553,7 @@ impl Render for DmSidebar {
 					.pt(theme.space_8)
 					.pb(theme.space_16)
 					.child(friends)
+					.children(requests)
 					.child(self.nav_row(
 						"dm-nitro",
 						IconKind::Nitro,
@@ -588,7 +585,6 @@ impl Render for DmSidebar {
 						),
 					)
 					.children(rows)
-					.children(requests)
 					.overflow_y_scrollbar()
 					.id("dm-list")
 					.flex_1()

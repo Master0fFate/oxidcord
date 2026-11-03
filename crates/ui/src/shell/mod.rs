@@ -19,6 +19,7 @@ mod pickers;
 mod plugins;
 mod profile;
 mod quick_switcher;
+mod request_bar;
 mod search_hints;
 mod search_panel;
 mod server_rail;
@@ -261,7 +262,7 @@ fn describe(state: &State, guild: Option<Snowflake>, channel: Snowflake) -> Desc
 			}
 		}
 		None => {
-			let row = state.dm_rows().into_iter().find(|row| row.channel_id == channel);
+			let row = state.dm_row(channel);
 			let single = row
 				.as_ref()
 				.filter(|row| row.recipients.len() == 1)
@@ -331,6 +332,12 @@ impl Shell {
 				DmSidebarEvent::OpenDm(id) => this.select(None, *id, cx),
 				DmSidebarEvent::Search => this.open_quick_switcher(window, cx),
 				DmSidebarEvent::OpenFriends => this.open_home_page(HomePage::Friends, cx),
+				DmSidebarEvent::OpenRequests => {
+					this.open_home_page(HomePage::Friends, cx);
+					this.home_pages
+						.friends
+						.update(cx, |friends, cx| friends.show_requests(cx));
+				}
 				DmSidebarEvent::OpenNitro => this.open_home_page(HomePage::Nitro, cx),
 				DmSidebarEvent::OpenShop => this.open_home_page(HomePage::Shop, cx),
 				DmSidebarEvent::CreateGroup => account::open_create(this.data.clone(), window, cx),
@@ -1689,6 +1696,10 @@ impl Render for Shell {
 		let show_plugin_panel =
 			plugins::right_panel_visible(cx) && width >= rem(SIDEBAR_MIN_WIDTH).to_pixels(rem_size);
 		let status_bar = plugins::status_bar(cx);
+		let request = self
+			.channel
+			.and_then(|channel| self.data.read(cx).state().message_request(channel))
+			.map(|request| request_bar::request_bar(&self.data, &request, &theme, cx));
 		let forum = self.community.read(cx).forum_view(cx);
 		let thread_panel = self.community.read(cx).thread_panel(cx);
 		let thread_full = thread_panel
@@ -1843,6 +1854,7 @@ impl Render for Shell {
 													(None, None) => {
 														composer::accept_files(column, self.composer.clone())
 															.child(self.timeline.clone())
+															.children(request)
 															.child(self.composer.clone())
 															.children(status_bar)
 													}
