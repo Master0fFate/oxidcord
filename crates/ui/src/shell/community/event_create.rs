@@ -144,11 +144,23 @@ fn build(window: &mut Window, cx: &mut App, guild: Snowflake, kind: usize, event
 			starts_subscription,
 			ends_subscription,
 		];
-		let channels = channels_of(&data, guild, KINDS[kind].1, cx);
-		let channel = event
-			.and_then(|event| event.channel_id)
-			.and_then(|id| channels.iter().position(|(known, _)| *known == id))
-			.unwrap_or(0);
+		let mut channels = channels_of(&data, guild, KINDS[kind].1, cx);
+		let channel = match event.and_then(|event| event.channel_id) {
+			Some(id) => channels
+				.iter()
+				.position(|(known, _)| *known == id)
+				.unwrap_or_else(|| {
+					let name = data
+						.read(cx)
+						.state()
+						.channel(id)
+						.and_then(|found| found.name.clone())
+						.unwrap_or_else(|| id.to_string());
+					channels.insert(0, (id, name.into()));
+					0
+				}),
+			None => 0,
+		};
 		CreateEvent {
 			data,
 			guild,
