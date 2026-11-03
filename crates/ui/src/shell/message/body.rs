@@ -53,6 +53,7 @@ pub struct BodyEnv<'a> {
 	paragraphs: Cell<u64>,
 	code_blocks: Cell<u32>,
 	pub(super) relative: Option<&'a Cell<bool>>,
+	forwarded: bool,
 }
 
 impl<'a> BodyEnv<'a> {
@@ -85,7 +86,13 @@ impl<'a> BodyEnv<'a> {
 			paragraphs: Cell::new(0),
 			code_blocks: Cell::new(0),
 			relative: None,
+			forwarded: false,
 		}
+	}
+
+	pub fn forwarded(mut self) -> Self {
+		self.forwarded = true;
+		self
 	}
 
 	pub fn relative(mut self, relative: Option<&'a Cell<bool>>) -> Self {
@@ -131,7 +138,7 @@ impl<'a> BodyEnv<'a> {
 			Some(author) if flags.intersects(AttachmentFlags::SENSITIVE) => self
 				.lookup
 				.state
-				.media_redaction(self.lookup.guild, author, flags),
+				.media_redaction(self.lookup.guild, author, self.forwarded, flags),
 			_ => MediaRedaction::Show,
 		}
 	}

@@ -69,9 +69,10 @@ impl State {
 		&self,
 		guild_id: Option<Snowflake>,
 		author: Snowflake,
+		forwarded: bool,
 		flags: AttachmentFlags,
 	) -> MediaRedaction {
-		if self.current_user_id() == Some(author) {
+		if !forwarded && self.current_user_id() == Some(author) {
 			return MediaRedaction::Show;
 		}
 		let scope = if guild_id.is_some() {

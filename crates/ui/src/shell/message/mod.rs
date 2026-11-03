@@ -1034,6 +1034,7 @@ fn forward_block(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 	}
 	let body_env = BodyEnv::new(theme, env.lookup, env.dispatch, id, env.revealed, env.prefs)
 		.relative(Some(env.relative_seen))
+		.forwarded()
 		.posted(message.author.id, source.flags);
 	if !source.flags.contains(protocol::MessageFlags::IS_COMPONENTS_V2) {
 		lines.extend(media::attachments(
