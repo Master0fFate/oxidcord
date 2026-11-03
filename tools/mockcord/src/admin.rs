@@ -1469,7 +1469,10 @@ impl Shared {
 			"" => 0,
 			digits => digits.parse::<usize>().ok()?,
 		};
-		self.fixtures.guilds.get(index)
+		self.fixtures
+			.guilds
+			.get(index)
+			.filter(|guild| guild.origin != GuildOrigin::Spare)
 	}
 
 	pub fn accept_invite(&self, code: &str) -> Result<Value, ApiError> {
@@ -1485,6 +1488,9 @@ impl Shared {
 		let new_member = store.absent_guilds.remove(&guild.id);
 		if new_member {
 			store.member_edits.remove(&(guild.id, CURRENT_USER_ID));
+			if let Some(removed) = store.removed_members.get_mut(&guild.id) {
+				removed.remove(&CURRENT_USER_ID);
+			}
 			if let Some(uses) = store.invites.get_mut(code).map(|invite| &mut invite["uses"]) {
 				*uses = json!(uses.as_i64().unwrap_or(0) + 1);
 			}
@@ -1503,7 +1509,9 @@ impl Shared {
 		drop(store);
 		if let Some(payload) = created {
 			self.hub.broadcast("GUILD_CREATE", &payload);
-			self.hub.broadcast("GUILD_MEMBER_ADD", &to_json(&member));
+			if member.is_some() {
+				self.hub.broadcast("GUILD_MEMBER_ADD", &to_json(&member));
+			}
 		}
 		Ok(invite)
 	}
