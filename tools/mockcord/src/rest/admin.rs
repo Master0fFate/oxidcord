@@ -381,6 +381,23 @@ pub async fn remove_recipient(State(shared): Mock, Path((id, user_id)): Path<(u6
 	Ok(StatusCode::NO_CONTENT)
 }
 
+pub async fn accept_message_request(State(shared): Mock, Path(id): Path<u64>) -> ApiResult {
+	shared.accept_message_request(id).map(Json)
+}
+
+pub async fn reject_message_request(State(shared): Mock, Path(id): Path<u64>) -> ApiResult {
+	let mut rejected = shared.reject_message_requests(&[id])?;
+	Ok(Json(rejected.pop().unwrap_or(Value::Null)))
+}
+
+pub async fn reject_message_requests(State(shared): Mock, Json(body): Json<Value>) -> ApiResult {
+	let ids: Vec<u64> = body["channel_ids"]
+		.as_array()
+		.map(|ids| ids.iter().filter_map(parse_id).collect())
+		.unwrap_or_default();
+	shared.reject_message_requests(&ids).map(Value::Array).map(Json)
+}
+
 pub async fn bulk_delete(State(shared): Mock, Path(id): Path<u64>, Json(body): Json<Value>) -> NoContent {
 	let ids: Vec<u64> = body["messages"]
 		.as_array()

@@ -20,6 +20,14 @@ const NICKNAMED_FRIEND: usize = 1;
 const IGNORED_FRIEND: usize = 2;
 const NICKNAME: &str = "Bestie";
 const GROUP_NAME: &str = "weekend crew";
+const REQUEST_MESSAGES: usize = 3;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Standing {
+	Accepted,
+	Request,
+	Spam,
+}
 
 pub fn generate(rng: &mut StdRng, ids: &mut EntityIds, size: usize) -> People {
 	let current = User {
@@ -90,27 +98,40 @@ fn capitalized(word: &str) -> String {
 }
 
 pub fn build_private_channels(builder: &mut Builder) -> Vec<u64> {
-	let layouts: [(ChannelType, &[usize], Option<&str>); 5] = [
-		(ChannelType::Dm, &[0], None),
-		(ChannelType::Dm, &[1], None),
-		(ChannelType::Dm, &[2], None),
-		(ChannelType::GroupDm, &[3, 4, 5], Some(GROUP_NAME)),
-		(ChannelType::GroupDm, &[6, 7], None),
+	let layouts: [(ChannelType, &[usize], Option<&str>, Standing); 7] = [
+		(ChannelType::Dm, &[0], None, Standing::Accepted),
+		(ChannelType::Dm, &[1], None, Standing::Accepted),
+		(ChannelType::Dm, &[2], None, Standing::Accepted),
+		(
+			ChannelType::GroupDm,
+			&[3, 4, 5],
+			Some(GROUP_NAME),
+			Standing::Accepted,
+		),
+		(ChannelType::GroupDm, &[6, 7], None, Standing::Accepted),
+		(ChannelType::Dm, &[20], None, Standing::Request),
+		(ChannelType::Dm, &[21], None, Standing::Spam),
 	];
 	let mut channel_ids = Vec::with_capacity(layouts.len());
-	for (variant, (kind, recipients, name)) in layouts.into_iter().enumerate() {
+	for (variant, (kind, recipients, name, standing)) in layouts.into_iter().enumerate() {
 		let channel_id = builder.ids.next();
 		let recipients: Vec<User> = recipients
 			.iter()
 			.map(|&index| builder.people.pool[index].clone())
 			.collect();
-		let mut authors: Vec<&User> = vec![&builder.people.current];
+		let mut authors: Vec<&User> = Vec::new();
+		if standing == Standing::Accepted {
+			authors.push(&builder.people.current);
+		}
 		authors.extend(recipients.iter());
 		let spec = ChannelSpec {
 			channel_id,
 			guild_id: None,
-			count: builder.config.messages_per_channel,
-			specials: true,
+			count: match standing {
+				Standing::Accepted => builder.config.messages_per_channel,
+				_ => REQUEST_MESSAGES.min(builder.config.messages_per_channel),
+			},
+			specials: standing == Standing::Accepted,
 			variant,
 			anchor: builder.anchor,
 			me: &builder.people.current,
@@ -132,7 +153,10 @@ pub fn build_private_channels(builder: &mut Builder) -> Vec<u64> {
 			last_message_id: messages.keys().next_back().copied().map(Snowflake),
 			recipient_ids: recipients.iter().map(|user| user.id).collect(),
 			recipients: LenientVec::from(recipients),
-			is_message_request: (variant == 2).then_some(true),
+			is_message_request: (standing != Standing::Accepted).then_some(true),
+			is_message_request_timestamp: (standing != Standing::Accepted)
+				.then(|| builder.anchor - Duration::hours(variant as i64)),
+			is_spam: (standing == Standing::Spam).then_some(true),
 			..Channel::default()
 		};
 		builder.channels.insert(channel_id, channel);

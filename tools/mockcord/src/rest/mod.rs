@@ -171,6 +171,14 @@ pub fn router(shared: Arc<Shared>) -> Router {
 			put(admin::join_thread).delete(admin::leave_thread),
 		)
 		.route(
+			"/channels/{id}/recipients/@me",
+			put(admin::accept_message_request).delete(admin::reject_message_request),
+		)
+		.route(
+			"/channels/recipients/@me/batch-reject",
+			put(admin::reject_message_requests),
+		)
+		.route(
 			"/channels/{id}/recipients/{uid}",
 			put(admin::add_recipient).delete(admin::remove_recipient),
 		)

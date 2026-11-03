@@ -2,7 +2,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use chrono::{DateTime, Duration, Utc};
 use protocol::{
-	Channel, ChannelType, Emoji, LenientVec, Member, MessageType, PermissionOverwrite,
+	Channel, ChannelFlags, ChannelType, Emoji, LenientVec, Member, MessageType, PermissionOverwrite,
 	PermissionOverwriteKind, Permissions, Relationship, RelationshipKind, Role, Snowflake, UserGuildSettings,
 };
 use serde_json::{Value, json};
@@ -640,6 +640,35 @@ impl Shared {
 			self.hub.broadcast("CHANNEL_DELETE", &value);
 		}
 		Ok(value)
+	}
+
+	pub fn accept_message_request(&self, channel_id: u64) -> Result<Value, ApiError> {
+		let mut store = self.store.lock();
+		let channel = store
+			.channels
+			.get_mut(&channel_id)
+			.filter(|channel| channel.is_pending_request())
+			.ok_or_else(ApiError::unknown_channel)?;
+		channel.is_message_request = Some(false);
+		channel.is_spam = Some(false);
+		channel.flags.remove(ChannelFlags::IS_SPAM);
+		let value = to_json(&*channel);
+		drop(store);
+		self.hub.broadcast("CHANNEL_UPDATE", &value);
+		Ok(value)
+	}
+
+	pub fn reject_message_requests(&self, channel_ids: &[u64]) -> Result<Vec<Value>, ApiError> {
+		{
+			let store = self.store.lock();
+			let all_pending = channel_ids
+				.iter()
+				.all(|id| store.channels.get(id).is_some_and(Channel::is_pending_request));
+			if !all_pending {
+				return Err(ApiError::unknown_channel());
+			}
+		}
+		channel_ids.iter().map(|id| self.delete_channel(*id)).collect()
 	}
 
 	pub fn set_overwrite(
