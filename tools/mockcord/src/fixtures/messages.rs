@@ -55,6 +55,7 @@ enum Special {
 	CustomEmoji,
 	UnicodeEmoji,
 	MentionMe,
+	SilentMention,
 	Reply,
 	Images,
 	EmbedRich,
@@ -184,6 +185,7 @@ fn special_list(spec: &ChannelSpec) -> Vec<Special> {
 		WebmFile,
 		Components,
 		MentionMe,
+		SilentMention,
 	];
 	if spec.emojis.is_empty() {
 		list.retain(|special| *special != CustomEmoji);
@@ -403,6 +405,15 @@ impl<'a> Generator<'a, '_> {
 					);
 					message.mentions = LenientVec::from(vec![spec.me.clone()]);
 				}
+			}
+			Special::SilentMention => {
+				if author.id == spec.me.id {
+					message.content = pick(self.rng, corpus::SENTENCES).to_string();
+				} else {
+					message.content = format!("<@{}> no ping for this one", spec.me.id);
+					message.mentions = LenientVec::from(vec![spec.me.clone()]);
+				}
+				message.flags = MessageFlags::SUPPRESS_NOTIFICATIONS;
 			}
 			Special::Reply => self.reply(message),
 			Special::Images => {

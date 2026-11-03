@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Duration;
 
-use protocol::{EditMessage, StatusKind, User};
+use protocol::{EditMessage, MessageFlags, StatusKind, User};
 use rand::Rng;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -25,6 +25,7 @@ const RECENT_CAPACITY: usize = 6;
 const EDIT_EVERY: u64 = 3;
 const DELETE_EVERY: u64 = 4;
 const THREAD_MENTION_EVERY: u64 = 5;
+const SILENT_MENTION_CHANCE: f64 = 0.3;
 const STORM_EVERY: u64 = 5;
 const STORM_USERS: std::ops::RangeInclusive<usize> = 3..=5;
 const STORM_EMOJI: [&str; 4] = ["🔥", "🎉", "👍", "😂"];
@@ -70,6 +71,7 @@ struct Target {
 	channel_id: u64,
 	author: User,
 	content: String,
+	flags: MessageFlags,
 }
 
 fn pick_target(shared: &Shared) -> Option<Target> {
@@ -112,15 +114,21 @@ fn pick_target(shared: &Shared) -> Option<Target> {
 	}
 	let author = (*pick(&mut rng, &authors)).clone();
 	let sentence = *pick(&mut rng, SENTENCES);
-	let content = if rng.random_bool(0.15) {
-		format!("<@{CURRENT_USER_ID}> {sentence}")
+	let (content, flags) = if rng.random_bool(0.15) {
+		let flags = if rng.random_bool(SILENT_MENTION_CHANCE) {
+			MessageFlags::SUPPRESS_NOTIFICATIONS
+		} else {
+			MessageFlags::empty()
+		};
+		(format!("<@{CURRENT_USER_ID}> {sentence}"), flags)
 	} else {
-		sentence.to_owned()
+		(sentence.to_owned(), MessageFlags::empty())
 	};
 	Some(Target {
 		channel_id,
 		author,
 		content,
+		flags,
 	})
 }
 
@@ -139,6 +147,7 @@ fn thread_target(shared: &Shared) -> Option<Target> {
 		channel_id: thread_id,
 		author,
 		content: format!("<@{CURRENT_USER_ID}> {sentence}"),
+		flags: MessageFlags::empty(),
 	})
 }
 
@@ -171,7 +180,11 @@ async fn message_loop(shared: Arc<Shared>) {
 		if interrupted(&mut shutdown, TYPING_LEAD).await {
 			return;
 		}
-		let posted = shared.post_message(target.channel_id, &target.author, Draft::text(target.content));
+		let draft = Draft {
+			flags: target.flags,
+			..Draft::text(target.content)
+		};
+		let posted = shared.post_message(target.channel_id, &target.author, draft);
 		if let Some(id) = posted.ok().and_then(|value| parse_id(&value["id"])) {
 			tracing::info!(channel_id = target.channel_id, "live message");
 			recent.push_back(Posted {

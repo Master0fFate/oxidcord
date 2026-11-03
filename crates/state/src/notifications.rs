@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use protocol::{
-	Channel, ChannelType, DefaultMessageNotifications, Message, MuteConfig, NotificationLevel, Permissions,
-	ReadState, Snowflake, StatusKind, ThreadMember, UserGuildSettings,
+	Channel, ChannelType, DefaultMessageNotifications, Message, MessageFlags, MuteConfig, NotificationLevel,
+	Permissions, ReadState, Snowflake, StatusKind, ThreadMember, UserGuildSettings,
 };
 
 use crate::guild::GuildState;
@@ -238,7 +238,7 @@ impl State {
 		let Some(me) = self.current_user_id() else {
 			return false;
 		};
-		if message.author.id == me {
+		if message.author.id == me || message.flags.contains(MessageFlags::SUPPRESS_NOTIFICATIONS) {
 			return false;
 		}
 		let settings = self.guild_settings(guild_id);
