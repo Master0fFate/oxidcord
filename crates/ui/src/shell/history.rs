@@ -43,12 +43,14 @@ impl History {
 		self.travel(self.cursor + 1 + skipped)
 	}
 
-	pub fn can_go_back(&self) -> bool {
-		self.cursor > 0
+	pub fn can_go_back(&self, reachable: impl Fn(&Place) -> bool) -> bool {
+		self.places[..self.cursor].iter().any(reachable)
 	}
 
-	pub fn can_go_forward(&self) -> bool {
-		self.cursor + 1 < self.places.len()
+	pub fn can_go_forward(&self, reachable: impl Fn(&Place) -> bool) -> bool {
+		self.places
+			.get(self.cursor + 1..)
+			.is_some_and(|later| later.iter().any(reachable))
 	}
 
 	fn travel(&mut self, cursor: usize) -> Option<Place> {

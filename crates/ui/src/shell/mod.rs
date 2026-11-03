@@ -180,6 +180,13 @@ impl Focusable for Shell {
 	}
 }
 
+fn place_reachable(state: &State, place: &Place) -> bool {
+	match place {
+		Place::Channel { channel, .. } => state.channel(*channel).is_some(),
+		Place::Home(_) => true,
+	}
+}
+
 fn selectable_channels(state: &State, guild: Snowflake) -> Vec<Snowflake> {
 	state
 		.guild_channel_tree(guild)
@@ -1270,10 +1277,7 @@ impl Shell {
 	fn navigate(&mut self, direction: NavigationDirection, window: &mut Window, cx: &mut Context<Self>) {
 		let place = {
 			let state = self.data.read(cx).state();
-			let reachable = |place: &Place| match place {
-				Place::Channel { channel, .. } => state.channel(*channel).is_some(),
-				Place::Home(_) => true,
-			};
+			let reachable = |place: &Place| place_reachable(&state, place);
 			match direction {
 				NavigationDirection::Back => self.history.back(reachable),
 				NavigationDirection::Forward => self.history.forward(reachable),
@@ -1293,19 +1297,17 @@ impl Shell {
 	}
 
 	fn history_button(&self, direction: NavigationDirection, cx: &mut Context<Self>) -> AnyElement {
-		let (id, icon, label, enabled) = match direction {
-			NavigationDirection::Back => (
-				"title-back",
-				IconKind::Back,
-				"title-back",
-				self.history.can_go_back(),
-			),
-			NavigationDirection::Forward => (
-				"title-forward",
-				IconKind::Ahead,
-				"title-forward",
-				self.history.can_go_forward(),
-			),
+		let enabled = {
+			let state = self.data.read(cx).state();
+			let reachable = |place: &Place| place_reachable(&state, place);
+			match direction {
+				NavigationDirection::Back => self.history.can_go_back(reachable),
+				NavigationDirection::Forward => self.history.can_go_forward(reachable),
+			}
+		};
+		let (id, icon, label) = match direction {
+			NavigationDirection::Back => ("title-back", IconKind::Back, "title-back"),
+			NavigationDirection::Forward => ("title-forward", IconKind::Ahead, "title-forward"),
 		};
 		let muted = cx.global::<Theme>().interactive_muted;
 		IconButton::new(id, icon)
