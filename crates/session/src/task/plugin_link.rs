@@ -620,6 +620,15 @@ impl Core {
 		outgoing: Outgoing,
 		decision: FullSendDecision,
 	) {
+		if outgoing.shows_pending()
+			&& !self
+				.state
+				.read()
+				.messages(channel_id)
+				.is_some_and(|cache| cache.has_pending(&nonce))
+		{
+			return;
+		}
 		match decision {
 			FullSendDecision::Pass => self.dispatch_send(nonce, channel_id, outgoing),
 			FullSendDecision::Replaced { by, msg } => {
