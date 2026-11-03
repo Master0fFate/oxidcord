@@ -555,6 +555,14 @@ impl Media {
 			}
 		}
 		drop((users, volumes));
+		let mut effects = self.shared.effects.lock();
+		active |= !effects.is_empty();
+		if deafened {
+			effects.clear();
+		} else {
+			effects.retain_mut(|playing| playing.mix_into(&mut self.mixer));
+		}
+		drop(effects);
 		let master = if deafened {
 			0.0
 		} else {

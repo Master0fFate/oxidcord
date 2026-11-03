@@ -17,6 +17,7 @@ use crate::event::VoiceEvent;
 use crate::media::SharedTransform;
 use crate::session::{Credentials, Signals, Supervisor, establish};
 use crate::shared::{Control, InputMode, Shared, VideoControl, VoiceStats};
+use crate::sound::{Playing, Sound};
 use crate::transform::{FrameTransform, Layered, Passthrough};
 use crate::video::capture::{CameraSource, ScreenSource, ScreenTarget, VideoSource};
 use crate::video::send::SenderHandle;
@@ -24,6 +25,7 @@ use crate::video::{VideoError, VideoFrame, VideoKind, VideoQuality, VideoSink};
 
 const MAX_VOLUME: f32 = 2.0;
 const PREVIEW_TIMEOUT: Duration = Duration::from_secs(3);
+const MAX_SOUNDS: usize = 8;
 
 #[derive(Debug)]
 pub struct VoiceParams {
@@ -168,6 +170,14 @@ impl VoiceConnection {
 			.user_volumes
 			.lock()
 			.insert(user_id, volume.clamp(0.0, MAX_VOLUME));
+	}
+
+	pub fn play_sound(&self, sound: &Sound, volume: f32) {
+		let mut effects = self.shared.effects.lock();
+		if effects.len() >= MAX_SOUNDS {
+			effects.remove(0);
+		}
+		effects.push(Playing::new(sound.clone(), volume.clamp(0.0, 1.0)));
 	}
 
 	pub fn set_input_volume(&self, volume: f32) {

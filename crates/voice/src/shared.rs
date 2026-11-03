@@ -11,6 +11,7 @@ use crate::codec::DEFAULT_BITRATE_BPS;
 use crate::dave::DaveStats;
 use crate::denoise;
 use crate::event::EventHub;
+use crate::sound::Playing;
 use crate::video::hub::VideoHub;
 use crate::video::{VideoKind, VideoQuality};
 
@@ -123,6 +124,7 @@ pub(crate) struct Shared {
 	pub output_level: AtomicF32,
 	pub user_volumes: Mutex<HashMap<Snowflake, f32>>,
 	pub ssrc_users: Mutex<HashMap<u32, Snowflake>>,
+	pub effects: Mutex<Vec<Playing>>,
 	pub rings: Arc<Rings>,
 	pub engine: Mutex<Option<AudioEngine>>,
 	pub hub: EventHub,
@@ -153,6 +155,7 @@ impl Shared {
 			output_level: AtomicF32::new(0.0),
 			user_volumes: Mutex::new(HashMap::new()),
 			ssrc_users: Mutex::new(HashMap::new()),
+			effects: Mutex::new(Vec::new()),
 			rings,
 			engine: Mutex::new(None),
 			hub: EventHub::default(),

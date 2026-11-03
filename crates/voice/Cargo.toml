@@ -40,6 +40,7 @@ sha2.workspace = true
 nnnoiseless = { workspace = true, optional = true }
 sonora.workspace = true
 openh264.workspace = true
+symphonia.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = [
