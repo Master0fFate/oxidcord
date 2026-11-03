@@ -41,6 +41,7 @@ struct CommandCall<'a> {
 	kind: u8,
 	guild_id: Option<Snowflake>,
 	channel_id: Snowflake,
+	session_id: String,
 	nonce: Nonce,
 	command: &'a ApplicationCommand,
 	target_id: Option<Snowflake>,
@@ -1051,6 +1052,15 @@ impl Core {
 		}
 	}
 
+	fn live_session_id(&mut self) -> Option<String> {
+		let session_id = self.state.read().session().session_id.clone();
+		if session_id.is_empty() {
+			self.reject("Still connecting, try again shortly");
+			return None;
+		}
+		Some(session_id)
+	}
+
 	fn command_body(&self, call: CommandCall) -> Value {
 		let command = call.command;
 		let mut body = json!({
@@ -1058,7 +1068,7 @@ impl Core {
 			"application_id": command.application_id,
 			"guild_id": call.guild_id,
 			"channel_id": call.channel_id,
-			"session_id": self.state.read().session().session_id.clone(),
+			"session_id": call.session_id,
 			"nonce": call.nonce,
 			"data": {
 				"version": command.version,
@@ -1083,6 +1093,9 @@ impl Core {
 		message_id: Snowflake,
 		command: ApplicationCommand,
 	) {
+		let Some(session_id) = self.live_session_id() else {
+			return;
+		};
 		let nonce = self.next_nonce();
 		self.track_interaction(&nonce, channel_id, None);
 		let aborted = Internal::InteractionAborted(nonce.clone());
@@ -1090,6 +1103,7 @@ impl Core {
 			kind: APPLICATION_COMMAND_INTERACTION,
 			guild_id,
 			channel_id,
+			session_id,
 			nonce,
 			command: &command,
 			target_id: Some(message_id),
@@ -1108,6 +1122,9 @@ impl Core {
 		options: Vec<InteractionOption>,
 		files: Vec<UploadFile>,
 	) {
+		let Some(session_id) = self.live_session_id() else {
+			return;
+		};
 		let nonce = self.next_nonce();
 		self.track_interaction(&nonce, channel_id, None);
 		let aborted = Internal::InteractionAborted(nonce.clone());
@@ -1115,6 +1132,7 @@ impl Core {
 			kind: APPLICATION_COMMAND_INTERACTION,
 			guild_id,
 			channel_id,
+			session_id,
 			nonce,
 			command: &command,
 			target_id: None,
@@ -1133,12 +1151,16 @@ impl Core {
 		options: Vec<InteractionOption>,
 		generation: u64,
 	) {
+		let Some(session_id) = self.live_session_id() else {
+			return;
+		};
 		let nonce = self.next_nonce();
 		self.completion = Some((nonce.clone(), generation));
 		let body = self.command_body(CommandCall {
 			kind: AUTOCOMPLETE_INTERACTION,
 			guild_id,
 			channel_id,
+			session_id,
 			nonce,
 			command: &command,
 			target_id: None,
@@ -1199,6 +1221,9 @@ impl Core {
 	}
 
 	fn submit_modal(&mut self, submit: ModalSubmit) {
+		let Some(session_id) = self.live_session_id() else {
+			return;
+		};
 		let nonce = self.next_nonce();
 		self.track_interaction(&nonce, submit.channel_id, None);
 		let aborted = Internal::InteractionAborted(nonce.clone());
@@ -1208,7 +1233,7 @@ impl Core {
 			guild_id: self.state.read().channel_guild(submit.channel_id),
 			channel_id: submit.channel_id,
 			application_id: submit.application_id,
-			session_id: self.state.read().session().session_id.clone(),
+			session_id,
 			data: ModalSubmissionData {
 				id: submit.interaction_id,
 				custom_id: submit.custom_id,
@@ -1221,6 +1246,9 @@ impl Core {
 	}
 
 	fn use_component(&mut self, used: ComponentUse) {
+		let Some(session_id) = self.live_session_id() else {
+			return;
+		};
 		let nonce = self.next_nonce();
 		self.track_interaction(&nonce, used.channel_id, Some(used.message_id));
 		let aborted = Internal::InteractionAborted(nonce.clone());
@@ -1232,7 +1260,7 @@ impl Core {
 			message_flags: used.message_flags,
 			message_id: used.message_id,
 			application_id: used.application_id,
-			session_id: self.state.read().session().session_id.clone(),
+			session_id,
 			data: ComponentInteractionData {
 				component_type: used.component_type,
 				custom_id: used.custom_id,
