@@ -1129,9 +1129,10 @@ impl Core {
 				channel_id,
 				visible,
 			} => {
-				self.member_channel = Some(channel_id);
-				self.member_ranges = member_ranges(visible);
-				self.subscribe(guild_id, Some(channel_id));
+				if self.member_channel == Some(channel_id) {
+					self.member_ranges = member_ranges(visible);
+					self.subscribe(guild_id, Some(channel_id));
+				}
 			}
 			Command::SearchMembers { guild_id, query } => {
 				if let Err(error) =
