@@ -64,13 +64,11 @@ impl State {
 		self.relationships
 			.values()
 			.filter(|relationship| keep(relationship))
-			.map(|relationship| {
-				RelationshipRow {
-					ignored: relationship.user_ignored,
-					spam: relationship.is_spam_request,
-					stranger: relationship.stranger_request,
-					..self.person_row(relationship.id, relationship.nickname.clone(), relationship.since)
-				}
+			.map(|relationship| RelationshipRow {
+				ignored: relationship.user_ignored,
+				spam: relationship.is_spam_request,
+				stranger: relationship.stranger_request,
+				..self.person_row(relationship.id, relationship.nickname.clone(), relationship.since)
 			})
 			.collect()
 	}

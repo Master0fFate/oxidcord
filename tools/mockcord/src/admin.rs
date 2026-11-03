@@ -647,7 +647,7 @@ impl Shared {
 		let channel = store
 			.channels
 			.get_mut(&channel_id)
-			.filter(|channel| channel.is_pending_request())
+			.filter(|channel| channel.is_request())
 			.ok_or_else(ApiError::unknown_channel)?;
 		channel.is_message_request = Some(false);
 		channel.is_spam = Some(false);
@@ -663,7 +663,7 @@ impl Shared {
 			let store = self.store.lock();
 			let all_pending = channel_ids
 				.iter()
-				.all(|id| store.channels.get(id).is_some_and(Channel::is_pending_request));
+				.all(|id| store.channels.get(id).is_some_and(Channel::is_request));
 			if !all_pending {
 				return Err(ApiError::unknown_channel());
 			}
