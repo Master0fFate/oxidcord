@@ -6,6 +6,7 @@ pub struct SearchResults {
 	pub messages: Vec<Message>,
 	pub total: u64,
 	pub indexing: bool,
+	pub request: u64,
 }
 
 fn hit_of(group: &Value) -> Option<&Value> {
@@ -32,6 +33,7 @@ impl SearchResults {
 			messages,
 			total,
 			indexing: false,
+			request: 0,
 		}
 	}
 

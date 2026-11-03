@@ -1015,7 +1015,8 @@ impl Core {
 				guild_id,
 				channel_id,
 				query,
-			} => self.search(guild_id, channel_id, query),
+				request,
+			} => self.search(guild_id, channel_id, query, request),
 			Command::ToggleCategory { category_id, .. } => {
 				let collapsed = !self.state.read().is_collapsed(category_id);
 				self.apply_local(LocalEvent::CategoryCollapsed {
@@ -1523,7 +1524,13 @@ impl Core {
 		});
 	}
 
-	fn search(&self, guild_id: Option<Snowflake>, channel_id: Option<Snowflake>, query: SearchQuery) {
+	fn search(
+		&self,
+		guild_id: Option<Snowflake>,
+		channel_id: Option<Snowflake>,
+		query: SearchQuery,
+		request: u64,
+	) {
 		let rest = self.rest.clone();
 		let internal = self.internal.clone();
 		self.runtime.spawn(async move {
@@ -1545,7 +1552,7 @@ impl Core {
 					SearchResults::default()
 				}
 			};
-			let _ = internal.send(Internal::Search(results));
+			let _ = internal.send(Internal::Search(SearchResults { request, ..results }));
 		});
 	}
 }

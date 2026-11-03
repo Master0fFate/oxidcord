@@ -177,6 +177,7 @@ pub enum Command {
 		guild_id: Option<Snowflake>,
 		channel_id: Option<Snowflake>,
 		query: SearchQuery,
+		request: u64,
 	},
 	ToggleCategory {
 		guild_id: Snowflake,

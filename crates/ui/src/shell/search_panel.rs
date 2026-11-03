@@ -115,10 +115,12 @@ pub fn tokens(text: &str) -> Vec<(usize, &str)> {
 
 fn snowflake_at(date: NaiveDate, end_of_day: bool) -> Option<Snowflake> {
 	let day = if end_of_day { date.succ_opt()? } else { date };
-	let start = day
-		.and_time(NaiveTime::MIN)
-		.and_local_timezone(Local)
-		.earliest()?;
+	let midnight = day.and_time(NaiveTime::MIN);
+	let start = midnight.and_local_timezone(Local).earliest().or_else(|| {
+		(midnight + chrono::TimeDelta::hours(1))
+			.and_local_timezone(Local)
+			.earliest()
+	})?;
 	let millis = start.timestamp_millis() - DISCORD_EPOCH_MS;
 	u64::try_from(millis)
 		.ok()
@@ -297,6 +299,7 @@ pub struct SearchPanel {
 	unknown: bool,
 	scope: Option<Scope>,
 	offset: u32,
+	request: u64,
 }
 
 impl EventEmitter<SearchEvent> for SearchPanel {}
@@ -313,6 +316,7 @@ impl SearchPanel {
 			unknown: false,
 			scope: None,
 			offset: 0,
+			request: 0,
 		}
 	}
 
@@ -331,6 +335,7 @@ impl SearchPanel {
 		self.offset = 0;
 		self.indexing = false;
 		self.searching = false;
+		self.request += 1;
 		self.scope = (!self.unknown).then_some(Scope {
 			guild_id: guild,
 			channel_id: if guild.is_none() { channel } else { None },
@@ -348,10 +353,12 @@ impl SearchPanel {
 			offset: Some(self.offset).filter(|offset| *offset > 0),
 			..scope.query.clone()
 		};
+		self.request += 1;
 		self.data.read(cx).send(Command::Search {
 			guild_id: scope.guild_id,
 			channel_id: scope.channel_id,
 			query,
+			request: self.request,
 		});
 		self.searching = true;
 		self.indexing = false;
@@ -364,13 +371,16 @@ impl SearchPanel {
 	}
 
 	fn last_offset(&self) -> u32 {
-		let pages = u32::try_from(self.total.div_ceil(u64::from(PAGE_SIZE))).unwrap_or(u32::MAX);
-		(pages.saturating_sub(1) * PAGE_SIZE).min(MAX_OFFSET)
+		let last = self.total.div_ceil(u64::from(PAGE_SIZE)).saturating_sub(1) * u64::from(PAGE_SIZE);
+		u32::try_from(last.min(u64::from(MAX_OFFSET))).unwrap_or(MAX_OFFSET)
 	}
 
 	pub fn refresh(&mut self, cx: &mut Context<Self>) {
 		let data = self.data.read(cx);
-		let Some(results) = data.search_results() else {
+		let Some(results) = data
+			.search_results()
+			.filter(|results| results.request == self.request)
+		else {
 			return;
 		};
 		let state = data.state();
