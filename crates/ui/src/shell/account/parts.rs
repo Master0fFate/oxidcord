@@ -19,6 +19,7 @@ use crate::data::Data;
 use crate::i18n::Translate as _;
 use crate::icons::IconKind;
 use crate::images::Images;
+use crate::model::role_color;
 use crate::theme::{Theme, with_alpha};
 
 pub type CloseFn = Rc<dyn Fn(&mut Window, &mut App)>;
@@ -80,11 +81,16 @@ pub fn banner(profile: &ProfileData, height: gpui::Rems, theme: &Theme, cx: &App
 		cx.global::<Images>()
 			.get(url, SizeHint::new(BANNER_PIXELS, BANNER_PIXELS / 2))
 	});
+	let banner_color = profile
+		.theme_colors
+		.map(|colors| role_color(colors[0]))
+		.or(profile.accent)
+		.unwrap_or(theme.brand);
 	div()
 		.h(height)
 		.w_full()
 		.flex_none()
-		.bg(profile.accent.unwrap_or(theme.brand))
+		.bg(banner_color)
 		.overflow_hidden()
 		.children(image.map(|image| img(image).size_full().object_fit(ObjectFit::Cover)))
 		.into_any_element()

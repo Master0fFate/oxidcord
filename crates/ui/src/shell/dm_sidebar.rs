@@ -15,6 +15,7 @@ use super::community::developer_mode;
 use super::community::notify::{Scope, mark_read_item, mute_items};
 use super::plugins::{self, MenuTarget, PluginMenu as _};
 use crate::components::{Avatar, ContextMenuBuilder, IconButton, MentionBadge, SectionHeader};
+use crate::cosmetics::{Flair, flair, name_text, nameplate_backdrop};
 use crate::data::Data;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
@@ -48,6 +49,7 @@ struct DmItem {
 	mentions: u32,
 	muted: bool,
 	over: Option<UserOverride>,
+	flair: Flair,
 	facts: RelationFacts,
 	badges: Vec<PluginBadge>,
 }
@@ -122,6 +124,7 @@ impl DmSidebar {
 					mentions: row.mentions,
 					muted: row.muted,
 					over,
+					flair: single.map(|user| flair(&state, None, user)).unwrap_or_default(),
 					facts: single
 						.map(|user| relation_facts(&state, user))
 						.unwrap_or_default(),
@@ -235,7 +238,7 @@ impl DmSidebar {
 				.size(rem(32.))
 				.url(dm.avatar.clone())
 				.status(dm.status)
-				.decoration(plugins::decoration_of(dm.over.as_ref()))
+				.decoration(dm.flair.decoration.clone())
 				.cutout(if selected {
 					theme.modifier_selected
 				} else {
@@ -273,6 +276,7 @@ impl DmSidebar {
 			.id(("dm", id.get()))
 			.group(group.clone())
 			.flex()
+			.relative()
 			.items_center()
 			.gap(theme.space_12)
 			.h(theme.member_row_height)
@@ -295,6 +299,12 @@ impl DmSidebar {
 					plugins::channel_click(None, id, event, cx);
 				}
 			}))
+			.children(
+				dm.flair
+					.nameplate
+					.as_ref()
+					.map(|plate| nameplate_backdrop(plate, theme, cx)),
+			)
 			.child(avatar)
 			.child(
 				div()
@@ -320,8 +330,9 @@ impl DmSidebar {
 										FontWeight::MEDIUM
 									})
 									.text_color(name_color)
-									.child(dm.name.clone()),
+									.child(name_text(dm.name.clone(), dm.flair.name_style.as_ref())),
 							)
+							.children(dm.flair.tag_chip())
 							.children(tags)
 							.children(channel_badges),
 					)

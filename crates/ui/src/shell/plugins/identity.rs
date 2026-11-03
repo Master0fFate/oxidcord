@@ -33,10 +33,6 @@ pub fn avatar_url(state: &State, guild: Option<Snowflake>, user: Snowflake, size
 		.unwrap_or_else(|| avatar_for(state, user, size))
 }
 
-pub fn decoration_of(over: Option<&UserOverride>) -> Option<SharedString> {
-	over.and_then(|over| over.decoration.clone()).map(Into::into)
-}
-
 fn badge_color(color: &BadgeColor, theme: &Theme) -> Option<Hsla> {
 	match color {
 		BadgeColor::Token(token) => theme.token(token),

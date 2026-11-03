@@ -10,6 +10,7 @@ use protocol::ActivityKind;
 use super::account::{StatusMenu, StatusMenuEvent};
 use super::plugins::{self, MenuTarget, PANEL};
 use crate::components::{Avatar, IconButton, StatusEmoji, tooltip};
+use crate::cosmetics::{Flair, flair, name_text};
 use crate::data::{Data, streamer_mode};
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::IconKind;
@@ -31,6 +32,7 @@ pub struct UserPanel {
 	name: SharedString,
 	handle: SharedString,
 	avatar: String,
+	flair: Flair,
 	status: Status,
 	custom_status: Option<SharedString>,
 	custom_emoji: Option<StatusEmoji>,
@@ -97,6 +99,7 @@ impl UserPanel {
 			name: SharedString::default(),
 			handle: SharedString::default(),
 			avatar: String::new(),
+			flair: Flair::default(),
 			status: Status::Online,
 			custom_status: None,
 			custom_emoji: None,
@@ -120,6 +123,7 @@ impl UserPanel {
 		let name: SharedString = state.display_name(None, user.id).into();
 		let handle: SharedString = user.username.clone().into();
 		let avatar = user_avatar(user, AVATAR_PIXELS);
+		let flair = flair(&state, None, user.id);
 		let status = Status::from(&state.own_status());
 		let custom = presence.and_then(|presence| {
 			presence
@@ -139,6 +143,7 @@ impl UserPanel {
 			|| name != self.name
 			|| handle != self.handle
 			|| avatar != self.avatar
+			|| flair != self.flair
 			|| status != self.status
 			|| custom_status != self.custom_status
 			|| custom_emoji != self.custom_emoji;
@@ -147,6 +152,7 @@ impl UserPanel {
 			self.name = name;
 			self.handle = handle;
 			self.avatar = avatar;
+			self.flair = flair;
 			self.status = status;
 			self.custom_status = custom_status;
 			self.custom_emoji = custom_emoji;
@@ -252,6 +258,7 @@ impl Render for UserPanel {
 							.size(rem(32.))
 							.url(self.avatar.clone())
 							.status(self.status)
+							.decoration(self.flair.decoration.clone())
 							.cutout(theme.user_panel_background),
 					)
 					.child(
@@ -266,7 +273,7 @@ impl Render for UserPanel {
 									.line_height(rem(18.))
 									.font_weight(FontWeight::SEMIBOLD)
 									.text_color(theme.header_primary)
-									.child(self.name.clone()),
+									.child(name_text(self.name.clone(), self.flair.name_style.as_ref())),
 							)
 							.child(
 								div()

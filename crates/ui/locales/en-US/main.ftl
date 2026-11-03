@@ -646,6 +646,7 @@ friends-active-empty-body = When a friend starts an activity, like playing a gam
 profile-add-friend = Add Friend
 profile-copy-id = Copy ID
 profile-about-me = About Me
+profile-private = Private profile
 profile-joined-server = Joined { $date }
 profile-view-full = View Full Profile
 profile-mutual-servers = { $count ->

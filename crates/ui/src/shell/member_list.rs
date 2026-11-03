@@ -21,6 +21,7 @@ use super::community::developer_mode;
 use super::moderation;
 use super::plugins::{self, MenuTarget, PluginMenu as _};
 use crate::components::{Avatar, ContextMenuBuilder, IconButton};
+use crate::cosmetics::{Flair, flair, name_text, nameplate_backdrop};
 use crate::data::Data;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
@@ -52,6 +53,7 @@ struct MemberItem {
 	bot: bool,
 	badge: Option<SharedString>,
 	over: Option<UserOverride>,
+	flair: Flair,
 }
 
 #[derive(PartialEq)]
@@ -443,6 +445,7 @@ impl MemberList {
 		div()
 			.id(("member", id.get()))
 			.flex()
+			.relative()
 			.items_center()
 			.gap(theme.space_12)
 			.h(theme.member_row_height)
@@ -459,12 +462,19 @@ impl MemberList {
 				})
 			}))
 			.context_menu(menu)
+			.children(
+				member
+					.flair
+					.nameplate
+					.as_ref()
+					.map(|plate| nameplate_backdrop(plate, theme, cx)),
+			)
 			.child(
 				Avatar::new(member.name.clone())
 					.size(rem(32.))
 					.url(member.avatar.clone())
 					.status(member.status)
-					.decoration(plugins::decoration_of(member.over.as_ref()))
+					.decoration(member.flair.decoration.clone())
 					.cutout(theme.background_primary),
 			)
 			.child(
@@ -485,7 +495,7 @@ impl MemberList {
 									.line_height(rem(20.))
 									.font_weight(FontWeight::MEDIUM)
 									.text_color(name_color)
-									.child(member.name.clone()),
+									.child(name_text(member.name.clone(), member.flair.name_style.as_ref())),
 							)
 							.when(member.bot, |name| {
 								name.child(
@@ -501,6 +511,7 @@ impl MemberList {
 										.child(bot_label.clone()),
 								)
 							})
+							.children(member.flair.tag_chip())
 							.children(
 								member
 									.over
@@ -554,6 +565,7 @@ fn member_item(
 		badge: badge.map(Into::into),
 		bot: state.user(id).is_some_and(|user| user.bot == Some(true)),
 		over: state.user_override(Some(guild), id).cloned(),
+		flair: flair(state, Some(guild), id),
 	}
 }
 

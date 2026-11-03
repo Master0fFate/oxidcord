@@ -43,10 +43,11 @@ use super::community;
 use super::incoming;
 use super::inline_emoji::{self, EmojiTokens};
 use super::plugins::{
-	INLINE, PatchEffects, author_badge, contextual_inline, decoration_of, message_actions, message_click,
-	message_extras, patch_effects, tags,
+	INLINE, PatchEffects, author_badge, contextual_inline, message_actions, message_click, message_extras,
+	patch_effects, tags,
 };
 use crate::components::{Avatar, IconButton, tooltip};
+use crate::cosmetics::{flair, name_text};
 use crate::format;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
@@ -1714,7 +1715,7 @@ fn message_row(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 	let avatar = over
 		.and_then(|over| over.avatar.clone())
 		.unwrap_or_else(|| user_avatar(&message.author, 128));
-	let decoration = decoration_of(over);
+	let flair = flair(env.lookup.state, guild, author_id);
 	let profile = env.dispatch.clone();
 	let avatar_profile = env.dispatch.clone();
 	let author_message = message.clone();
@@ -1746,7 +1747,7 @@ fn message_row(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 						.size(rem(AVATAR_SIZE))
 						.url(avatar)
 						.color(avatar_color)
-						.decoration(decoration),
+						.decoration(flair.decoration.clone()),
 				),
 		)
 		.child(
@@ -1779,8 +1780,9 @@ fn message_row(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 								},
 							)
 						})
-						.child(name),
+						.child(name_text(name.into(), flair.name_style.as_ref())),
 				)
+				.children(flair.tag_chip())
 				.children(author_tags)
 				.children(app_tag(message, theme, cx))
 				.children(author_badge(view, theme))
@@ -1818,6 +1820,7 @@ fn compact_message(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 		.state
 		.user_override(guild, message.author.id)
 		.map_or_else(Vec::new, |over| tags(over, message.author.id, theme, cx));
+	let flair = flair(env.lookup.state, guild, message.author.id);
 	let row = div()
 		.id(("message", id))
 		.group(group.clone())
@@ -1856,8 +1859,20 @@ fn compact_message(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 				.line_height(theme.compact_row)
 				.font_weight(FontWeight::SEMIBOLD)
 				.text_color(author_color(view, theme))
-				.child(view.author_display.clone()),
+				.child(name_text(
+					view.author_display.clone().into(),
+					flair.name_style.as_ref(),
+				)),
 		)
+		.children(flair.tag_chip().map(|chip| {
+			div()
+				.flex()
+				.flex_none()
+				.items_center()
+				.pr(theme.space_4)
+				.h(theme.compact_row)
+				.child(chip)
+		}))
 		.children((!author_tags.is_empty()).then(|| {
 			div()
 				.flex()

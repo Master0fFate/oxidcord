@@ -9,6 +9,7 @@ mod mention_badge;
 mod section_header;
 mod status_dot;
 mod status_emoji;
+mod tag_chip;
 mod tooltip;
 mod unread_pill;
 
@@ -26,5 +27,6 @@ pub use mention_badge::MentionBadge;
 pub use section_header::SectionHeader;
 pub use status_dot::{StatusDot, status_color};
 pub use status_emoji::StatusEmoji;
+pub use tag_chip::TagChip;
 pub use tooltip::tooltip;
 pub use unread_pill::{PillState, UnreadPill};

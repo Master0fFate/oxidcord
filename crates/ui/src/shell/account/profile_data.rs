@@ -2,6 +2,7 @@ use gpui::{Hsla, SharedString};
 use protocol::{RelationshipKind, Snowflake};
 use state::{State, UserOverride};
 
+use crate::cosmetics::{Flair, flair};
 use crate::lookup::user_avatar;
 use crate::model::{Status, role_color, status_of};
 
@@ -55,7 +56,11 @@ pub struct ProfileData {
 	pub avatar: String,
 	pub banner_url: Option<String>,
 	pub accent: Option<Hsla>,
+	pub theme_colors: Option<[u32; 2]>,
 	pub pronouns: Option<SharedString>,
+	pub legacy_username: Option<SharedString>,
+	pub private: bool,
+	pub flair: Flair,
 	pub bio: Option<String>,
 	pub badges: Vec<Badge>,
 	pub roles: Vec<RoleChip>,
@@ -128,6 +133,15 @@ pub fn relation_facts(state: &State, user: Snowflake) -> RelationFacts {
 }
 
 impl ProfileData {
+	pub fn handle_line(&self) -> String {
+		let mut line = self.handle.to_string();
+		for extra in self.pronouns.iter().chain(&self.legacy_username) {
+			line.push_str(" \u{b7} ");
+			line.push_str(extra);
+		}
+		line
+	}
+
 	pub fn load(state: &State, user_id: Snowflake, guild: Option<Snowflake>) -> Option<Self> {
 		let user = state.user(user_id)?;
 		let over = state.user_override(guild, user_id).cloned();
@@ -164,6 +178,9 @@ impl ProfileData {
 			.or(user.accent_color)
 			.and_then(|color| u32::try_from(color).ok())
 			.map(role_color);
+		let theme_colors = guild_profile
+			.and_then(|found| found.theme_colors)
+			.or_else(|| profile.and_then(|profile| profile.theme_colors));
 		let handle = match user.discriminator.as_deref() {
 			Some(tag) if tag != "0" && !tag.is_empty() => format!("{}#{tag}", user.username),
 			_ => user.username.clone(),
@@ -219,6 +236,7 @@ impl ProfileData {
 				}
 			}),
 			accent,
+			theme_colors,
 			pronouns: over
 				.as_ref()
 				.and_then(|over| over.pronouns.clone())
@@ -240,6 +258,11 @@ impl ProfileData {
 						.collect()
 				})
 				.unwrap_or_default(),
+			legacy_username: profile
+				.and_then(|profile| profile.legacy_username.clone())
+				.map(Into::into),
+			private: profile.is_some_and(|profile| profile.private),
+			flair: flair(state, guild, user_id),
 			roles: roles(state, guild, user_id),
 			created: user_id.timestamp().date_naive(),
 			joined,

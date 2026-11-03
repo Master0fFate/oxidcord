@@ -14,6 +14,7 @@ use super::note::NoteBox;
 use super::profile_data::ProfileData;
 use super::{AccountHub, parts, rich};
 use crate::components::{Avatar, IconButton};
+use crate::cosmetics::{name_text, profile_gradient};
 use crate::format;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::IconKind;
@@ -102,6 +103,14 @@ impl AccountHub {
 		cx: &Context<Self>,
 	) -> AnyElement {
 		let mut column = div().flex().flex_col().gap(theme.space_16);
+		if profile.private {
+			column = column.child(
+				div()
+					.text_size(theme.font_sm)
+					.text_color(theme.text_muted)
+					.child(cx.t("profile-private")),
+			);
+		}
 		if !activities.is_empty() {
 			let now = chrono::Utc::now().timestamp_millis();
 			column = column.child(
@@ -298,10 +307,7 @@ impl AccountHub {
 			FullTab::Friends => self.friends_tab(profile, theme, cx),
 		};
 		let cutout = theme.background_floating;
-		let handle = match &profile.pronouns {
-			Some(pronouns) => format!("{} \u{b7} {pronouns}", profile.handle),
-			None => profile.handle.to_string(),
-		};
+		let handle = profile.handle_line();
 		let tabs = div()
 			.flex()
 			.gap(theme.space_16)
@@ -324,6 +330,9 @@ impl AccountHub {
 			.max_h_full()
 			.rounded(theme.radius_md)
 			.bg(theme.background_floating)
+			.when_some(profile.theme_colors, |card, colors| {
+				card.bg(profile_gradient(colors, theme.background_floating))
+			})
 			.overflow_hidden()
 			.text_color(theme.text_normal)
 			.occlude()
@@ -354,6 +363,7 @@ impl AccountHub {
 								.size(theme.avatar_xl)
 								.url(profile.avatar.clone())
 								.status(profile.status)
+								.decoration(profile.flair.decoration.clone())
 								.cutout(cutout),
 						),
 					)
@@ -380,10 +390,17 @@ impl AccountHub {
 									.flex_col()
 									.child(
 										div()
+											.flex()
+											.items_center()
+											.gap(theme.space_4)
 											.text_size(theme.font_xl)
 											.font_weight(FontWeight::BOLD)
 											.text_color(theme.header_primary)
-											.child(profile.name.clone()),
+											.child(name_text(
+												profile.name.clone(),
+												profile.flair.name_style.as_ref(),
+											))
+											.children(profile.flair.tag_chip()),
 									)
 									.child(
 										div()

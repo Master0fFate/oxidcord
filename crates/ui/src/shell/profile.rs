@@ -15,6 +15,7 @@ use super::account::{self, ProfileData};
 use super::plugins::{self, LinkOrigin, MenuTarget, plugin_menu};
 use super::{SettingsBackend, links};
 use crate::components::{Avatar, Divider, tooltip};
+use crate::cosmetics::{name_text, profile_gradient};
 use crate::data::{Data, DataEvent};
 use crate::format;
 use crate::i18n::{ArgValue, Translate as _};
@@ -158,7 +159,6 @@ impl Render for ProfileCard {
 			.over
 			.as_ref()
 			.map_or_else(Vec::new, |over| plugins::badges(over, self.user, &theme, cx));
-		let decoration = plugins::decoration_of(profile.over.as_ref());
 		let suffix = profile.over.as_ref().and_then(|over| over.suffix.clone());
 		let badges = div()
 			.flex()
@@ -200,10 +200,7 @@ impl Render for ProfileCard {
 			},
 			cx,
 		);
-		let handle = match &profile.pronouns {
-			Some(pronouns) => format!("{} \u{b7} {pronouns}", profile.handle),
-			None => profile.handle.to_string(),
-		};
+		let handle = profile.handle_line();
 		div()
 			.flex()
 			.flex_col()
@@ -212,6 +209,9 @@ impl Render for ProfileCard {
 			.border_1()
 			.border_color(theme.divider)
 			.bg(theme.background_floating)
+			.when_some(profile.theme_colors, |card, colors| {
+				card.bg(profile_gradient(colors, theme.background_floating))
+			})
 			.overflow_hidden()
 			.text_color(theme.text_normal)
 			.child(banner)
@@ -236,7 +236,7 @@ impl Render for ProfileCard {
 									.size(theme.avatar_lg)
 									.url(profile.avatar.clone())
 									.status(profile.status)
-									.decoration(decoration)
+									.decoration(profile.flair.decoration.clone())
 									.cutout(cutout),
 							),
 					)
@@ -254,10 +254,14 @@ impl Render for ProfileCard {
 							.flex_col()
 							.child(
 								div()
+									.flex()
+									.items_center()
+									.gap(theme.space_4)
 									.text_size(theme.font_lg)
 									.font_weight(FontWeight::BOLD)
 									.text_color(theme.header_primary)
-									.child(profile.name.clone())
+									.child(name_text(profile.name.clone(), profile.flair.name_style.as_ref()))
+									.children(profile.flair.tag_chip())
 									.when_some(suffix, |name, suffix| {
 										name.child(
 											div()
@@ -277,6 +281,14 @@ impl Render for ProfileCard {
 							),
 					)
 					.child(Divider::horizontal())
+					.when(profile.private, |card| {
+						card.child(
+							div()
+								.text_size(theme.font_sm)
+								.text_color(theme.text_muted)
+								.child(cx.t("profile-private")),
+						)
+					})
 					.children(deck)
 					.when_some(bio, |card, bio| {
 						card.child(
