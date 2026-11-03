@@ -1,10 +1,8 @@
 use plugin_host::api::model::{OutgoingAttachment, OutgoingFull};
 use protocol::Snowflake;
-use rest::UploadFile;
+use rest::{SPOILER_PREFIX, UploadFile};
 
 use crate::command::ReplyTarget;
-
-const SPOILER_PREFIX: &str = "SPOILER_";
 
 pub(crate) struct Outgoing {
 	pub(crate) content: String,
@@ -53,7 +51,7 @@ impl Outgoing {
 					name: plain_name(&file.name).to_owned(),
 					size: file.bytes.len() as u64,
 					content_type: Some(file.content_type.clone()).filter(|kind| !kind.is_empty()),
-					spoiler: file.name.starts_with(SPOILER_PREFIX),
+					spoiler: file.is_spoiler(),
 				})
 				.collect(),
 			stickers: self.stickers.iter().map(|sticker| sticker.get()).collect(),

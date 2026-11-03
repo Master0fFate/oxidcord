@@ -1501,7 +1501,8 @@ impl Core {
 			let sent = if files.is_empty() {
 				rest.create_message(channel_id, body).await
 			} else {
-				rest.create_message_with_files(channel_id, body, files).await
+				rest.create_message_with_files(channel_id, body, files, None)
+					.await
 			};
 			if let Err(error) = sent {
 				tracing::warn!(%error, "message was not sent");

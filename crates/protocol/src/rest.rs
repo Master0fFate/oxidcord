@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::component::ComponentType;
+use crate::lenient::LenientVec;
 use crate::message::{MessageFlags, MessageReference, PollAnswer, PollLayout, PollMedia};
 use crate::snowflake::Snowflake;
 
@@ -21,6 +22,31 @@ pub struct AttachmentDescriptor {
 	pub duration_secs: Option<f64>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub waveform: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub uploaded_filename: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub is_spoiler: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CloudUploadRequest {
+	pub id: Snowflake,
+	pub filename: String,
+	pub file_size: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+#[serde(default)]
+pub struct CloudUploadSlot {
+	pub id: Snowflake,
+	pub upload_url: String,
+	pub upload_filename: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Deserialize)]
+#[serde(default)]
+pub struct CloudUploadSlots {
+	pub attachments: LenientVec<CloudUploadSlot>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -68,6 +94,8 @@ pub struct CreateMessage {
 	pub content: Option<String>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub nonce: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub enforce_nonce: Option<bool>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub tts: Option<bool>,
 	#[serde(skip_serializing_if = "Option::is_none")]

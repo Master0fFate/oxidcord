@@ -1,4 +1,9 @@
-use protocol::rest::{AttachmentDescriptor, ComponentInteraction, CreateMessage, EditMessage, MessagesQuery};
+use std::sync::Arc;
+
+use protocol::rest::{
+	AttachmentDescriptor, CloudUploadRequest, CloudUploadSlot, CloudUploadSlots, ComponentInteraction,
+	CreateMessage, EditMessage, MessagesQuery,
+};
 use protocol::{
 	BURST_REACTION, Channel, CommandIndex, LenientVec, Message, PinnedPage, Snowflake, ThreadMember, User,
 };
@@ -8,11 +13,23 @@ use serde_json::{Value, json};
 use super::guild_admin::with_reason;
 use crate::client::RestClient;
 use crate::error::{RestError, Result};
-use crate::request::{Request, UploadFile, encode_component};
+use crate::request::{Request, UploadFile, UploadProgress, encode_component};
 
 const PUBLIC_THREAD: i64 = 11;
 const CONSENT_ACCEPTED: i64 = 2;
 const MESSAGE_REQUEST_BATCH: usize = 50;
+const CLOUD_UPLOAD_MIN_BYTES: usize = 8 * 1024 * 1024;
+
+fn descriptor(index: usize, file: &UploadFile, uploaded_filename: Option<String>) -> AttachmentDescriptor {
+	AttachmentDescriptor {
+		id: Snowflake(index as u64),
+		filename: Some(file.name.clone()),
+		description: file.description.clone(),
+		uploaded_filename,
+		is_spoiler: file.is_spoiler().then_some(true),
+		..AttachmentDescriptor::default()
+	}
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct SearchQuery {
@@ -123,24 +140,81 @@ impl RestClient {
 		channel_id: Snowflake,
 		mut body: CreateMessage,
 		files: Vec<UploadFile>,
+		progress: Option<UploadProgress>,
 	) -> Result<Message> {
+		let total: usize = files.iter().map(|file| file.bytes.len()).sum();
+		if total > CLOUD_UPLOAD_MIN_BYTES {
+			return self
+				.create_message_from_cloud(channel_id, body, files, progress)
+				.await;
+		}
 		if body.attachments.is_empty() {
 			body.attachments = files
 				.iter()
 				.enumerate()
-				.map(|(index, file)| AttachmentDescriptor {
-					id: Snowflake(index as u64),
-					filename: Some(file.name.clone()),
-					description: file.description.clone(),
-					..AttachmentDescriptor::default()
-				})
+				.map(|(index, file)| descriptor(index, file, None))
 				.collect();
 		}
 		let mut request = Request::post(format!("/channels/{channel_id}/messages")).multipart(files, &body);
+		if let Some(progress) = progress {
+			request = request.progress(progress);
+		}
 		if body.nonce.is_some() {
 			request = request.idempotent();
 		}
 		self.send(request).await
+	}
+
+	async fn create_message_from_cloud(
+		&self,
+		channel_id: Snowflake,
+		mut body: CreateMessage,
+		files: Vec<UploadFile>,
+		progress: Option<UploadProgress>,
+	) -> Result<Message> {
+		let slots = self.upload_slots(channel_id, &files).await?;
+		let mut uploaded = 0u64;
+		for (file, slot) in files.iter().zip(&slots) {
+			let report = progress.clone().map(|report| -> UploadProgress {
+				let before = uploaded;
+				Arc::new(move |sent| report(before + sent))
+			});
+			self.put_upload(&slot.upload_url, file, report).await?;
+			uploaded += file.bytes.len() as u64;
+		}
+		body.attachments = files
+			.iter()
+			.zip(&slots)
+			.enumerate()
+			.map(|(index, (file, slot))| descriptor(index, file, Some(slot.upload_filename.clone())))
+			.collect();
+		self.create_message(channel_id, body).await
+	}
+
+	async fn upload_slots(
+		&self,
+		channel_id: Snowflake,
+		files: &[UploadFile],
+	) -> Result<Vec<CloudUploadSlot>> {
+		let requested: Vec<CloudUploadRequest> = files
+			.iter()
+			.enumerate()
+			.map(|(index, file)| CloudUploadRequest {
+				id: Snowflake(index as u64),
+				filename: file.name.clone(),
+				file_size: file.bytes.len() as u64,
+			})
+			.collect();
+		let request =
+			Request::post(format!("/channels/{channel_id}/attachments")).json(&json!({ "files": requested }));
+		let slots: CloudUploadSlots = self.send(request).await?;
+		let mut slots = slots.attachments.into_vec();
+		slots.sort_by_key(|slot| slot.id);
+		if slots.len() == files.len() {
+			Ok(slots)
+		} else {
+			Err(RestError::InvalidRequest)
+		}
 	}
 
 	pub async fn edit_message(

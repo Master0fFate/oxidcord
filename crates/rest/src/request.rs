@@ -1,6 +1,12 @@
+use std::sync::Arc;
+
 use bytes::Bytes;
 use reqwest::Method;
 use serde::Serialize;
+
+pub const SPOILER_PREFIX: &str = "SPOILER_";
+
+pub type UploadProgress = Arc<dyn Fn(u64) + Send + Sync>;
 
 #[derive(Debug, Clone)]
 pub struct UploadFile {
@@ -8,6 +14,12 @@ pub struct UploadFile {
 	pub bytes: Bytes,
 	pub content_type: String,
 	pub description: Option<String>,
+}
+
+impl UploadFile {
+	pub fn is_spoiler(&self) -> bool {
+		self.name.starts_with(SPOILER_PREFIX)
+	}
 }
 
 pub fn content_type_for(name: &str) -> &'static str {
@@ -49,6 +61,7 @@ pub(crate) enum Body {
 	Multipart {
 		payload_json: String,
 		files: Vec<UploadFile>,
+		progress: Option<UploadProgress>,
 	},
 	Form {
 		fields: Vec<(String, String)>,
@@ -108,9 +121,20 @@ impl Request {
 
 	pub fn multipart<T: Serialize + ?Sized>(mut self, files: Vec<UploadFile>, payload_json: &T) -> Self {
 		self.body = match serde_json::to_string(payload_json) {
-			Ok(payload_json) => Body::Multipart { payload_json, files },
+			Ok(payload_json) => Body::Multipart {
+				payload_json,
+				files,
+				progress: None,
+			},
 			Err(_) => Body::Invalid,
 		};
+		self
+	}
+
+	pub fn progress(mut self, report: UploadProgress) -> Self {
+		if let Body::Multipart { progress, .. } = &mut self.body {
+			*progress = Some(report);
+		}
 		self
 	}
 

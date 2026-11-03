@@ -13,7 +13,7 @@ use gpui_component::input::{Input, InputEvent, InputState, Textarea, TextareaSta
 use image::codecs::jpeg::JpegEncoder;
 use image::{DynamicImage, ImageFormat};
 use media::{Decoded, Limits};
-use rest::UploadFile;
+use rest::{SPOILER_PREFIX, UploadFile};
 
 use super::community::modal::{self, Close};
 use crate::components::{IconButton, dialog_footer, field};
@@ -23,7 +23,6 @@ use crate::icons::{Icon, IconKind};
 use crate::images::{Picture, render_image};
 use crate::theme::{Theme, rem, with_alpha};
 
-const SPOILER_PREFIX: &str = "SPOILER_";
 const PREVIEW_SIDE: u32 = 1600;
 const CARD_WIDTH: f32 = 200.;
 const CARD_MEDIA: f32 = 150.;

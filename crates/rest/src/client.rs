@@ -7,8 +7,8 @@ use parking_lot::RwLock;
 use protocol::rest::{ApiError, RateLimitBody, SLOWMODE_CODE};
 use protocol::{DecodeError, Token};
 use reqwest::header::{
-	ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue, ORIGIN,
-	REFERER,
+	ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, HeaderMap,
+	HeaderValue, ORIGIN, REFERER,
 };
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -17,8 +17,9 @@ use url::{Host, Url};
 use crate::config::RestConfig;
 use crate::error::{RestError, Result, network_error};
 use crate::limiter::{RateLimiter, clamp_wait, header_global, header_retry_after, header_u32};
-use crate::request::{Body, Request, UploadFile, encode_component};
+use crate::request::{Body, Request, UploadFile, UploadProgress, encode_component};
 use crate::route::{RouteKey, route_key};
+use crate::upload::{Meter, metered_body};
 use protocol::gateway::{accept_language, sec_ch_ua_platform};
 use reqwest::multipart::{Form, Part};
 use reqwest::redirect::Policy;
@@ -48,6 +49,7 @@ pub struct RestClient {
 
 struct Inner {
 	http: reqwest::Client,
+	storage: reqwest::Client,
 	base_url: Url,
 	max_body: usize,
 	token: Arc<RwLock<Option<Token>>>,
@@ -121,20 +123,33 @@ fn secure_scheme(url: &Url) -> bool {
 	}
 }
 
-fn file_part(file: &UploadFile) -> Result<Part> {
-	Part::stream_with_length(HttpBody::from(file.bytes.clone()), file.bytes.len() as u64)
+fn upload_body(bytes: &Bytes, meter: Option<&Arc<Meter>>) -> HttpBody {
+	match meter {
+		Some(meter) => metered_body(bytes.clone(), Arc::clone(meter)),
+		None => HttpBody::from(bytes.clone()),
+	}
+}
+
+fn file_part(file: &UploadFile, meter: Option<&Arc<Meter>>) -> Result<Part> {
+	Part::stream_with_length(upload_body(&file.bytes, meter), file.bytes.len() as u64)
 		.file_name(file.name.clone())
 		.mime_str(&file.content_type)
 		.map_err(|_| RestError::InvalidRequest)
 }
 
-fn multipart_form(payload_json: &str, files: &[UploadFile]) -> Result<Form> {
+fn multipart_form(
+	payload_json: &str,
+	files: &[UploadFile],
+	progress: Option<&UploadProgress>,
+) -> Result<Form> {
+	let total = files.iter().map(|file| file.bytes.len() as u64).sum();
+	let meter = progress.map(|report| Meter::new(Arc::clone(report), total));
 	let payload = Part::text(payload_json.to_owned())
 		.mime_str("application/json")
 		.map_err(|_| RestError::InvalidRequest)?;
 	let mut form = Form::new().part("payload_json", payload);
 	for (index, file) in files.iter().enumerate() {
-		form = form.part(format!("files[{index}]"), file_part(file)?);
+		form = form.part(format!("files[{index}]"), file_part(file, meter.as_ref())?);
 	}
 	Ok(form)
 }
@@ -145,7 +160,7 @@ fn fields_form(fields: &[(String, String)], files: &[(String, UploadFile)]) -> R
 		form = form.text(name.clone(), value.clone());
 	}
 	for (name, file) in files {
-		form = form.part(name.clone(), file_part(file)?);
+		form = form.part(name.clone(), file_part(file, None)?);
 	}
 	Ok(form)
 }
@@ -216,9 +231,16 @@ impl RestClient {
 			.default_headers(default_headers(&config))
 			.build()
 			.expect("http client initializes");
+		let storage = reqwest::Client::builder()
+			.redirect(Policy::none())
+			.timeout(UPLOAD_TIMEOUT)
+			.user_agent(config.user_agent.as_str())
+			.build()
+			.expect("storage client initializes");
 		Self {
 			inner: Arc::new(Inner {
 				http,
+				storage,
 				base_url: config.base_url,
 				max_body: config.max_body,
 				token: Arc::default(),
@@ -257,6 +279,35 @@ impl RestClient {
 
 	pub async fn send_empty(&self, request: Request) -> Result<()> {
 		self.execute(request).await.map(drop)
+	}
+
+	pub async fn put_upload(
+		&self,
+		upload_url: &str,
+		file: &UploadFile,
+		progress: Option<UploadProgress>,
+	) -> Result<()> {
+		let url = Url::parse(upload_url).map_err(|_| RestError::InvalidRequest)?;
+		if !secure_scheme(&url) {
+			return Err(RestError::InvalidRequest);
+		}
+		let meter = progress.map(|report| Meter::new(report, file.bytes.len() as u64));
+		let mut builder = self
+			.inner
+			.storage
+			.put(url)
+			.header(CONTENT_LENGTH, file.bytes.len())
+			.body(upload_body(&file.bytes, meter.as_ref()));
+		if discord_host(&self.inner.base_url) {
+			builder = builder.header(ORIGIN, HeaderValue::from_static(WEB_ORIGIN));
+		}
+		let response = builder.send().await.map_err(network_error)?;
+		let status = response.status();
+		if status.is_success() {
+			return Ok(());
+		}
+		let body = read_capped(response, self.inner.max_body).await?;
+		Err(classify(status, &body))
 	}
 
 	pub async fn send_bytes(&self, request: Request) -> Result<Bytes> {
@@ -303,9 +354,15 @@ impl RestClient {
 			Body::Json(bytes) => builder
 				.header(CONTENT_TYPE, "application/json")
 				.body(bytes.clone()),
-			Body::Multipart { payload_json, files } => builder
-				.timeout(UPLOAD_TIMEOUT)
-				.multipart(multipart_form(payload_json, files)?),
+			Body::Multipart {
+				payload_json,
+				files,
+				progress,
+			} => builder.timeout(UPLOAD_TIMEOUT).multipart(multipart_form(
+				payload_json,
+				files,
+				progress.as_ref(),
+			)?),
 			Body::Form { fields, files } => builder
 				.timeout(UPLOAD_TIMEOUT)
 				.multipart(fields_form(fields, files)?),
