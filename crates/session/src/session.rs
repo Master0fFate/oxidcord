@@ -55,8 +55,12 @@ fn install_crypto_provider() {
 	let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 }
 
+fn is_loopback(rest_base: &Url) -> bool {
+	rest_base.host_str() == Some("127.0.0.1")
+}
+
 fn mock_origin(rest_base: &Url) -> Option<Url> {
-	(rest_base.host_str() == Some("127.0.0.1")).then(|| {
+	is_loopback(rest_base).then(|| {
 		let mut origin = rest_base.clone();
 		origin.set_path("/");
 		origin
@@ -67,7 +71,7 @@ fn media_fetcher(identify: &IdentifyProperties, rest_base: &Url, max_bytes: usiz
 	let mut builder = MediaFetcher::builder()
 		.user_agent(identify.user_agent())
 		.max_bytes(max_bytes);
-	if rest_base.host_str() == Some("127.0.0.1")
+	if is_loopback(rest_base)
 		&& let Some(port) = rest_base.port()
 	{
 		builder = builder.allow_loopback_http(port);
