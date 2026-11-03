@@ -9,6 +9,7 @@ mod friends;
 mod history;
 mod incoming;
 mod inline_emoji;
+mod interaction_modal;
 mod lightbox;
 mod links;
 mod login;

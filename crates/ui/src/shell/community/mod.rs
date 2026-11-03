@@ -30,6 +30,7 @@ use state::{Changes, Selection};
 use store::Settings;
 
 use super::composer::{Composer, ComposerEvent};
+use super::interaction_modal;
 use super::links;
 use super::message::{Gallery, ReactionRequests, VideoFullscreenTarget};
 use super::pickers::{Picker, PickerEvent, PickerTab, SkinTone};
@@ -132,6 +133,7 @@ pub struct Community {
 	floating: Option<Floating>,
 	settings: Option<Entity<ServerSettings>>,
 	seen_rejection: u64,
+	seen_modal: u64,
 	plugin_slot: ComposerSlot,
 	_subscriptions: Vec<Subscription>,
 }
@@ -223,6 +225,7 @@ impl Community {
 			floating: None,
 			settings: None,
 			seen_rejection: 0,
+			seen_modal: 0,
 			plugin_slot: ComposerSlot::Main,
 			_subscriptions: subscriptions,
 		}
@@ -656,6 +659,9 @@ impl Community {
 		if changes.rejected {
 			self.show_rejection(window, cx);
 		}
+		if changes.interaction_modal {
+			self.show_interaction_modal(window, cx);
+		}
 		if changes.channel_lists.is_empty()
 			&& changes.loaded.is_empty()
 			&& !changes.guild_list
@@ -703,6 +709,15 @@ impl Community {
 		};
 		let composer = self.panel.read(cx).composer().clone();
 		composer.update(cx, |composer, cx| composer.set_typing(names, cx));
+	}
+
+	fn show_interaction_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+		let prompt = self.data.read(cx).state().interaction_modal().cloned();
+		let Some(prompt) = prompt.filter(|prompt| prompt.id > self.seen_modal) else {
+			return;
+		};
+		self.seen_modal = prompt.id;
+		interaction_modal::open(window, cx, self.data.clone(), prompt.modal);
 	}
 
 	fn show_rejection(&mut self, window: &mut Window, cx: &mut Context<Self>) {
