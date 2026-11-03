@@ -27,6 +27,7 @@ use crate::theme::{Theme, rem, with_alpha};
 
 const TITLE_LIMIT: usize = 100;
 const MAX_FILES: usize = 10;
+const POST_ACTION: &str = "create post";
 
 struct Attached {
 	name: String,
@@ -122,9 +123,9 @@ impl NewPost {
 				.and_then(|selection| state.channel(selection.channel_id))
 				.is_some_and(|thread| thread.parent_id == Some(self.channel));
 		let rejected = changes.rejected
-			&& state
-				.last_rejection()
-				.is_some_and(|rejection| rejection.id > baseline);
+			&& state.last_rejection().is_some_and(|rejection| {
+				rejection.id > baseline && rejection.reason.starts_with(POST_ACTION)
+			});
 		drop(state);
 		if created {
 			cx.emit(Close);

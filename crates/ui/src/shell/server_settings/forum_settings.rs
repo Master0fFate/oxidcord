@@ -10,7 +10,9 @@ use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::scroll::ScrollableElement as _;
 use gpui_component::switch::Switch;
-use protocol::{Channel, ChannelFlags, ChannelType, DefaultReaction, ForumLayout, ForumSortOrder, ForumTag, Snowflake};
+use protocol::{
+	Channel, ChannelFlags, ChannelType, DefaultReaction, ForumLayout, ForumSortOrder, ForumTag, Snowflake,
+};
 use session::{ForumEdit, ForumTagEdit};
 
 use super::channel::SLOWMODES;
