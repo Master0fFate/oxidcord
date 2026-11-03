@@ -8,9 +8,19 @@ use super::{Core, Internal};
 impl Core {
 	pub(super) fn refresh_token(&mut self, token: Token) {
 		self.rest.set_token(Token::new(token.as_str()));
-		self.token = Arc::new(token);
+		let previous = std::mem::replace(&mut self.token, Arc::new(token));
 		self.account_saved = false;
 		self.remember_account();
+		let store = self.store.clone();
+		let token = self.token.clone();
+		self.runtime.spawn_blocking(move || {
+			if store.tokens.load().ok().flatten().as_deref() != Some(previous.as_str()) {
+				return;
+			}
+			if let Err(error) = store.tokens.save(token.as_str()) {
+				tracing::warn!(%error, "rotated token was not saved");
+			}
+		});
 	}
 
 	pub(super) fn remember_account(&mut self) {
