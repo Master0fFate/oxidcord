@@ -48,7 +48,7 @@ use crate::format;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
 use crate::lookup::{Lookup, user_avatar};
-use crate::model::role_color;
+use crate::model::role_display_color;
 use crate::playback::MediaKey;
 use crate::theme::{Theme, rem};
 
@@ -645,7 +645,7 @@ fn bot_tag(label: SharedString, theme: &Theme) -> impl IntoElement {
 }
 
 fn author_color(view: &MessageView, theme: &Theme) -> Hsla {
-	view.author_color.map_or(theme.header_primary, role_color)
+	view.author_color.map_or(theme.header_primary, role_display_color)
 }
 
 fn reply_header(
@@ -1427,7 +1427,7 @@ fn message_row(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 	let profile = env.dispatch.clone();
 	let avatar_profile = env.dispatch.clone();
 	let author_message = message.clone();
-	let avatar_color = view.author_color.map_or(theme.brand, role_color);
+	let avatar_color = view.author_color.map_or(theme.brand, role_display_color);
 	let row = container
 		.mt(theme.space_16)
 		.children(reply)

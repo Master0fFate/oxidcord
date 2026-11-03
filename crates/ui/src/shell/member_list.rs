@@ -21,7 +21,7 @@ use crate::components::{Avatar, ContextMenuBuilder, IconButton};
 use crate::data::Data;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
-use crate::model::{Status, role_color, status_of};
+use crate::model::{Status, role_display_color, status_of};
 use crate::theme::{Theme, rem};
 
 const AVATAR_PIXELS: u32 = 64;
@@ -389,7 +389,7 @@ fn member_item(
 	MemberItem {
 		id,
 		name: display.into(),
-		color: color.map(role_color),
+		color: color.map(role_display_color),
 		status,
 		activity: activity.map(Into::into),
 		avatar: plugins::avatar_url(state, Some(guild), id, AVATAR_PIXELS),

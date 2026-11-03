@@ -611,7 +611,11 @@ impl<'a> Blocks<'a> {
 					.lookup
 					.role(*id)
 					.unwrap_or_else(|| (id.to_string(), None));
-				self.mention(format!("@{name}"), color.map(crate::model::role_color), style);
+				self.mention(
+					format!("@{name}"),
+					color.map(crate::model::role_display_color),
+					style,
+				);
 			}
 			Node::ChannelMention(id) => {
 				let name = self.env.lookup.channel(*id).unwrap_or_else(|| id.to_string());

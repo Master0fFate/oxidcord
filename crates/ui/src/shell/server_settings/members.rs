@@ -16,7 +16,7 @@ use crate::data::{Data, DataEvent};
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::IconKind;
 use crate::lookup::avatar_for;
-use crate::model::role_color;
+use crate::model::role_display_color;
 use crate::shell::community::access::{GuildAccess, MODERATION_PERMISSIONS};
 use crate::shell::moderation::user_items;
 use crate::theme::Theme;
@@ -94,7 +94,7 @@ impl MembersPage {
 					|| username.to_lowercase().contains(query);
 				matches.then(|| Row {
 					id: *id,
-					color: state.role_color(self.guild, *id).map(role_color),
+					color: state.role_color(self.guild, *id).map(role_display_color),
 					roles: member
 						.roles
 						.iter()
@@ -166,7 +166,7 @@ impl MembersPage {
 					.children(row.roles.iter().map(|(name, color)| {
 						badge(
 							name.clone(),
-							color.map_or(theme.interactive_normal, role_color),
+							color.map_or(theme.interactive_normal, role_display_color),
 							theme,
 						)
 					})),

@@ -42,7 +42,11 @@ pub fn set_role_saturation(percent: u8) {
 }
 
 pub fn role_color(color: u32) -> Hsla {
-	let mut color: Hsla = rgb(color).into();
+	rgb(color).into()
+}
+
+pub fn role_display_color(color: u32) -> Hsla {
+	let mut color = role_color(color);
 	color.s *= f32::from(ROLE_SATURATION.load(Ordering::Relaxed)) / f32::from(MAX_ROLE_SATURATION);
 	color
 }
