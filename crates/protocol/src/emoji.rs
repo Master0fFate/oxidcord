@@ -23,7 +23,9 @@ int_enum! {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PartialEmoji {
+	#[serde(skip_serializing_if = "Option::is_none")]
 	pub id: Option<Snowflake>,
+	#[serde(skip_serializing_if = "Option::is_none")]
 	pub name: Option<String>,
 	pub animated: bool,
 }

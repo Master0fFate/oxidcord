@@ -3,8 +3,8 @@ use std::time::{Duration, Instant};
 use chrono::{SecondsFormat, Utc};
 use protocol::{
 	Attachment, AttachmentDescriptor, ChannelType, CreateMessage, EditMessage, LenientVec, Message,
-	MessageFlags, MessageReference, MessageReferenceKind, MessageType, Nonce, Permissions, ReadState,
-	ReadStateKind, RelationshipKind, Snowflake, StickerFormat, StickerItem, User,
+	MessageFlags, MessageReference, MessageReferenceKind, MessageType, Nonce, Permissions, Poll, PollAnswer,
+	PollCreate, ReadState, ReadStateKind, RelationshipKind, Snowflake, StickerFormat, StickerItem, User,
 };
 use serde_json::{Value, json};
 
@@ -16,6 +16,7 @@ use crate::json::{author_id, parse_id, to_json};
 use crate::state::{Shared, Store};
 
 const BURST_COLOR: &str = "#ff73fa";
+const MAX_POLL_ANSWERS: usize = 10;
 
 pub struct UploadedFile {
 	pub filename: String,
@@ -35,6 +36,7 @@ pub struct Draft {
 	pub sticker_ids: Vec<Snowflake>,
 	pub descriptors: Vec<AttachmentDescriptor>,
 	pub files: Vec<UploadedFile>,
+	pub poll: Option<PollCreate>,
 }
 
 impl Draft {
@@ -57,6 +59,7 @@ impl Draft {
 			sticker_ids: create.sticker_ids,
 			descriptors: create.attachments,
 			files,
+			poll: create.poll,
 		}
 	}
 }
@@ -199,7 +202,12 @@ impl Shared {
 			.reference
 			.as_ref()
 			.is_some_and(|reference| reference.kind == Some(MessageReferenceKind::Forward));
-		if draft.content.is_empty() && draft.files.is_empty() && draft.sticker_ids.is_empty() && !forwarding {
+		if draft.content.is_empty()
+			&& draft.files.is_empty()
+			&& draft.sticker_ids.is_empty()
+			&& draft.poll.is_none()
+			&& !forwarding
+		{
 			return Err(ApiError::empty_message());
 		}
 		let mut store = self.store.lock();
@@ -214,6 +222,7 @@ impl Shared {
 			.filter_map(|user_id| self.fixtures.users.get(user_id).cloned())
 			.collect();
 		let mention_everyone = draft.content.contains("@everyone") || draft.content.contains("@here");
+		let poll = draft.poll.map(poll_from).transpose()?;
 		let mut attachments = Vec::with_capacity(draft.files.len());
 		for (index, file) in draft.files.iter().enumerate() {
 			let attachment_id = store.next_snowflake();
@@ -236,6 +245,7 @@ impl Shared {
 			mentions: LenientVec::from(mentions),
 			mention_roles: mention_roles.into_iter().map(Snowflake).collect(),
 			attachments: LenientVec::from(attachments),
+			poll,
 			nonce: draft.nonce.map(Nonce),
 			flags: draft.flags,
 			kind: draft.kind.unwrap_or_default(),
@@ -604,6 +614,34 @@ impl Shared {
 			.last_pin_timestamp = last_pin_timestamp;
 		Ok(())
 	}
+}
+
+fn poll_from(create: PollCreate) -> Result<Poll, ApiError> {
+	let question = create
+		.question
+		.text
+		.as_deref()
+		.is_some_and(|text| !text.is_empty());
+	if !question || create.answers.is_empty() || create.answers.len() > MAX_POLL_ANSWERS {
+		return Err(ApiError::invalid_body("Invalid Form Body"));
+	}
+	let answers = create
+		.answers
+		.into_iter()
+		.zip(1..)
+		.map(|(answer, answer_id)| PollAnswer {
+			answer_id: Some(answer_id),
+			..answer
+		})
+		.collect::<Vec<_>>();
+	Ok(Poll {
+		question: create.question,
+		answers: LenientVec::from(answers),
+		expiry: Some(Utc::now() + chrono::Duration::hours(i64::from(create.duration))),
+		allow_multiselect: create.allow_multiselect,
+		layout_type: Some(create.layout_type),
+		results: None,
+	})
 }
 
 fn blank_read_state(channel_id: u64) -> ReadState {

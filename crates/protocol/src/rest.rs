@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::component::ComponentType;
-use crate::message::{MessageFlags, MessageReference};
+use crate::message::{MessageFlags, MessageReference, PollAnswer, PollLayout, PollMedia};
 use crate::snowflake::Snowflake;
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -80,6 +80,17 @@ pub struct CreateMessage {
 	pub sticker_ids: Vec<Snowflake>,
 	#[serde(skip_serializing_if = "Vec::is_empty")]
 	pub attachments: Vec<AttachmentDescriptor>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub poll: Option<PollCreate>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PollCreate {
+	pub question: PollMedia,
+	pub answers: Vec<PollAnswer>,
+	pub duration: u32,
+	pub allow_multiselect: bool,
+	pub layout_type: PollLayout,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]

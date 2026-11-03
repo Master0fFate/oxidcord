@@ -28,6 +28,7 @@ use super::pickers::{PickerTab, SkinTone, toned};
 use super::plugins::{
 	self, MenuTarget, PluginMenu as _, command_list, composer_toolbar, has_plugin_items, parse_command,
 };
+use super::poll_create;
 use crate::components::{Avatar, ContextMenuBuilder, Divider, IconButton, unicode_emoji};
 use crate::data::{Data, DataEvent};
 use crate::i18n::{ArgValue, Translate as _};
@@ -62,6 +63,7 @@ struct SendAccess {
 	send: bool,
 	attach: bool,
 	slowmode: Option<Duration>,
+	poll: bool,
 }
 
 fn strip_silent(text: &str) -> Option<&str> {
@@ -381,6 +383,7 @@ impl Composer {
 				send: true,
 				attach: true,
 				slowmode: None,
+				poll: true,
 			};
 		}
 		let data = self.data.read(cx);
@@ -389,6 +392,7 @@ impl Composer {
 			send: state.can_send(channel),
 			attach: state.can_attach(channel),
 			slowmode: state.slowmode_interval(channel),
+			poll: state.can_poll(channel),
 		}
 	}
 
@@ -1021,6 +1025,12 @@ impl Composer {
 		cx.notify();
 	}
 
+	fn create_poll(&self, window: &mut Window, cx: &mut Context<Self>) {
+		if let Some(channel) = self.channel {
+			poll_create::open(window, cx, self.data.clone(), channel);
+		}
+	}
+
 	fn pick_files(&mut self, cx: &mut Context<Self>) {
 		cx.spawn(async move |this, cx| {
 			let Some(handles) = rfd::AsyncFileDialog::new().pick_files().await else {
@@ -1527,6 +1537,17 @@ impl Render for Composer {
 											.pr(theme.space_8)
 											.gap(theme.space_4)
 											.children(composer_toolbar(plugin_context, cx))
+											.when(access.poll, |toolbar| {
+												toolbar.child(
+													IconButton::new("composer-poll", IconKind::Poll)
+														.icon_size(rem(22.))
+														.hit_size(rem(32.))
+														.tooltip(cx.t("composer-poll"))
+														.on_click(cx.listener(|this, _, window, cx| {
+															this.create_poll(window, cx)
+														})),
+												)
+											})
 											.child(
 												IconButton::new("composer-gif", IconKind::Gif)
 													.icon_size(rem(22.))

@@ -10,7 +10,7 @@ use plugin_host::api::{HostError, User as PluginUser};
 use plugin_host::{Navigation, Permission, PickedPath, ViewContext};
 use protocol::{
 	ApplicationCommand, ChannelType, ComponentType, Gif, MessageFlags, NotificationLevel,
-	PermissionOverwriteKind, Permissions, Snowflake, StatusKind,
+	PermissionOverwriteKind, Permissions, PollCreate, Snowflake, StatusKind,
 };
 use rest::UploadFile;
 use rest::api::SearchQuery;
@@ -704,6 +704,10 @@ pub enum Command {
 	EndPoll {
 		channel_id: Snowflake,
 		message_id: Snowflake,
+	},
+	SendPoll {
+		channel_id: Snowflake,
+		poll: Box<PollCreate>,
 	},
 	UseComponent(ComponentUse),
 	RunMessageCommand {

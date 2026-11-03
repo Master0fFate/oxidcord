@@ -157,6 +157,10 @@ impl State {
 		.then(|| Duration::from_secs(seconds))
 	}
 
+	pub fn can_poll(&self, channel_id: Snowflake) -> bool {
+		self.can_send(channel_id) && self.my_permissions(channel_id).contains(Permissions::SEND_POLLS)
+	}
+
 	pub fn can_attach(&self, channel_id: Snowflake) -> bool {
 		self.can_send(channel_id)
 			&& self

@@ -103,6 +103,7 @@ composer-attach = Upload a File
 mention-role = Role
 mention-everyone = Notify everyone
 mention-here = Notify online
+composer-poll = Create poll
 composer-gift = Send a gift
 composer-gif = Open GIF picker
 composer-sticker = Open sticker picker
@@ -234,6 +235,7 @@ poll-votes = { $count ->
     [one] { $count } vote
    *[other] { $count } votes
 }
+poll-ends = Ends { $time }
 
 system-join = { $name } joined the server.
 system-pin = { $name } pinned a message to this channel.

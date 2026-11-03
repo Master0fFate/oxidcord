@@ -74,7 +74,7 @@ pub fn timestamp(unix: i64, style: TimestampStyle, cx: &App) -> String {
 	}
 }
 
-fn relative(time: DateTime<Utc>, cx: &App) -> SharedString {
+pub fn relative(time: DateTime<Utc>, cx: &App) -> SharedString {
 	let delta = Utc::now() - time;
 	let past = delta >= TimeDelta::zero();
 	let seconds = delta.num_seconds().unsigned_abs();

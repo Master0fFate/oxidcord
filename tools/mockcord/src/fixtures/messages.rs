@@ -944,7 +944,7 @@ impl<'a> Generator<'a, '_> {
 					})
 					.collect::<Vec<_>>(),
 			),
-			expiry: Some(self.spec.anchor + Duration::days(2)),
+			expiry: Some(self.spec.anchor + Duration::hours(2)),
 			allow_multiselect: false,
 			layout_type: Some(PollLayout::Default),
 			results: Some(PollResults {

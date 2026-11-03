@@ -7,6 +7,7 @@ use gpui_component::Sizable as _;
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::scroll::ScrollableElement as _;
 use media::SizeHint;
+use protocol::{PartialEmoji, Snowflake};
 
 use crate::components::unicode_emoji;
 use crate::emoji::{self, CATEGORIES};
@@ -31,6 +32,20 @@ impl EmojiChoice {
 		match self {
 			Self::Unicode(glyph) => glyph.clone(),
 			Self::Custom { name, id, .. } => format!("{name}:{id}"),
+		}
+	}
+
+	pub fn partial(&self) -> PartialEmoji {
+		match self {
+			Self::Unicode(glyph) => PartialEmoji {
+				name: Some(glyph.clone()),
+				..PartialEmoji::default()
+			},
+			Self::Custom { id, animated, .. } => PartialEmoji {
+				id: Some(Snowflake(*id)),
+				animated: *animated,
+				..PartialEmoji::default()
+			},
 		}
 	}
 

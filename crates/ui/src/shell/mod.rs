@@ -17,6 +17,7 @@ mod message;
 mod moderation;
 mod pickers;
 mod plugins;
+mod poll_create;
 mod profile;
 mod quick_switcher;
 mod request_bar;

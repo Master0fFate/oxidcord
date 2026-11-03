@@ -285,13 +285,16 @@ pub struct MessageReference {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PollMedia {
+	#[serde(skip_serializing_if = "Option::is_none")]
 	pub text: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
 	pub emoji: Option<PartialEmoji>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PollAnswer {
+	#[serde(skip_serializing_if = "Option::is_none")]
 	pub answer_id: Option<i64>,
 	pub poll_media: PollMedia,
 }

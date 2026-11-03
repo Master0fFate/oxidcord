@@ -100,6 +100,7 @@ impl Core {
 			| Command::ForwardMessage { .. }
 			| Command::VotePoll { .. }
 			| Command::EndPoll { .. }
+			| Command::SendPoll { .. }
 			| Command::UseComponent(_)
 			| Command::RunMessageCommand { .. }
 			| Command::SaveMessage { .. }
@@ -400,6 +401,17 @@ impl Core {
 			} => self.spawn_action("end poll", move |rest| async move {
 				rest.end_poll(channel_id, message_id).await.map(drop)
 			}),
+			Command::SendPoll { channel_id, poll } => {
+				if self.channel_allows(channel_id, Permissions::SEND_POLLS, "Send Polls") {
+					let body = CreateMessage {
+						poll: Some(*poll),
+						..CreateMessage::default()
+					};
+					self.spawn_action("send poll", move |rest| async move {
+						rest.create_message(channel_id, body).await.map(drop)
+					});
+				}
+			}
 			Command::UseComponent(used) => self.use_component(used),
 			Command::RunMessageCommand {
 				guild_id,

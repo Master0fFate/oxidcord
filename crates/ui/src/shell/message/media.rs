@@ -15,8 +15,8 @@ use media::providers::{self, Candidate, Layout};
 use plugin_host::ViewContext;
 use plugin_host::api::model::{AttachmentLayout, AttachmentOverride, ClickTarget, EmojiRef};
 use protocol::{
-	Attachment, Embed, EmbedKind, EmbedMedia, Gif, GifFormat, Message, PartialEmoji, Poll, Reaction,
-	Snowflake, StickerItem,
+	Attachment, Embed, EmbedKind, EmbedMedia, Gif, GifFormat, Message, PartialEmoji, Poll, PollAnswer,
+	Reaction, Snowflake, StickerItem,
 };
 
 use super::body::{BodyEnv, render_body};
@@ -27,7 +27,7 @@ use super::{
 	GifFavoriteOverrides, ImageTarget, RowAction, point_link, point_media, with_attachment_menu,
 	with_link_menu,
 };
-use crate::components::{IconButton, tooltip, unicode_emoji};
+use crate::components::{IconButton, StatusEmoji, tooltip, unicode_emoji};
 use crate::format;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
@@ -51,6 +51,7 @@ const STICKER_SIZE: f32 = 160.;
 const FIELD_WIDTH: f32 = 242.;
 const PLACEHOLDER_SIDE: u32 = 32;
 const REACTION_EMOJI: f32 = 16.;
+const POLL_EMOJI: f32 = 20.;
 const ANIMATED_FLAG: u64 = 1 << 5;
 const EMBED_ITEM: u64 = 1 << 62;
 const GIF_STAR: f32 = 26.;
@@ -1384,6 +1385,23 @@ fn poll_finished(poll: &Poll) -> bool {
 		|| poll.expiry.is_some_and(|expiry| expiry <= Utc::now())
 }
 
+fn poll_status(poll: &Poll, total: i64, finished: bool, unavailable: bool, cx: &App) -> SharedString {
+	if unavailable {
+		return cx.t("poll-results-unavailable");
+	}
+	let votes: SharedString = cx.t_args("poll-votes", &[("count", ArgValue::from(total))]);
+	match poll.expiry.filter(|_| !finished) {
+		Some(expiry) => {
+			let ends = cx.t_args(
+				"poll-ends",
+				&[("time", ArgValue::from(format::relative(expiry, cx).to_string()))],
+			);
+			format!("{votes} · {ends}").into()
+		}
+		None => votes,
+	}
+}
+
 pub fn poll(view: &PollView, env: &BodyEnv, cx: &App) -> AnyElement {
 	let theme = env.theme;
 	let message = view.message;
@@ -1399,20 +1417,21 @@ pub fn poll(view: &PollView, env: &BodyEnv, cx: &App) -> AnyElement {
 	};
 	let finished = poll_finished(poll);
 	let multi = poll.allow_multiselect;
-	let voted: Vec<i64> = poll
+	let answers: Vec<(&PollAnswer, i64)> = poll
 		.answers
 		.iter()
-		.filter_map(|answer| answer.answer_id)
+		.filter_map(|answer| Some((answer, answer.answer_id?)))
+		.collect();
+	let voted: Vec<i64> = answers
+		.iter()
+		.map(|(_, id)| *id)
 		.filter(|id| count_of(*id).1)
 		.collect();
 	let current: Vec<i64> = view.picks.cloned().unwrap_or_else(|| voted.clone());
-	let total: i64 = poll
-		.answers
-		.iter()
-		.map(|answer| count_of(answer.answer_id.unwrap_or_default()).0)
-		.sum();
-	let rows = poll.answers.iter().enumerate().map(|(index, answer)| {
-		let answer_id = answer.answer_id.unwrap_or_default();
+	let unavailable = finished && poll.results.is_none();
+	let total: i64 = answers.iter().map(|(_, id)| count_of(*id).0).sum();
+	let rows = answers.iter().enumerate().map(|(index, (answer, answer_id))| {
+		let answer_id = *answer_id;
 		let (count, _) = count_of(answer_id);
 		let chosen = current.contains(&answer_id);
 		let share = if total > 0 {
@@ -1491,6 +1510,14 @@ pub fn poll(view: &PollView, env: &BodyEnv, cx: &App) -> AnyElement {
 						)
 					}),
 			)
+			.children(
+				answer
+					.poll_media
+					.emoji
+					.as_ref()
+					.and_then(StatusEmoji::from_activity)
+					.map(|emoji| emoji.element(rem(POLL_EMOJI), cx)),
+			)
 			.child(
 				div()
 					.relative()
@@ -1502,16 +1529,18 @@ pub fn poll(view: &PollView, env: &BodyEnv, cx: &App) -> AnyElement {
 					.text_color(theme.header_primary)
 					.child(answer.poll_media.text.clone().unwrap_or_default()),
 			)
-			.child(
-				div()
-					.relative()
-					.flex_none()
-					.text_size(theme.font_sm)
-					.text_color(theme.header_secondary)
-					.child(format!("{}%", (share * 100.).round() as u32)),
-			)
+			.when(!unavailable, |row| {
+				row.child(
+					div()
+						.relative()
+						.flex_none()
+						.text_size(theme.font_sm)
+						.text_color(theme.header_secondary)
+						.child(format!("{}%", (share * 100.).round() as u32)),
+				)
+			})
 	});
-	let votes: SharedString = cx.t_args("poll-votes", &[("count", ArgValue::from(total))]);
+	let status = poll_status(poll, total, finished, unavailable, cx);
 	let submit_dispatch = env.dispatch.clone();
 	let end_dispatch = env.dispatch.clone();
 	let submit_ids = current.clone();
@@ -1558,7 +1587,7 @@ pub fn poll(view: &PollView, env: &BodyEnv, cx: &App) -> AnyElement {
 						.flex_1()
 						.text_size(theme.font_tiny)
 						.text_color(theme.text_muted)
-						.child(votes),
+						.child(status),
 				)
 				.when(multi && !finished && dirty, |footer| {
 					footer.child(
