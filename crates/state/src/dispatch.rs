@@ -4,8 +4,8 @@ use std::time::{Duration, Instant};
 use protocol::{
 	Channel, ChannelLastMessage, ChannelPinsUpdate, ChannelRecipientChange, DispatchEvent,
 	GuildMemberListUpdate, GuildMembersChunk, GuildRoleChange, Member, MemberListGroup, Message, MessageAck,
-	MessagePollVote, MessageType, MessageUpdate, PassiveUpdate, Presence, RelationshipKind, Snowflake, ThreadDelete,
-	ThreadListSync, TypingStart, UnavailableGuild, UserGuildSettings, VoiceState,
+	MessagePollVote, MessageType, MessageUpdate, PassiveUpdate, Presence, RelationshipKind, Snowflake,
+	ThreadDelete, ThreadListSync, TypingStart, UnavailableGuild, UserGuildSettings, VoiceState,
 };
 use serde::Deserialize;
 use serde_json::Value;

@@ -69,7 +69,7 @@ struct SendAccess {
 
 fn strip_silent(text: &str) -> Option<&str> {
 	let rest = text.strip_prefix(SILENT_TAG)?;
-	rest.starts_with(char::is_whitespace).then(|| rest.trim_start())
+	(rest.is_empty() || rest.starts_with(char::is_whitespace)).then(|| rest.trim_start())
 }
 
 fn silent_suggestion(cx: &Context<Composer>) -> Suggestion {

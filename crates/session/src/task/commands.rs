@@ -5,8 +5,8 @@ use protocol::{
 	ApplicationCommand, CreateMessage, DispatchEvent, MessageAck, MessageFlags, MessageReference,
 	MessageReferenceKind, Permissions, ProtoCustomStatus, Snowflake, StatusKind, ThreadMember,
 };
-use rest::{RestError, UploadFile};
 use rest::api::image_data_uri;
+use rest::{RestError, UploadFile};
 use serde_json::{Value, json};
 use state::{Loaded, LocalEvent, USER_COMMANDS, guild_folders_settings};
 
