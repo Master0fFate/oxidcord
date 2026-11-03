@@ -98,6 +98,10 @@ pub(crate) struct AppRoot {
 }
 
 pub fn run(mut config: LaunchConfig) {
+	platform::sound::monitor_playback(|rate| {
+		let mut tap = voice::RenderTap::new(rate).ok()?;
+		Some(Box::new(move |played: &[f32]| tap.write(played)))
+	});
 	let assets = crate::assets::Assets::new(config.store.paths.icons_dir());
 	gpui_platform::application().with_assets(assets).run(move |cx| {
 		gpui_component::init(cx);

@@ -78,6 +78,10 @@ impl CaptureChain {
 		self.pending.extend_from_slice(frame);
 	}
 
+	pub fn backlog(&self) -> usize {
+		self.pending.len() / self.source.channels()
+	}
+
 	pub fn take_frame(&mut self, frame: &mut [f32]) -> bool {
 		if self.pending.len() < frame.len() {
 			return false;

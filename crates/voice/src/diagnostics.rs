@@ -88,7 +88,7 @@ pub fn loopback_with_levels(
 		capture.pull(&rings)?;
 		while capture.take_frame(&mut microphone) {
 			microphone.iter_mut().for_each(|sample| *sample *= options.gain);
-			processor.cancel_echo(&mut microphone);
+			processor.cancel_echo(&mut microphone, capture.backlog());
 			if options.denoise {
 				denoiser.process(&mut microphone);
 			}
@@ -96,7 +96,6 @@ pub fn loopback_with_levels(
 			peak = peak.max(meter_level(rms(&microphone)));
 			let packet = encoder.encode(&microphone)?;
 			decoder.decode(packet, false, &mut speaker)?;
-			processor.analyze_playback(&speaker);
 			playback.push(&speaker)?;
 		}
 		if Instant::now() >= next_level {

@@ -3,9 +3,9 @@ use sonora::{AudioProcessing, Config, StreamConfig};
 use tracing::warn;
 
 use crate::codec::{FRAME_SAMPLES, SAMPLE_RATE};
+use crate::render_tap::RenderReader;
 
 const CHUNK_SAMPLES: usize = FRAME_SAMPLES / 2;
-const STEREO_CHUNK_SAMPLES: usize = CHUNK_SAMPLES * 2;
 const MONO: u16 = 1;
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
@@ -47,18 +47,16 @@ fn report_once(reported: &mut bool, stage: &'static str, error: impl std::fmt::D
 	}
 }
 
-fn run_capture(
+fn process_chunk(
 	apm: &mut AudioProcessing,
 	input: &mut [f32; CHUNK_SAMPLES],
-	frame: &mut [f32],
+	chunk: &mut [f32; CHUNK_SAMPLES],
 	reported: &mut bool,
 	stage: &'static str,
 ) {
-	for chunk in frame.as_chunks_mut::<CHUNK_SAMPLES>().0 {
-		*input = *chunk;
-		if let Err(error) = apm.process_capture_f32(&[&*input], &mut [chunk.as_mut_slice()]) {
-			report_once(reported, stage, error);
-		}
+	*input = *chunk;
+	if let Err(error) = apm.process_capture_f32(&[&*input], &mut [chunk.as_mut_slice()]) {
+		report_once(reported, stage, error);
 	}
 }
 
@@ -66,6 +64,7 @@ pub struct VoiceProcessor {
 	echo: AudioProcessing,
 	gain: AudioProcessing,
 	stages: Stages,
+	far_end: RenderReader,
 	input: [f32; CHUNK_SAMPLES],
 	reference: [f32; CHUNK_SAMPLES],
 	discarded: [f32; CHUNK_SAMPLES],
@@ -78,6 +77,7 @@ impl VoiceProcessor {
 			echo: build(),
 			gain: build(),
 			stages: Stages::default(),
+			far_end: RenderReader::default(),
 			input: [0.0; CHUNK_SAMPLES],
 			reference: [0.0; CHUNK_SAMPLES],
 			discarded: [0.0; CHUNK_SAMPLES],
@@ -94,29 +94,25 @@ impl VoiceProcessor {
 		}
 	}
 
-	pub fn analyze_playback(&mut self, stereo: &[f32]) {
+	pub fn cancel_echo(&mut self, frame: &mut [f32], backlog: usize) {
 		if !self.stages.echo_cancellation {
 			return;
 		}
-		for chunk in stereo.as_chunks::<STEREO_CHUNK_SAMPLES>().0 {
-			for (mono, pair) in self.reference.iter_mut().zip(chunk.as_chunks::<2>().0) {
-				*mono = (pair[0] + pair[1]) * 0.5;
-			}
+		let chunks = frame.as_chunks_mut::<CHUNK_SAMPLES>().0;
+		let count = chunks.len();
+		for (index, chunk) in chunks.iter_mut().enumerate() {
+			self.far_end
+				.read(backlog + (count - 1 - index) * CHUNK_SAMPLES, &mut self.reference);
 			if let Err(error) = self
 				.echo
 				.process_render_f32(&[&self.reference], &mut [&mut self.discarded])
 			{
 				report_once(&mut self.reported, "playback reference", error);
 			}
-		}
-	}
-
-	pub fn cancel_echo(&mut self, frame: &mut [f32]) {
-		if self.stages.echo_cancellation {
-			run_capture(
+			process_chunk(
 				&mut self.echo,
 				&mut self.input,
-				frame,
+				chunk,
 				&mut self.reported,
 				"echo cancellation",
 			);
@@ -124,11 +120,14 @@ impl VoiceProcessor {
 	}
 
 	pub fn level_gain(&mut self, frame: &mut [f32]) {
-		if self.stages.auto_gain {
-			run_capture(
+		if !self.stages.auto_gain {
+			return;
+		}
+		for chunk in frame.as_chunks_mut::<CHUNK_SAMPLES>().0 {
+			process_chunk(
 				&mut self.gain,
 				&mut self.input,
-				frame,
+				chunk,
 				&mut self.reported,
 				"automatic gain",
 			);
