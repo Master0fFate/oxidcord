@@ -24,6 +24,8 @@ use crate::icons::{Icon, IconKind};
 use crate::shell::{SettingsBackend, plugins};
 use crate::theme::Theme;
 
+type E2eeKey = (Snowflake, Option<u64>, bool);
+
 pub struct VoicePanel {
 	data: Entity<Data>,
 	backend: Rc<SettingsBackend>,
@@ -32,6 +34,7 @@ pub struct VoicePanel {
 	last_error: Option<String>,
 	was_camera: bool,
 	was_screen: bool,
+	e2ee_cache: Option<(E2eeKey, Option<Rc<E2eeView>>)>,
 	_subscriptions: Vec<Subscription>,
 }
 
@@ -83,6 +86,7 @@ impl VoicePanel {
 			last_error: None,
 			was_camera: false,
 			was_screen: false,
+			e2ee_cache: None,
 			_subscriptions: vec![subscription, local],
 		}
 	}
@@ -226,6 +230,16 @@ impl Render for VoicePanel {
 			let data = self.data.read(cx);
 			let state = data.state();
 			state.voice().map(|voice| {
+				let key = (
+					voice.channel_id,
+					voice.e2ee.as_ref().map(|info| info.epoch),
+					voice.e2ee_failed,
+				);
+				let rebuilt = self
+					.e2ee_cache
+					.as_ref()
+					.is_none_or(|(cached, _)| *cached != key)
+					.then(|| E2eeView::new(voice, |user| state.display_name(voice.guild_id, user).into()));
 				(
 					voice.status.clone(),
 					voice.stats,
@@ -233,13 +247,18 @@ impl Render for VoicePanel {
 					voice.screen_share.is_some(),
 					voice.channel_id,
 					voice.guild_id,
-					E2eeView::new(voice, |user| state.display_name(voice.guild_id, user).into()),
+					key,
+					rebuilt,
 				)
 			})
 		};
-		let Some((status, stats, camera_on, screen_on, channel, guild, e2ee_view)) = snapshot else {
+		let Some((status, stats, camera_on, screen_on, channel, guild, key, rebuilt)) = snapshot else {
 			return div().into_any_element();
 		};
+		if let Some(view) = rebuilt {
+			self.e2ee_cache = Some((key, view));
+		}
+		let e2ee_view = self.e2ee_cache.as_ref().and_then(|(_, view)| view.clone());
 		let (status_key, status_color) = status_style(&status, &theme);
 		let failed = matches!(status, VoiceStatus::Disconnected { reason: Some(_) });
 		let connected = matches!(status, VoiceStatus::Connected);

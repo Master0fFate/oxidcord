@@ -31,7 +31,7 @@ fn is_ringing_out(state: &State) -> bool {
 	state.voice().is_some_and(|voice| {
 		voice.guild_id.is_none()
 			&& voice.status == VoiceStatus::Connected
-			&& !state.ringing_recipients(voice.channel_id).is_empty()
+			&& state.has_ringing_recipients(voice.channel_id)
 			&& !state.call_has_guests(voice.channel_id)
 	})
 }

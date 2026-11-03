@@ -80,7 +80,6 @@ fn absent_recipients(
 	joined: &[Participant],
 	avatar_size: u32,
 ) -> Vec<Participant> {
-	let ringing = state.ringing_recipients(channel);
 	let recipients = state
 		.channel(channel)
 		.map_or(&[][..], |found| &found.recipient_ids);
@@ -89,7 +88,7 @@ fn absent_recipients(
 		.filter(|user| !joined.iter().any(|row| row.user == **user))
 		.map(|user| {
 			let mut absent = base(state, None, *user, avatar_size);
-			absent.presence = if ringing.contains(user) {
+			absent.presence = if state.is_ringing(channel, *user) {
 				Presence::Ringing
 			} else {
 				Presence::Absent

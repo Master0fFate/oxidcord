@@ -275,6 +275,19 @@ impl State {
 		})
 	}
 
+	pub fn is_ringing(&self, channel_id: Snowflake, user_id: Snowflake) -> bool {
+		Some(user_id) != self.current_user_id()
+			&& self
+				.call(channel_id)
+				.is_some_and(|call| call.ringing.contains(&user_id))
+	}
+
+	pub fn has_ringing_recipients(&self, channel_id: Snowflake) -> bool {
+		let me = self.current_user_id();
+		self.call(channel_id)
+			.is_some_and(|call| call.ringing.iter().any(|user_id| Some(*user_id) != me))
+	}
+
 	pub fn call_has_guests(&self, channel_id: Snowflake) -> bool {
 		let me = self.current_user_id();
 		self.call(channel_id)
