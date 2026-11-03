@@ -16,6 +16,8 @@ use crate::i18n::Translate as _;
 use crate::theme::Theme;
 
 const NO_CHOICE: usize = usize::MAX;
+const TEXT_LIMIT: usize = 150;
+const PARAGRAPH_LIMIT: usize = 1000;
 
 enum Answer {
 	Agreed(bool),
@@ -25,10 +27,18 @@ enum Answer {
 	Skipped,
 }
 
+struct FieldView {
+	label: SharedString,
+	description: Option<SharedString>,
+	lines: Vec<SharedString>,
+}
+
 pub struct Screening {
 	data: Entity<Data>,
 	guild_id: Snowflake,
 	answers: Vec<Answer>,
+	views: Vec<FieldView>,
+	description: Option<SharedString>,
 	_subscriptions: Vec<Subscription>,
 }
 
@@ -60,6 +70,8 @@ impl Screening {
 			data,
 			guild_id,
 			answers: Vec::new(),
+			views: Vec::new(),
+			description: None,
 			_subscriptions: vec![loads],
 		};
 		if screening
@@ -83,21 +95,42 @@ impl Screening {
 		if !self.answers.is_empty() {
 			return;
 		}
-		let kinds: Vec<(FormFieldKind, Option<String>)> = {
+		let (kinds, views, description): (Vec<(FormFieldKind, Option<String>)>, Vec<FieldView>, _) = {
 			let data = self.data.read(cx);
 			let state = data.state();
 			let Some(form) = state.member_verification(self.guild_id) else {
 				return;
 			};
-			form.form_fields
+			let kinds = form
+				.form_fields
 				.iter()
 				.map(|field| (field.field_type.clone(), field.placeholder.clone()))
-				.collect()
+				.collect();
+			let views = form
+				.form_fields
+				.iter()
+				.map(|field| FieldView {
+					label: field.label.clone().into(),
+					description: field.description.clone().map(SharedString::from),
+					lines: match field.field_type {
+						FormFieldKind::Terms => {
+							field.values.iter().cloned().map(SharedString::from).collect()
+						}
+						FormFieldKind::MultipleChoice => {
+							field.choices.iter().cloned().map(SharedString::from).collect()
+						}
+						_ => Vec::new(),
+					},
+				})
+				.collect();
+			(kinds, views, form.description.clone().map(SharedString::from))
 		};
 		self.answers = kinds
 			.into_iter()
 			.map(|(kind, placeholder)| self.answer_for(kind, placeholder, window, cx))
 			.collect();
+		self.views = views;
+		self.description = description;
 		cx.notify();
 	}
 
@@ -119,12 +152,20 @@ impl Screening {
 						None => state,
 					}
 				});
-				self._subscriptions
-					.push(cx.subscribe(&input, |_, _, event: &InputEvent, cx| {
+				self._subscriptions.push(cx.subscribe_in(
+					&input,
+					window,
+					|_, input, event: &InputEvent, window, cx| {
 						if matches!(event, InputEvent::Change) {
+							let value = input.read(cx).value();
+							if value.chars().count() > TEXT_LIMIT {
+								let capped: String = value.chars().take(TEXT_LIMIT).collect();
+								input.update(cx, |state, cx| state.set_value(capped, window, cx));
+							}
 							cx.notify();
 						}
-					}));
+					},
+				));
 				Answer::Short(input)
 			}
 			FormFieldKind::Paragraph => {
@@ -135,12 +176,20 @@ impl Screening {
 						None => state,
 					}
 				});
-				self._subscriptions
-					.push(cx.subscribe(&input, |_, _, event: &InputEvent, cx| {
+				self._subscriptions.push(cx.subscribe_in(
+					&input,
+					window,
+					|_, input, event: &InputEvent, window, cx| {
 						if matches!(event, InputEvent::Change) {
+							let value = input.read(cx).value();
+							if value.chars().count() > PARAGRAPH_LIMIT {
+								let capped: String = value.chars().take(PARAGRAPH_LIMIT).collect();
+								input.update(cx, |state, cx| state.set_value(capped, window, cx));
+							}
 							cx.notify();
 						}
-					}));
+					},
+				));
 				Answer::Long(input)
 			}
 			FormFieldKind::Unknown(_) => Answer::Skipped,
@@ -159,10 +208,11 @@ impl Screening {
 
 	fn complete(&self, fields: &[FormField], cx: &App) -> bool {
 		!self.answers.is_empty()
-			&& fields
-				.iter()
-				.enumerate()
-				.all(|(index, field)| !field.required || self.response(index, cx).is_some())
+			&& fields.iter().enumerate().all(|(index, field)| {
+				!field.required
+					|| matches!(self.answers.get(index), Some(Answer::Skipped))
+					|| self.response(index, cx).is_some()
+			})
 	}
 
 	fn submit(&mut self, cx: &mut Context<Self>) {
@@ -192,14 +242,14 @@ impl Screening {
 		}
 	}
 
-	fn rules(&self, index: usize, field: &FormField, theme: &Theme, cx: &Context<Self>) -> AnyElement {
+	fn rules(&self, index: usize, view: &FieldView, theme: &Theme, cx: &Context<Self>) -> AnyElement {
 		let agreed = matches!(self.answers.get(index), Some(Answer::Agreed(true)));
 		let weak = cx.weak_entity();
 		let toggle: ToggleHandler = Rc::new(move |value, _, cx| {
 			weak.update(cx, |this, cx| this.set_answer(index, Answer::Agreed(value), cx))
 				.ok();
 		});
-		let rules = card(theme).children(field.values.iter().enumerate().map(|(number, rule)| {
+		let rules = card(theme).children(view.lines.iter().enumerate().map(|(number, rule)| {
 			div()
 				.flex()
 				.gap(theme.space_8)
@@ -218,7 +268,7 @@ impl Screening {
 			.flex()
 			.flex_col()
 			.gap(theme.space_12)
-			.child(field_caption(field, theme))
+			.child(field_caption(view, theme))
 			.child(rules)
 			.child(switch_row(
 				("screening-agree", index),
@@ -231,12 +281,11 @@ impl Screening {
 			.into_any_element()
 	}
 
-	fn choices(&self, index: usize, field: &FormField, theme: &Theme, cx: &Context<Self>) -> AnyElement {
+	fn choices(&self, index: usize, view: &FieldView, theme: &Theme, cx: &Context<Self>) -> AnyElement {
 		let selected = match self.answers.get(index) {
 			Some(Answer::Choice(Some(choice))) => *choice,
 			_ => NO_CHOICE,
 		};
-		let options: Vec<SharedString> = field.choices.iter().cloned().map(SharedString::from).collect();
 		let weak = cx.weak_entity();
 		let pick: PickHandler = Rc::new(move |choice, _, cx| {
 			weak.update(cx, |this, cx| {
@@ -245,9 +294,9 @@ impl Screening {
 			.ok();
 		});
 		field_body(
-			field,
+			view,
 			theme,
-			segmented("screening-choice", &options, selected, theme, pick),
+			segmented("screening-choice", &view.lines, selected, theme, pick),
 		)
 	}
 
@@ -258,17 +307,18 @@ impl Screening {
 		theme: &Theme,
 		cx: &Context<Self>,
 	) -> Option<AnyElement> {
+		let view = self.views.get(index)?;
 		match (&field.field_type, self.answers.get(index)?) {
-			(FormFieldKind::Terms, _) => Some(self.rules(index, field, theme, cx)),
-			(FormFieldKind::MultipleChoice, _) => Some(self.choices(index, field, theme, cx)),
-			(_, Answer::Short(input)) => Some(field_body(field, theme, Input::new(input))),
-			(_, Answer::Long(input)) => Some(field_body(field, theme, Textarea::new(input))),
+			(FormFieldKind::Terms, _) => Some(self.rules(index, view, theme, cx)),
+			(FormFieldKind::MultipleChoice, _) => Some(self.choices(index, view, theme, cx)),
+			(_, Answer::Short(input)) => Some(field_body(view, theme, Input::new(input))),
+			(_, Answer::Long(input)) => Some(field_body(view, theme, Textarea::new(input))),
 			_ => None,
 		}
 	}
 }
 
-fn field_caption(field: &FormField, theme: &Theme) -> AnyElement {
+fn field_caption(view: &FieldView, theme: &Theme) -> AnyElement {
 	div()
 		.flex()
 		.flex_col()
@@ -278,18 +328,18 @@ fn field_caption(field: &FormField, theme: &Theme) -> AnyElement {
 				.text_size(theme.font_md)
 				.font_weight(FontWeight::SEMIBOLD)
 				.text_color(theme.header_primary)
-				.child(field.label.clone()),
+				.child(view.label.clone()),
 		)
-		.children(field.description.clone().map(|text| hint(text, theme)))
+		.children(view.description.clone().map(|text| hint(text, theme)))
 		.into_any_element()
 }
 
-fn field_body(field: &FormField, theme: &Theme, content: impl IntoElement) -> AnyElement {
+fn field_body(view: &FieldView, theme: &Theme, content: impl IntoElement) -> AnyElement {
 	div()
 		.flex()
 		.flex_col()
 		.gap(theme.space_8)
-		.child(field_caption(field, theme))
+		.child(field_caption(view, theme))
 		.child(content)
 		.into_any_element()
 }
@@ -307,10 +357,7 @@ impl Render for Screening {
 			.flex()
 			.flex_col()
 			.gap(theme.space_16)
-			.children(
-				form.and_then(|form| form.description.clone())
-					.map(|text| hint(text, &theme)),
-			)
+			.children(self.description.clone().map(|text| hint(text, &theme)))
 			.children(
 				fields
 					.iter()
