@@ -142,7 +142,7 @@ pub(crate) enum Internal {
 		db: Option<Arc<Database>>,
 	},
 	RestoreRead(Vec<ReadSnapshot>),
-	RestoreChannels(Vec<Channel>),
+	RestoreChannels(Vec<(Snowflake, Option<i64>, Option<Snowflake>)>),
 	FriendRequestSent(String),
 	FriendRequestFailed {
 		username: String,
@@ -877,8 +877,20 @@ impl Core {
 					self.persist_read_state(snapshot.channel_id);
 				}
 			}
-			Internal::RestoreChannels(channels) => {
-				for channel in channels {
+			Internal::RestoreChannels(placements) => {
+				let restored: Vec<Channel> = {
+					let state = self.state.read();
+					placements
+						.into_iter()
+						.filter_map(|(id, position, parent_id)| {
+							let mut channel = state.channel(id)?.clone();
+							channel.position = position;
+							channel.parent_id = parent_id;
+							Some(channel)
+						})
+						.collect()
+				};
+				for channel in restored {
 					self.apply_dispatch(&DispatchEvent::ChannelUpdate(Box::new(channel)));
 				}
 			}

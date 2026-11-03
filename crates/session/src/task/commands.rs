@@ -1760,11 +1760,22 @@ impl Core {
 		for channel in moved {
 			self.apply_dispatch(&DispatchEvent::ChannelUpdate(Box::new(channel)));
 		}
+		let previous: Vec<_> = previous
+			.iter()
+			.map(|channel| (channel.id, channel.position, channel.parent_id))
+			.collect();
 		let rest = self.rest.clone();
 		let internal = self.internal.clone();
 		self.runtime.spawn(async move {
 			if let Err(error) = rest.modify_channel_positions(guild_id, &positions).await {
-				let _ = internal.send(Internal::RestoreChannels(previous));
+				let placements = match rest.guild_channels(guild_id).await {
+					Ok(fetched) => fetched
+						.iter()
+						.map(|channel| (channel.id, channel.position, channel.parent_id))
+						.collect(),
+					Err(_) => previous,
+				};
+				let _ = internal.send(Internal::RestoreChannels(placements));
 				let _ = internal.send(rest_failure("reorder channels", &error));
 			}
 		});
