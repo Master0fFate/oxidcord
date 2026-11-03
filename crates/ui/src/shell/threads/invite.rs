@@ -55,10 +55,10 @@ impl InviteMembers {
 		let placeholder = cx.t("members-search");
 		let search = cx.new(|cx| InputState::new(window, cx).placeholder(placeholder));
 		let subscriptions = vec![
-			cx.subscribe(&data, |_, _, event: &DataEvent, cx| {
-				if matches!(event, DataEvent::Changed(_) | DataEvent::MediaReady) {
-					cx.notify();
-				}
+			cx.subscribe(&data, move |_, _, event: &DataEvent, cx| match event {
+				DataEvent::Changed(changes) if changes.members.contains(guild) => cx.notify(),
+				DataEvent::MediaReady => cx.notify(),
+				_ => {}
 			}),
 			cx.subscribe_in(
 				&search,
@@ -94,7 +94,7 @@ impl InviteMembers {
 			return Vec::new();
 		};
 		let me = state.current_user_id();
-		let mut rows: Vec<Row> = guild
+		let mut found: Vec<(String, Snowflake, String, String)> = guild
 			.members
 			.keys()
 			.filter(|id| Some(**id) != me)
@@ -104,20 +104,23 @@ impl InviteMembers {
 					.user(*id)
 					.map(|user| user.username.clone())
 					.unwrap_or_default();
-				let matches = query.is_empty()
-					|| name.to_lowercase().contains(query)
-					|| username.to_lowercase().contains(query);
-				matches.then(|| Row {
-					id: *id,
-					avatar: avatar_for(&state, *id, 64),
-					name: name.into(),
-					username: username.into(),
-				})
+				let lowered = name.to_lowercase();
+				let matches =
+					query.is_empty() || lowered.contains(query) || username.to_lowercase().contains(query);
+				matches.then_some((lowered, *id, name, username))
 			})
 			.collect();
-		rows.sort_by_key(|row| row.name.to_lowercase());
-		rows.truncate(ROW_LIMIT);
-		rows
+		found.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+		found.truncate(ROW_LIMIT);
+		found
+			.into_iter()
+			.map(|(_, id, name, username)| Row {
+				id,
+				avatar: avatar_for(&state, id, 64),
+				name: name.into(),
+				username: username.into(),
+			})
+			.collect()
 	}
 
 	fn add(&mut self, user: Snowflake, cx: &mut Context<Self>) {
