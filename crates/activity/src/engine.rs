@@ -88,6 +88,7 @@ pub(crate) enum Input {
 	Rpc { link: u64, activity: Option<Value> },
 	Game(Option<Value>),
 	Spotify(Option<Value>),
+	Stop,
 }
 
 #[derive(Clone)]
@@ -108,6 +109,10 @@ impl ActivityHandle {
 
 	pub fn refresh_connections(&self) {
 		let _ = self.inputs.send(Input::RefreshConnections);
+	}
+
+	pub fn shutdown(&self) {
+		let _ = self.inputs.send(Input::Stop);
 	}
 
 	pub fn endpoints(&self) -> RpcEndpoints {
@@ -246,6 +251,7 @@ impl EngineState {
 				},
 				Input::Game(game) => self.game = game,
 				Input::Spotify(activity) => self.spotify = activity,
+				Input::Stop => break,
 			}
 			self.publish();
 		}

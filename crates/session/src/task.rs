@@ -490,6 +490,7 @@ impl Core {
 		}
 		self.notifier.flush();
 		self.gateway.shutdown();
+		self.activity.shutdown();
 		self.persist.close().await;
 	}
 
