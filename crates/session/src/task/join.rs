@@ -1,5 +1,5 @@
 use activity::{ActivityRequest, SecretKind};
-use protocol::{CreateMessage, Message, MessageActivity, Snowflake};
+use protocol::{ChannelType, CreateMessage, Message, MessageActivity, Snowflake};
 
 use super::Core;
 use super::Internal;
@@ -59,14 +59,20 @@ impl Core {
 		let application_id = message
 			.application_id
 			.or_else(|| message.application.as_ref().map(|application| application.id));
-		let Some(application_id) = application_id.filter(|_| {
-			activity.kind == Some(MessageActivity::JOIN_REQUEST)
-				&& self.state.read().current_user_id() != Some(message.author.id)
-		}) else {
+		let (Some(application_id), Some(party_id)) = (application_id, activity.party_id.as_deref()) else {
 			return;
 		};
-		self.activity
-			.deliver_join_request(application_id, &message.author);
+		let valid = activity.kind == Some(MessageActivity::JOIN_REQUEST) && {
+			let state = self.state.read();
+			state.current_user_id() != Some(message.author.id)
+				&& state
+					.channel(message.channel_id)
+					.is_some_and(|channel| matches!(channel.kind, ChannelType::Dm | ChannelType::GroupDm))
+		};
+		if valid {
+			self.activity
+				.deliver_join_request(application_id, party_id, &message.author);
+		}
 	}
 
 	fn send_activity_message(
@@ -77,11 +83,18 @@ impl Core {
 		kind: i64,
 		party_id: String,
 	) {
+		let session_id = self.state.read().session().session_id.clone();
+		if session_id.is_empty() {
+			let _ = self
+				.internal
+				.send(Internal::Rejected(format!("{what}: not connected")));
+			return;
+		}
 		let body = CreateMessage {
 			activity: Some(MessageActivity {
 				kind: Some(kind),
 				party_id: Some(party_id),
-				session_id: Some(self.state.read().session().session_id.clone()),
+				session_id: Some(session_id),
 			}),
 			application_id: Some(application_id),
 			..CreateMessage::default()

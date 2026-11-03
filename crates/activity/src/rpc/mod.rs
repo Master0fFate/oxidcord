@@ -4,7 +4,7 @@ mod ipc;
 mod link;
 mod ws;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
@@ -21,9 +21,40 @@ pub use ipc::socket_name as ipc_socket_name;
 
 pub(crate) const MAX_LINKS: usize = 64;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RpcEvent {
+	Join,
+	Spectate,
+	JoinRequest,
+}
+
+impl RpcEvent {
+	pub fn parse(name: &str) -> Option<Self> {
+		match name {
+			"ACTIVITY_JOIN" => Some(Self::Join),
+			"ACTIVITY_SPECTATE" => Some(Self::Spectate),
+			"ACTIVITY_JOIN_REQUEST" => Some(Self::JoinRequest),
+			_ => None,
+		}
+	}
+
+	pub fn name(self) -> &'static str {
+		match self {
+			Self::Join => "ACTIVITY_JOIN",
+			Self::Spectate => "ACTIVITY_SPECTATE",
+			Self::JoinRequest => "ACTIVITY_JOIN_REQUEST",
+		}
+	}
+
+	fn bit(self) -> u8 {
+		1 << self as u8
+	}
+}
+
 struct Subscriber {
 	application_id: u64,
-	events: HashSet<String>,
+	party_id: Option<String>,
+	events: u8,
 	sender: mpsc::UnboundedSender<Value>,
 }
 
@@ -73,7 +104,8 @@ impl RpcShared {
 			link,
 			Subscriber {
 				application_id,
-				events: HashSet::new(),
+				party_id: None,
+				events: 0,
 				sender,
 			},
 		);
@@ -83,24 +115,37 @@ impl RpcShared {
 		self.subscribers.lock().remove(&link);
 	}
 
-	pub fn subscribe(&self, link: u64, event: &str) {
+	pub fn set_party(&self, link: u64, party_id: Option<String>) {
 		if let Some(subscriber) = self.subscribers.lock().get_mut(&link) {
-			subscriber.events.insert(event.to_owned());
+			subscriber.party_id = party_id;
 		}
 	}
 
-	pub fn unsubscribe(&self, link: u64, event: &str) {
+	pub fn subscribe(&self, link: u64, event: RpcEvent) {
 		if let Some(subscriber) = self.subscribers.lock().get_mut(&link) {
-			subscriber.events.remove(event);
+			subscriber.events |= event.bit();
 		}
 	}
 
-	pub fn dispatch(&self, application_id: u64, event: &str, data: &Value) -> bool {
-		let payload = json!({ "cmd": "DISPATCH", "data": data, "evt": event, "nonce": Value::Null });
+	pub fn unsubscribe(&self, link: u64, event: RpcEvent) {
+		if let Some(subscriber) = self.subscribers.lock().get_mut(&link) {
+			subscriber.events &= !event.bit();
+		}
+	}
+
+	pub fn dispatch(
+		&self,
+		application_id: u64,
+		event: RpcEvent,
+		party_id: Option<&str>,
+		data: &Value,
+	) -> bool {
+		let payload = json!({ "cmd": "DISPATCH", "data": data, "evt": event.name(), "nonce": Value::Null });
 		let mut delivered = false;
 		for subscriber in self.subscribers.lock().values() {
 			if subscriber.application_id == application_id
-				&& subscriber.events.contains(event)
+				&& subscriber.events & event.bit() != 0
+				&& party_id.is_none_or(|party_id| subscriber.party_id.as_deref() == Some(party_id))
 				&& subscriber.sender.send(payload.clone()).is_ok()
 			{
 				delivered = true;

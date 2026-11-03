@@ -11,7 +11,7 @@ use url::Url;
 
 use crate::apps::Apps;
 use crate::games::{self, GamesConfig};
-use crate::rpc::{self, RpcShared, user_json};
+use crate::rpc::{self, RpcEvent, RpcShared, user_json};
 use crate::spotify::{self, SpotifyAccount};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,10 +62,10 @@ impl SecretKind {
 		}
 	}
 
-	fn event(self) -> &'static str {
+	fn event(self) -> RpcEvent {
 		match self {
-			Self::Join => "ACTIVITY_JOIN",
-			Self::Spectate => "ACTIVITY_SPECTATE",
+			Self::Join => RpcEvent::Join,
+			Self::Spectate => RpcEvent::Spectate,
 		}
 	}
 }
@@ -115,14 +115,19 @@ impl ActivityHandle {
 	}
 
 	pub fn deliver_secret(&self, application_id: Snowflake, kind: SecretKind, secret: &str) -> bool {
-		self.shared
-			.dispatch(application_id.get(), kind.event(), &json!({ "secret": secret }))
-	}
-
-	pub fn deliver_join_request(&self, application_id: Snowflake, user: &User) -> bool {
 		self.shared.dispatch(
 			application_id.get(),
-			"ACTIVITY_JOIN_REQUEST",
+			kind.event(),
+			None,
+			&json!({ "secret": secret }),
+		)
+	}
+
+	pub fn deliver_join_request(&self, application_id: Snowflake, party_id: &str, user: &User) -> bool {
+		self.shared.dispatch(
+			application_id.get(),
+			RpcEvent::JoinRequest,
+			Some(party_id),
 			&json!({ "user": user_json(user) }),
 		)
 	}

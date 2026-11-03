@@ -4,8 +4,8 @@ use protocol::Snowflake;
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 
-use super::RpcShared;
 use super::activity;
+use super::{RpcEvent, RpcShared};
 use crate::apps::RpcApp;
 use crate::engine::{ActivityRequest, Input};
 
@@ -15,6 +15,7 @@ const API_ENDPOINT: &str = "//discord.com/api";
 const ENVIRONMENT: &str = "production";
 const ERROR_INVALID_PAYLOAD: i64 = 4000;
 const ERROR_INVALID_COMMAND: i64 = 4002;
+const ERROR_INVALID_EVENT: i64 = 4004;
 const ERROR_SERVICE_UNAVAILABLE: i64 = 1001;
 
 const KNOWN_COMMANDS: [&str; 19] = [
@@ -177,14 +178,17 @@ impl Link {
 		match name {
 			"SET_ACTIVITY" => self.set_activity(&cmd, &nonce, &args).await,
 			"SUBSCRIBE" | "UNSUBSCRIBE" => match payload.get("evt").and_then(Value::as_str) {
-				Some(event) => {
-					if name == "SUBSCRIBE" {
-						self.shared.subscribe(self.id, event);
-					} else {
-						self.shared.unsubscribe(self.id, event);
+				Some(event) => match RpcEvent::parse(event) {
+					Some(parsed) => {
+						if name == "SUBSCRIBE" {
+							self.shared.subscribe(self.id, parsed);
+						} else {
+							self.shared.unsubscribe(self.id, parsed);
+						}
+						reply(&cmd, &nonce, json!({ "evt": event }))
 					}
-					reply(&cmd, &nonce, json!({ "evt": event }))
-				}
+					None => error(&cmd, &nonce, ERROR_INVALID_EVENT, "Invalid event"),
+				},
 				None => error(
 					&cmd,
 					&nonce,
@@ -261,6 +265,7 @@ impl Link {
 			.as_ref()
 			.and_then(|activity| activity["party"]["id"].as_str())
 			.map(str::to_owned);
+		self.shared.set_party(self.id, self.party_id.clone());
 		let _ = self.shared.inputs.send(Input::Rpc {
 			link: self.id,
 			activity,
