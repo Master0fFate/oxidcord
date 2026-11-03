@@ -12,6 +12,7 @@ use voice::video::capture::ScreenTarget;
 use voice::video::{VideoFrame, VideoQuality, scaled_bgra};
 use voice::{AudioRoute, ShareAudio, VoiceConnection, VoiceError, VoiceEvent, VoiceOptions, VoiceParams};
 
+use super::voice_link::gain;
 use super::{Core, Internal};
 use crate::config::VoiceIo;
 
@@ -402,8 +403,6 @@ impl Core {
 				});
 			}
 			Role::Watch => {
-				connection.set_deaf(self.voice.self_deaf);
-				connection.set_output_volume(self.streams.volume);
 				self.apply_local(LocalEvent::Watching(key));
 			}
 		}
@@ -438,9 +437,17 @@ impl Core {
 
 	pub(super) fn set_stream_volume(&mut self, volume: f32) {
 		self.streams.volume = volume;
+		self.apply_stream_gain(self.master_volume());
+	}
+
+	pub(super) fn apply_stream_gain(&self, master: f32) {
 		if let Some(connection) = self.streams.watched_connection() {
-			connection.set_output_volume(volume);
+			connection.set_output_volume(self.streams.volume * master);
 		}
+	}
+
+	fn master_volume(&self) -> f32 {
+		gain(self.store.settings.read().voice.output_volume)
 	}
 
 	pub(super) fn load_stream_preview(&self, stream_key: String) {
@@ -526,6 +533,8 @@ impl Core {
 			audio: audio_route(self.voice.io(), &session.role),
 			output_device: self.store.settings.read().voice.output_device.clone(),
 			stream: true,
+			deafened: self.voice.self_deaf,
+			output_volume: self.streams.volume * self.master_volume(),
 			identity: Some(self.identity.clone()),
 			..VoiceOptions::default()
 		};

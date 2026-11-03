@@ -43,6 +43,8 @@ pub struct VoiceOptions {
 	pub output_device: Option<String>,
 	pub transform: Box<dyn FrameTransform>,
 	pub stream: bool,
+	pub deafened: bool,
+	pub output_volume: f32,
 	pub identity: Option<IdentifyProperties>,
 }
 
@@ -54,6 +56,8 @@ impl Default for VoiceOptions {
 			output_device: None,
 			transform: Box::new(Passthrough),
 			stream: false,
+			deafened: false,
+			output_volume: 1.0,
 			identity: None,
 		}
 	}
@@ -95,6 +99,10 @@ impl VoiceConnection {
 		let dave = DaveSession::new(params.user_id.get(), dave_group)?;
 		let rings = Arc::new(Rings::new());
 		let shared = Arc::new(Shared::new(rings.clone(), dave.stats(), options.stream));
+		shared.deafened.store(options.deafened, Ordering::Relaxed);
+		shared
+			.output_volume
+			.store(options.output_volume.clamp(0.0, MAX_VOLUME));
 		if options.audio.uses_devices() {
 			let engine = tokio::task::spawn_blocking(move || {
 				AudioEngine::start(rings, options.audio, options.input_device, options.output_device)

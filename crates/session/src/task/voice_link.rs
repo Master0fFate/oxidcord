@@ -326,6 +326,7 @@ impl Core {
 		if let Some(connection) = &self.voice.connection {
 			connection.set_output_volume(volume);
 		}
+		self.apply_stream_gain(volume);
 		self.update_voice_settings(move |settings| settings.output_volume = percent(volume));
 	}
 
