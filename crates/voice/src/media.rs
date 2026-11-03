@@ -17,7 +17,7 @@ use crate::crypto::PacketCipher;
 use crate::denoise::Denoiser;
 use crate::gate::{VoiceGate, meter_level, rms, to_db};
 use crate::jitter::Push;
-use crate::mixer::{Mixer, soft_clip};
+use crate::mixer::Mixer;
 use crate::processing::{Stages, VoiceProcessor};
 use crate::remote::{Frame, RemoteStream};
 use crate::rtp;
