@@ -10,9 +10,7 @@ use state::{LocalEvent, StreamInfo};
 use tokio::time::sleep;
 use voice::video::capture::ScreenTarget;
 use voice::video::{VideoFrame, VideoQuality, scaled_bgra};
-use voice::{
-	AudioRoute, ShareAudio, VoiceConnection, VoiceError, VoiceEvent, VoiceOptions, VoiceParams,
-};
+use voice::{AudioRoute, ShareAudio, VoiceConnection, VoiceError, VoiceEvent, VoiceOptions, VoiceParams};
 
 use super::{Core, Internal};
 use crate::config::VoiceIo;
@@ -113,7 +111,6 @@ async fn upload_preview(rest: &RestClient, connection: &VoiceConnection, stream_
 	};
 	if let Err(error) = rest.upload_stream_preview(stream_key, &thumbnail).await {
 		tracing::warn!(%error, "stream preview was not uploaded");
-	}
 	}
 }
 

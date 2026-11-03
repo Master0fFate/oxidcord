@@ -44,9 +44,7 @@ impl Shared {
 		{
 			return None;
 		}
-		let owner = guild.voice_states.iter().find(|state| {
-			state.channel_id.is_some_and(|id| id.0 == channel_id) && state.user_id.0 != CURRENT_USER_ID
-		})?;
+		let owner = self.stream_occupant(guild_id, channel_id)?;
 		let key = format!("guild:{}:{channel_id}:{}", guild.id, owner.user_id.0);
 		Some(stream_create_event(&key, channel_id, &[]))
 	}
