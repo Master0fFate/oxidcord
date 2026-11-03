@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use gpui::{
-	Context, Entity, FontWeight, Hsla, InteractiveElement as _, IntoElement, ParentElement as _, Render,
+	App, Context, Entity, FontWeight, Hsla, InteractiveElement as _, IntoElement, ParentElement as _, Render,
 	SharedString, StatefulInteractiveElement as _, Styled as _, Subscription, Window, div,
 	prelude::FluentBuilder as _,
 };
@@ -9,7 +9,8 @@ use gpui_component::WindowExt as _;
 use gpui_component::notification::Notification;
 use gpui_component::popover::Popover;
 use protocol::Snowflake;
-use state::{State, VoiceStats, VoiceStatus};
+use state::{DisconnectReason, State, VoiceStats, VoiceStatus};
+use voice::close;
 
 use super::actions;
 use super::e2ee::{self, E2eeView};
@@ -31,7 +32,7 @@ pub struct VoicePanel {
 	backend: Rc<SettingsBackend>,
 	title: SharedString,
 	titled: Option<(Option<Snowflake>, Snowflake)>,
-	last_error: Option<String>,
+	last_error: Option<DisconnectReason>,
 	was_camera: bool,
 	was_screen: bool,
 	e2ee_cache: Option<(E2eeKey, Option<Rc<E2eeView>>)>,
@@ -125,7 +126,7 @@ impl VoicePanel {
 		{
 			self.last_error = Some(reason.clone());
 			window.push_notification(
-				Notification::error(reason.clone()).title(cx.t("voice-not-connected")),
+				Notification::error(disconnect_text(reason, cx)).title(cx.t("voice-not-connected")),
 				cx,
 			);
 		} else if target.is_none() || error.is_none() {
@@ -210,6 +211,30 @@ impl VoicePanel {
 			})
 			.tooltip(tooltip(tooltip_text))
 			.child(Icon::new(icon).size(theme.voice_icon_md).color(color))
+	}
+}
+
+fn disconnect_text(reason: &DisconnectReason, cx: &App) -> SharedString {
+	match reason {
+		DisconnectReason::Closed(Some(code)) => match *code {
+			close::SESSION_INVALID => cx.t("voice-close-session"),
+			close::SESSION_TIMEOUT => cx.t("voice-close-timeout"),
+			close::DISCONNECTED => cx.t("voice-close-removed"),
+			close::SERVER_CRASHED => cx.t("voice-close-crashed"),
+			close::UNKNOWN_ENCRYPTION_MODE => cx.t("voice-close-encryption"),
+			close::E2EE_REQUIRED => cx.t("voice-close-e2ee"),
+			close::RATE_LIMITED => cx.t("voice-close-rate-limited"),
+			close::CALL_TERMINATED => cx.t("voice-close-call-ended"),
+			other => cx.t_args(
+				"voice-close-other",
+				&[("code", ArgValue::from(usize::from(other)))],
+			),
+		},
+		DisconnectReason::Closed(None) => cx.t("voice-close-lost"),
+		DisconnectReason::ConnectedElsewhere => cx.t("voice-reason-elsewhere"),
+		DisconnectReason::NoResponse => cx.t("voice-reason-no-response"),
+		DisconnectReason::Left => cx.t("voice-reason-left"),
+		DisconnectReason::Failed(text) => text.clone().into(),
 	}
 }
 

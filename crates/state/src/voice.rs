@@ -16,11 +16,20 @@ use crate::state::State;
 const VOICE_CUE_BACKLOG: usize = 8;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DisconnectReason {
+	Closed(Option<u16>),
+	ConnectedElsewhere,
+	NoResponse,
+	Left,
+	Failed(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VoiceStatus {
 	Connecting,
 	Connected,
 	Reconnecting,
-	Disconnected { reason: Option<String> },
+	Disconnected { reason: Option<DisconnectReason> },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]

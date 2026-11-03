@@ -7,7 +7,7 @@ use gateway::SendError;
 use parking_lot::Mutex;
 use protocol::{Permissions, Snowflake, Token, VoiceChannelEffect, VoiceServerUpdate, VoiceState};
 use serde_json::json;
-use state::{E2eeInfo, E2eeMember, JoinBlock, LocalEvent, VoiceStatus};
+use state::{DisconnectReason, E2eeInfo, E2eeMember, JoinBlock, LocalEvent, VoiceStatus};
 use store::{Store, UserVolume, VoiceSettings};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
@@ -27,7 +27,6 @@ const LEVEL_INTERVAL: Duration = Duration::from_millis(50);
 const LEVEL_FLOOR: f32 = 0.005;
 const FULL_VOLUME_PERCENT: f32 = 100.0;
 const AUTO_VAD_THRESHOLD_DB: f32 = -50.0;
-const CONNECTED_ELSEWHERE: &str = "Connected on another device";
 const MAX_CACHED_SOUNDS: usize = 32;
 
 pub(crate) type SharedVoice = Arc<Mutex<Option<Arc<VoiceConnection>>>>;
@@ -182,18 +181,6 @@ fn input_mode(push_to_talk: bool) -> InputMode {
 	}
 }
 
-fn close_reason(code: Option<u16>) -> String {
-	match code {
-		Some(close::DISCONNECTED) => "removed from the voice channel".to_owned(),
-		Some(close::UNKNOWN_ENCRYPTION_MODE) => "Unsupported encryption mode".to_owned(),
-		Some(close::E2EE_REQUIRED) => "This call requires end-to-end encryption".to_owned(),
-		Some(close::RATE_LIMITED) => "Too many voice reconnects, try later".to_owned(),
-		Some(close::CALL_TERMINATED) => "Call ended".to_owned(),
-		Some(code) => format!("voice connection closed ({code})"),
-		None => "voice connection lost".to_owned(),
-	}
-}
-
 impl Core {
 	pub(super) fn join_voice(&mut self, guild_id: Option<Snowflake>, channel_id: Snowflake) {
 		let target = Target { guild_id, channel_id };
@@ -219,7 +206,7 @@ impl Core {
 			self_deaf: self.voice.self_deaf,
 		});
 		if let Err(error) = self.send_voice_state(guild_id, Some(channel_id)) {
-			self.end_voice(Some(error.to_string()), false);
+			self.end_voice(Some(DisconnectReason::Failed(error.to_string())), false);
 			return;
 		}
 		self.schedule(JOIN_TIMEOUT, Internal::VoiceJoinTimeout);
@@ -519,7 +506,7 @@ impl Core {
 		}
 		if self.is_foreign_session(update) {
 			if update.channel_id.is_some() {
-				self.end_voice(Some(CONNECTED_ELSEWHERE.to_owned()), false);
+				self.end_voice(Some(DisconnectReason::ConnectedElsewhere), false);
 			}
 			return;
 		}
@@ -549,7 +536,7 @@ impl Core {
 				}
 			}
 			None if self.voice.session_id.is_some() => {
-				self.end_voice(Some("disconnected from the channel".to_owned()), false);
+				self.end_voice(Some(DisconnectReason::Left), false);
 			}
 			None => {}
 		}
@@ -610,7 +597,7 @@ impl Core {
 
 	pub(super) fn on_voice_join_timeout(&mut self, generation: u64) {
 		if generation == self.voice.generation && self.voice.connection.is_none() && !self.voice.connecting {
-			self.end_voice(Some("voice server did not respond".to_owned()), true);
+			self.end_voice(Some(DisconnectReason::NoResponse), true);
 		}
 	}
 
@@ -619,7 +606,7 @@ impl Core {
 			return;
 		}
 		match self.voice.closed_with.take() {
-			Some(code) => self.end_voice(Some(close_reason(Some(code))), false),
+			Some(code) => self.end_voice(Some(DisconnectReason::Closed(Some(code))), false),
 			None if self.voice.server.is_some() => self.try_connect(),
 			None => {}
 		}
@@ -638,7 +625,7 @@ impl Core {
 			Ok(connection) => self.adopt_connection(connection),
 			Err(error) => {
 				tracing::warn!(%error, "voice connection failed");
-				self.end_voice(Some(error.to_string()), true);
+				self.end_voice(Some(DisconnectReason::Failed(error.to_string())), true);
 			}
 		}
 	}
@@ -738,7 +725,7 @@ impl Core {
 				self.await_voice_server();
 				self.resend_voice_state();
 			}
-			code => self.end_voice(Some(close_reason(code)), true),
+			code => self.end_voice(Some(DisconnectReason::Closed(code)), true),
 		}
 	}
 
@@ -805,7 +792,7 @@ impl Core {
 		)
 	}
 
-	fn end_voice(&mut self, reason: Option<String>, notify_gateway: bool) {
+	fn end_voice(&mut self, reason: Option<DisconnectReason>, notify_gateway: bool) {
 		let Some(target) = self.voice.target.take() else {
 			return;
 		};
