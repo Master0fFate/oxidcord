@@ -353,6 +353,7 @@ struct Origin<'a> {
 	interaction: u64,
 	kind: InteractionType,
 	session_id: Option<&'a str>,
+	clicked: Option<u64>,
 }
 
 fn app_message(
@@ -371,6 +372,13 @@ fn app_message(
 		.filter(|_| flags.contains(MessageFlags::EPHEMERAL))
 		.map(str::to_owned);
 	draft.interaction_metadata = Some(invocation(shared, origin.interaction, origin.kind, None));
+	draft.reference = origin.clicked.map(|clicked| MessageReference {
+		kind: None,
+		message_id: Some(Snowflake(clicked)),
+		channel_id: Some(Snowflake(channel_id)),
+		guild_id: None,
+		fail_if_not_exists: Some(false),
+	});
 	shared.post_message(channel_id, &author, draft)
 }
 
@@ -397,6 +405,7 @@ fn use_component(shared: &Arc<Shared>, body: &Value, interaction: u64) -> Result
 		interaction,
 		kind: InteractionType::MessageComponent,
 		session_id: body["session_id"].as_str(),
+		clicked: parse_id(&body["message_id"]),
 	};
 	match body["data"]["custom_id"].as_str() {
 		Some("upgrade") => Ok(Reply::Modal(upgrade_modal(shared, body))),
@@ -444,6 +453,7 @@ fn submit_modal(shared: &Shared, body: &Value, interaction: u64) -> Result<Reply
 		interaction,
 		kind: InteractionType::ModalSubmit,
 		session_id: body["session_id"].as_str(),
+		clicked: None,
 	};
 	app_message(shared, channel_id, origin, MessageFlags::empty(), &content).map(|_| Reply::Success)
 }
