@@ -564,16 +564,14 @@ impl Timeline {
 						channel_id,
 						message_id,
 						emoji,
-						burst: burst.unwrap_or_else(|| {
-							plugins::client_options(cx).super_react_default.unwrap_or(false)
-						}),
+						burst,
 					}
 				} else {
 					Command::RemoveReaction {
 						channel_id,
 						message_id,
 						emoji,
-						burst: burst.unwrap_or(false),
+						burst,
 					}
 				};
 				self.data.read(cx).send(command);

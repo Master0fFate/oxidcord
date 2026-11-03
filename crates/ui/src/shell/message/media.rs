@@ -1307,7 +1307,7 @@ fn reaction_chip(
 					message_id,
 					emoji: key.clone(),
 					add,
-					burst: Some(burst),
+					burst,
 				},
 				window,
 				cx,

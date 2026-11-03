@@ -16,7 +16,7 @@ use crate::components::{ContextMenuBuilder, unicode_emoji};
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::IconKind;
 use crate::images::Images;
-use crate::shell::plugins::{MenuTarget, PluginMenu as _};
+use crate::shell::plugins::{MenuTarget, PluginMenu as _, client_options};
 use crate::theme::{Theme, rem};
 
 const QUICK_REACTIONS: [&str; 4] = ["\u{2705}", "\u{1F602}", "\u{1F480}", "\u{1F44D}"];
@@ -417,12 +417,12 @@ impl MenuSource {
 				});
 			}
 		}
+		let burst = client_options(cx).super_react_default.unwrap_or(false);
 		for pick in &mut picks {
-			pick.reacted = self
-				.message
-				.reactions
-				.iter()
-				.any(|reaction| reaction.me && media::emoji_key(&reaction.emoji) == pick.key);
+			pick.reacted = self.message.reactions.iter().any(|reaction| {
+				(if burst { reaction.me_burst } else { reaction.me })
+					&& media::emoji_key(&reaction.emoji) == pick.key
+			});
 		}
 		let (channel_id, message_id) = (self.message.channel_id, self.message.id);
 		let dispatch = self.dispatch.clone();
@@ -454,7 +454,7 @@ impl MenuSource {
 									message_id,
 									emoji: emoji.clone(),
 									add,
-									burst: None,
+									burst,
 								},
 								window,
 								cx,
