@@ -337,7 +337,6 @@ impl VoiceVideoPage {
 	}
 
 	fn set_input_mode(&mut self, push_to_talk: bool, cx: &mut Context<Self>) {
-		self.voice.push_to_talk = push_to_talk;
 		self.write(move |voice| voice.push_to_talk = push_to_talk);
 		self.data
 			.update(cx, |data, cx| data.set_input_mode(push_to_talk, cx));
@@ -534,12 +533,13 @@ impl Render for VoiceVideoPage {
 		};
 		let testing = test.is_some();
 		let meter_fraction = level_fraction(test.map_or(level, |test| test.level));
-		let manual_sensitivity = !self.voice.push_to_talk && !self.voice.auto_sensitivity;
+		let push_to_talk = self.data.read(cx).push_to_talk();
+		let manual_sensitivity = !push_to_talk && !self.voice.auto_sensitivity;
 		let threshold = manual_sensitivity.then(|| db_fraction(f32::from(self.voice.sensitivity_db)));
 		let camera_testing = self.camera_testing(cx);
 		let input_percent = self.voice.input_volume;
 		let output_percent = self.voice.output_volume;
-		let mode_index = usize::from(self.voice.push_to_talk);
+		let mode_index = usize::from(push_to_talk);
 		let device_row = div()
 			.flex()
 			.gap(theme.space_16)
@@ -623,7 +623,7 @@ impl Render for VoiceVideoPage {
 							cx.listener(|this, index: &usize, _, cx| this.set_input_mode(*index == 1, cx)),
 						),
 				)
-				.when(!self.voice.push_to_talk, |body| {
+				.when(!push_to_talk, |body| {
 					body.child(
 						Switch::new("voice-auto-sensitivity")
 							.checked(self.voice.auto_sensitivity)
@@ -657,7 +657,7 @@ impl Render for VoiceVideoPage {
 						),
 					)
 				})
-				.when(self.voice.push_to_talk, |body| {
+				.when(push_to_talk, |body| {
 					body.child(
 						div()
 							.text_size(theme.font_sm)

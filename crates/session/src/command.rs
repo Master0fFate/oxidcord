@@ -821,6 +821,10 @@ pub enum Command {
 	LoadScheduledEvents {
 		guild_id: Snowflake,
 	},
+	LoadAppCommands {
+		guild_id: Option<Snowflake>,
+		channel_id: Snowflake,
+	},
 	CreateScheduledEvent {
 		guild_id: Snowflake,
 		name: String,

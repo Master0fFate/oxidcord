@@ -297,6 +297,7 @@ impl Core {
 			| Command::LoadActiveThreads { .. }
 			| Command::CreateForumPost { .. }
 			| Command::LoadPins { .. }
+			| Command::LoadAppCommands { .. }
 			| Command::AckPins { .. }
 			| Command::LoadMentions { .. }
 			| Command::DismissMention { .. }
@@ -526,6 +527,7 @@ impl Core {
 				}
 			}
 			Command::LoadPins { channel_id, before } => self.load_pins(channel_id, before),
+			Command::LoadAppCommands { guild_id, channel_id } => self.load_commands(guild_id, channel_id),
 			Command::AckPins { channel_id } => {
 				let pinned_at = self
 					.state

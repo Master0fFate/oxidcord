@@ -2,12 +2,13 @@ use std::collections::{HashMap, HashSet};
 
 use gpui::{
 	AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, InteractiveElement as _, IntoElement,
-	ParentElement as _, Pixels, Point, Render, SharedString, StatefulInteractiveElement as _, Styled as _,
+	MouseButton, ParentElement as _, Pixels, Point, Render, SharedString, StatefulInteractiveElement as _, Styled as _,
 	Window, div, prelude::FluentBuilder as _,
 };
 use gpui_component::menu::ContextMenuExt as _;
 use gpui_component::scroll::ScrollableElement as _;
 use protocol::Snowflake;
+use session::Command;
 use state::{DmSectionView, PluginBadge, UserOverride};
 
 use super::account::{RelationFacts, manage_items, primary_items, relation_facts};
@@ -301,6 +302,15 @@ impl DmSidebar {
 					plugins::channel_click(None, id, event, cx);
 				}
 			}))
+			.on_mouse_down(
+				MouseButton::Right,
+				cx.listener(move |this, _, _, cx| {
+					this.data.read(cx).send(Command::LoadAppCommands {
+						guild_id: None,
+						channel_id: id,
+					});
+				}),
+			)
 			.children(
 				dm.flair
 					.nameplate
