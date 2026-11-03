@@ -34,7 +34,7 @@ use super::plugins::{
 	self, MenuTarget, PluginMenu as _, command_list, composer_toolbar, has_plugin_items, parse_command,
 };
 use super::poll_create;
-use super::slash::{Invalid, SlashDraft, is_typed};
+use super::slash::{Invalid, SlashDraft, command_paths, is_typed, label_at};
 use crate::components::{Avatar, ContextMenuBuilder, Divider, IconButton, unicode_emoji};
 use crate::data::{Data, DataEvent};
 use crate::format;
@@ -1157,11 +1157,12 @@ impl Composer {
 		};
 		let mut found = Vec::new();
 		for app in state.app_commands(ApplicationCommandType::ChatInput, self.guild, channel) {
-			for draft in SlashDraft::from_command(&app) {
-				let label = draft.label();
+			for path in command_paths(&app.command) {
+				let label = label_at(&app.command, &path);
 				let Some(hit) = rank(&label) else {
 					continue;
 				};
+				let draft = SlashDraft::at(&app.command, path);
 				found.push((hit, command_suggestion(&app, draft, label)));
 			}
 		}
@@ -1198,6 +1199,7 @@ impl Composer {
 			return;
 		};
 		slash.focused = index;
+		let filled = slash.focused_filled();
 		let option = slash.focused_option();
 		let typed = option.is_some_and(is_typed);
 		let autocomplete = option.is_some_and(|option| option.autocomplete);
@@ -1223,7 +1225,7 @@ impl Composer {
 		self.input
 			.update(cx, |state, cx| state.set_placeholder(hint, window, cx));
 		self.set_text(text, window, cx);
-		if autocomplete {
+		if autocomplete && !filled {
 			self.send_choice_request(cx);
 		}
 		if attachment {
@@ -1380,7 +1382,13 @@ impl Composer {
 
 	fn refresh_slash(&mut self, cx: &mut Context<Self>) {
 		let query = self.input.read(cx).value().to_lowercase();
-		let settled = query.is_empty() && self.slash.as_ref().is_some_and(SlashDraft::focused_filled);
+		let settled = self.slash.as_ref().is_some_and(|slash| {
+			slash.focused_filled()
+				&& slash
+					.slots
+					.get(slash.focused)
+					.is_some_and(|slot| slot.text.to_lowercase() == query)
+		});
 		let items = if settled {
 			Vec::new()
 		} else {

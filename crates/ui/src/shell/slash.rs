@@ -1,7 +1,6 @@
 use protocol::{ApplicationCommand, ApplicationCommandOption, CommandOptionType, InteractionOption};
 use rest::UploadFile;
 use serde_json::{Number, Value};
-use state::AppCommand;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Invalid {
@@ -103,31 +102,43 @@ fn parse(option: &ApplicationCommandOption, text: &str) -> Result<Value, Invalid
 	}
 }
 
+pub(super) fn command_paths(command: &ApplicationCommand) -> Vec<Vec<usize>> {
+	let mut paths = Vec::new();
+	collect_paths(&command.options, &mut Vec::new(), &mut paths);
+	paths
+}
+
+fn chain_at<'a>(
+	command: &'a ApplicationCommand,
+	path: &'a [usize],
+) -> impl Iterator<Item = &'a ApplicationCommandOption> {
+	let mut options = command.options.as_slice();
+	path.iter().map_while(move |&index| {
+		let option = options.get(index)?;
+		options = option.options.as_slice();
+		Some(option)
+	})
+}
+
+pub(super) fn label_at(command: &ApplicationCommand, path: &[usize]) -> String {
+	chain_at(command, path).fold(command.name.clone(), |label, option| {
+		format!("{label} {}", option.name)
+	})
+}
+
 impl SlashDraft {
-	pub fn from_command(found: &AppCommand) -> Vec<Self> {
-		let mut paths = Vec::new();
-		collect_paths(&found.command.options, &mut Vec::new(), &mut paths);
-		paths
-			.into_iter()
-			.map(|path| {
-				let slots = vec![Slot::default(); options_at(&found.command, &path).len()];
-				Self {
-					command: Box::new(found.command.clone()),
-					path,
-					slots,
-					focused: 0,
-				}
-			})
-			.collect()
+	pub fn at(command: &ApplicationCommand, path: Vec<usize>) -> Self {
+		let slots = vec![Slot::default(); options_at(command, &path).len()];
+		Self {
+			command: Box::new(command.clone()),
+			path,
+			slots,
+			focused: 0,
+		}
 	}
 
 	fn chain(&self) -> impl Iterator<Item = &ApplicationCommandOption> {
-		let mut options = self.command.options.as_slice();
-		self.path.iter().map_while(move |&index| {
-			let option = options.get(index)?;
-			options = option.options.as_slice();
-			Some(option)
-		})
+		chain_at(&self.command, &self.path)
 	}
 
 	pub fn command(&self) -> &ApplicationCommand {
@@ -143,9 +154,7 @@ impl SlashDraft {
 	}
 
 	pub fn label(&self) -> String {
-		self.chain().fold(self.command.name.clone(), |label, option| {
-			format!("{label} {}", option.name)
-		})
+		label_at(&self.command, &self.path)
 	}
 
 	pub fn description(&self) -> Option<&str> {
@@ -199,11 +208,12 @@ impl SlashDraft {
 		let Some(slot) = self.slots.get_mut(self.focused) else {
 			return Ok(());
 		};
+		if !is_typed(option) || slot.value.is_some() {
+			return Ok(());
+		}
 		let text = slot.text.trim();
-		if is_typed(option) && !text.is_empty() {
+		if !text.is_empty() {
 			slot.value = Some(parse(option, text)?);
-		} else if is_typed(option) {
-			slot.value = None;
 		}
 		Ok(())
 	}
