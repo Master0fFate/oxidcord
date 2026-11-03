@@ -22,12 +22,7 @@ pub struct VoiceJoin {
 }
 
 impl Shared {
-	pub fn voice_state_event(
-		&self,
-		session: &str,
-		guild_id: Option<u64>,
-		channel_id: Option<u64>,
-	) -> Value {
+	pub fn voice_state_event(&self, session: &str, guild_id: Option<u64>, channel_id: Option<u64>) -> Value {
 		let member = guild_id
 			.and_then(|id| self.fixtures.guild(id))
 			.map_or(Value::Null, |guild| to_json(guild.current_member()));

@@ -1646,7 +1646,12 @@ impl Shared {
 		if closed && !moderator {
 			return Err(ApiError::missing_permissions());
 		}
-		if !store.thread_invitees.entry(thread_id).or_default().insert(user_id) {
+		if !store
+			.thread_invitees
+			.entry(thread_id)
+			.or_default()
+			.insert(user_id)
+		{
 			return Ok(());
 		}
 		let thread = store

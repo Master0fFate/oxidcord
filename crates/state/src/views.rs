@@ -158,7 +158,10 @@ pub enum RoleIcon {
 impl RoleIcon {
 	pub fn present(role: &protocol::Role) -> bool {
 		role.icon.as_deref().is_some_and(|hash| !hash.is_empty())
-			|| role.unicode_emoji.as_deref().is_some_and(|emoji| !emoji.is_empty())
+			|| role
+				.unicode_emoji
+				.as_deref()
+				.is_some_and(|emoji| !emoji.is_empty())
 	}
 
 	pub fn of(role: &protocol::Role) -> Option<Self> {
