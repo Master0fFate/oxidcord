@@ -131,7 +131,12 @@ pub fn router(shared: Arc<Shared>) -> Router {
 			"/guilds/{id}/member-verification",
 			get(admin::member_verification),
 		)
-		.route("/guilds/{id}/requests/@me", put(admin::submit_join_request))
+		.route(
+			"/guilds/{id}/requests/@me",
+			put(admin::submit_join_request).delete(admin::delete_join_request),
+		)
+		.route("/users/@me/join-request-guilds", get(admin::join_request_guilds))
+		.route("/mock/application/reject", post(admin::reject_application))
 		.route(
 			"/guilds/{id}/channels",
 			get(guilds::channels)

@@ -686,6 +686,7 @@ membership-bar-title = Membership Screening
 membership-bar-submitted = Application Pending
 membership-bar-rejected = Application Rejected
 membership-bar-complete = Complete
+rail-application-apply = Apply to join
 friends-message = Message
 friends-more = More
 friends-accept = Accept

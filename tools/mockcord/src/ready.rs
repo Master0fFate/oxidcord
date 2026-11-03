@@ -245,6 +245,7 @@ pub fn build(shared: &Shared, session_id: &str, user: &User, capabilities: u64) 
 			"version": CONTAINER_VERSION,
 			"partial": false,
 		},
+		"guild_join_requests": shared.application_requests(&store),
 		"session_id": session_id,
 		"auth_session_id_hash": crate::admin::current_session_hash(),
 		"resume_gateway_url": shared.urls.gateway,

@@ -657,6 +657,7 @@ impl Core {
 				self.activity.set_user(Some(ready.user.clone()));
 				self.activity.refresh_connections();
 				self.note_ready();
+				self.load_unnamed_applications();
 				let stale = {
 					let state = self.state.read();
 					state
@@ -740,6 +741,9 @@ impl Core {
 		self.forward_dispatch(&event);
 		self.forward_client_events(&event, probe);
 		match event {
+			DispatchEvent::GuildJoinRequestCreate(_) | DispatchEvent::GuildJoinRequestUpdate(_) => {
+				self.load_unnamed_applications();
+			}
 			DispatchEvent::MessageCreate(message) => {
 				self.deliver_join_request(&message);
 				if let Some(nonce) = &message.nonce {

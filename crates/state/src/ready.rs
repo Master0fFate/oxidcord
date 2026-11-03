@@ -4,7 +4,7 @@ use protocol::{
 
 use crate::changes::Changes;
 use crate::expressions::stamped_stickers;
-use crate::guild::{GuildState, stripped_member};
+use crate::guild::{Application, GuildState, stripped_member};
 use crate::state::{State, intern_user};
 
 impl State {
@@ -27,6 +27,17 @@ impl State {
 			self.ingest_guild(guild);
 			if let Some(members) = ready.merged_members.get(source) {
 				self.ingest_members(guild.id, members);
+			}
+		}
+		for request in ready.guild_join_requests.iter() {
+			if let Some(guild_id) = request.guild_id.filter(|id| !self.guilds.contains_key(id)) {
+				self.applications.insert(
+					guild_id,
+					Application {
+						status: request.application_status.clone(),
+						..Application::default()
+					},
+				);
 			}
 		}
 		for channel in ready.private_channels.iter() {
@@ -104,6 +115,7 @@ impl State {
 
 	fn reset_for_ready(&mut self) {
 		self.guilds.clear();
+		self.applications.clear();
 		self.private_channels.clear();
 		self.channel_guilds.clear();
 		self.users.clear();
@@ -130,6 +142,7 @@ impl State {
 
 	pub(crate) fn ingest_guild(&mut self, guild: &Guild) {
 		let id = guild.id;
+		self.applications.shift_remove(&id);
 		let mut state = GuildState::from_guild(guild);
 		if guild.stickers.is_empty() {
 			self.lazy.expressions.guild_stickers.remove(&id);

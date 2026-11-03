@@ -243,6 +243,9 @@ pub async fn invite(
 	Path(code): Path<String>,
 	Query(params): Query<HashMap<String, String>>,
 ) -> ApiResult {
+	if let Some(application) = shared.application_invite(&code, false) {
+		return Ok(Json(application));
+	}
 	if let Some(created) = shared.invite_json(&code) {
 		return Ok(Json(created));
 	}

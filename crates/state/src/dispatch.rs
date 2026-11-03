@@ -695,9 +695,20 @@ impl State {
 	) -> Changes {
 		let mut changes = Changes::default();
 		let mine = user_id.is_none_or(|id| Some(id) == self.current_user_id());
-		if mine && let Some(guild) = self.guilds.get_mut(&guild_id) {
+		if !mine {
+			return changes;
+		}
+		if let Some(guild) = self.guilds.get_mut(&guild_id) {
 			guild.join_request = status;
 			changes.members.insert(guild_id);
+		} else {
+			match status {
+				Some(status) => self.applications.entry(guild_id).or_default().status = Some(status),
+				None => {
+					self.applications.shift_remove(&guild_id);
+				}
+			}
+			changes.guild_list = true;
 		}
 		changes
 	}

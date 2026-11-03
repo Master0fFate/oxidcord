@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::guild::Guild;
 use crate::lenient::{LenientVec, str_enum};
 use crate::snowflake::Snowflake;
 
@@ -56,13 +57,15 @@ pub struct MemberVerification {
 #[serde(default)]
 pub struct InviteAccepted {
 	pub guild_id: Option<Snowflake>,
+	pub guild: Option<Guild>,
 	pub show_verification_form: bool,
 	pub new_member: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Default, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct JoinRequest {
+	pub guild_id: Option<Snowflake>,
 	pub application_status: Option<JoinRequestStatus>,
 	pub user_id: Option<Snowflake>,
 }

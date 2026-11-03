@@ -280,6 +280,7 @@ impl Core {
 			| Command::AcceptInvite { .. }
 			| Command::LoadMemberVerification { .. }
 			| Command::SubmitMemberVerification { .. }
+			| Command::WithdrawJoinRequest { .. }
 			| Command::LoadReactionUsers { .. }
 			| Command::ForwardMessage { .. }
 			| Command::VotePoll { .. }
@@ -585,9 +586,17 @@ impl Core {
 					if accepted.new_member {
 						let _ = internal.send(Internal::SelectJoinedGuild(guild_id));
 					}
-					if accepted.show_verification_form
-						&& let Ok(form) = rest.member_verification(guild_id, Some(&code)).await
-					{
+					if !accepted.show_verification_form {
+						return Ok(());
+					}
+					if let Some(guild) = accepted.guild {
+						let _ = internal.send(Internal::Loaded(Loaded::Application {
+							guild_id,
+							name: guild.name.unwrap_or_default(),
+							icon: guild.icon,
+						}));
+					}
+					if let Ok(form) = rest.member_verification(guild_id, Some(&code)).await {
 						let _ =
 							internal.send(Internal::Loaded(Loaded::MemberVerification { guild_id, form }));
 					}
@@ -604,6 +613,11 @@ impl Core {
 				.spawn_action("rules screening", move |rest| async move {
 					rest.submit_join_request(guild_id, &form).await
 				}),
+			Command::WithdrawJoinRequest { guild_id } => {
+				self.spawn_action("withdraw application", move |rest| async move {
+					rest.delete_join_request(guild_id).await
+				});
+			}
 			Command::LoadReactionUsers {
 				channel_id,
 				message_id,
@@ -1418,20 +1432,6 @@ impl Core {
 					self.reject("Only the owner can delete a server");
 				}
 			}
-			Command::CreateChannel {
-				guild_id,
-				name,
-				kind,
-				parent_id,
-				private,
-			} => {
-				if self.guild_allows(guild_id, Permissions::MANAGE_CHANNELS, "Manage Channels")
-					&& (!private || self.guild_allows(guild_id, Permissions::MANAGE_ROLES, "Manage Roles"))
-				{
-					let creator = {
-						let state = self.state.read();
-						state.current_user_id().filter(|me| {
-							!state
 			Command::RequestOwnershipCode { guild_id } => {
 				if self.owns_guild(guild_id) {
 					self.spawn_action("ownership code", move |rest| async move {
@@ -1456,6 +1456,20 @@ impl Core {
 					self.reject("Only the owner can transfer a server");
 				}
 			}
+			Command::CreateChannel {
+				guild_id,
+				name,
+				kind,
+				parent_id,
+				private,
+			} => {
+				if self.guild_allows(guild_id, Permissions::MANAGE_CHANNELS, "Manage Channels")
+					&& (!private || self.guild_allows(guild_id, Permissions::MANAGE_ROLES, "Manage Roles"))
+				{
+					let creator = {
+						let state = self.state.read();
+						state.current_user_id().filter(|me| {
+							!state
 								.guild_permissions(guild_id, *me)
 								.contains(Permissions::ADMINISTRATOR)
 						})
@@ -2120,6 +2134,14 @@ impl Core {
 				let _ = internal.send(Internal::Rejected("server order failed".to_owned()));
 			}
 		});
+	}
+
+	pub(super) fn load_unnamed_applications(&self) {
+		if self.state.read().has_unnamed_application() {
+			self.spawn_load("applications", |rest| async move {
+				Ok(Loaded::JoinRequestGuilds(rest.join_request_guilds().await?))
+			});
+		}
 	}
 
 	fn owns_guild(&self, guild_id: Snowflake) -> bool {

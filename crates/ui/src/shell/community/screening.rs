@@ -5,7 +5,7 @@ use gpui::{
 	ParentElement as _, Render, SharedString, Styled as _, Subscription, Window, div,
 };
 use gpui_component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
-use protocol::{FormField, FormFieldKind, Snowflake};
+use protocol::{FormField, FormFieldKind, JoinRequestStatus, Snowflake};
 use serde_json::Value;
 use session::Command;
 
@@ -344,9 +344,62 @@ fn field_body(view: &FieldView, theme: &Theme, content: impl IntoElement) -> Any
 		.into_any_element()
 }
 
+impl Screening {
+	fn closed(&self, title: &'static str, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+		let weak_close = cx.weak_entity();
+		let weak_withdraw = cx.weak_entity();
+		div()
+			.flex()
+			.flex_col()
+			.gap(theme.space_16)
+			.pt(theme.space_8)
+			.child(hint(cx.t(title), theme))
+			.child(dialog_footer(
+				cx.t("action-close"),
+				cx.t("screening-withdraw"),
+				true,
+				true,
+				theme,
+				move |_, cx| {
+					weak_close.update(cx, |_, cx| cx.emit(Close)).ok();
+				},
+				move |_, cx| {
+					weak_withdraw
+						.update(cx, |this, cx| {
+							this.data.read(cx).send(Command::WithdrawJoinRequest {
+								guild_id: this.guild_id,
+							});
+							cx.emit(Close);
+						})
+						.ok();
+				},
+			))
+			.into_any_element()
+	}
+}
+
 impl Render for Screening {
 	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
+		let sent = self
+			.data
+			.read(cx)
+			.state()
+			.application(self.guild_id)
+			.and_then(|application| application.status.clone());
+		match sent {
+			Some(JoinRequestStatus::Submitted) => {
+				return self
+					.closed("membership-bar-submitted", &theme, cx)
+					.into_any_element();
+			}
+			Some(JoinRequestStatus::Rejected) => {
+				return self
+					.closed("membership-bar-rejected", &theme, cx)
+					.into_any_element();
+			}
+			_ => {}
+		}
 		let data = self.data.clone();
 		let data = data.read(cx);
 		let state = data.state();
@@ -385,5 +438,6 @@ impl Render for Screening {
 					weak_confirm.update(cx, |this, cx| this.submit(cx)).ok();
 				},
 			))
+			.into_any_element()
 	}
 }

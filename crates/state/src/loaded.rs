@@ -6,7 +6,8 @@ use chrono::{DateTime, Utc};
 use protocol::lenient::{or_default, timestamp, timestamp_or_seconds};
 use protocol::{
 	ApplicationCommand, ApplicationCommandType, AutoModRule, Channel, ChannelType, CommandApplication,
-	CommandChoice, CommandIndex, Connection, Gif, GifFavorites, GifTrending, GuildBan, InteractionContext,
+	CommandChoice, CommandIndex, Connection, Gif, GifFavorites, GifTrending, Guild, GuildBan,
+	InteractionContext,
 	JoinRequestStatus, LenientVec, Member, MemberVerification, Message, Permissions, PinnedMessage,
 	ScheduledEvent, Snowflake, SoundboardSound, Sticker, StickerPack, ThreadMember, User,
 };
@@ -15,7 +16,7 @@ use serde_json::Value;
 
 use crate::changes::Changes;
 use crate::expressions::{EXPRESSIONS_KEY, EmojiRef, Expressions, stamped_stickers};
-use crate::guild::stripped_member;
+use crate::guild::{Application, stripped_member};
 use crate::state::{State, intern_user};
 
 pub const INBOX_KEY: Snowflake = Snowflake(1);
@@ -91,6 +92,12 @@ pub enum Loaded {
 		guild_id: Snowflake,
 		form: MemberVerification,
 	},
+	Application {
+		guild_id: Snowflake,
+		name: String,
+		icon: Option<String>,
+	},
+	JoinRequestGuilds(LenientVec<Guild>),
 	AuditLog {
 		guild_id: Snowflake,
 		raw: Value,
@@ -865,6 +872,22 @@ impl State {
 				self.lazy.member_verifications.insert(*guild_id, form.clone());
 				changes.loaded.insert(*guild_id);
 			}
+			Loaded::Application { guild_id, name, icon } => {
+				if !self.guilds.contains_key(guild_id) {
+					let application = self.applications.entry(*guild_id).or_default();
+					application.name.clone_from(name);
+					application.icon.clone_from(icon);
+					changes.guild_list = true;
+				}
+			}
+			Loaded::JoinRequestGuilds(guilds) => {
+				for guild in guilds.iter().filter(|guild| !self.guilds.contains_key(&guild.id)) {
+					let application = self.applications.entry(guild.id).or_default();
+					application.name = guild.name.clone().unwrap_or_default();
+					application.icon.clone_from(&guild.icon);
+				}
+				changes.guild_list = true;
+			}
 			Loaded::AuditLog {
 				guild_id,
 				raw,
@@ -1295,6 +1318,22 @@ impl State {
 
 	pub fn member_verification(&self, guild_id: Snowflake) -> Option<&MemberVerification> {
 		self.lazy.member_verifications.get(&guild_id)
+	}
+
+	pub fn applications(&self) -> impl Iterator<Item = (Snowflake, &Application)> {
+		self.applications
+			.iter()
+			.map(|(id, application)| (*id, application))
+	}
+
+	pub fn application(&self, guild_id: Snowflake) -> Option<&Application> {
+		self.applications.get(&guild_id)
+	}
+
+	pub fn has_unnamed_application(&self) -> bool {
+		self.applications
+			.values()
+			.any(|application| application.name.is_empty())
 	}
 
 	pub fn me_pending(&self, guild_id: Snowflake) -> bool {

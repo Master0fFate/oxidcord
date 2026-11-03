@@ -130,6 +130,7 @@ pub struct Store {
 	pub seats: HashMap<u64, Seat>,
 	pub sounds: HashMap<u64, Vec<SoundboardSound>>,
 	pub calls: BTreeMap<u64, Vec<u64>>,
+	pub application: Option<&'static str>,
 	last_id: u64,
 }
 
@@ -247,6 +248,7 @@ impl Store {
 			seats: HashMap::new(),
 			sounds: crate::soundboard::seed_sounds(fixtures),
 			calls: BTreeMap::new(),
+			application: None,
 			last_id,
 		}
 	}

@@ -775,6 +775,7 @@ add-server-default-name = { $name }'s server
 screening-title = Membership Screening
 screening-agree = I agree to the rules
 screening-submit = Submit
+screening-withdraw = Withdraw
 
 leave-server-title = Leave { $name }?
 leave-server-body = You will not be able to rejoin this server unless you are invited again.

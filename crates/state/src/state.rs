@@ -13,7 +13,7 @@ use smallvec::SmallVec;
 
 use crate::changes::Changes;
 use crate::event::{Event, LoadDirection, LocalEvent};
-use crate::guild::GuildState;
+use crate::guild::{Application, GuildState};
 use crate::interactions::{ModalPrompt, PendingInteraction};
 use crate::loaded::Lazy;
 use crate::messages::ChannelMessages;
@@ -48,6 +48,7 @@ pub struct Selection {
 pub struct State {
 	pub(crate) current_user: Option<User>,
 	pub(crate) guilds: IndexMap<Snowflake, GuildState>,
+	pub(crate) applications: IndexMap<Snowflake, Application>,
 	pub(crate) private_channels: IndexMap<Snowflake, Channel>,
 	pub(crate) channel_guilds: HashMap<Snowflake, Option<Snowflake>>,
 	pub(crate) users: HashMap<Snowflake, Arc<User>>,

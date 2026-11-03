@@ -224,6 +224,9 @@ pub async fn ack_bulk(State(shared): Mock, Json(body): Json<Value>) -> NoContent
 }
 
 pub async fn accept_invite(State(shared): Mock, Path(code): Path<String>) -> ApiResult {
+	if let Some(application) = shared.application_invite(&code, true) {
+		return Ok(Json(application));
+	}
 	shared.accept_invite(&code).map(Json)
 }
 
@@ -237,6 +240,20 @@ pub async fn submit_join_request(
 	Json(body): Json<Value>,
 ) -> ApiResult {
 	shared.submit_join_request(id, &body).map(Json)
+}
+
+pub async fn delete_join_request(State(shared): Mock, Path(id): Path<u64>) -> NoContent {
+	shared.delete_join_request(id)?;
+	Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn join_request_guilds(State(shared): Mock) -> Json<Value> {
+	Json(shared.join_request_guilds_json())
+}
+
+pub async fn reject_application(State(shared): Mock) -> StatusCode {
+	shared.reject_application();
+	StatusCode::NO_CONTENT
 }
 
 pub async fn create_guild(State(shared): Mock, Json(body): Json<Value>) -> ApiResult {

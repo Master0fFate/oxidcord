@@ -28,7 +28,7 @@ pub use event::{Event, LoadDirection, LocalEvent};
 pub use expressions::{
 	CatalogEmoji, EXPRESSIONS_KEY, EmojiCatalog, EmojiRef, GuildEmojis, RECENT_CAP, UnicodeSection,
 };
-pub use guild::{ENHANCED_ROLE_COLORS, GuildState, ROLE_ICONS};
+pub use guild::{Application, ENHANCED_ROLE_COLORS, GuildState, ROLE_ICONS};
 pub use interactions::{INTERACTION_TTL, InteractionPhase, ModalPrompt};
 pub use limits::{ExpressionLimits, PREMIUM_UPLOAD_BYTES};
 pub use loaded::{

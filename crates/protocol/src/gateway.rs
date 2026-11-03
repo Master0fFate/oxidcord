@@ -26,7 +26,7 @@ use crate::snowflake::Snowflake;
 use crate::soundboard::{SoundboardSound, SoundboardSoundDelete, SoundboardSounds, VoiceChannelEffect};
 use crate::token::Token;
 use crate::user::User;
-use crate::verification::{JoinRequestChange, JoinRequestDelete};
+use crate::verification::{JoinRequest, JoinRequestChange, JoinRequestDelete};
 use crate::voice::{StageInstance, VoiceState};
 
 int_enum! {
@@ -321,6 +321,7 @@ pub struct Ready {
 	pub relationships: LenientVec<Relationship>,
 	pub read_state: ReadStateContainer,
 	pub user_guild_settings: UserGuildSettingsContainer,
+	pub guild_join_requests: LenientVec<JoinRequest>,
 	#[serde(deserialize_with = "or_default")]
 	pub session_id: String,
 	#[serde(deserialize_with = "or_default")]

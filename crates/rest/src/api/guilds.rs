@@ -63,6 +63,15 @@ impl RestClient {
 			.await
 	}
 
+	pub async fn join_request_guilds(&self) -> Result<LenientVec<Guild>> {
+		self.send(Request::get("/users/@me/join-request-guilds")).await
+	}
+
+	pub async fn delete_join_request(&self, guild_id: Snowflake) -> Result<()> {
+		self.send_empty(Request::delete(format!("/guilds/{guild_id}/requests/@me")))
+			.await
+	}
+
 	pub async fn submit_join_request(&self, guild_id: Snowflake, form: &MemberVerification) -> Result<()> {
 		let body = json!({ "version": form.version, "form_fields": form.form_fields });
 		self.send_empty(Request::put(format!("/guilds/{guild_id}/requests/@me")).json(&body))

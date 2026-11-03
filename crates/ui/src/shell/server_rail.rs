@@ -10,12 +10,13 @@ use gpui::{
 use gpui_component::menu::ContextMenuExt as _;
 use media::SizeHint;
 use plugin_host::ViewContext;
-use protocol::Snowflake;
+use protocol::{JoinRequestStatus, Snowflake};
 use session::Command;
 use state::State;
 
 use super::community::add_server;
 use super::community::menus::guild_menu_for;
+use super::community::screening;
 use super::plugins::{self, MenuTarget, PluginMenu as _};
 use super::transition::Pairs;
 use crate::components::{ContextMenuBuilder, Divider, MentionBadge, PillState, UnreadPill, tooltip};
@@ -47,6 +48,14 @@ pub struct GuildItem {
 	pub icon: Option<String>,
 	pub unread: bool,
 	pub mentions: u32,
+}
+
+#[derive(Clone, PartialEq)]
+struct ApplicationTile {
+	id: Snowflake,
+	name: SharedString,
+	icon: Option<String>,
+	status: Option<JoinRequestStatus>,
 }
 
 #[derive(Clone, PartialEq)]
@@ -89,6 +98,7 @@ enum Target {
 	Home,
 	Dm(Id),
 	Guild(Id),
+	Application(Id),
 	Folder(Id),
 	AddServer,
 	Explore,
@@ -103,6 +113,7 @@ impl Target {
 			Self::Guild(id) => id.wrapping_mul(2).wrapping_add(8),
 			Self::Dm(id) => id.wrapping_mul(2).wrapping_add(1 << 62),
 			Self::Folder(id) => id.wrapping_mul(2).wrapping_add(9),
+			Self::Application(id) => id.wrapping_mul(2).wrapping_add(10),
 		}
 	}
 }
@@ -148,6 +159,7 @@ pub struct ServerRail {
 	data: Entity<Data>,
 	entries: Vec<RailEntry>,
 	dms: Vec<DmTile>,
+	applications: Vec<ApplicationTile>,
 	selected: Option<Snowflake>,
 	home_mentions: u32,
 	hovered: Option<Target>,
@@ -163,6 +175,7 @@ impl ServerRail {
 			data,
 			entries: Vec::new(),
 			dms: Vec::new(),
+			applications: Vec::new(),
 			selected: None,
 			home_mentions: 0,
 			hovered: None,
@@ -217,10 +230,16 @@ impl ServerRail {
 			.take(RAIL_DMS)
 			.map(|row| dm_tile(&state, row))
 			.collect();
+		let applications = application_tiles(&state);
 		drop(state);
-		if entries != self.entries || dms != self.dms || home_mentions != self.home_mentions {
+		if entries != self.entries
+			|| dms != self.dms
+			|| applications != self.applications
+			|| home_mentions != self.home_mentions
+		{
 			self.entries = entries;
 			self.dms = dms;
+			self.applications = applications;
 			self.home_mentions = home_mentions;
 			cx.notify();
 		}
@@ -449,6 +468,46 @@ impl ServerRail {
 		}
 		let menu = ContextMenuBuilder::new().plugin_items("channel-context-menu", target, cx);
 		tile.context_menu(menu.build()).into_any_element()
+	}
+
+	fn application_tile(
+		&mut self,
+		application: &ApplicationTile,
+		theme: &Theme,
+		cx: &mut Context<Self>,
+	) -> AnyElement {
+		let id = application.id;
+		let face = Face::Guild {
+			icon: application.icon.clone(),
+			acronym: acronym(&application.name),
+		};
+		let style = TileStyle {
+			rest_background: theme.background_secondary,
+			rest_foreground: theme.text_muted,
+			active_background: theme.brand,
+			active_foreground: theme.text_on_brand,
+		};
+		let status = cx.t(match application.status {
+			Some(JoinRequestStatus::Submitted) => "membership-bar-submitted",
+			Some(JoinRequestStatus::Rejected) => "membership-bar-rejected",
+			_ => "rail-application-apply",
+		});
+		self.tile(
+			TileSpec {
+				target: Target::Application(id.get()),
+				face,
+				style,
+				unread: false,
+				selected: false,
+				mentions: 0,
+				pill_inset: rem(0.),
+			},
+			theme,
+			cx,
+		)
+		.on_click(move |_, window, cx| screening::open(window, cx, id))
+		.tooltip(tooltip(format!("{} - {status}", application.name)))
+		.into_any_element()
 	}
 
 	fn guild_tile(
@@ -794,6 +853,12 @@ impl Render for ServerRail {
 			sidebar: options.folder_sidebar.unwrap_or(false),
 			plain_icons: options.plain_folder_icons.unwrap_or(false),
 		};
+		let applications = std::mem::take(&mut self.applications);
+		let application_tiles: Vec<AnyElement> = applications
+			.iter()
+			.map(|application| self.application_tile(application, &theme, cx))
+			.collect();
+		self.applications = applications;
 		let entries = std::mem::take(&mut self.entries);
 		let rows: Vec<AnyElement> = entries
 			.iter()
@@ -882,6 +947,7 @@ impl Render for ServerRail {
 				)
 			})
 			.children(rows)
+			.children(application_tiles)
 			.child(add)
 			.child(explore)
 			.when(!apps.is_empty(), |rail| {
@@ -912,6 +978,21 @@ fn dm_tile(state: &State, row: state::DmRow) -> DmTile {
 		unread: row.unread,
 		mentions: row.mentions,
 	}
+}
+
+fn application_tiles(state: &State) -> Vec<ApplicationTile> {
+	state
+		.applications()
+		.map(|(id, application)| ApplicationTile {
+			id,
+			name: application.name.clone().into(),
+			icon: application
+				.icon
+				.as_ref()
+				.map(|hash| media::cdn::guild_icon_url(id.get(), hash, ICON_PIXELS)),
+			status: application.status.clone(),
+		})
+		.collect()
 }
 
 fn guild_item(summary: &state::GuildSummary) -> GuildItem {
