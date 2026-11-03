@@ -133,7 +133,8 @@ impl ChannelMessages {
 				.collect();
 			self.ordered.clear();
 			self.by_id.clear();
-			self.rendered.retain(|id, _| kept.iter().any(|message| message.id == *id));
+			self.rendered
+				.retain(|id, _| kept.iter().any(|message| message.id == *id));
 			self.deleted.clear();
 			self.latency.clear();
 			self.gaps.clear();

@@ -122,8 +122,14 @@ pub enum LocalEvent {
 	VoiceE2ee(Option<E2eeInfo>),
 	VoiceE2eeFailed,
 	SettingsEdited,
-	RestorePrivacy { before: Vec<u8>, applied: Vec<u8> },
-	RestoreSensitiveMedia { before: Vec<u8>, applied: Vec<u8> },
+	RestorePrivacy {
+		before: Vec<u8>,
+		applied: Vec<u8>,
+	},
+	RestoreSensitiveMedia {
+		before: Vec<u8>,
+		applied: Vec<u8>,
+	},
 	CameraChanged(bool),
 	ScreenShareChanged(Option<StreamInfo>),
 	Watching(Option<String>),
