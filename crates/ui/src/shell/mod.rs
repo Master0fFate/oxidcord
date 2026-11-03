@@ -31,6 +31,7 @@ mod server_settings;
 mod settings;
 mod shortcuts;
 mod slash;
+mod spoiler_gate;
 mod threads;
 mod timeline;
 mod title_bar;
@@ -40,7 +41,7 @@ mod updates;
 mod user_panel;
 mod voice;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -53,7 +54,7 @@ use gpui::{
 use gpui_component::WindowExt as _;
 use media::SizeHint;
 use platform::notifications::Notification;
-use protocol::{ChannelType, Snowflake, StatusKind};
+use protocol::{ChannelFlags, ChannelType, Snowflake, StatusKind};
 use session::Command;
 use state::{Alert, Changes, RequestRow, State, UiIntent};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
@@ -181,6 +182,7 @@ pub struct Shell {
 	request: Option<RequestRow>,
 	membership: Option<Membership>,
 	last_channel: HashMap<Snowflake, Snowflake>,
+	revealed_spoilers: HashSet<Snowflake>,
 	last_dm: Option<Snowflake>,
 	recent_targets: Vec<SwitcherTarget>,
 	history: History,
@@ -684,6 +686,7 @@ impl Shell {
 			request: None,
 			membership: None,
 			last_channel: HashMap::new(),
+			revealed_spoilers: HashSet::new(),
 			last_dm: None,
 			recent_targets: Vec::new(),
 			history: History::default(),
@@ -1033,6 +1036,23 @@ impl Shell {
 		let muted = target.is_some_and(|(_, channel)| self.data.read(cx).state().channel_is_muted(channel));
 		self.top_bar
 			.update(cx, |bar, cx| bar.set_notifications(target, muted, cx));
+	}
+
+	fn gated_spoiler_channel(&self, cx: &Context<Self>) -> Option<Snowflake> {
+		let channel = self.channel?;
+		let spoiler = !self.revealed_spoilers.contains(&channel)
+			&& self
+				.data
+				.read(cx)
+				.state()
+				.channel(channel)
+				.is_some_and(|found| found.flags.contains(ChannelFlags::IS_SPOILER_CHANNEL));
+		spoiler.then_some(channel)
+	}
+
+	fn reveal_spoiler(&mut self, channel: Snowflake, cx: &mut Context<Self>) {
+		self.revealed_spoilers.insert(channel);
+		cx.notify();
 	}
 
 	fn sync_pins_unread(&mut self, cx: &mut Context<Self>) {
@@ -2106,6 +2126,12 @@ impl Render for Shell {
 			.membership
 			.as_ref()
 			.map(|membership| membership_bar::membership_bar(membership, &theme, cx));
+		let spoiler_gate = self.gated_spoiler_channel(cx).map(|channel| {
+			let weak = cx.weak_entity();
+			spoiler_gate::spoiler_gate(&theme, cx, move |_, cx| {
+				weak.update(cx, |this, cx| this.reveal_spoiler(channel, cx)).ok();
+			})
+		});
 		let forum = self.community.read(cx).forum_view(cx);
 		let thread_panel = self.community.read(cx).thread_panel(cx);
 		let thread_full = thread_panel
@@ -2290,14 +2316,18 @@ impl Render for Shell {
 														column.child(page).children(status_bar)
 													}
 													(None, Some(forum)) => column.child(forum),
-													(None, None) => {
-														composer::accept_files(column, self.composer.clone())
-															.child(self.timeline.clone())
-															.children(request)
-															.children(membership)
-															.child(self.composer.clone())
-															.children(status_bar)
-													}
+													(None, None) => match spoiler_gate {
+														Some(gate) => column.child(gate),
+														None => composer::accept_files(
+															column,
+															self.composer.clone(),
+														)
+														.child(self.timeline.clone())
+														.children(request)
+														.children(membership)
+														.child(self.composer.clone())
+														.children(status_bar),
+													},
 												}),
 										)
 									})
