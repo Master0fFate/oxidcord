@@ -73,6 +73,14 @@ impl Flair {
 }
 
 pub fn flair(state: &State, guild: Option<Snowflake>, user: Snowflake) -> Flair {
+	build_flair(state, guild, user, true)
+}
+
+pub fn header_flair(state: &State, guild: Option<Snowflake>, user: Snowflake) -> Flair {
+	build_flair(state, guild, user, false)
+}
+
+fn build_flair(state: &State, guild: Option<Snowflake>, user: Snowflake, with_nameplate: bool) -> Flair {
 	let found = state.cosmetics(guild, user);
 	let decoration = state
 		.user_override(guild, user)
@@ -99,7 +107,7 @@ pub fn flair(state: &State, guild: Option<Snowflake>, user: Snowflake) -> Flair 
 			badge: badge.map(Into::into),
 		})
 	});
-	let nameplate = found.nameplate.and_then(|plate| {
+	let nameplate = found.nameplate.filter(|_| with_nameplate).and_then(|plate| {
 		Some(Nameplate {
 			url: media::cdn::nameplate_url(&plate.asset)?.into(),
 			tint: palette_tint(&plate.palette),

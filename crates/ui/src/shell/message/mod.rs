@@ -47,7 +47,7 @@ use super::plugins::{
 	patch_effects, tags,
 };
 use crate::components::{Avatar, IconButton, role_icon, tooltip};
-use crate::cosmetics::{flair, name_text};
+use crate::cosmetics::{header_flair, name_text};
 use crate::format;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
@@ -1700,7 +1700,7 @@ fn message_row(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 	let avatar = over
 		.and_then(|over| over.avatar.clone())
 		.unwrap_or_else(|| user_avatar(&message.author, 128));
-	let flair = flair(env.lookup.state, guild, author_id);
+	let flair = header_flair(env.lookup.state, guild, author_id);
 	let profile = env.dispatch.clone();
 	let avatar_profile = env.dispatch.clone();
 	let author_message = message.clone();
@@ -1810,7 +1810,7 @@ fn compact_message(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 		.state
 		.user_override(guild, message.author.id)
 		.map_or_else(Vec::new, |over| tags(over, message.author.id, theme, cx));
-	let flair = flair(env.lookup.state, guild, message.author.id);
+	let flair = header_flair(env.lookup.state, guild, message.author.id);
 	let row = div()
 		.id(("message", id))
 		.group(group.clone())
