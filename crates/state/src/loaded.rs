@@ -430,6 +430,7 @@ pub(crate) struct NotificationFeed {
 pub(crate) struct Lazy {
 	pub(crate) mentions: HashMap<(bool, bool), Vec<Arc<Message>>>,
 	pub(crate) request_previews: HashMap<Snowflake, Arc<Message>>,
+	pub(crate) previews_requested: HashSet<Snowflake>,
 	pub(crate) notifications: Option<NotificationFeed>,
 	pub(crate) pins: HashMap<Snowflake, PinList>,
 	pub(crate) archived: HashMap<Snowflake, ArchivedThreads>,
@@ -689,7 +690,7 @@ impl State {
 				everyone,
 				messages,
 			} => {
-				let shared = messages
+				let fetched: Vec<Arc<Message>> = messages
 					.iter()
 					.map(|message| {
 						let guild_id = self.channel_guild(message.channel_id);
@@ -697,6 +698,19 @@ impl State {
 						Arc::new(message.clone())
 					})
 					.collect();
+				let live: Vec<Arc<Message>> = match fetched.first() {
+					Some(newest) => self
+						.lazy
+						.mentions
+						.get(&(*roles, *everyone))
+						.into_iter()
+						.flatten()
+						.take_while(|known| known.id > newest.id)
+						.cloned()
+						.collect(),
+					None => Vec::new(),
+				};
+				let shared = live.into_iter().chain(fetched).collect();
 				self.lazy.mentions.insert((*roles, *everyone), shared);
 				changes.loaded.insert(INBOX_KEY);
 			}
@@ -734,6 +748,7 @@ impl State {
 			} => {
 				for channel_id in channel_ids {
 					self.lazy.request_previews.remove(channel_id);
+					self.lazy.previews_requested.insert(*channel_id);
 				}
 				for preview in previews {
 					let Some(message) = &preview.message_preview else {
@@ -1379,6 +1394,10 @@ impl State {
 			added = true;
 		}
 		added
+	}
+
+	pub fn request_preview_loaded(&self, channel_id: Snowflake) -> bool {
+		self.lazy.previews_requested.contains(&channel_id)
 	}
 
 	pub fn request_preview(&self, channel_id: Snowflake) -> Option<&Arc<Message>> {

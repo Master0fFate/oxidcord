@@ -152,6 +152,7 @@ impl FriendsPage {
 		let requests = self.data.read(cx).state().message_requests();
 		if requests != self.requests {
 			self.requests = requests;
+			self.previews_asked.clear();
 			self.load_previews(cx);
 			cx.notify();
 		}
@@ -161,12 +162,15 @@ impl FriendsPage {
 		if self.tab != Tab::Requests {
 			return;
 		}
+		let data = self.data.read(cx);
+		let state = data.state();
 		let missing: Vec<Snowflake> = self
 			.requests
 			.iter()
 			.map(|request| request.channel_id)
-			.filter(|channel_id| self.previews_asked.insert(*channel_id))
+			.filter(|channel_id| !state.request_preview_loaded(*channel_id) && self.previews_asked.insert(*channel_id))
 			.collect();
+		drop(state);
 		if !missing.is_empty() {
 			self.data
 				.read(cx)
