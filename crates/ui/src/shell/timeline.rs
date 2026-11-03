@@ -942,11 +942,12 @@ impl Timeline {
 					.ordered
 					.iter()
 					.rev()
-					.find(|message| can_edit(message, me))
+					.find(|message| !cache.is_deleted(message.id) && can_edit(message, me))
 					.map(|message| message.id)
 			})
 		};
 		if let Some(message_id) = last {
+			self.jump_to(message_id, cx);
 			self.start_edit(message_id, window, cx);
 		}
 	}
