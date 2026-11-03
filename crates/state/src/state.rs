@@ -336,9 +336,10 @@ impl State {
 	}
 
 	pub fn slowmode_remaining(&self, channel_id: Snowflake) -> Option<Duration> {
+		let interval = self.slowmode_interval(channel_id)?;
 		self.slowmode
 			.get(&channel_id)
-			.map(|until| until.saturating_duration_since(Instant::now()))
+			.map(|until| until.saturating_duration_since(Instant::now()).min(interval))
 			.filter(|remaining| !remaining.is_zero())
 	}
 
