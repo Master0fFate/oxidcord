@@ -189,6 +189,10 @@ impl Images {
 		}
 	}
 
+	pub fn media(&self) -> MediaService {
+		self.media.clone()
+	}
+
 	pub fn get(&self, url: &str, hint: SizeHint) -> Option<Picture> {
 		self.rendered_image(url, hint, false)
 	}

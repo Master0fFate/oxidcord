@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -15,10 +15,11 @@ use crate::fetch::MediaFetcher;
 use crate::lottie;
 use crate::resize::resize_decoded;
 use crate::twemoji;
-use crate::types::Decoded;
+use crate::types::{Decoded, DecodedImage};
 
 const FAILURE_RETRY_DELAY: Duration = Duration::from_secs(60);
 const MAX_IN_FLIGHT: usize = 6;
+const ICON_DIR: &str = "icons";
 
 type ReadyCallback = Arc<dyn Fn() + Send + Sync>;
 
@@ -167,6 +168,24 @@ impl MediaService {
 		Ok(decoded)
 	}
 
+	pub async fn icon_file(&self, url: &str, hint: SizeHint) -> Result<PathBuf> {
+		let path = self
+			.inner
+			.disk
+			.root()
+			.join(ICON_DIR)
+			.join(format!("{:016x}.png", memory_key(url, hint, true)));
+		if path.is_file() {
+			return Ok(path);
+		}
+		let decoded = self.load(url, hint, true).await?;
+		let target = path.clone();
+		spawn_blocking(move || write_png(&decoded, &target))
+			.await
+			.map_err(|error| MediaError::Decode(format!("icon task failed: {error}")))??;
+		Ok(path)
+	}
+
 	async fn raw_bytes(&self, url: &str) -> Result<(Bytes, bool)> {
 		if let Some(bundled) = twemoji::bytes(url) {
 			return Ok((bundled, true));
@@ -211,6 +230,20 @@ impl MediaService {
 			callback();
 		}
 	}
+}
+
+fn write_png(decoded: &Decoded, path: &Path) -> Result<()> {
+	let first: &DecodedImage = match decoded {
+		Decoded::Still(image) => image,
+		Decoded::Animated(animation) => &animation.frames[0].image,
+	};
+	let buffer = image::RgbaImage::from_raw(first.width, first.height, first.rgba.clone())
+		.ok_or_else(|| MediaError::Decode("icon buffer does not match its size".to_owned()))?;
+	if let Some(parent) = path.parent() {
+		std::fs::create_dir_all(parent)?;
+	}
+	buffer.save_with_format(path, image::ImageFormat::Png)?;
+	Ok(())
 }
 
 fn shrink_to_hint(decoded: Decoded, hint: SizeHint) -> Decoded {

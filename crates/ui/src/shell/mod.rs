@@ -49,6 +49,7 @@ use gpui::{
 	prelude::FluentBuilder as _,
 };
 use gpui_component::WindowExt as _;
+use media::SizeHint;
 use platform::notifications::Notification;
 use protocol::{ChannelType, Snowflake, StatusKind};
 use session::Command;
@@ -91,7 +92,8 @@ use crate::components::IconButton;
 use crate::data::{Data, DataEvent};
 use crate::i18n::Translate as _;
 use crate::icons::{IconKind, channel_icon};
-use crate::lookup::Lookup;
+use crate::images::Images;
+use crate::lookup::{Lookup, user_avatar};
 use crate::model::{Status, status_of};
 use crate::theme::{Theme, rem};
 
@@ -110,6 +112,7 @@ const MEMBER_LIST_MIN_WIDTH: f32 = 1200.;
 const SIDEBAR_MIN_WIDTH: f32 = 900.;
 const WINDOW_TITLE: &str = "Oxidcord";
 const NOTIFICATION_BODY_LIMIT: usize = 140;
+const NOTIFICATION_ICON_SIZE: u32 = 64;
 const RECENT_TARGETS: usize = 8;
 
 pub enum ShellEvent {
@@ -1286,7 +1289,7 @@ impl Shell {
 	fn raise_alerts(&mut self, window: &Window, cx: &mut Context<Self>) {
 		let settings = (self.backend.read)().notifications;
 		let viewing = self.channel.filter(|_| window.is_window_active());
-		let (notifications, audible): (Vec<(Snowflake, Notification)>, bool) = {
+		let (notifications, audible): (Vec<(Snowflake, Notification, String)>, bool) = {
 			let data = self.data.read(cx);
 			let state = data.state();
 			let seen = std::mem::replace(&mut self.seen_alert, state.last_alert_id());
@@ -1308,6 +1311,8 @@ impl Shell {
 					notifications.push((
 						alert.message.channel_id,
 						alert_notification(&state, alert, settings.show_content, cx),
+						cx.global::<Images>()
+							.resolve(&user_avatar(&alert.message.author, NOTIFICATION_ICON_SIZE)),
 					));
 				}
 			}
@@ -1317,10 +1322,18 @@ impl Shell {
 			let volume = plugins::client_options(cx).notification_volume;
 			platform::sound::play_chime_at(volume.map_or(1., |volume| f32::from(volume.min(100)) / 100.));
 		}
-		for (channel, notification) in notifications {
+		let media = cx.global::<Images>().media();
+		for (channel, mut notification, avatar) in notifications {
 			let clicks = self.notification_clicks.clone();
-			platform::notifications::show_with_click(notification, move || {
-				clicks.send(Notified::Channel(channel)).ok();
+			let media = media.clone();
+			media.runtime().clone().spawn(async move {
+				notification.icon_path = media
+					.icon_file(&avatar, SizeHint::square(NOTIFICATION_ICON_SIZE))
+					.await
+					.ok();
+				platform::notifications::show_with_click(notification, move || {
+					clicks.send(Notified::Channel(channel)).ok();
+				});
 			});
 		}
 	}
