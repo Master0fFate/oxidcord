@@ -50,7 +50,15 @@ pub fn guild_threads(store: &Store, guild_id: u64) -> Vec<&Channel> {
 	let mut threads: Vec<&Channel> = store
 		.channels
 		.values()
-		.filter(|channel| channel.guild_id == Some(Snowflake(guild_id)) && is_thread(channel.kind))
+		.filter(|channel| {
+			channel.guild_id == Some(Snowflake(guild_id))
+				&& is_thread(channel.kind)
+				&& store.thread_visible(channel)
+				&& !channel
+					.thread_metadata
+					.as_ref()
+					.is_some_and(|metadata| metadata.archived)
+		})
 		.collect();
 	threads.sort_by_key(|channel| channel.id);
 	threads

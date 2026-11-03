@@ -68,6 +68,7 @@ pub struct Store {
 	pub guild_bios: HashMap<(u64, u64), String>,
 	pub audit: HashMap<u64, Vec<Value>>,
 	pub joined_threads: BTreeSet<u64>,
+	pub thread_member_settings: HashMap<u64, Value>,
 	pub slowmode: HashMap<u64, Instant>,
 	pub pinned_at: HashMap<u64, DateTime<Utc>>,
 	pub created_guilds: HashMap<u64, Value>,
@@ -155,9 +156,17 @@ impl Store {
 			joined_threads: fixtures
 				.guilds
 				.first()
-				.and_then(|guild| guild.thread_ids.first().copied())
 				.into_iter()
+				.flat_map(|guild| {
+					guild
+						.thread_ids
+						.first()
+						.into_iter()
+						.chain(&guild.private_thread_ids)
+				})
+				.copied()
 				.collect(),
+			thread_member_settings: HashMap::new(),
 			slowmode: HashMap::new(),
 			proto_status: seed_status(),
 			proto_privacy: privacy_with_friend_sources(

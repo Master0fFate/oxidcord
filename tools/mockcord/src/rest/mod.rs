@@ -185,6 +185,14 @@ pub fn router(shared: Arc<Shared>) -> Router {
 			put(admin::join_thread).delete(admin::leave_thread),
 		)
 		.route(
+			"/channels/{id}/thread-members/@me/settings",
+			patch(admin::thread_settings),
+		)
+		.route(
+			"/channels/{id}/thread-members/{uid}",
+			put(admin::add_thread_member),
+		)
+		.route(
 			"/channels/{id}/recipients/@me",
 			put(admin::accept_message_request).delete(admin::reject_message_request),
 		)
@@ -218,6 +226,14 @@ pub fn router(shared: Arc<Shared>) -> Router {
 		.route(
 			"/channels/{id}/threads/archived/public",
 			get(admin::archived_threads),
+		)
+		.route(
+			"/channels/{id}/threads/archived/private",
+			get(admin::archived_private_threads),
+		)
+		.route(
+			"/channels/{id}/users/@me/threads/archived/private",
+			get(admin::joined_archived_private_threads),
 		)
 		.merge(expressions::routes())
 		.route_layer(middleware::from_fn_with_state(shared.clone(), guard));

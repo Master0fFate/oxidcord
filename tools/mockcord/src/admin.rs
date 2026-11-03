@@ -140,14 +140,28 @@ impl Store {
 	pub fn thread_json(&self, thread: &Channel) -> Value {
 		let mut value = to_json(thread);
 		if self.joined_threads.contains(&thread.id.0) {
-			value["member"] = json!({
-				"id": thread.id.to_string(),
-				"user_id": CURRENT_USER_ID.to_string(),
-				"join_timestamp": now_iso(),
-				"flags": 0,
-			});
+			value["member"] = self.thread_member_json(thread.id.0);
 		}
 		value
+	}
+
+	pub fn thread_member_json(&self, thread_id: u64) -> Value {
+		let mut member = json!({
+			"id": thread_id.to_string(),
+			"user_id": CURRENT_USER_ID.to_string(),
+			"join_timestamp": now_iso(),
+			"flags": 0,
+		});
+		if let Some(Value::Object(settings)) = self.thread_member_settings.get(&thread_id) {
+			for (key, value) in settings {
+				member[key] = value.clone();
+			}
+		}
+		member
+	}
+
+	pub fn thread_visible(&self, thread: &Channel) -> bool {
+		thread.kind != ChannelType::PrivateThread || self.joined_threads.contains(&thread.id.0)
 	}
 }
 
@@ -1256,6 +1270,7 @@ impl Shared {
 		} else {
 			store.joined_threads.remove(&thread_id);
 		}
+		let member = store.thread_member_json(thread_id);
 		drop(store);
 		let mut update = json!({
 			"id": thread_id.to_string(),
@@ -1263,12 +1278,7 @@ impl Shared {
 			"member_count": count.max(0),
 		});
 		if join {
-			update["added_members"] = json!([{
-				"id": thread_id.to_string(),
-				"user_id": CURRENT_USER_ID.to_string(),
-				"join_timestamp": now_iso(),
-				"flags": 0,
-			}]);
+			update["added_members"] = json!([member]);
 		} else {
 			update["removed_member_ids"] = json!([CURRENT_USER_ID.to_string()]);
 		}
@@ -1276,25 +1286,76 @@ impl Shared {
 		Ok(())
 	}
 
-	pub fn threads_json(&self, filter: impl Fn(&Channel) -> bool) -> Value {
+	pub fn thread_member_added(&self, thread_id: u64, user_id: u64) -> Result<(), ApiError> {
+		if !self.fixtures.users.contains_key(&user_id) {
+			return Err(ApiError::unknown_user());
+		}
+		let mut store = self.store.lock();
+		let thread = store
+			.channels
+			.get_mut(&thread_id)
+			.filter(|channel| is_thread(channel.kind))
+			.ok_or_else(ApiError::wrong_channel_kind)?;
+		let count = thread.member_count.unwrap_or(0) + 1;
+		thread.member_count = Some(count);
+		let guild_id = thread.guild_id.map(|id| id.to_string());
+		drop(store);
+		self.hub.broadcast(
+			"THREAD_MEMBERS_UPDATE",
+			&json!({
+				"id": thread_id.to_string(),
+				"guild_id": guild_id,
+				"member_count": count,
+				"added_members": [{
+					"id": thread_id.to_string(),
+					"user_id": user_id.to_string(),
+					"join_timestamp": now_iso(),
+					"flags": 0,
+				}],
+			}),
+		);
+		Ok(())
+	}
+
+	pub fn update_thread_settings(&self, thread_id: u64, body: &Value) -> Result<Value, ApiError> {
+		let mut store = self.store.lock();
+		let guild_id = store
+			.channels
+			.get(&thread_id)
+			.filter(|channel| is_thread(channel.kind))
+			.ok_or_else(ApiError::wrong_channel_kind)?
+			.guild_id;
+		if !store.joined_threads.contains(&thread_id) {
+			return Err(ApiError::unknown_member());
+		}
+		let settings = store
+			.thread_member_settings
+			.entry(thread_id)
+			.or_insert_with(|| json!({}));
+		for key in ["flags", "muted", "mute_config"] {
+			if let Some(value) = body.get(key) {
+				settings[key] = value.clone();
+			}
+		}
+		let mut member = store.thread_member_json(thread_id);
+		member["guild_id"] = json!(guild_id.map(|id| id.to_string()));
+		drop(store);
+		self.hub.broadcast("THREAD_MEMBER_UPDATE", &member);
+		Ok(member)
+	}
+
+	pub fn threads_json(&self, filter: impl Fn(&Store, &Channel) -> bool) -> Value {
 		let store = self.store.lock();
 		let mut threads: Vec<&Channel> = store
 			.channels
 			.values()
-			.filter(|channel| is_thread(channel.kind) && filter(channel))
+			.filter(|channel| is_thread(channel.kind) && filter(&store, channel))
 			.collect();
 		threads.sort_by_key(|channel| std::cmp::Reverse(channel.id));
 		let members: Vec<Value> = threads
 			.iter()
 			.filter(|thread| store.joined_threads.contains(&thread.id.0))
-			.map(|thread| {
-				json!({
-					"id": thread.id.to_string(),
-					"user_id": CURRENT_USER_ID.to_string(),
-					"join_timestamp": now_iso(),
-					"flags": 0,
-				})
-			})
+			.map(|thread| store.thread_member_json(thread.id.0))
 			.collect();
 		json!({
 			"threads": threads.iter().map(|thread| store.thread_json(thread)).collect::<Vec<_>>(),

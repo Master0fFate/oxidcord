@@ -14,6 +14,7 @@ use crate::fixtures::CURRENT_USER_ID;
 use crate::fixtures::previews;
 use crate::forward::snapshot_of;
 use crate::json::{author_id, parse_id, to_json};
+use crate::ready::is_thread;
 use crate::state::{Shared, Store};
 
 const BURST_COLOR: &str = "#ff73fa";
@@ -171,6 +172,30 @@ impl Shared {
 			&& channel.permission_overwrites.iter().any(|overwrite| {
 				overwrite.deny.contains(Permissions::ADD_REACTIONS) && me.roles.contains(&overwrite.id)
 			})
+	}
+
+	pub fn enforce_thread_unlocked(&self, channel_id: u64) -> Result<(), ApiError> {
+		let store = self.store.lock();
+		let Some(channel) = store.channels.get(&channel_id) else {
+			return Ok(());
+		};
+		let locked = is_thread(channel.kind)
+			&& channel
+				.thread_metadata
+				.as_ref()
+				.is_some_and(|metadata| metadata.locked);
+		let moderator = channel
+			.guild_id
+			.and_then(|guild_id| self.fixtures.guild(guild_id.0))
+			.is_some_and(|guild| {
+				guild
+					.permissions_for(guild.current_member())
+					.contains(Permissions::MANAGE_THREADS)
+			});
+		if locked && !moderator {
+			return Err(ApiError::thread_locked());
+		}
+		Ok(())
 	}
 
 	pub fn enforce_slowmode(&self, channel_id: u64) -> Result<(), ApiError> {

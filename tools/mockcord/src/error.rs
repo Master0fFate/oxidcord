@@ -112,6 +112,10 @@ impl ApiError {
 		}
 	}
 
+	pub const fn thread_locked() -> Self {
+		Self::new(StatusCode::FORBIDDEN, 160005, "Thread is locked")
+	}
+
 	pub const fn empty_message() -> Self {
 		Self::new(StatusCode::BAD_REQUEST, 50006, "Cannot send an empty message")
 	}

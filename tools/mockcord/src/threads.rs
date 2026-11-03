@@ -5,7 +5,6 @@ use protocol::{
 use serde_json::{Value, json};
 
 use crate::error::ApiError;
-use crate::fixtures::CURRENT_USER_ID;
 use crate::json::{author_id, to_json};
 use crate::ops::Draft;
 use crate::state::Shared;
@@ -14,6 +13,7 @@ pub struct ThreadRequest {
 	pub name: String,
 	pub auto_archive_duration: i64,
 	pub kind: ChannelType,
+	pub invitable: Option<bool>,
 	pub applied_tags: Vec<Snowflake>,
 	pub starter: Option<Draft>,
 }
@@ -59,6 +59,14 @@ impl Shared {
 		} else {
 			request.kind
 		};
+		let kind_fits = match parent_kind {
+			ChannelType::GuildAnnouncement => kind == ChannelType::AnnouncementThread,
+			ChannelType::GuildText => matches!(kind, ChannelType::PublicThread | ChannelType::PrivateThread),
+			_ => true,
+		};
+		if !kind_fits {
+			return Err(ApiError::invalid_body("Invalid thread type for this channel"));
+		}
 		let now = Utc::now();
 		let thread = Channel {
 			id: Snowflake(thread_id),
@@ -77,7 +85,7 @@ impl Shared {
 				auto_archive_duration: Some(request.auto_archive_duration),
 				archive_timestamp: Some(now),
 				locked: false,
-				invitable: Some(true),
+				invitable: Some(request.invitable.unwrap_or(true)),
 				create_timestamp: Some(now),
 			}),
 			..Channel::default()
@@ -95,7 +103,7 @@ impl Shared {
 			}
 			_ => None,
 		};
-		if from_message.is_none() && !is_forum {
+		if from_message.is_none() && !is_forum && kind != ChannelType::PrivateThread {
 			let name = self.store.lock().channels[&thread_id]
 				.name
 				.clone()
@@ -126,12 +134,7 @@ impl Shared {
 		if let Some(starter) = starter {
 			thread_json["message"] = starter;
 		}
-		thread_json["member"] = json!({
-			"id": thread_id.to_string(),
-			"user_id": CURRENT_USER_ID.to_string(),
-			"join_timestamp": now.to_rfc3339(),
-			"flags": 0,
-		});
+		thread_json["member"] = self.store.lock().thread_member_json(thread_id);
 		Ok(thread_json)
 	}
 

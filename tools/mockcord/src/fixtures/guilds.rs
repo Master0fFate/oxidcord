@@ -36,6 +36,7 @@ pub struct GuildFixture {
 	pub channel_ids: Vec<u64>,
 	pub message_channel_ids: Vec<u64>,
 	pub thread_ids: Vec<u64>,
+	pub private_thread_ids: Vec<u64>,
 	pub muted_channel_id: u64,
 	pub emojis: Vec<Emoji>,
 	pub members: Vec<Member>,
@@ -742,6 +743,38 @@ pub fn build(builder: &mut Builder, index: usize) -> GuildFixture {
 		thread_ids.push(id);
 	}
 
+	let locked_id = builder.ids.next();
+	let mut locked = thread_channel(
+		locked_id,
+		guild_id,
+		first_text,
+		"release freeze",
+		member_ids[0],
+		anchor,
+	);
+	if let Some(metadata) = locked.thread_metadata.as_mut() {
+		metadata.locked = true;
+	}
+	builder.channels.insert(locked_id, locked);
+	thread_ids.push(locked_id);
+	let private_id = builder.ids.next();
+	let mut private = thread_channel(
+		private_id,
+		guild_id,
+		first_text,
+		"mod notes",
+		member_ids[0],
+		anchor,
+	);
+	private.kind = ChannelType::PrivateThread;
+	private.thread_metadata = private.thread_metadata.map(|metadata| ThreadMetadata {
+		archived: true,
+		invitable: Some(false),
+		..metadata
+	});
+	builder.channels.insert(private_id, private);
+	let private_thread_ids = vec![private_id];
+
 	let authors: Vec<&User> = members.iter().filter_map(|member| member.user.as_ref()).collect();
 	let mention_targets: Vec<(u64, String)> = layout
 		.text
@@ -871,6 +904,7 @@ pub fn build(builder: &mut Builder, index: usize) -> GuildFixture {
 		channel_ids: layout.all,
 		message_channel_ids: layout.message,
 		thread_ids,
+		private_thread_ids,
 		muted_channel_id: layout.muted,
 		emojis,
 		members,

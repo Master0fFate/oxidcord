@@ -195,6 +195,7 @@ pub async fn create_message(
 	draft.files.extend(shared.claim_uploads(&draft.descriptors)?);
 	shared.check_limits(&draft.content, &draft.files)?;
 	draft.skip_echo = matches!(fault, Some(SendFault::SkipEcho));
+	shared.enforce_thread_unlocked(id)?;
 	shared.enforce_slowmode(id)?;
 	shared
 		.post_message(id, &shared.fixtures.current_user, draft)
@@ -430,6 +431,7 @@ fn thread_request(body: &Value, starter: Option<Draft>) -> Result<ThreadRequest,
 			.as_i64()
 			.unwrap_or(DEFAULT_ARCHIVE_MINUTES),
 		kind: ChannelType::from(body["type"].as_i64().unwrap_or(11)),
+		invitable: body["invitable"].as_bool(),
 		applied_tags: body["applied_tags"]
 			.as_array()
 			.map(|tags| tags.iter().filter_map(parse_id).map(Snowflake).collect())

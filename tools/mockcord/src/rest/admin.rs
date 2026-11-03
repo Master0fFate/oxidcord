@@ -4,13 +4,13 @@ use std::sync::Arc;
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
-use protocol::decode_settings;
+use protocol::{Channel, ChannelType, decode_settings};
 use serde_json::{Value, json};
 
 use crate::error::{ApiError, ApiResult};
 use crate::json::{parse_id, to_json};
 use crate::ready::user_settings_proto;
-use crate::state::Shared;
+use crate::state::{Shared, Store};
 
 type Mock = State<Arc<Shared>>;
 type NoContent = Result<StatusCode, ApiError>;
@@ -249,8 +249,9 @@ pub async fn delete_automod_rule(State(shared): Mock, Path((id, rule_id)): Path<
 
 pub async fn active_threads(State(shared): Mock, Path(id): Path<u64>) -> ApiResult {
 	let guild_id = protocol::Snowflake(id);
-	Ok(Json(shared.threads_json(|thread| {
+	Ok(Json(shared.threads_json(|store, thread| {
 		thread.guild_id == Some(guild_id)
+			&& store.thread_visible(thread)
 			&& thread
 				.thread_metadata
 				.as_ref()
@@ -258,15 +259,30 @@ pub async fn active_threads(State(shared): Mock, Path(id): Path<u64>) -> ApiResu
 	})))
 }
 
-pub async fn archived_threads(State(shared): Mock, Path(id): Path<u64>) -> ApiResult {
-	let parent_id = protocol::Snowflake(id);
-	Ok(Json(shared.threads_json(|thread| {
+fn archived_in(shared: &Shared, parent: u64, scope: impl Fn(&Store, &Channel) -> bool) -> ApiResult {
+	let parent_id = protocol::Snowflake(parent);
+	Ok(Json(shared.threads_json(|store, thread| {
 		thread.parent_id == Some(parent_id)
+			&& scope(store, thread)
 			&& thread
 				.thread_metadata
 				.as_ref()
 				.is_some_and(|metadata| metadata.archived)
 	})))
+}
+
+pub async fn archived_threads(State(shared): Mock, Path(id): Path<u64>) -> ApiResult {
+	archived_in(&shared, id, |_, thread| thread.kind != ChannelType::PrivateThread)
+}
+
+pub async fn archived_private_threads(State(shared): Mock, Path(id): Path<u64>) -> ApiResult {
+	archived_in(&shared, id, |_, thread| thread.kind == ChannelType::PrivateThread)
+}
+
+pub async fn joined_archived_private_threads(State(shared): Mock, Path(id): Path<u64>) -> ApiResult {
+	archived_in(&shared, id, |store, thread| {
+		thread.kind == ChannelType::PrivateThread && store.joined_threads.contains(&thread.id.0)
+	})
 }
 
 pub async fn modify_guild(State(shared): Mock, Path(id): Path<u64>, Json(body): Json<Value>) -> ApiResult {
@@ -389,6 +405,15 @@ pub async fn delete_overwrite(State(shared): Mock, Path((id, target_id)): Path<(
 pub async fn join_thread(State(shared): Mock, Path(id): Path<u64>) -> NoContent {
 	shared.thread_membership(id, true)?;
 	Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn add_thread_member(State(shared): Mock, Path((id, user_id)): Path<(u64, u64)>) -> NoContent {
+	shared.thread_member_added(id, user_id)?;
+	Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn thread_settings(State(shared): Mock, Path(id): Path<u64>, Json(body): Json<Value>) -> ApiResult {
+	shared.update_thread_settings(id, &body).map(Json)
 }
 
 pub async fn leave_thread(State(shared): Mock, Path(id): Path<u64>) -> NoContent {
