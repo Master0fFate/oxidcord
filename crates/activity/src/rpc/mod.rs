@@ -4,12 +4,12 @@ mod ipc;
 mod link;
 mod ws;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 use parking_lot::{Mutex, RwLock};
-use protocol::User;
+use protocol::{Snowflake, User};
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
@@ -64,6 +64,7 @@ pub(crate) struct RpcShared {
 	pub requests: mpsc::UnboundedSender<ActivityRequest>,
 	user: RwLock<Option<User>>,
 	subscribers: Mutex<HashMap<u64, Subscriber>>,
+	pending: Mutex<HashSet<(u64, Snowflake)>>,
 	next_link: AtomicU64,
 	live: AtomicUsize,
 }
@@ -94,6 +95,7 @@ impl RpcShared {
 			requests,
 			user: RwLock::new(None),
 			subscribers: Mutex::new(HashMap::new()),
+			pending: Mutex::new(HashSet::new()),
 			next_link: AtomicU64::new(1),
 			live: AtomicUsize::new(0),
 		}
@@ -152,6 +154,14 @@ impl RpcShared {
 			}
 		}
 		delivered
+	}
+
+	pub fn add_pending(&self, application_id: u64, user_id: Snowflake) {
+		self.pending.lock().insert((application_id, user_id));
+	}
+
+	pub fn take_pending(&self, application_id: u64, user_id: Snowflake) -> bool {
+		self.pending.lock().remove(&(application_id, user_id))
 	}
 
 	pub fn set_user(&self, user: Option<User>) {

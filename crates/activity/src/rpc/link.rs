@@ -95,6 +95,22 @@ fn error(cmd: &Value, nonce: &Value, code: i64, message: impl Into<String>) -> V
 	})
 }
 
+fn requesting_user(args: &Value) -> Option<Snowflake> {
+	args.get("user_id")
+		.and_then(Value::as_str)
+		.and_then(|id| id.parse().ok())
+		.map(Snowflake)
+}
+
+fn invalid_user_id(cmd: &Value, nonce: &Value) -> Value {
+	error(
+		cmd,
+		nonce,
+		ERROR_INVALID_PAYLOAD,
+		r#"child "user_id" fails because ["user_id" must be a string]"#,
+	)
+}
+
 fn reply(cmd: &Value, nonce: &Value, data: Value) -> Value {
 	json!({ "cmd": cmd, "data": data, "evt": Value::Null, "nonce": nonce })
 }
@@ -197,7 +213,9 @@ impl Link {
 				),
 			},
 			"SEND_ACTIVITY_JOIN_INVITE" => self.join_invite(&cmd, &nonce, &args),
-			"CLOSE_ACTIVITY_REQUEST" | "CLOSE_ACTIVITY_JOIN_REQUEST" => reply(&cmd, &nonce, Value::Null),
+			"CLOSE_ACTIVITY_REQUEST" | "CLOSE_ACTIVITY_JOIN_REQUEST" => {
+				self.close_request(&cmd, &nonce, &args)
+			}
 			known if KNOWN_COMMANDS.contains(&known) => {
 				error(&cmd, &nonce, ERROR_SERVICE_UNAVAILABLE, "Service unavailable")
 			}
@@ -235,27 +253,31 @@ impl Link {
 		let Some(app) = &self.app else {
 			return error(cmd, nonce, ERROR_INVALID_PAYLOAD, "Not connected");
 		};
-		let Some(user_id) = args
-			.get("user_id")
-			.and_then(Value::as_str)
-			.and_then(|id| id.parse().ok())
-			.map(Snowflake)
-		else {
-			return error(
-				cmd,
-				nonce,
-				ERROR_INVALID_PAYLOAD,
-				r#"child "user_id" fails because ["user_id" must be a string]"#,
-			);
+		let Some(user_id) = requesting_user(args) else {
+			return invalid_user_id(cmd, nonce);
 		};
 		let Some(party_id) = self.party_id.clone() else {
 			return error(cmd, nonce, ERROR_INVALID_PAYLOAD, "No party to invite to");
 		};
+		if !self.shared.take_pending(app.id.get(), user_id) {
+			return error(cmd, nonce, ERROR_INVALID_PAYLOAD, "No pending join request");
+		}
 		let _ = self.shared.requests.send(ActivityRequest::JoinInvite {
 			application_id: app.id,
 			user_id,
 			party_id,
 		});
+		reply(cmd, nonce, Value::Null)
+	}
+
+	fn close_request(&self, cmd: &Value, nonce: &Value, args: &Value) -> Value {
+		let Some(app) = &self.app else {
+			return error(cmd, nonce, ERROR_INVALID_PAYLOAD, "Not connected");
+		};
+		let Some(user_id) = requesting_user(args) else {
+			return invalid_user_id(cmd, nonce);
+		};
+		self.shared.take_pending(app.id.get(), user_id);
 		reply(cmd, nonce, Value::Null)
 	}
 
