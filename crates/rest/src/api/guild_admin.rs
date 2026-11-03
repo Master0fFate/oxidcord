@@ -1,8 +1,8 @@
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use protocol::{
-	AutoModRule, AutoModTriggerType, Channel, LenientVec, Role, ScheduledEvent, ScheduledEventRsvp, Snowflake,
-	StageInstance,
+	AutoModRule, AutoModTriggerType, Channel, LenientVec, Role, ScheduledEvent, ScheduledEventRsvp,
+	Snowflake, StageInstance,
 };
 use serde_json::{Value, json};
 

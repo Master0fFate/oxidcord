@@ -4,8 +4,7 @@ use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use protocol::{
 	Channel, ChannelType, DefaultMessageNotifications, Emoji, Guild, Member, Role, ScheduledEvent, Snowflake,
-	StageInstance,
-	VoiceState,
+	StageInstance, VoiceState,
 };
 
 use crate::member_list::MemberList;
