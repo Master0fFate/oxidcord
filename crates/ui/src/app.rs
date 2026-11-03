@@ -17,6 +17,7 @@ use session::{Command, NotifyFn, Session};
 use state::Changes;
 use store::{Settings, Store};
 use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::watch;
 use url::Url;
 
 use crate::actions;
@@ -480,14 +481,18 @@ fn settings_backend(store: &Arc<Store>) -> Rc<SettingsBackend> {
 	let reader = store.clone();
 	let writer = store.clone();
 	let secrets = store.clone();
+	let (changed, _) = watch::channel(0);
+	let announce = changed.clone();
 	Rc::new(SettingsBackend {
 		read: Box::new(move || reader.settings.read().clone()),
 		write: Box::new(move |apply| {
 			if let Err(error) = writer.update_settings(|settings: &mut Settings| apply(settings)) {
 				tracing::warn!(%error, "could not save settings");
 			}
+			announce.send_modify(|revision| *revision += 1);
 		}),
 		plaintext_secrets: Box::new(move |plaintext| secrets.set_plaintext_secrets(plaintext)),
+		changed,
 		themes_dir: store.paths.themes_dir(),
 	})
 }

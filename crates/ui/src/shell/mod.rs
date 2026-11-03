@@ -217,6 +217,7 @@ pub struct Shell {
 	overlay: Option<Overlay>,
 	_subscriptions: Vec<Subscription>,
 	_notification_clicks: Task<()>,
+	_settings_changes: Task<()>,
 }
 
 impl EventEmitter<ShellEvent> for Shell {}
@@ -649,6 +650,17 @@ impl Shell {
 				}
 			}
 		});
+		let mut settings_changes = backend.changed.subscribe();
+		let settings_task = cx.spawn(async move |this, cx| {
+			while settings_changes.changed().await.is_ok() {
+				if this
+					.update(cx, |shell, cx| shell.on_settings_changed(cx))
+					.is_err()
+				{
+					break;
+				}
+			}
+		});
 		let (seen_alert, seen_intent, seen_friend_notice, seen_event_notice, voice_sounds) = {
 			let data = data.read(cx);
 			let state = data.state();
@@ -708,6 +720,7 @@ impl Shell {
 			overlay: None,
 			_subscriptions: subscriptions,
 			_notification_clicks: notification_task,
+			_settings_changes: settings_task,
 		};
 		shell.on_changes(&Changes::everything(), window, cx);
 		shell
@@ -1201,6 +1214,11 @@ impl Shell {
 		if changes.intents {
 			self.consume_intents(window, cx);
 		}
+	}
+
+	fn on_settings_changed(&mut self, cx: &mut Context<Self>) {
+		self.voice_sounds
+			.sync_loops(self.data.read(cx), &self.backend, cx);
 	}
 
 	fn apply_client_options(&mut self, window: &mut Window, cx: &mut Context<Self>) {

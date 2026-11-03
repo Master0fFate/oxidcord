@@ -13,6 +13,7 @@ use gpui_component::scroll::ScrollableElement as _;
 use gpui_component::slider::{Slider, SliderEvent, SliderState};
 use gpui_component::switch::Switch;
 use store::Settings;
+use tokio::sync::watch;
 
 use super::account::{
 	AccountPages, Note, PageEvent, Target, activity_page, chat_page, note_page, streamer_page,
@@ -35,6 +36,7 @@ pub type SettingsWriter = Box<dyn Fn(&dyn Fn(&mut Settings))>;
 pub struct SettingsBackend {
 	pub read: Box<dyn Fn() -> Settings>,
 	pub write: SettingsWriter,
+	pub changed: watch::Sender<u64>,
 	pub plaintext_secrets: Box<dyn Fn(bool) -> store::Result<()>>,
 	pub themes_dir: PathBuf,
 }

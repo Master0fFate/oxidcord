@@ -87,7 +87,7 @@ impl VoiceSounds {
 		}
 	}
 
-	fn sync_loops(&mut self, data: &Data, backend: &SettingsBackend, cx: &App) {
+	pub fn sync_loops(&mut self, data: &Data, backend: &SettingsBackend, cx: &App) {
 		let (ringing_in, ringing_out) = {
 			let state = data.state();
 			(is_ringing_in(&state), is_ringing_out(&state))
