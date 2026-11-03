@@ -3,7 +3,7 @@ use std::io::ErrorKind;
 
 use protocol::gateway::{CHROME_VERSION, FALLBACK_BUILD_NUMBER};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::atomic::write_atomic;
 use crate::error::Result;
@@ -361,6 +361,35 @@ impl Settings {
 	}
 }
 
+fn accepts(merged: &Map<String, Value>) -> bool {
+	serde_json::from_value::<Settings>(Value::Object(merged.clone())).is_ok()
+}
+
+fn merge_section(merged: &mut Map<String, Value>, name: &str, value: Value) -> bool {
+	let Some(previous) = merged.insert(name.to_owned(), value.clone()) else {
+		merged.remove(name);
+		return true;
+	};
+	if accepts(merged) {
+		return true;
+	}
+	merged.insert(name.to_owned(), previous.clone());
+	if let (Value::Object(fields), Value::Object(mut kept)) = (value, previous) {
+		for (field, incoming) in fields {
+			let Some(old) = kept.insert(field.clone(), incoming) else {
+				kept.remove(&field);
+				continue;
+			};
+			merged.insert(name.to_owned(), Value::Object(kept.clone()));
+			if !accepts(merged) {
+				kept.insert(field, old);
+			}
+		}
+		merged.insert(name.to_owned(), Value::Object(kept));
+	}
+	false
+}
+
 fn decode_sections(bytes: &[u8]) -> (Settings, bool) {
 	let Ok(Value::Object(file)) = serde_json::from_slice(bytes) else {
 		return (Settings::default(), false);
@@ -370,14 +399,7 @@ fn decode_sections(bytes: &[u8]) -> (Settings, bool) {
 	};
 	let mut intact = true;
 	for (name, value) in file {
-		let Some(previous) = merged.insert(name.clone(), value) else {
-			merged.remove(&name);
-			continue;
-		};
-		if serde_json::from_value::<Settings>(Value::Object(merged.clone())).is_err() {
-			merged.insert(name, previous);
-			intact = false;
-		}
+		intact &= merge_section(&mut merged, &name, value);
 	}
 	let settings = serde_json::from_value(Value::Object(merged)).unwrap_or_default();
 	(settings, intact)
