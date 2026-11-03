@@ -160,19 +160,33 @@ impl Core {
 		}
 		match event {
 			DispatchEvent::RelationshipAdd(relationship) => {
-				let view = views::relationship(&self.state.read(), relationship);
-				if let Some(view) = view {
-					self.client_event(ClientEvent::RelationshipChanged(view), false);
+				let (view, stored) = {
+					let state = self.state.read();
+					(
+						views::relationship(&state, relationship),
+						state.relationship(relationship.id).is_some(),
+					)
+				};
+				match view {
+					Some(view) => self.client_event(ClientEvent::RelationshipChanged(view), false),
+					None if !stored => {
+						self.client_event(ClientEvent::RelationshipRemoved(relationship.id.get()), false)
+					}
+					None => {}
 				}
 			}
 			DispatchEvent::RelationshipUpdate(update) => {
 				let state = self.state.read();
-				let view = state
-					.relationship(update.id)
-					.and_then(|relationship| views::relationship(&state, relationship));
+				let stored = state.relationship(update.id);
+				let view = stored.and_then(|relationship| views::relationship(&state, relationship));
+				let removed = stored.is_none();
 				drop(state);
-				if let Some(view) = view {
-					self.client_event(ClientEvent::RelationshipChanged(view), false);
+				match view {
+					Some(view) => self.client_event(ClientEvent::RelationshipChanged(view), false),
+					None if removed => {
+						self.client_event(ClientEvent::RelationshipRemoved(update.id.get()), false)
+					}
+					None => {}
 				}
 			}
 			DispatchEvent::RelationshipRemove(remove) => {
