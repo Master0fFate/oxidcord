@@ -261,7 +261,11 @@ pub fn router(shared: Arc<Shared>) -> Router {
 			get(apps::channel_index),
 		)
 		.route("/users/@me/application-command-index", get(apps::user_index))
-		.route("/users/@me/connections", get(rpc::connections))
+		.route("/users/@me/connections", get(users::my_connections))
+		.route(
+			"/users/@me/connections/{kind}/{id}",
+			patch(admin::patch_connection).delete(admin::delete_connection),
+		)
 		.route("/applications/detectable", get(rpc::detectable))
 		.route("/applications/{id}/rpc", get(rpc::rpc_application))
 		.route("/applications/{id}/external-assets", post(rpc::external_assets))

@@ -728,7 +728,6 @@ group-transfer = Make Owner
 group-members-title = Members — { $count }
 
 settings-note-privacy = Privacy & Safety settings are managed in Discord's web app.
-settings-note-connections = Connections are managed in Discord's web app.
 settings-note-clips = Clips are not supported in Oxidcord.
 
 account-web-note = Change these in Discord's web app.
@@ -997,3 +996,12 @@ shortcut-zoom = Zoom
 idle-after = Idle after
 idle-after-note = Set your status to idle when you stop using this computer.
 idle-never = Never
+
+connections-loading = Loading connections...
+connections-empty = No connected accounts.
+connections-profile = Show on profile
+connections-status = Show as status
+connections-remove = Disconnect
+connections-confirm = Confirm
+connections-add = Add account
+connections-add-note = New accounts are linked in the Discord web app.

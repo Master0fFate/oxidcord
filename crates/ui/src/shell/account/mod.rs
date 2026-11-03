@@ -7,6 +7,7 @@ pub mod pages;
 mod parts;
 mod picker;
 mod profile_data;
+mod providers;
 mod relation;
 pub(crate) mod rich;
 mod status;

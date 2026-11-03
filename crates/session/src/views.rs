@@ -243,7 +243,7 @@ pub(crate) fn user_profile(profile: &state::UserProfile) -> UserProfile {
 			.map(|account| Connection {
 				kind: account.kind.clone(),
 				name: account.name.clone(),
-				id: String::new(),
+				id: account.id.clone(),
 				verified: account.verified,
 				url: None,
 			})

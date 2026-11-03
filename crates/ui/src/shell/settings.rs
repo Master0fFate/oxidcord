@@ -282,6 +282,10 @@ impl SettingsWindow {
 				let backend = self.backend.clone();
 				self.keybinds = Some(cx.new(|cx| KeybindsPage::new(backend, cx)));
 			}
+			Page::Connections => self
+				.account_pages
+				.connections
+				.update(cx, |connections, cx| connections.refresh(cx)),
 			Page::Devices => self
 				.account_pages
 				.devices
@@ -585,7 +589,7 @@ impl SettingsWindow {
 			Page::FriendRequests => self.account_pages.friend_requests.clone().into_any_element(),
 			Page::Devices => self.account_pages.devices.clone().into_any_element(),
 			Page::Privacy => note_page(Note::Privacy, cx),
-			Page::Connections => note_page(Note::Connections, cx),
+			Page::Connections => self.account_pages.connections.clone().into_any_element(),
 			Page::Clips => note_page(Note::Clips, cx),
 			Page::VoiceVideo => div().children(self.voice_video.clone()).into_any_element(),
 			Page::Keybinds => div().children(self.keybinds.clone()).into_any_element(),

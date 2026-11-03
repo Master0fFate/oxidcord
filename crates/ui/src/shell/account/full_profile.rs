@@ -2,22 +2,24 @@ use std::rc::Rc;
 
 use gpui::{
 	AnyElement, Context, Entity, FontWeight, InteractiveElement as _, IntoElement, MouseButton, ObjectFit,
-	ParentElement as _, StatefulInteractiveElement as _, Styled as _, StyledImage as _, div, img,
-	prelude::FluentBuilder as _,
+	ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _, StyledImage as _, div,
+	img, prelude::FluentBuilder as _,
 };
 use gpui_component::scroll::ScrollableElement as _;
 use media::SizeHint;
 use protocol::Snowflake;
+use state::ConnectedAccount;
 
 use super::activity::{ActivityView, OpenLink, activity_card_full};
 use super::note::NoteBox;
 use super::profile_data::ProfileData;
+use super::providers;
 use super::{AccountHub, parts, rich};
 use crate::components::{Avatar, IconButton};
 use crate::cosmetics::{name_text, profile_gradient};
 use crate::format;
 use crate::i18n::{ArgValue, Translate as _};
-use crate::icons::IconKind;
+use crate::icons::{Icon, IconKind};
 use crate::images::Images;
 use crate::theme::Theme;
 
@@ -178,21 +180,20 @@ impl AccountHub {
 					),
 			);
 		}
-		if !profile.connections.is_empty() {
+		if !profile.connections.is_empty() && !crate::data::streamer_mode(cx).hides_personal() {
 			column = column.child(
 				div()
 					.flex()
 					.flex_col()
-					.gap(theme.space_4)
+					.gap(theme.space_8)
 					.child(parts::section_label(cx.t("profile-connections"), theme))
-					.children(profile.connections.iter().map(|(kind, name)| {
-						div()
-							.flex()
-							.gap(theme.space_8)
-							.text_size(theme.font_sm)
-							.child(div().text_color(theme.text_muted).child(kind.clone()))
-							.child(name.clone())
-					})),
+					.children(
+						profile
+							.connections
+							.iter()
+							.enumerate()
+							.map(|(index, account)| connection_row(index, account, open, theme)),
+					),
 			);
 		}
 		column.into_any_element()
@@ -422,6 +423,51 @@ impl AccountHub {
 			)
 			.into_any_element()
 	}
+}
+
+fn connection_row(index: usize, account: &ConnectedAccount, open: &OpenLink, theme: &Theme) -> AnyElement {
+	let url = providers::profile_url(&account.kind, &account.id, &account.name);
+	let name = div()
+		.truncate()
+		.text_size(theme.font_sm)
+		.text_color(theme.text_normal)
+		.when(url.is_some(), |name| name.underline())
+		.child(account.name.clone());
+	let name = match url {
+		Some(url) => {
+			let open = open.clone();
+			div()
+				.id(("profile-connection", index))
+				.min_w_0()
+				.cursor_pointer()
+				.hover(|style| style.opacity(0.8))
+				.on_click(move |_, window, cx| open(&url, window, cx))
+				.child(name)
+				.into_any_element()
+		}
+		None => name.into_any_element(),
+	};
+	div()
+		.flex()
+		.items_center()
+		.gap(theme.space_8)
+		.child(
+			Icon::new(IconKind::Connections)
+				.size(theme.glyph_sm)
+				.color(theme.interactive_muted),
+		)
+		.child(
+			div()
+				.flex_none()
+				.text_size(theme.font_sm)
+				.text_color(theme.text_muted)
+				.child(SharedString::from(providers::label(&account.kind).to_owned())),
+		)
+		.child(name)
+		.when(account.verified, |row| {
+			row.child(Icon::new(IconKind::Check).size(theme.glyph_sm).color(theme.brand))
+		})
+		.into_any_element()
 }
 
 fn empty(text: gpui::SharedString, theme: &Theme) -> AnyElement {

@@ -317,6 +317,9 @@ impl Core {
 			| Command::SetGuildLayout(_)
 			| Command::CreateGuild { .. }
 			| Command::LoadSessions
+			| Command::LoadConnections
+			| Command::UpdateConnection { .. }
+			| Command::RemoveConnection { .. }
 			| Command::LogoutSessions(_)
 			| Command::UpdateGuildSettingsRaw { .. }
 			| Command::SetCustomStatus { .. }
@@ -926,6 +929,19 @@ impl Core {
 					rest.auth_sessions().await,
 				)))
 			}),
+			Command::LoadConnections => self.load_connections(),
+			Command::UpdateConnection { kind, id, changes } => {
+				self.spawn_load("update connection", move |rest| async move {
+					rest.modify_connection(&kind, &id, changes).await?;
+					Ok(Loaded::Connections(rest.connections().await?.into_vec()))
+				})
+			}
+			Command::RemoveConnection { kind, id } => {
+				self.spawn_load("remove connection", move |rest| async move {
+					rest.delete_connection(&kind, &id).await?;
+					Ok(Loaded::Connections(rest.connections().await?.into_vec()))
+				})
+			}
 			Command::LogoutSessions(id_hashes) => self.spawn_load("log out devices", |rest| async move {
 				rest.logout_sessions(&id_hashes).await?;
 				Ok(Loaded::AuthSessions(sessions_or_empty(
@@ -1203,6 +1219,12 @@ impl Core {
 			Some(Internal::RestoreRead(restore)),
 			move |rest| async move { rest.ack_message(channel_id, previous, body).await.map(drop) },
 		);
+	}
+
+	pub(super) fn load_connections(&self) {
+		self.spawn_load("connections", |rest| async move {
+			Ok(Loaded::Connections(rest.connections().await?.into_vec()))
+		});
 	}
 
 	fn mark_read(&mut self, unread: &[(Snowflake, Snowflake)], what: &'static str) {

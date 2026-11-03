@@ -1,6 +1,6 @@
 use gpui::{Hsla, SharedString};
 use protocol::{RelationshipKind, Snowflake};
-use state::{State, UserOverride};
+use state::{ConnectedAccount, State, UserOverride};
 
 use crate::cosmetics::{Flair, flair};
 use crate::lookup::user_avatar;
@@ -69,7 +69,7 @@ pub struct ProfileData {
 	pub mutual_guilds: Vec<MutualGuild>,
 	pub mutual_friends: Vec<MutualFriend>,
 	pub mutual_friend_count: usize,
-	pub connections: Vec<(String, String)>,
+	pub connections: Vec<ConnectedAccount>,
 	pub status: Status,
 	pub facts: RelationFacts,
 	pub mine: bool,
@@ -270,13 +270,7 @@ impl ProfileData {
 			mutual_guilds,
 			mutual_friends,
 			connections: profile
-				.map(|profile| {
-					profile
-						.connected_accounts
-						.iter()
-						.map(|account| (account.kind.clone(), account.name.clone()))
-						.collect()
-				})
+				.map(|profile| profile.connected_accounts.clone())
 				.unwrap_or_default(),
 			status: status_of(state, user_id),
 			facts: relation_facts(state, user_id),

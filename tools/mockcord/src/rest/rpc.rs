@@ -66,10 +66,6 @@ pub async fn activity_secret(Path((_, session_id, _, kind)): Path<(u64, String, 
 	}
 }
 
-pub async fn connections() -> Json<Value> {
-	Json(json!([]))
-}
-
 pub async fn detectable() -> Json<Value> {
 	Json(json!([]))
 }

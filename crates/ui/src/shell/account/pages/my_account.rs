@@ -60,7 +60,7 @@ impl MyAccountPage {
 	}
 }
 
-fn open_web_app() {
+pub(super) fn open_web_app() {
 	if let Err(error) = platform::open::open_url(WEB_APP) {
 		tracing::warn!(%error, "could not open the web app");
 	}

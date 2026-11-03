@@ -888,6 +888,16 @@ pub enum Command {
 		icon: Option<String>,
 	},
 	LoadSessions,
+	LoadConnections,
+	UpdateConnection {
+		kind: String,
+		id: String,
+		changes: Value,
+	},
+	RemoveConnection {
+		kind: String,
+		id: String,
+	},
 	LogoutSessions(Vec<String>),
 	SetCustomStatus {
 		text: Option<String>,

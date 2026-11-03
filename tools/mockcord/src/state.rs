@@ -26,6 +26,30 @@ const WINDOW_SECONDS: f64 = 2.0;
 const BUCKET_LIMIT: u32 = 5;
 const MOCK_STATUS_MINUTES: i64 = 30;
 
+fn seed_connections() -> Vec<Value> {
+	[
+		("github", "7021", "oxid-dev", true, 1, false),
+		("spotify", "31ab9", "oxid.listens", true, 1, true),
+		("twitch", "58213", "oxid_live", false, 0, false),
+	]
+	.into_iter()
+	.map(|(kind, id, name, verified, visibility, show_activity)| {
+		serde_json::json!({
+			"type": kind,
+			"id": id,
+			"name": name,
+			"verified": verified,
+			"visibility": visibility,
+			"show_activity": show_activity,
+			"friend_sync": false,
+			"revoked": false,
+			"metadata_visibility": 0,
+			"two_way_link": false,
+		})
+	})
+	.collect()
+}
+
 fn seed_status() -> Vec<u8> {
 	let expires = chrono::Utc::now() + chrono::Duration::minutes(MOCK_STATUS_MINUTES);
 	encode_status(&ProtoStatus {
@@ -70,6 +94,7 @@ pub struct Store {
 	pub absent_guilds: BTreeSet<u64>,
 	pub ended_sessions: BTreeSet<String>,
 	pub dismissed_mentions: BTreeSet<u64>,
+	pub connections: Vec<Value>,
 	pub guild_bios: HashMap<(u64, u64), String>,
 	pub audit: HashMap<u64, Vec<Value>>,
 	pub joined_threads: BTreeSet<u64>,
@@ -169,6 +194,7 @@ impl Store {
 				.collect(),
 			ended_sessions: BTreeSet::new(),
 			dismissed_mentions: BTreeSet::new(),
+			connections: seed_connections(),
 			guild_bios: HashMap::new(),
 			audit: crate::admin::seed_audit(fixtures),
 			pinned_at: fixtures.pinned_at(),

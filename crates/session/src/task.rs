@@ -766,7 +766,12 @@ impl Core {
 			DispatchEvent::ChannelPinsUpdate(update) => self.reload_pins(update.channel_id),
 			DispatchEvent::GuildCreate(guild) => self.select_new_guild(guild.id),
 			DispatchEvent::UserUpdate(user) => self.activity.set_user(Some(*user)),
-			DispatchEvent::UserConnectionsUpdate(_) => self.activity.refresh_connections(),
+			DispatchEvent::UserConnectionsUpdate(_) => {
+				self.activity.refresh_connections();
+				if self.state.read().connections().is_some() {
+					self.load_connections();
+				}
+			}
 			DispatchEvent::ApplicationCommandAutocompleteResponse(response) => {
 				self.on_command_choices(response);
 			}

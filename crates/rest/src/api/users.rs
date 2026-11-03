@@ -16,6 +16,24 @@ impl RestClient {
 		self.send(Request::get("/users/@me/connections")).await
 	}
 
+	pub async fn modify_connection(&self, kind: &str, id: &str, changes: Value) -> Result<Connection> {
+		let path = format!(
+			"/users/@me/connections/{}/{}",
+			encode_component(kind),
+			encode_component(id)
+		);
+		self.send(Request::patch(path).json(&changes)).await
+	}
+
+	pub async fn delete_connection(&self, kind: &str, id: &str) -> Result<()> {
+		let path = format!(
+			"/users/@me/connections/{}/{}",
+			encode_component(kind),
+			encode_component(id)
+		);
+		self.send_empty(Request::delete(path)).await
+	}
+
 	pub async fn connection_access_token(&self, kind: &str, id: &str) -> Result<Value> {
 		let path = format!(
 			"/users/@me/connections/{}/{}/access-token",

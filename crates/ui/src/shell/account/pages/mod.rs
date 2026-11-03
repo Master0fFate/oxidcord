@@ -2,6 +2,7 @@ mod accessibility;
 mod activity;
 mod advanced;
 mod chat;
+mod connections;
 mod devices;
 mod friend_requests;
 mod language;
@@ -20,6 +21,7 @@ pub use self::accessibility::AccessibilityPage;
 pub use self::activity::activity_page;
 pub use self::advanced::AdvancedPage;
 pub use self::chat::chat_page;
+pub use self::connections::ConnectionsPage;
 pub use self::devices::DevicesPage;
 pub use self::friend_requests::FriendRequestsPage;
 pub use self::language::LanguagePage;
@@ -50,7 +52,6 @@ pub enum PageEvent {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Note {
 	Privacy,
-	Connections,
 	Clips,
 }
 
@@ -58,7 +59,6 @@ impl Note {
 	fn key(self) -> &'static str {
 		match self {
 			Self::Privacy => "settings-note-privacy",
-			Self::Connections => "settings-note-connections",
 			Self::Clips => "settings-note-clips",
 		}
 	}
@@ -66,7 +66,6 @@ impl Note {
 	fn icon(self) -> IconKind {
 		match self {
 			Self::Privacy => IconKind::Shield,
-			Self::Connections => IconKind::Connections,
 			Self::Clips => IconKind::Clips,
 		}
 	}
@@ -84,6 +83,7 @@ pub struct AccountPages {
 	pub notifications: Entity<NotificationsPage>,
 	pub advanced: Entity<AdvancedPage>,
 	pub friend_requests: Entity<FriendRequestsPage>,
+	pub connections: Entity<ConnectionsPage>,
 	pub devices: Entity<DevicesPage>,
 	pub accessibility: Entity<AccessibilityPage>,
 }
@@ -99,6 +99,7 @@ impl AccountPages {
 		Self {
 			my_account: cx.new(|cx| MyAccountPage::new(data.clone(), cx)),
 			friend_requests: cx.new(|cx| FriendRequestsPage::new(data.clone(), cx)),
+			connections: cx.new(|cx| ConnectionsPage::new(data.clone(), cx)),
 			devices: cx.new(|cx| DevicesPage::new(data.clone(), cx)),
 			profiles: cx.new(|cx| ProfilesPage::new(data, window, cx)),
 			language: cx.new(|_| LanguagePage::new(backend.clone())),

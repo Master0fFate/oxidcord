@@ -5,8 +5,8 @@ use std::time::Instant;
 use chrono::{DateTime, Utc};
 use protocol::lenient::{or_default, timestamp};
 use protocol::{
-	ApplicationCommand, ApplicationCommandType, AutoModRule, Channel, CommandChoice, CommandIndex, Gif,
-	GifFavorites, GifTrending, GuildBan, InteractionContext, JoinRequestStatus, LenientVec, Member,
+	ApplicationCommand, ApplicationCommandType, AutoModRule, Channel, CommandChoice, CommandIndex, Connection,
+	Gif, GifFavorites, GifTrending, GuildBan, InteractionContext, JoinRequestStatus, LenientVec, Member,
 	MemberVerification, Message, Permissions, PinnedMessage, ScheduledEvent, Snowflake, SoundboardSound,
 	Sticker, StickerPack, ThreadMember, User,
 };
@@ -149,6 +149,7 @@ pub enum Loaded {
 	UserSettings(Value),
 	SettingsProto(String),
 	AuthSessions(Value),
+	Connections(Vec<Connection>),
 	VoiceRegions(Value),
 	User(Box<User>),
 }
@@ -162,6 +163,7 @@ pub struct ProfileBadge {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConnectedAccount {
+	pub id: String,
 	pub kind: String,
 	pub name: String,
 	pub verified: bool,
@@ -350,6 +352,7 @@ pub(crate) struct Lazy {
 	pub(crate) automod_rules: HashMap<Snowflake, Vec<AutoModRule>>,
 	pub(crate) role_counts: HashMap<Snowflake, HashMap<Snowflake, u64>>,
 	pub(crate) auth_sessions: Option<Vec<AuthSession>>,
+	pub(crate) connections: Option<Vec<Connection>>,
 	pub(crate) voice_regions: Option<Vec<VoiceRegion>>,
 	pub(crate) reaction_users: HashMap<(Snowflake, String, bool), Vec<User>>,
 	pub(crate) expressions: Expressions,
@@ -374,6 +377,7 @@ struct RawMutualGuild {
 #[derive(Deserialize, Default)]
 #[serde(default)]
 struct RawConnection {
+	id: String,
 	#[serde(rename = "type")]
 	kind: String,
 	name: String,
@@ -725,6 +729,19 @@ impl State {
 				);
 				changes.loaded.insert(self.current_user_id().unwrap_or_default());
 			}
+			Loaded::Connections(connections) => {
+				self.lazy.connections = Some(
+					connections
+						.iter()
+						.cloned()
+						.map(|connection| Connection {
+							access_token: None,
+							..connection
+						})
+						.collect(),
+				);
+				changes.loaded.insert(self.current_user_id().unwrap_or_default());
+			}
 			Loaded::VoiceRegions(raw) => {
 				let regions = LenientVec::<RawVoiceRegion>::deserialize(raw).unwrap_or_default();
 				self.lazy.voice_regions = Some(
@@ -942,6 +959,7 @@ impl State {
 				.unwrap_or_default()
 				.into_iter()
 				.map(|account| ConnectedAccount {
+					id: account.id,
 					kind: account.kind,
 					name: account.name,
 					verified: account.verified,
@@ -1196,6 +1214,10 @@ impl State {
 
 	pub fn audit_log(&self, guild_id: Snowflake) -> Option<&AuditLog> {
 		self.lazy.audit_logs.get(&guild_id)
+	}
+
+	pub fn connections(&self) -> Option<&[Connection]> {
+		self.lazy.connections.as_deref()
 	}
 
 	pub fn auth_sessions(&self) -> Option<&[AuthSession]> {

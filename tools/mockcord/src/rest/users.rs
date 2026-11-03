@@ -66,6 +66,10 @@ pub async fn my_mentions(
 	))
 }
 
+pub async fn my_connections(State(shared): State<Arc<Shared>>) -> Json<Value> {
+	Json(Value::Array(shared.store.lock().connections.clone()))
+}
+
 pub async fn my_guilds(State(shared): State<Arc<Shared>>) -> Json<Value> {
 	let store = shared.store.lock();
 	let guilds: Vec<Value> = shared

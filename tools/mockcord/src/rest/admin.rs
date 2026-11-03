@@ -103,6 +103,44 @@ pub async fn get_note(State(shared): Mock, Path(id): Path<u64>) -> ApiResult {
 	Ok(Json(shared.note(id)?))
 }
 
+pub async fn patch_connection(
+	State(shared): Mock,
+	Path((kind, id)): Path<(String, String)>,
+	Json(body): Json<Value>,
+) -> ApiResult {
+	let updated = {
+		let mut store = shared.store.lock();
+		let connection = store
+			.connections
+			.iter_mut()
+			.find(|connection| connection["type"] == kind && connection["id"] == id)
+			.ok_or_else(ApiError::not_found)?;
+		for key in [
+			"visibility",
+			"show_activity",
+			"friend_sync",
+			"metadata_visibility",
+		] {
+			if !body[key].is_null() {
+				connection[key] = body[key].clone();
+			}
+		}
+		connection.clone()
+	};
+	shared.hub.broadcast("USER_CONNECTIONS_UPDATE", &json!({}));
+	Ok(Json(updated))
+}
+
+pub async fn delete_connection(State(shared): Mock, Path((kind, id)): Path<(String, String)>) -> NoContent {
+	shared
+		.store
+		.lock()
+		.connections
+		.retain(|connection| connection["type"] != kind || connection["id"] != id);
+	shared.hub.broadcast("USER_CONNECTIONS_UPDATE", &json!({}));
+	Ok(StatusCode::NO_CONTENT)
+}
+
 pub async fn delete_mention(State(shared): Mock, Path(id): Path<u64>) -> NoContent {
 	shared.store.lock().dismissed_mentions.insert(id);
 	Ok(StatusCode::NO_CONTENT)
@@ -576,9 +614,18 @@ pub fn profile_extras(shared: &Shared, user_id: u64, guild_id: Option<u64>) -> V
 		"theme_colors": theme_colors,
 		"legacy_username": user.filter(|_| tagged).map(|user| format!("{}#1234", user.username)),
 		"private": tagged && decorated,
-		"connected_accounts": user.map_or_else(Vec::new, |user| {
-			vec![json!({ "type": "github", "id": user.id.to_string(), "name": user.username, "verified": true })]
-		}),
+		"connected_accounts": if user_id == crate::fixtures::CURRENT_USER_ID {
+			store
+				.connections
+				.iter()
+				.filter(|connection| connection["visibility"] == 1)
+				.cloned()
+				.collect()
+		} else {
+			user.map_or_else(Vec::new, |user| {
+				vec![json!({ "type": "github", "id": user.id.to_string(), "name": user.username, "verified": true })]
+			})
+		},
 		"guild_member_profile": guild_id.and_then(|guild_id| {
 			let guild = fixtures.guild(guild_id)?;
 			let bio = store.guild_bios.get(&(guild_id, user_id)).cloned().or_else(|| {
