@@ -12,6 +12,7 @@ use crate::error::{ApiError, ApiResult};
 use crate::fixtures::GuildFixture;
 use crate::json::to_json;
 use crate::ready::guild_threads;
+use crate::rest::guild_stickers_snapshot;
 use crate::state::Shared;
 
 const DEFAULT_MEMBER_SEARCH_LIMIT: usize = 1;
@@ -31,7 +32,7 @@ pub async fn guild(
 	let mut value = to_json(&store.properties[&guild.id]);
 	value["roles"] = to_json(&store.roles[&guild.id]);
 	value["emojis"] = to_json(&store.emojis[&guild.id]);
-	value["stickers"] = Value::Array(Vec::new());
+	value["stickers"] = to_json(&guild_stickers_snapshot(&shared, &store.current_user, guild.id));
 	if params.get("with_counts").is_some_and(|flag| flag == "true") {
 		value["approximate_member_count"] = store.live_member_count(guild).into();
 		value["approximate_presence_count"] = store.online_count(guild.id).into();
