@@ -192,12 +192,12 @@ enum Reply {
 	Modal(Value),
 }
 
-fn invocation(shared: &Shared, id: u64, name: &str) -> InteractionMetadata {
+fn invocation(shared: &Shared, id: u64, kind: InteractionType, name: Option<&str>) -> InteractionMetadata {
 	InteractionMetadata {
 		id: Snowflake(id),
-		kind: InteractionType::ApplicationCommand,
-		name: Some(name.to_owned()),
-		command_type: Some(ApplicationCommandType::ChatInput),
+		kind,
+		name: name.map(str::to_owned),
+		command_type: name.map(|_| ApplicationCommandType::ChatInput),
 		user: shared
 			.fixtures
 			.users
@@ -225,7 +225,12 @@ fn run_chat_command(
 	let author = app_bot(shared).ok_or_else(ApiError::unknown_message)?;
 	let mut draft = Draft::text(reply);
 	draft.kind = Some(MessageType::ChatInputCommand);
-	draft.interaction_metadata = Some(invocation(shared, interaction, name));
+	draft.interaction_metadata = Some(invocation(
+		shared,
+		interaction,
+		InteractionType::ApplicationCommand,
+		Some(name),
+	));
 	shared
 		.post_message(channel_id, &author, draft)
 		.map(|_| Reply::Success)
@@ -327,31 +332,33 @@ fn upgrade_modal(shared: &Shared, body: &Value) -> Value {
 	})
 }
 
+struct Origin<'a> {
+	interaction: u64,
+	kind: InteractionType,
+	session_id: Option<&'a str>,
+}
+
 fn app_message(
 	shared: &Shared,
 	channel_id: u64,
-	interaction: u64,
-	name: &str,
+	origin: Origin,
 	flags: MessageFlags,
 	content: &str,
 ) -> Result<Value, ApiError> {
 	let author = app_bot(shared).ok_or_else(ApiError::unknown_message)?;
 	let mut draft = Draft::text(content);
-	draft.kind = Some(MessageType::ChatInputCommand);
+	draft.kind = Some(MessageType::Reply);
 	draft.flags = flags;
-	draft.interaction_metadata = Some(invocation(shared, interaction, name));
+	draft.only_for = origin
+		.session_id
+		.filter(|_| flags.contains(MessageFlags::EPHEMERAL))
+		.map(str::to_owned);
+	draft.interaction_metadata = Some(invocation(shared, origin.interaction, origin.kind, None));
 	shared.post_message(channel_id, &author, draft)
 }
 
-fn defer_reply(shared: &Arc<Shared>, channel_id: u64, interaction: u64) -> Result<(), ApiError> {
-	let loading = app_message(
-		shared,
-		channel_id,
-		interaction,
-		"thanks",
-		MessageFlags::LOADING,
-		"",
-	)?;
+fn defer_reply(shared: &Arc<Shared>, channel_id: u64, origin: Origin) -> Result<(), ApiError> {
+	let loading = app_message(shared, channel_id, origin, MessageFlags::LOADING, "")?;
 	let id = message_id(&loading);
 	let author = app_bot(shared).map_or(0, |bot| bot.id.get());
 	let shared = Arc::clone(shared);
@@ -369,18 +376,22 @@ fn defer_reply(shared: &Arc<Shared>, channel_id: u64, interaction: u64) -> Resul
 
 fn use_component(shared: &Arc<Shared>, body: &Value, interaction: u64) -> Result<Reply, ApiError> {
 	let channel_id = parse_id(&body["channel_id"]).unwrap_or_default();
+	let origin = Origin {
+		interaction,
+		kind: InteractionType::MessageComponent,
+		session_id: body["session_id"].as_str(),
+	};
 	match body["data"]["custom_id"].as_str() {
 		Some("upgrade") => Ok(Reply::Modal(upgrade_modal(shared, body))),
 		Some("later") => app_message(
 			shared,
 			channel_id,
-			interaction,
-			"remind",
+			origin,
 			MessageFlags::EPHEMERAL,
 			"Reminder set for tomorrow",
 		)
 		.map(|_| Reply::Success),
-		Some("love") => defer_reply(shared, channel_id, interaction).map(|()| Reply::Success),
+		Some("love") => defer_reply(shared, channel_id, origin).map(|()| Reply::Success),
 		Some("fail") => Ok(Reply::Failure),
 		_ => Ok(Reply::Success),
 	}
@@ -412,15 +423,12 @@ fn submit_modal(shared: &Shared, body: &Value, interaction: u64) -> Result<Reply
 		"Upgrading to {version} on {channel}{}",
 		if restart { ", restarting after" } else { "" }
 	);
-	app_message(
-		shared,
-		channel_id,
+	let origin = Origin {
 		interaction,
-		"upgrade",
-		MessageFlags::empty(),
-		&content,
-	)
-	.map(|_| Reply::Success)
+		kind: InteractionType::ModalSubmit,
+		session_id: body["session_id"].as_str(),
+	};
+	app_message(shared, channel_id, origin, MessageFlags::empty(), &content).map(|_| Reply::Success)
 }
 
 fn complete(shared: &Shared, body: &Value) {

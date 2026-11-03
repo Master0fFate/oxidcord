@@ -42,6 +42,7 @@ pub struct Draft {
 	pub poll: Option<PollCreate>,
 	pub interaction_metadata: Option<InteractionMetadata>,
 	pub skip_echo: bool,
+	pub only_for: Option<String>,
 }
 
 impl Draft {
@@ -72,6 +73,7 @@ impl Draft {
 			poll: create.poll,
 			interaction_metadata: None,
 			skip_echo: false,
+			only_for: None,
 		}
 	}
 }
@@ -339,6 +341,12 @@ impl Shared {
 			}
 		}
 		let value = to_json(&message);
+		if let Some(session_id) = &draft.only_for {
+			let gateway = self.gateway_message(&store, &value);
+			drop(store);
+			self.hub.dispatch_to(session_id, "MESSAGE_CREATE", &gateway);
+			return Ok(value);
+		}
 		store
 			.messages
 			.entry(channel_id)
