@@ -353,7 +353,9 @@ impl Render for ThreadPanel {
 	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
 		let header = self.header_state(cx);
-		let archived = header.as_ref().is_some_and(|header| header.facts.archived);
+		let composable = header
+			.as_ref()
+			.is_none_or(|header| !header.facts.archived || header.can_reopen);
 		let top = header.as_ref().map(|header| self.header(header, &theme, cx));
 		let notice = header.as_ref().and_then(|header| self.notice(header, &theme, cx));
 		let width = self.width.map_or(theme.thread_panel_width, rem);
@@ -380,7 +382,7 @@ impl Render for ThreadPanel {
 			.children(top)
 			.child(self.timeline.clone())
 			.children(notice)
-			.when(!archived, |panel| {
+			.when(composable, |panel| {
 				accept_files(panel, self.composer.clone()).child(self.composer.clone())
 			})
 	}
