@@ -2,8 +2,8 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui::{
-	AnyElement, App, AppContext as _, Context, Entity, EventEmitter, Focusable as _, IntoElement,
-	ParentElement as _, Render, SharedString, Styled as _, Subscription, Window, div,
+	AnyElement, App, AppContext as _, Context, Entity, EventEmitter, Focusable as _, InteractiveElement as _,
+	IntoElement, ParentElement as _, Render, SharedString, Styled as _, Subscription, Window, div,
 };
 use gpui_component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
 use protocol::rest::{ModalAnswer, ModalValue};
@@ -47,6 +47,7 @@ enum Control {
 	Radio(Choices),
 	Toggles(Choices),
 	Flag(bool),
+	Unsupported,
 }
 
 struct Item {
@@ -64,7 +65,7 @@ pub struct ModalForm {
 	data: Entity<Data>,
 	modal: Arc<InteractionModal>,
 	items: Vec<Item>,
-	notes: Vec<SharedString>,
+	notes: Vec<(usize, SharedString)>,
 	_subscriptions: Vec<Subscription>,
 }
 
@@ -140,7 +141,7 @@ impl ModalForm {
 			}
 			ComponentType::TextDisplay => {
 				if let Some(content) = &component.content {
-					self.notes.push(content.clone().into());
+					self.notes.push((self.items.len(), content.clone().into()));
 				}
 			}
 			_ => {}
@@ -172,6 +173,7 @@ impl ModalForm {
 			ComponentType::RadioGroup => Control::Radio(choices(component, true)),
 			ComponentType::CheckboxGroup => Control::Toggles(choices(component, false)),
 			ComponentType::Checkbox => Control::Flag(component.default),
+			_ if component.is_required() => Control::Unsupported,
 			_ => return,
 		};
 		self.items.push(Item {
@@ -261,6 +263,7 @@ impl ModalForm {
 				count >= picks.min && count <= picks.max
 			}
 			Control::Flag(_) => true,
+			Control::Unsupported => false,
 		}
 	}
 
@@ -287,6 +290,7 @@ impl ModalForm {
 			Control::Dropdown(picks) | Control::Toggles(picks) => answer.values = Some(chosen(picks)),
 			Control::Radio(picks) => answer.value = Some(ModalValue::Text(chosen(picks).into_iter().next())),
 			Control::Flag(flag) => answer.value = Some(ModalValue::Flag(*flag)),
+			Control::Unsupported => {}
 		}
 		answer
 	}
@@ -373,13 +377,16 @@ impl ModalForm {
 					.iter()
 					.position(|picked| *picked)
 					.unwrap_or(usize::MAX);
-				segmented(
-					"modal-radio",
-					&labels,
-					selected,
-					theme,
-					self.pick_handler(index, cx),
-				)
+				div()
+					.id(("modal-radio", index))
+					.child(segmented(
+						"modal-radio",
+						&labels,
+						selected,
+						theme,
+						self.pick_handler(index, cx),
+					))
+					.into_any_element()
 			}
 			Control::Toggles(picks) => div()
 				.flex()
@@ -406,6 +413,7 @@ impl ModalForm {
 				theme,
 				self.toggle_handler(index, 0, cx),
 			),
+			Control::Unsupported => hint(cx.t("interaction-modal-unsupported"), theme),
 		}
 	}
 
@@ -436,25 +444,26 @@ impl ModalForm {
 impl Render for ModalForm {
 	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
-		let notes: Vec<AnyElement> = self.notes.iter().map(|note| hint(note.clone(), &theme)).collect();
-		let fields: Vec<AnyElement> = self
-			.items
-			.iter()
-			.enumerate()
-			.map(|(index, item)| {
-				let control = self.control(index, item, &theme, cx);
-				if matches!(item.control, Control::Flag(_)) {
-					return control;
-				}
-				let body = div()
-					.flex()
-					.flex_col()
-					.gap(theme.space_4)
-					.children(item.description.clone().map(|text| hint(text, &theme)))
-					.child(control);
-				field(item.label.clone(), &theme, body)
-			})
-			.collect();
+		let mut notes = self.notes.iter().peekable();
+		let mut entries: Vec<AnyElement> = Vec::with_capacity(self.items.len() + self.notes.len());
+		for (index, item) in self.items.iter().enumerate() {
+			while let Some((_, note)) = notes.next_if(|(at, _)| *at <= index) {
+				entries.push(hint(note.clone(), &theme));
+			}
+			let control = self.control(index, item, &theme, cx);
+			if matches!(item.control, Control::Flag(_)) {
+				entries.push(control);
+				continue;
+			}
+			let body = div()
+				.flex()
+				.flex_col()
+				.gap(theme.space_4)
+				.children(item.description.clone().map(|text| hint(text, &theme)))
+				.child(control);
+			entries.push(field(item.label.clone(), &theme, body));
+		}
+		entries.extend(notes.map(|(_, note)| hint(note.clone(), &theme)));
 		let weak = cx.weak_entity();
 		let cancel = weak.clone();
 		div()
@@ -462,8 +471,7 @@ impl Render for ModalForm {
 			.flex_col()
 			.gap(theme.space_16)
 			.pt(theme.space_8)
-			.children(notes)
-			.children(fields)
+			.children(entries)
 			.child(dialog_footer(
 				cx.t("action-cancel"),
 				cx.t("interaction-modal-submit"),

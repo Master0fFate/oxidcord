@@ -937,6 +937,7 @@ slash-length = { $name } has the wrong length
 component-select-placeholder = Make a selection
 component-spoiler = Spoiler
 interaction-modal-submit = Submit
+interaction-modal-unsupported = This field needs a file upload, which isn't supported here
 message-copy-link = Copy Message Link
 message-copy-id = Copy Message ID
 search-filters = Filters
