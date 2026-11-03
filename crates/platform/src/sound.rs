@@ -203,7 +203,7 @@ pub fn play(cue: Cue, volume: f32) {
 	if volume == 0. {
 		return;
 	}
-	let reserved = PLAYING.fetch_update(Ordering::AcqRel, Ordering::Acquire, |playing| {
+	let reserved = PLAYING.try_update(Ordering::AcqRel, Ordering::Acquire, |playing| {
 		(playing < MAX_PLAYING).then_some(playing + 1)
 	});
 	if reserved.is_err() {
