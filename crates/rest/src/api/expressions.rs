@@ -1,7 +1,7 @@
 use protocol::{
 	Emoji, Gif, GifFavorites, GifFormat, GifTrending, LenientVec, ProtoFavoriteGif, ProtoFrecencySettings,
-	ProtoGifFavorites, Snowflake, Sticker, StickerPack, StickerPacks, decode_frecency_settings,
-	encode_frecency_favorites,
+	ProtoGifFavorites, Snowflake, SoundboardSound, SoundboardSoundList, Sticker, StickerPack, StickerPacks,
+	decode_frecency_settings, encode_frecency_favorites,
 };
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -286,5 +286,63 @@ impl RestClient {
 	pub async fn delete_guild_emoji(&self, guild_id: Snowflake, id: Snowflake) -> Result<()> {
 		self.send_empty(Request::delete(format!("/guilds/{guild_id}/emojis/{id}")))
 			.await
+	}
+
+	pub async fn default_sounds(&self) -> Result<LenientVec<SoundboardSound>> {
+		self.send(Request::get("/soundboard-default-sounds")).await
+	}
+
+	pub async fn guild_sounds(&self, guild_id: Snowflake) -> Result<SoundboardSoundList> {
+		self.send(Request::get(format!("/guilds/{guild_id}/soundboard-sounds")))
+			.await
+	}
+
+	pub async fn create_guild_sound(
+		&self,
+		guild_id: Snowflake,
+		name: &str,
+		sound_data_uri: &str,
+		volume: f32,
+	) -> Result<SoundboardSound> {
+		let request = Request::post(format!("/guilds/{guild_id}/soundboard-sounds"))
+			.json(&json!({ "name": name, "sound": sound_data_uri, "volume": volume }));
+		self.send(request).await
+	}
+
+	pub async fn edit_guild_sound(
+		&self,
+		guild_id: Snowflake,
+		sound_id: Snowflake,
+		name: Option<&str>,
+		volume: Option<f32>,
+	) -> Result<SoundboardSound> {
+		let mut changes = Map::new();
+		if let Some(name) = name {
+			changes.insert("name".to_owned(), Value::from(name));
+		}
+		if let Some(volume) = volume {
+			changes.insert("volume".to_owned(), Value::from(volume));
+		}
+		let request =
+			Request::patch(format!("/guilds/{guild_id}/soundboard-sounds/{sound_id}")).json(&changes);
+		self.send(request).await
+	}
+
+	pub async fn delete_guild_sound(&self, guild_id: Snowflake, sound_id: Snowflake) -> Result<()> {
+		self.send_empty(Request::delete(format!(
+			"/guilds/{guild_id}/soundboard-sounds/{sound_id}"
+		)))
+		.await
+	}
+
+	pub async fn send_sound(
+		&self,
+		channel_id: Snowflake,
+		sound_id: Snowflake,
+		source_guild_id: Option<Snowflake>,
+	) -> Result<()> {
+		let request = Request::post(format!("/channels/{channel_id}/send-soundboard-sound"))
+			.json(&json!({ "sound_id": sound_id, "source_guild_id": source_guild_id }));
+		self.send_empty(request).await
 	}
 }

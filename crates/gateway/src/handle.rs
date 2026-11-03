@@ -107,6 +107,10 @@ impl GatewayHandle {
 		)
 	}
 
+	pub fn request_soundboard_sounds(&self, guild_ids: Vec<Snowflake>) -> Result<(), SendError> {
+		self.queue(Opcode::RequestSoundboardSounds, json!({ "guild_ids": guild_ids }))
+	}
+
 	pub fn voice_state(
 		&self,
 		guild_id: Option<Snowflake>,

@@ -23,6 +23,7 @@ use crate::settings::{
 	UserGuildSettingsContainer, UserNoteUpdate,
 };
 use crate::snowflake::Snowflake;
+use crate::soundboard::{SoundboardSound, SoundboardSoundDelete, SoundboardSounds, VoiceChannelEffect};
 use crate::token::Token;
 use crate::user::User;
 use crate::verification::{JoinRequestChange, JoinRequestDelete};
@@ -46,6 +47,7 @@ int_enum! {
 		StreamWatch = 20,
 		StreamPing = 21,
 		StreamSetPaused = 22,
+		RequestSoundboardSounds = 31,
 		GuildSubscriptions = 14,
 		GuildSubscriptionsBulk = 37,
 		QosHeartbeat = 40,
@@ -793,6 +795,11 @@ pub enum DispatchEvent {
 	GuildRoleDelete(GuildRoleDelete),
 	GuildEmojisUpdate(GuildEmojisUpdate),
 	GuildStickersUpdate(GuildStickersUpdate),
+	SoundboardSounds(SoundboardSounds),
+	GuildSoundboardSoundCreate(Box<SoundboardSound>),
+	GuildSoundboardSoundUpdate(Box<SoundboardSound>),
+	GuildSoundboardSoundDelete(SoundboardSoundDelete),
+	VoiceChannelEffectSend(Box<VoiceChannelEffect>),
 	ScheduledEventCreate(Box<ScheduledEvent>),
 	ScheduledEventUpdate(Box<ScheduledEvent>),
 	ScheduledEventDelete(Box<ScheduledEvent>),
@@ -891,6 +898,13 @@ impl DispatchEvent {
 			"GUILD_ROLE_DELETE" => Self::GuildRoleDelete(decode(name, data)?),
 			"GUILD_EMOJIS_UPDATE" => Self::GuildEmojisUpdate(decode(name, data)?),
 			"GUILD_STICKERS_UPDATE" => Self::GuildStickersUpdate(decode(name, data)?),
+			"SOUNDBOARD_SOUNDS" | "GUILD_SOUNDBOARD_SOUNDS_UPDATE" => {
+				Self::SoundboardSounds(decode(name, data)?)
+			}
+			"GUILD_SOUNDBOARD_SOUND_CREATE" => Self::GuildSoundboardSoundCreate(decode(name, data)?),
+			"GUILD_SOUNDBOARD_SOUND_UPDATE" => Self::GuildSoundboardSoundUpdate(decode(name, data)?),
+			"GUILD_SOUNDBOARD_SOUND_DELETE" => Self::GuildSoundboardSoundDelete(decode(name, data)?),
+			"VOICE_CHANNEL_EFFECT_SEND" => Self::VoiceChannelEffectSend(decode(name, data)?),
 			"GUILD_SCHEDULED_EVENT_CREATE" => Self::ScheduledEventCreate(decode(name, data)?),
 			"GUILD_SCHEDULED_EVENT_UPDATE" => Self::ScheduledEventUpdate(decode(name, data)?),
 			"GUILD_SCHEDULED_EVENT_DELETE" => Self::ScheduledEventDelete(decode(name, data)?),
