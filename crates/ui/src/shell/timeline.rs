@@ -1029,7 +1029,7 @@ impl Timeline {
 						content: text,
 						keep,
 					});
-				} else if this.is_text_only(message_id, cx) {
+				} else if keep.is_some() || this.is_text_only(message_id, cx) {
 					this.confirm_delete(message_id, window, cx);
 				}
 				this.stop_editing(cx);
