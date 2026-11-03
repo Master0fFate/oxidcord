@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use gpui::{
@@ -119,7 +118,7 @@ pub struct RolesPage {
 	name: Entity<InputState>,
 	hex: Entity<InputState>,
 	search: Entity<InputState>,
-	picker: Entity<EmojiPicker>,
+	picker: Option<Entity<EmojiPicker>>,
 	picker_open: bool,
 	_subscriptions: Vec<Subscription>,
 }
@@ -131,22 +130,10 @@ impl RolesPage {
 		let hex = cx.new(|cx| InputState::new(window, cx).placeholder("#99aab5"));
 		let search_placeholder = cx.t("roles-search-permissions");
 		let search = cx.new(|cx| InputState::new(window, cx).placeholder(search_placeholder));
-		let picker = cx.new(|cx| EmojiPicker::new(window, cx));
-		picker.update(cx, |picker, cx| picker.open(Vec::new(), window, cx));
 		let subscriptions = vec![
 			cx.subscribe(&data, |this, _, event: &DataEvent, cx| {
 				if matches!(event, DataEvent::Changed(_)) {
 					this.sync_original(cx);
-					cx.notify();
-				}
-			}),
-			cx.subscribe(&picker, |this, _, event: &EmojiPickerEvent, cx| {
-				let EmojiPickerEvent::Pick(choice) = event;
-				if let EmojiChoice::Unicode(glyph) = choice
-					&& let Some(draft) = &mut this.draft
-				{
-					draft.icon = IconDraft::Emoji(glyph.clone());
-					this.picker_open = false;
 					cx.notify();
 				}
 			}),
@@ -178,10 +165,31 @@ impl RolesPage {
 			name,
 			hex,
 			search,
-			picker,
+			picker: None,
 			picker_open: false,
 			_subscriptions: subscriptions,
 		}
+	}
+
+	fn toggle_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+		if self.picker.is_none() {
+			let picker = cx.new(|cx| EmojiPicker::new(window, cx));
+			picker.update(cx, |picker, cx| picker.open(Vec::new(), window, cx));
+			self._subscriptions
+				.push(cx.subscribe(&picker, |this, _, event: &EmojiPickerEvent, cx| {
+					let EmojiPickerEvent::Pick(choice) = event;
+					if let EmojiChoice::Unicode(glyph) = choice
+						&& let Some(draft) = &mut this.draft
+					{
+						draft.icon = IconDraft::Emoji(glyph.clone());
+						this.picker_open = false;
+						cx.notify();
+					}
+				}));
+			self.picker = Some(picker);
+		}
+		self.picker_open = !self.picker_open;
+		cx.notify();
 	}
 
 	fn roles_sorted(&self, cx: &App) -> Vec<Role> {
@@ -194,17 +202,20 @@ impl RolesPage {
 		roles
 	}
 
-	fn member_counts(&self, cx: &App) -> HashMap<Snowflake, u64> {
+	fn member_counts(&self, roles: &[Role], cx: &App) -> Vec<Option<u64>> {
 		let state = self.data.read(cx).state();
-		let mut counts = state.role_member_counts(self.guild).cloned().unwrap_or_default();
-		if let Some(total) = state
+		let counts = state.role_member_counts(self.guild);
+		let total = state
 			.guild(self.guild)
 			.and_then(|guild| guild.member_count)
-			.and_then(|total| u64::try_from(total).ok())
-		{
-			counts.insert(self.guild, total);
-		}
-		counts
+			.and_then(|total| u64::try_from(total).ok());
+		roles
+			.iter()
+			.map(|role| {
+				let everyone = if role.id == self.guild { total } else { None };
+				everyone.or_else(|| counts.and_then(|counts| counts.get(&role.id).copied()))
+			})
+			.collect()
 	}
 
 	fn begin(&mut self, role: Role, window: &mut Window, cx: &mut Context<Self>) {
@@ -450,10 +461,11 @@ impl RolesPage {
 
 	fn list(&self, access: &GuildAccess, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
 		let roles = self.roles_sorted(cx);
-		let counts = self.member_counts(cx);
+		let counts = self.member_counts(&roles, cx);
 		let rows: Vec<AnyElement> = roles
 			.iter()
-			.map(|role| self.role_row(role, counts.get(&role.id).copied(), access, theme, cx))
+			.zip(counts)
+			.map(|(role, count)| self.role_row(role, count, access, theme, cx))
 			.collect();
 		div()
 			.flex()
@@ -645,10 +657,7 @@ impl RolesPage {
 							Button::new("role-icon-emoji")
 								.outline()
 								.label(cx.t("roles-icon-emoji"))
-								.on_click(cx.listener(|this, _, _, cx| {
-									this.picker_open = !this.picker_open;
-									cx.notify();
-								})),
+								.on_click(cx.listener(|this, _, window, cx| this.toggle_picker(window, cx))),
 						)
 						.when(removable, |row| {
 							row.child(
@@ -668,7 +677,10 @@ impl RolesPage {
 							)
 						}),
 				)
-				.when(self.picker_open, |column| column.child(self.picker.clone())),
+				.when_some(
+					self.picker.clone().filter(|_| self.picker_open),
+					|column, picker| column.child(picker),
+				),
 		)
 	}
 
