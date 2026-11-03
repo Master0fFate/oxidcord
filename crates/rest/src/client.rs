@@ -387,7 +387,9 @@ impl RestClient {
 			} else {
 				UNSTRUCTURED_RETRY_AFTER
 			});
-		self.inner.limiter.limited(route, retry_after, global);
+		if !slowmode {
+			self.inner.limiter.limited(route, retry_after, global);
+		}
 		Throttle {
 			retry_after,
 			global,
