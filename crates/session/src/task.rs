@@ -85,6 +85,13 @@ pub(crate) struct Stats {
 	pub(crate) reconnects: AtomicU64,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct ReadSnapshot {
+	pub channel_id: Snowflake,
+	pub message_id: Snowflake,
+	pub mention_count: Option<i64>,
+}
+
 pub(crate) type SharedSearch = Arc<Mutex<Option<Arc<SearchResults>>>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -113,6 +120,7 @@ pub(crate) enum Internal {
 		answer: PluginAnswer,
 	},
 	Rejected(String),
+	RestoreRead(Vec<ReadSnapshot>),
 	FriendRequestSent(String),
 	SignedOut,
 	CameraStarted {
@@ -774,6 +782,17 @@ impl Core {
 			}
 			Internal::PluginApplied { loaded, answer } => self.on_plugin_applied(loaded, answer),
 			Internal::Rejected(reason) => self.reject(reason),
+			Internal::RestoreRead(snapshots) => {
+				for snapshot in snapshots {
+					self.apply_dispatch(&DispatchEvent::MessageAck(MessageAck {
+						channel_id: snapshot.channel_id,
+						message_id: snapshot.message_id,
+						version: None,
+						mention_count: snapshot.mention_count,
+					}));
+					self.persist_read_state(snapshot.channel_id);
+				}
+			}
 			Internal::FriendRequestSent(username) => {
 				self.apply_local(LocalEvent::FriendRequestSent { username })
 			}

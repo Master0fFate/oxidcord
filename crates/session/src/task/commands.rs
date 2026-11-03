@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use state::{Loaded, LocalEvent, USER_COMMANDS, guild_folders_settings};
 
 use super::actions::{mute_config, object, some, timestamp};
-use super::{Command, Core, Internal};
+use super::{Command, Core, Internal, ReadSnapshot};
 use crate::command::ComponentUse;
 
 const COMPONENT_INTERACTION: u8 = 3;
@@ -427,7 +427,7 @@ impl Core {
 				discriminator,
 			} => {
 				let done = Internal::FriendRequestSent(username.clone());
-				self.spawn_confirmed("friend request", Some(done), move |rest| async move {
+				self.spawn_confirmed("friend request", Some(done), None, move |rest| async move {
 					rest.send_friend_request(&username, discriminator.as_deref())
 						.await
 				});
@@ -707,7 +707,22 @@ impl Core {
 		});
 	}
 
+	fn read_snapshots(&self, channels: impl Iterator<Item = Snowflake>) -> Vec<ReadSnapshot> {
+		let state = self.state.read();
+		channels
+			.filter_map(|channel_id| {
+				let read_state = state.read_state(channel_id)?;
+				Some(ReadSnapshot {
+					channel_id,
+					message_id: read_state.last_message_id?,
+					mention_count: read_state.mention_count,
+				})
+			})
+			.collect()
+	}
+
 	fn mark_unread(&mut self, channel_id: Snowflake, message_id: Snowflake) {
+		let restore = self.read_snapshots(std::iter::once(channel_id));
 		let previous = self
 			.state
 			.read()
@@ -728,19 +743,37 @@ impl Core {
 		}));
 		self.persist_read_state(channel_id);
 		let body = json!({ "manual": true, "mention_count": 0 });
-		self.spawn_action("mark unread", move |rest| async move {
-			rest.ack_message(channel_id, previous, body).await.map(drop)
-		});
+		self.spawn_confirmed(
+			"mark unread",
+			None,
+			Some(Internal::RestoreRead(restore)),
+			move |rest| async move { rest.ack_message(channel_id, previous, body).await.map(drop) },
+		);
 	}
 
 	fn mark_guild_read(&mut self, guild_id: Snowflake) {
 		let unread = self.state.read().guild_unread_targets(guild_id);
+		let snapshots = self.read_snapshots(unread.iter().map(|(channel_id, _)| *channel_id));
 		for (channel_id, message_id) in &unread {
 			self.ack_local(*channel_id, *message_id);
 		}
 		for chunk in unread.chunks(ACK_BULK_LIMIT) {
 			let chunk = chunk.to_vec();
-			self.spawn_action("ack guild", move |rest| async move { rest.ack_bulk(chunk).await });
+			let restore = snapshots
+				.iter()
+				.filter(|snapshot| {
+					chunk
+						.iter()
+						.any(|(channel_id, _)| *channel_id == snapshot.channel_id)
+				})
+				.copied()
+				.collect();
+			self.spawn_confirmed(
+				"ack guild",
+				None,
+				Some(Internal::RestoreRead(restore)),
+				move |rest| async move { rest.ack_bulk(chunk).await },
+			);
 		}
 	}
 

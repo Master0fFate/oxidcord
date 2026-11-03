@@ -186,11 +186,16 @@ impl Core {
 		F: FnOnce(RestClient) -> Fut,
 		Fut: Future<Output = rest::Result<()>> + Send + 'static,
 	{
-		self.spawn_confirmed(what, None, call);
+		self.spawn_confirmed(what, None, None, call);
 	}
 
-	pub(super) fn spawn_confirmed<F, Fut>(&self, what: &'static str, done: Option<Internal>, call: F)
-	where
+	pub(super) fn spawn_confirmed<F, Fut>(
+		&self,
+		what: &'static str,
+		done: Option<Internal>,
+		failed: Option<Internal>,
+		call: F,
+	) where
 		F: FnOnce(RestClient) -> Fut,
 		Fut: Future<Output = rest::Result<()>> + Send + 'static,
 	{
@@ -204,6 +209,9 @@ impl Core {
 					}
 				}
 				Err(error) => {
+					if let Some(failed) = failed {
+						let _ = internal.send(failed);
+					}
 					let _ = internal.send(rest_failure(what, &error));
 				}
 			}
