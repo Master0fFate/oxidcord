@@ -14,8 +14,8 @@ use plugin_host::api::model::DmSection;
 use plugin_host::{FullSendDecision, Invalidation};
 use protocol::gateway::IdentifyProperties;
 use protocol::{
-	AttachmentDescriptor, Channel, ChannelType, DISCORD_EPOCH_MS, DispatchEvent, EditMessage, Message,
-	MessageAck, MessageFlags, MessagesQuery, Nonce, ProtoCustomStatus, Snowflake, Token, User, VoiceState,
+	Channel, ChannelType, DISCORD_EPOCH_MS, DispatchEvent, EditMessage, Message, MessageAck, MessageFlags,
+	MessagesQuery, Nonce, ProtoCustomStatus, Snowflake, Token, User, VoiceState,
 };
 use rest::api::SearchQuery;
 use rest::{RestClient, RestError};
@@ -1139,14 +1139,7 @@ impl Core {
 			} => self.spawn_action("edit message", move |rest| async move {
 				let body = EditMessage {
 					content: Some(content),
-					attachments: keep.map(|ids| {
-						ids.into_iter()
-							.map(|id| AttachmentDescriptor {
-								id,
-								..AttachmentDescriptor::default()
-							})
-							.collect()
-					}),
+					attachments: keep,
 					..EditMessage::default()
 				};
 				rest.edit_message(channel_id, message_id, body).await.map(drop)

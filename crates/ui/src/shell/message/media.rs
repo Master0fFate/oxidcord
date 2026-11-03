@@ -163,7 +163,7 @@ fn is_image(attachment: &Attachment) -> bool {
 		.any(|extension| name.ends_with(&format!(".{extension}")))
 }
 
-fn is_spoiler(attachment: &Attachment) -> bool {
+pub(super) fn is_spoiler(attachment: &Attachment) -> bool {
 	attachment.filename.starts_with(SPOILER_PREFIX) || attachment.flags.contains(AttachmentFlags::IS_SPOILER)
 }
 

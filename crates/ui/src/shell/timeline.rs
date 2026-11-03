@@ -5,6 +5,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use bytes::Bytes;
 use gpui::{
 	App, AppContext as _, ClickEvent, Context, Entity, EventEmitter, FontWeight, InteractiveElement as _,
 	IntoElement, ListOffset, ParentElement as _, Pixels, Point, Render, SharedString,
@@ -17,15 +18,16 @@ use gpui_component::button::{Button, ButtonVariant, ButtonVariants as _};
 use gpui_component::input::{Escape, InputEvent, TextareaState};
 use lru::LruCache;
 use plugin_host::api::model::ClickTarget;
-use protocol::{ChannelType, Snowflake};
+use protocol::{AttachmentDescriptor, ChannelType, Snowflake};
 use session::Command;
 use state::{Changes, MessageRow, UnreadSince};
 
+use super::attachments::{self, Edit, Pending};
 use super::community::{act, save_file};
 use super::inline_emoji::{self, EmojiTokens};
 use super::message::{
-	Dispatch, DocumentCache, Editing, FLASH_DURATION, Gallery, GifFavoriteOverrides, MessageAccess,
-	PollDraft, Prefs, RowAction, RowEnv, VideoFullscreenTarget, Welcome, can_edit, render_row,
+	AttachmentChange, Dispatch, DocumentCache, Editing, FLASH_DURATION, Gallery, GifFavoriteOverrides,
+	MessageAccess, PollDraft, Prefs, RowAction, RowEnv, VideoFullscreenTarget, Welcome, can_edit, render_row,
 };
 use super::moderation;
 use super::plugins::{self, LinkOrigin, PluginBridge};
@@ -814,6 +816,9 @@ impl Timeline {
 					cx.notify();
 				}
 			}
+			RowAction::ModifyEditAttachment { message, attachment } => {
+				self.modify_edit_attachment(message, attachment, window, cx)
+			}
 			RowAction::OpenEmoji { message_id, at } => cx.emit(TimelineEvent::OpenEmoji { message_id, at }),
 			RowAction::OpenProfile { user, at } => cx.emit(TimelineEvent::OpenProfile { user, at }),
 			RowAction::OpenRole { role, at } => cx.emit(TimelineEvent::OpenRole { role, at }),
@@ -991,6 +996,7 @@ impl Timeline {
 			input,
 			tokens: EmojiTokens::default(),
 			removed: HashSet::new(),
+			changes: HashMap::new(),
 		});
 		self.remeasure(message_id, cx);
 		cx.notify();
@@ -1037,9 +1043,9 @@ impl Timeline {
 		channel: Snowflake,
 		message_id: Snowflake,
 		cx: &Context<Self>,
-	) -> Option<Vec<Snowflake>> {
-		let removed = &self.editing.as_ref()?.removed;
-		if removed.is_empty() {
+	) -> Option<Vec<AttachmentDescriptor>> {
+		let editing = self.editing.as_ref()?;
+		if editing.removed.is_empty() && editing.changes.is_empty() {
 			return None;
 		}
 		let data = self.data.read(cx);
@@ -1049,9 +1055,83 @@ impl Timeline {
 			.attachments
 			.iter()
 			.map(|attachment| attachment.id)
-			.filter(|id| !removed.contains(id))
+			.filter(|id| !editing.removed.contains(id))
+			.map(|id| {
+				editing.changes.get(&id).map_or_else(
+					|| AttachmentDescriptor {
+						id,
+						..AttachmentDescriptor::default()
+					},
+					|change| change.descriptor(id),
+				)
+			})
 			.collect();
 		Some(kept)
+	}
+
+	fn modify_edit_attachment(
+		&mut self,
+		message_id: Snowflake,
+		attachment_id: Snowflake,
+		window: &mut Window,
+		cx: &mut Context<Self>,
+	) {
+		let (Some(channel), Some(editing)) = (self.channel, self.editing.as_ref()) else {
+			return;
+		};
+		if editing.message != message_id {
+			return;
+		}
+		let current = editing.changes.get(&attachment_id).cloned().or_else(|| {
+			let data = self.data.read(cx);
+			let state = data.state();
+			let message = state.messages(channel)?.by_id.get(&message_id)?;
+			let attachment = message
+				.attachments
+				.iter()
+				.find(|found| found.id == attachment_id)?;
+			Some(AttachmentChange::of(attachment))
+		});
+		let Some(current) = current else {
+			return;
+		};
+		let mut pending = Pending::new(attachment_id.get(), current.name, Bytes::new());
+		pending.description = current.description;
+		pending.spoiler = current.spoiler;
+		let timeline = cx.weak_entity();
+		attachments::open_modify(window, cx, &pending, move |edit, cx| {
+			timeline
+				.update(cx, |this, cx| {
+					this.apply_attachment_change(message_id, attachment_id, edit, cx)
+				})
+				.ok();
+		});
+	}
+
+	fn apply_attachment_change(
+		&mut self,
+		message_id: Snowflake,
+		attachment_id: Snowflake,
+		edit: Edit,
+		cx: &mut Context<Self>,
+	) {
+		let Some(editing) = self
+			.editing
+			.as_mut()
+			.filter(|editing| editing.message == message_id)
+		else {
+			return;
+		};
+		editing.changes.insert(
+			attachment_id,
+			AttachmentChange {
+				name: edit.name,
+				description: edit.description,
+				spoiler: edit.spoiler,
+			},
+		);
+		self.remeasure(message_id, cx);
+		cx.notify();
 	}
 
 	fn confirm_suppress(&mut self, message_id: Snowflake, window: &mut Window, cx: &mut Context<Self>) {

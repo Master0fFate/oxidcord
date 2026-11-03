@@ -12,7 +12,7 @@ use plugin_host::api::{HostError, User as PluginUser};
 use plugin_host::{Navigation, Permission, PickedPath, ViewContext};
 use protocol::rest::ModalAnswer;
 use protocol::{
-	ApplicationCommand, AutoModRule, ChannelPosition, ChannelType, ComponentType,
+	ApplicationCommand, AttachmentDescriptor, AutoModRule, ChannelPosition, ChannelType, ComponentType,
 	DefaultMessageNotifications, DefaultReaction, ExplicitContentFilter, ForumLayout, ForumSortOrder, Gif,
 	InteractionOption, MediaCategory, MediaRedaction, MediaScope, MemberVerification, MessageFlags, Nonce,
 	NotificationLevel, PermissionOverwriteKind, Permissions, PollCreate, PrivacyChange, Role, RoleColors,
@@ -245,7 +245,7 @@ pub enum Command {
 		channel_id: Snowflake,
 		message_id: Snowflake,
 		content: String,
-		keep: Option<Vec<Snowflake>>,
+		keep: Option<Vec<AttachmentDescriptor>>,
 	},
 	SuppressEmbeds {
 		channel_id: Snowflake,

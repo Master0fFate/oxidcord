@@ -31,7 +31,7 @@ use lru::LruCache;
 use markdown::Document;
 use plugin_host::ViewContext;
 use plugin_host::api::model::ClickTarget;
-use protocol::{Attachment, Gif, Message, MessageType, Nonce, Snowflake, UserFlags};
+use protocol::{Attachment, AttachmentDescriptor, Gif, Message, MessageType, Nonce, Snowflake, UserFlags};
 use state::{ClientOptions, MessageRow, MessageView, RenderedMessage};
 
 use self::body::{BodyEnv, render_body};
@@ -215,6 +215,10 @@ pub enum RowAction {
 		message: Snowflake,
 		attachment: Snowflake,
 	},
+	ModifyEditAttachment {
+		message: Snowflake,
+		attachment: Snowflake,
+	},
 	OpenEmoji {
 		message_id: Snowflake,
 		at: Point<Pixels>,
@@ -285,6 +289,40 @@ pub struct Editing {
 	pub input: Entity<TextareaState>,
 	pub tokens: EmojiTokens,
 	pub removed: HashSet<Snowflake>,
+	pub changes: HashMap<Snowflake, AttachmentChange>,
+}
+
+#[derive(Clone)]
+pub struct AttachmentChange {
+	pub name: String,
+	pub description: String,
+	pub spoiler: bool,
+}
+
+impl AttachmentChange {
+	pub fn of(attachment: &Attachment) -> Self {
+		Self {
+			name: attachment.filename.clone(),
+			description: attachment.description.clone().unwrap_or_default(),
+			spoiler: media::is_spoiler(attachment),
+		}
+	}
+
+	pub fn descriptor(&self, id: Snowflake) -> AttachmentDescriptor {
+		let bare = self.name.strip_prefix(rest::SPOILER_PREFIX).unwrap_or(&self.name);
+		let filename = if self.spoiler {
+			format!("{}{bare}", rest::SPOILER_PREFIX)
+		} else {
+			bare.to_owned()
+		};
+		AttachmentDescriptor {
+			id,
+			filename: Some(filename),
+			description: Some(self.description.trim().to_owned()),
+			is_spoiler: Some(self.spoiler),
+			..AttachmentDescriptor::default()
+		}
+	}
 }
 
 #[derive(Default)]
@@ -1530,7 +1568,7 @@ fn editor(editing: &Editing, attachments: &[Attachment], env: &RowEnv, cx: &App)
 			attachments
 				.iter()
 				.filter(|attachment| !editing.removed.contains(&attachment.id))
-				.map(|attachment| editable_attachment(editing.message, attachment, env, cx)),
+				.map(|attachment| editable_attachment(editing, attachment, env, cx)),
 		)
 		.child(
 			div()
@@ -1556,10 +1594,15 @@ fn editor(editing: &Editing, attachments: &[Attachment], env: &RowEnv, cx: &App)
 		.into_any_element()
 }
 
-fn editable_attachment(message: Snowflake, attachment: &Attachment, env: &RowEnv, cx: &App) -> AnyElement {
+fn editable_attachment(editing: &Editing, attachment: &Attachment, env: &RowEnv, cx: &App) -> AnyElement {
 	let theme = env.theme;
 	let dispatch = env.dispatch.clone();
+	let modify_dispatch = env.dispatch.clone();
+	let message = editing.message;
 	let id = attachment.id;
+	let change = editing.changes.get(&id);
+	let name = change.map_or(&attachment.filename, |change| &change.name);
+	let spoiler = change.map_or_else(|| media::is_spoiler(attachment), |change| change.spoiler);
 	div()
 		.flex()
 		.items_center()
@@ -1579,7 +1622,28 @@ fn editable_attachment(message: Snowflake, attachment: &Attachment, env: &RowEnv
 				.min_w_0()
 				.truncate()
 				.text_size(theme.font_sm)
-				.child(attachment.filename.clone()),
+				.child(name.clone()),
+		)
+		.when(spoiler, |row| {
+			row.child(
+				Icon::new(IconKind::EyeOff)
+					.size(rem(16.))
+					.color(theme.interactive_muted),
+			)
+		})
+		.child(
+			IconButton::new(("edit-attachment-modify", id.get()), IconKind::Edit)
+				.tooltip(cx.t("attachment-modify-title"))
+				.on_click(move |_, window, cx| {
+					modify_dispatch(
+						RowAction::ModifyEditAttachment {
+							message,
+							attachment: id,
+						},
+						window,
+						cx,
+					)
+				}),
 		)
 		.child(
 			IconButton::new(("edit-attachment-remove", id.get()), IconKind::Close)

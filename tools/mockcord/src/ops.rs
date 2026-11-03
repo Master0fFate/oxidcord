@@ -498,6 +498,14 @@ impl Shared {
 				parse_id(&attachment["id"])
 					.is_some_and(|attachment_id| keep.iter().any(|kept| kept.id.0 == attachment_id))
 			});
+			for attachment in attachments.iter_mut() {
+				let found = keep
+					.iter()
+					.find(|kept| Some(kept.id.0) == parse_id(&attachment["id"]));
+				if let Some(kept) = found {
+					apply_descriptor(attachment, kept);
+				}
+			}
 		}
 		if !moderating {
 			message["edited_timestamp"] = Value::String(now_iso());
@@ -753,6 +761,21 @@ fn poll_from(create: PollCreate) -> Result<Poll, ApiError> {
 		layout_type: Some(create.layout_type),
 		results: None,
 	})
+}
+
+fn apply_descriptor(attachment: &mut Value, descriptor: &AttachmentDescriptor) {
+	if let Some(filename) = &descriptor.filename {
+		attachment["filename"] = Value::String(filename.clone());
+	}
+	if let Some(description) = &descriptor.description {
+		attachment["description"] = Value::String(description.clone());
+	}
+	if let Some(spoiler) = descriptor.is_spoiler {
+		let mut flags: AttachmentFlags =
+			serde_json::from_value(attachment["flags"].clone()).unwrap_or(AttachmentFlags::empty());
+		flags.set(AttachmentFlags::IS_SPOILER, spoiler);
+		attachment["flags"] = json!(flags.bits());
+	}
 }
 
 fn blank_read_state(channel_id: u64) -> ReadState {
