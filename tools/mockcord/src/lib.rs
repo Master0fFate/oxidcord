@@ -2,6 +2,7 @@ mod admin;
 mod automod;
 mod config;
 mod error;
+mod events;
 pub mod fixtures;
 mod forward;
 mod gateway;

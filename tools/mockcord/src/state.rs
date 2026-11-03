@@ -7,7 +7,7 @@ use parking_lot::Mutex;
 use protocol::{
 	AutoModRule, Channel, Emoji, FRIEND_SOURCE_MUTUAL_FRIENDS, FRIEND_SOURCE_MUTUAL_GUILDS, GuildProperties,
 	Member, Presence, ProtoCustomStatus, ProtoFrecencySettings, ProtoStatus, ReadState, Relationship, Role,
-	Snowflake, StatusKind, User, UserGuildSettings, encode_status, privacy_with_friend_sources,
+	ScheduledEvent, Snowflake, StatusKind, User, UserGuildSettings, encode_status, privacy_with_friend_sources,
 };
 use serde_json::Value;
 use tokio::sync::{broadcast, watch};
@@ -58,6 +58,8 @@ pub struct Store {
 	pub properties: HashMap<u64, GuildProperties>,
 	pub roles: HashMap<u64, Vec<Role>>,
 	pub emojis: HashMap<u64, Vec<Emoji>>,
+	pub scheduled_events: HashMap<u64, Vec<ScheduledEvent>>,
+	pub event_interest: BTreeSet<u64>,
 	pub removed_members: HashMap<u64, BTreeSet<u64>>,
 	pub bans: HashMap<u64, BTreeMap<u64, Option<String>>>,
 	pub automod_rules: HashMap<u64, Vec<AutoModRule>>,
@@ -142,6 +144,12 @@ impl Store {
 				.iter()
 				.map(|guild| (guild.id, guild.emojis.clone()))
 				.collect(),
+			scheduled_events: fixtures
+				.guilds
+				.iter()
+				.map(|guild| (guild.id, guild.scheduled_events.clone()))
+				.collect(),
+			event_interest: BTreeSet::new(),
 			removed_members: HashMap::new(),
 			bans: HashMap::new(),
 			automod_rules: crate::automod::seed_automod(fixtures),

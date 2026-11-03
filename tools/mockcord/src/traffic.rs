@@ -2,10 +2,11 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Duration;
 
-use protocol::{EditMessage, MessageFlags, StatusKind, User};
+use protocol::{EditMessage, MessageFlags, ScheduledEventStatus, StatusKind, User};
 use rand::Rng;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
+use serde_json::json;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
@@ -21,6 +22,7 @@ const CHAOS_CLOSE_CODE: u16 = 4000;
 const MESSAGE_INTERVAL: Duration = Duration::from_secs(3);
 const TYPING_LEAD: Duration = Duration::from_secs(1);
 const PRESENCE_INTERVAL: Duration = Duration::from_secs(10);
+const EVENT_START_INTERVAL: Duration = Duration::from_secs(45);
 const RECENT_CAPACITY: usize = 6;
 const EDIT_EVERY: u64 = 3;
 const DELETE_EVERY: u64 = 4;
@@ -45,6 +47,7 @@ pub fn spawn(shared: &Arc<Shared>) -> Vec<JoinHandle<()>> {
 	if shared.config.live_traffic {
 		tasks.push(tokio::spawn(message_loop(shared.clone())));
 		tasks.push(tokio::spawn(presence_loop(shared.clone())));
+		tasks.push(tokio::spawn(event_loop(shared.clone())));
 	}
 	tasks
 }
@@ -156,6 +159,22 @@ struct Posted {
 	channel_id: u64,
 	id: u64,
 	author_id: u64,
+}
+
+async fn event_loop(shared: Arc<Shared>) {
+	let mut shutdown = shared.shutdown.clone();
+	while !interrupted(&mut shutdown, EVENT_START_INTERVAL).await {
+		let Some((guild_id, event_id)) = shared.next_scheduled_event() else {
+			return;
+		};
+		let started = json!({ "status": i64::from(ScheduledEventStatus::Active) });
+		if shared
+			.modify_scheduled_event(guild_id, event_id, &started)
+			.is_ok()
+		{
+			tracing::info!(guild_id, event_id, "live event start");
+		}
+	}
 }
 
 async fn message_loop(shared: Arc<Shared>) {

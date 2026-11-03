@@ -1,6 +1,7 @@
 mod admin;
 mod apps;
 mod channels;
+mod events;
 mod expressions;
 mod guilds;
 mod rpc;
@@ -131,6 +132,16 @@ pub fn router(shared: Arc<Shared>) -> Router {
 		)
 		.route("/guilds/{id}/invites", get(admin::guild_invites))
 		.route("/guilds/{id}/audit-logs", get(admin::audit_log))
+		.route(
+			"/guilds/{id}/scheduled-events",
+			get(events::list).post(events::create),
+		)
+		.route("/guilds/{id}/scheduled-events/{eid}", patch(events::modify))
+		.route(
+			"/guilds/{id}/scheduled-events/{eid}/users/@me",
+			put(events::join).delete(events::leave),
+		)
+		.route("/users/@me/scheduled-events", get(events::rsvps))
 		.route("/guilds/{id}/threads/active", get(admin::active_threads))
 		.route("/guilds/{id}/messages/search", get(guilds::search_messages))
 		.route(

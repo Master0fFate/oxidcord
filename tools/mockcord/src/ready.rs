@@ -85,7 +85,7 @@ fn ready_guild(shared: &Shared, store: &Store, guild: &GuildFixture) -> Value {
 		"large": guild.large,
 		"premium_subscription_count": guild.properties.premium_subscription_count,
 		"stage_instances": [],
-		"guild_scheduled_events": [],
+		"guild_scheduled_events": store.open_scheduled_events(guild.id),
 	})
 }
 

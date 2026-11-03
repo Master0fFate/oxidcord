@@ -6,7 +6,8 @@ use protocol::{
 	ClientStatus, DefaultMessageNotifications, DefaultReaction, Emoji, ExplicitContentFilter, ForumLayout,
 	ForumSortOrder, ForumTag, GuildProperties, LenientVec, Member, NsfwLevel, PartialEmoji,
 	PermissionOverwrite, PermissionOverwriteKind, Permissions, PremiumTier, Presence, Role, RoleColors,
-	Snowflake, StatusKind, ThreadMetadata, User, VerificationLevel, VoiceState,
+	ScheduledEvent, ScheduledEventKind, ScheduledEventMetadata, ScheduledEventStatus, Snowflake, StatusKind,
+	ThreadMetadata, User, VerificationLevel, VoiceState,
 };
 use rand::Rng;
 use rand::rngs::StdRng;
@@ -43,6 +44,7 @@ pub struct GuildFixture {
 	pub member_index: HashMap<u64, usize>,
 	pub presences: Vec<Presence>,
 	pub voice_states: Vec<VoiceState>,
+	pub scheduled_events: Vec<ScheduledEvent>,
 	pub joined_at: DateTime<Utc>,
 	pub large: bool,
 }
@@ -303,6 +305,7 @@ struct Channels {
 	text: Vec<u64>,
 	forum: u64,
 	voice: Vec<u64>,
+	stage: u64,
 	system: u64,
 	muted: u64,
 }
@@ -329,6 +332,7 @@ fn build_channels(builder: &mut Builder, guild_id: u64, roles: &RoleIds) -> Chan
 		text: Vec::new(),
 		forum: 0,
 		voice: Vec::new(),
+		stage: 0,
 		system: 0,
 		muted: 0,
 	};
@@ -490,6 +494,7 @@ fn build_channels(builder: &mut Builder, guild_id: u64, roles: &RoleIds) -> Chan
 	);
 	stage.bitrate = Some(64_000);
 	add_channel(builder, &mut layout.all, stage);
+	layout.stage = stage_id;
 	layout
 }
 
@@ -638,6 +643,77 @@ fn build_presences(builder: &mut Builder, members: &[Member]) -> Vec<Presence> {
 	presences
 }
 
+fn scheduled_event(
+	builder: &mut Builder,
+	guild_id: u64,
+	creator: Snowflake,
+	name: &str,
+	description: &str,
+	kind: ScheduledEventKind,
+	status: ScheduledEventStatus,
+) -> ScheduledEvent {
+	ScheduledEvent {
+		id: Snowflake(builder.ids.next()),
+		guild_id: Snowflake(guild_id),
+		creator_id: Some(creator),
+		name: name.to_owned(),
+		description: Some(description.to_owned()),
+		status,
+		entity_type: kind,
+		..ScheduledEvent::default()
+	}
+}
+
+fn build_scheduled_events(
+	builder: &mut Builder,
+	guild_id: u64,
+	layout: &Channels,
+	creator: Snowflake,
+) -> Vec<ScheduledEvent> {
+	let anchor = builder.anchor;
+	let mut game_night = scheduled_event(
+		builder,
+		guild_id,
+		creator,
+		"Game night",
+		"Bring your own snacks and join the lounge.",
+		ScheduledEventKind::Voice,
+		ScheduledEventStatus::Scheduled,
+	);
+	game_night.channel_id = layout.voice.first().copied().map(Snowflake);
+	game_night.scheduled_start_time = Some(anchor + Duration::hours(1));
+	game_night.scheduled_end_time = Some(anchor + Duration::hours(3));
+	game_night.user_count = Some(4);
+	let mut town_hall = scheduled_event(
+		builder,
+		guild_id,
+		creator,
+		"Town hall Q&A",
+		"Open questions for the mods.",
+		ScheduledEventKind::StageInstance,
+		ScheduledEventStatus::Active,
+	);
+	town_hall.channel_id = Some(Snowflake(layout.stage));
+	town_hall.scheduled_start_time = Some(anchor - Duration::minutes(10));
+	town_hall.user_count = Some(12);
+	let mut picnic = scheduled_event(
+		builder,
+		guild_id,
+		creator,
+		"Community picnic",
+		"Meet at the park by the lake.",
+		ScheduledEventKind::External,
+		ScheduledEventStatus::Scheduled,
+	);
+	picnic.entity_metadata = Some(ScheduledEventMetadata {
+		location: Some("Lakeside Park".to_owned()),
+	});
+	picnic.scheduled_start_time = Some(anchor + Duration::days(2));
+	picnic.scheduled_end_time = Some(anchor + Duration::days(2) + Duration::hours(4));
+	picnic.user_count = Some(7);
+	vec![town_hall, game_night, picnic]
+}
+
 fn build_voice_states(
 	builder: &mut Builder,
 	guild_id: u64,
@@ -710,6 +786,7 @@ pub fn build(builder: &mut Builder, index: usize) -> GuildFixture {
 		.unwrap_or_default();
 	let emojis = build_emojis(builder, &owner);
 	let layout = build_channels(builder, guild_id, &role_ids);
+	let scheduled_events = build_scheduled_events(builder, guild_id, &layout, owner.id);
 	let anchor = builder.anchor;
 
 	let first_text = layout.text[0];
@@ -911,6 +988,7 @@ pub fn build(builder: &mut Builder, index: usize) -> GuildFixture {
 		member_index,
 		presences,
 		voice_states,
+		scheduled_events,
 		joined_at: anchor - Duration::days(400),
 		large: is_large(index),
 	}
