@@ -1459,17 +1459,18 @@ impl Shell {
 	}
 
 	fn raise_event_notice(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+		let pending = self.data.read(cx).state().event_notices_since(self.seen_event_notice);
+		for notice in pending {
+			self.seen_event_notice = notice.id;
+			self.show_event_notice(notice, window, cx);
+		}
+	}
+
+	fn show_event_notice(&mut self, notice: state::EventNotice, window: &mut Window, cx: &mut Context<Self>) {
 		let settings = (self.backend.read)().notifications;
 		let (guild, event, title, message) = {
 			let data = self.data.read(cx);
 			let state = data.state();
-			let Some(notice) = state.last_event_notice() else {
-				return;
-			};
-			if notice.id <= self.seen_event_notice {
-				return;
-			}
-			self.seen_event_notice = notice.id;
 			if state.own_status() == StatusKind::Dnd {
 				return;
 			}

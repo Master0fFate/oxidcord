@@ -25,6 +25,7 @@ use crate::views::UserOverride;
 use crate::voice::{Call, MicTest, StreamSummary, VoiceCueEntry, VoiceLevels, VoiceSession, VoiceStats};
 
 pub const TYPING_TIMEOUT: Duration = Duration::from_secs(10);
+const EVENT_NOTICE_BACKLOG: usize = 16;
 
 pub type SharedState = Arc<RwLock<State>>;
 
@@ -94,7 +95,7 @@ pub struct State {
 	pub(crate) friend_request_count: u64,
 	pub(crate) friend_notice: Option<FriendNotice>,
 	pub(crate) friend_notice_count: u64,
-	pub(crate) event_notice: Option<EventNotice>,
+	pub(crate) event_notices: VecDeque<EventNotice>,
 	pub(crate) event_notice_count: u64,
 	pub(crate) chosen_status: Option<StatusKind>,
 	pub(crate) afk: bool,
@@ -352,7 +353,10 @@ impl State {
 
 	pub(crate) fn note_event_notice(&mut self, guild_id: Snowflake, event_id: Snowflake) {
 		self.event_notice_count += 1;
-		self.event_notice = Some(EventNotice {
+		if self.event_notices.len() >= EVENT_NOTICE_BACKLOG {
+			self.event_notices.pop_front();
+		}
+		self.event_notices.push_back(EventNotice {
 			id: self.event_notice_count,
 			guild_id,
 			event_id,
@@ -360,7 +364,15 @@ impl State {
 	}
 
 	pub fn last_event_notice(&self) -> Option<EventNotice> {
-		self.event_notice
+		self.event_notices.back().copied()
+	}
+
+	pub fn event_notices_since(&self, seen: u64) -> Vec<EventNotice> {
+		self.event_notices
+			.iter()
+			.filter(|notice| notice.id > seen)
+			.copied()
+			.collect()
 	}
 
 	pub fn selected(&self) -> Option<Selection> {
