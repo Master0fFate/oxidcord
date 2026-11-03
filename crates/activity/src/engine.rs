@@ -129,14 +129,14 @@ impl ActivityHandle {
 	}
 
 	pub fn deliver_join_request(&self, application_id: Snowflake, party_id: &str, user: &User) -> bool {
-		self.shared.add_pending(application_id.get(), user.id);
+		let fresh = self.shared.add_pending(application_id.get(), user.id);
 		let delivered = self.shared.dispatch(
 			application_id.get(),
 			RpcEvent::JoinRequest,
 			Some(party_id),
 			&json!({ "user": user_json(user) }),
 		);
-		if !delivered {
+		if !delivered && fresh {
 			self.shared.take_pending(application_id.get(), user.id);
 		}
 		delivered

@@ -156,8 +156,8 @@ impl RpcShared {
 		delivered
 	}
 
-	pub fn add_pending(&self, application_id: u64, user_id: Snowflake) {
-		self.pending.lock().insert((application_id, user_id));
+	pub fn add_pending(&self, application_id: u64, user_id: Snowflake) -> bool {
+		self.pending.lock().insert((application_id, user_id))
 	}
 
 	pub fn take_pending(&self, application_id: u64, user_id: Snowflake) -> bool {
