@@ -483,6 +483,12 @@ impl State {
 		edit: impl FnOnce(&mut Channel),
 	) -> Changes {
 		let mut changes = Changes::default();
+		let Some(guild_id) = Some(guild_id)
+			.filter(|id| id.0 != 0)
+			.or_else(|| self.channel_guilds.get(&channel_id).copied().flatten())
+		else {
+			return changes;
+		};
 		if let Some(channel) = self
 			.guilds
 			.get_mut(&guild_id)

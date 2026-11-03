@@ -53,6 +53,7 @@ pub struct VoiceRoom {
 	camera_pending: bool,
 	stage: Rc<Cell<Size<Pixels>>>,
 	last_render: Cell<Instant>,
+	status_cache: Option<SharedString>,
 	_subscriptions: Vec<Subscription>,
 	_frames: Task<()>,
 }
@@ -89,7 +90,7 @@ enum TileSize {
 	Fill,
 }
 
-fn snapshot(data: &Data) -> Option<Snapshot> {
+fn snapshot(data: &Data, status_cache: &mut Option<SharedString>) -> Option<Snapshot> {
 	let self_mute = data.self_mute();
 	let self_deaf = data.self_deaf();
 	let state = data.state();
@@ -99,6 +100,10 @@ fn snapshot(data: &Data) -> Option<Snapshot> {
 	let session = state.voice().filter(|voice| voice.channel_id == channel);
 	let participants = participants(&state, selected.guild_id, channel, AVATAR_PIXELS);
 	let permissions = state.my_permissions(channel);
+	let voice_status = state.channel(channel).and_then(|found| found.voice_status());
+	if voice_status != status_cache.as_deref() {
+		*status_cache = voice_status.map(|status| SharedString::from(status.to_owned()));
+	}
 	Some(Snapshot {
 		guild: selected.guild_id,
 		channel,
@@ -126,10 +131,7 @@ fn snapshot(data: &Data) -> Option<Snapshot> {
 		participants,
 		streams: stream_keys(&state, channel),
 		can_chat: permissions.contains(Permissions::VIEW_CHANNEL | Permissions::READ_MESSAGE_HISTORY),
-		voice_status: state
-			.channel(channel)
-			.and_then(|found| found.voice_status())
-			.map(|status| SharedString::from(status.to_owned())),
+		voice_status: status_cache.clone(),
 		can_edit_status: kind == Some(ChannelType::GuildVoice) && state.can_set_voice_status(channel),
 	})
 }
@@ -218,6 +220,7 @@ impl VoiceRoom {
 			camera_pending: false,
 			stage: Rc::new(Cell::new(size(px(0.), px(0.)))),
 			last_render: Cell::new(Instant::now()),
+			status_cache: None,
 			_subscriptions: vec![changes, local],
 			_frames: frames,
 		}
@@ -1094,7 +1097,7 @@ impl Render for VoiceRoom {
 	fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		self.last_render.set(Instant::now());
 		let theme = Theme::current(cx);
-		let Some(snapshot) = snapshot(self.data.read(cx)) else {
+		let Some(snapshot) = snapshot(self.data.read(cx), &mut self.status_cache) else {
 			return div().flex_1().into_any_element();
 		};
 		let area = self.stage_size(window, &theme);
