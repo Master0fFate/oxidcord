@@ -7,8 +7,8 @@ use protocol::{
 	ForumSortOrder, ForumTag, GuildProperties, LenientVec, Member, NsfwLevel, PartialEmoji,
 	PermissionOverwrite, PermissionOverwriteKind, Permissions, PremiumTier, Presence, Role, RoleColors,
 	ScheduledEvent, ScheduledEventKind, ScheduledEventMetadata, ScheduledEventStatus, Snowflake,
-	StageInstance, StagePrivacy, StatusKind, ThreadMetadata, User, VerificationLevel, VideoQualityMode,
-	VoiceState,
+	StageInstance, StagePrivacy, StatusKind, SystemChannelFlags, ThreadMetadata, User, VerificationLevel,
+	VideoQualityMode, VoiceState,
 };
 use rand::Rng;
 use rand::rngs::StdRng;
@@ -1066,9 +1066,17 @@ pub fn build(builder: &mut Builder, index: usize) -> GuildFixture {
 		verification_level: Some(VerificationLevel::Low),
 		default_message_notifications: Some(DefaultMessageNotifications::OnlyMentions),
 		explicit_content_filter: Some(ExplicitContentFilter::Disabled),
-		features: ["COMMUNITY", "NEWS", "ENHANCED_ROLE_COLORS", "ROLE_ICONS"]
-			.map(str::to_owned)
-			.to_vec(),
+		features: [
+			"COMMUNITY",
+			"NEWS",
+			"ENHANCED_ROLE_COLORS",
+			"ROLE_ICONS",
+			"BANNER",
+			"INVITE_SPLASH",
+		]
+		.map(str::to_owned)
+		.to_vec(),
+		system_channel_flags: Some(SystemChannelFlags::SUPPRESS_PREMIUM_SUBSCRIPTIONS),
 		system_channel_id: Some(Snowflake(layout.system)),
 		max_members: Some(500_000),
 		description: Some("A mock guild for headless runs".to_owned()),

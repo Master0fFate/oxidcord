@@ -96,7 +96,12 @@ pub fn router(shared: Arc<Shared>) -> Router {
 				.post(admin::accept_invite)
 				.delete(admin::delete_invite),
 		)
-		.route("/guilds/{id}", get(guilds::guild).patch(admin::modify_guild))
+		.route(
+			"/guilds/{id}",
+			get(guilds::guild)
+				.patch(admin::modify_guild)
+				.delete(admin::delete_guild),
+		)
 		.route(
 			"/guilds/{id}/member-verification",
 			get(admin::member_verification),

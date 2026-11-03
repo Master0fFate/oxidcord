@@ -21,6 +21,7 @@ pub enum Fit {
 	Original,
 	Square(u32),
 	SquareUnlessAnimated(u32),
+	Fill(u32, u32),
 }
 
 fn format_of(name: &str) -> ImageFormat {
@@ -39,8 +40,12 @@ fn format_of(name: &str) -> ImageFormat {
 }
 
 pub fn square_png(bytes: &[u8], side: u32) -> Option<Vec<u8>> {
+	filled_png(bytes, side, side)
+}
+
+fn filled_png(bytes: &[u8], width: u32, height: u32) -> Option<Vec<u8>> {
 	let decoded = image::load_from_memory(bytes).ok()?;
-	let resized = decoded.resize_to_fill(side, side, FilterType::Lanczos3);
+	let resized = decoded.resize_to_fill(width, height, FilterType::Lanczos3);
 	let mut encoded = Cursor::new(Vec::new());
 	resized.write_to(&mut encoded, image::ImageFormat::Png).ok()?;
 	Some(encoded.into_inner())
@@ -52,6 +57,7 @@ fn fitted(raw: Vec<u8>, name: &str, fit: Fit) -> Option<(Vec<u8>, ImageFormat)> 
 		Fit::Square(side) | Fit::SquareUnlessAnimated(side) => {
 			square_png(&raw, side).map(|bytes| (bytes, ImageFormat::Png))
 		}
+		Fit::Fill(width, height) => filled_png(&raw, width, height).map(|bytes| (bytes, ImageFormat::Png)),
 		Fit::Original => Some((raw, format_of(name))),
 	}
 }

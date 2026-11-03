@@ -2,9 +2,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use chrono::{DateTime, Duration, Utc};
 use protocol::{
-	Channel, ChannelFlags, ChannelType, Emoji, ForumLayout, ForumSortOrder, ForumTag, LenientVec, Member,
-	MessageType, PermissionOverwrite, PermissionOverwriteKind, Permissions, Relationship, RelationshipKind,
-	Role, RoleColors, Snowflake, UserGuildSettings, VideoQualityMode,
+	Channel, ChannelFlags, ChannelType, DefaultMessageNotifications, Emoji, ForumLayout, ForumSortOrder,
+	ForumTag, LenientVec, Member, MessageType, PermissionOverwrite, PermissionOverwriteKind, Permissions,
+	Relationship, RelationshipKind, Role, RoleColors, Snowflake, UserGuildSettings, VideoQualityMode,
 };
 use serde_json::{Value, json};
 
@@ -637,7 +637,28 @@ impl Shared {
 			properties.description = Some(description.to_owned());
 		}
 		if body["icon"].is_string() {
-			properties.icon = Some(new_icon);
+			properties.icon = Some(new_icon.clone());
+		}
+		if body["banner"].is_string() {
+			properties.banner = Some(new_icon.clone());
+		}
+		if body["splash"].is_string() {
+			properties.splash = Some(new_icon);
+		}
+		if body.get("system_channel_id").is_some() {
+			properties.system_channel_id = parse_id(&body["system_channel_id"]).map(Snowflake);
+		}
+		if let Ok(flags) = serde_json::from_value(body["system_channel_flags"].clone()) {
+			properties.system_channel_flags = Some(flags);
+		}
+		if body.get("afk_channel_id").is_some() {
+			properties.afk_channel_id = parse_id(&body["afk_channel_id"]).map(Snowflake);
+		}
+		if let Some(timeout) = body["afk_timeout"].as_i64() {
+			properties.afk_timeout = Some(timeout);
+		}
+		if let Some(level) = body["default_message_notifications"].as_i64() {
+			properties.default_message_notifications = Some(DefaultMessageNotifications::from(level));
 		}
 		store.push_audit(
 			guild_id,
