@@ -343,9 +343,7 @@ impl VoiceRoom {
 			.state()
 			.selected()
 			.and_then(|selected| selected.guild_id);
-		if let Some(guild) = guild {
-			self.soundboard = Some(self.build_soundboard(guild, cx));
-		}
+		self.soundboard = guild.map(|guild| self.build_soundboard(guild, cx));
 	}
 
 	fn request_previews(&self, cx: &Context<Self>) {
