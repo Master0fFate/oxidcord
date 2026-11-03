@@ -406,6 +406,7 @@ impl Connection {
 		let channel_id = parse_id(&data["channel_id"]);
 		let changed = self.shared.remember_voice(session, guild_id, channel_id)
 			| self.shared.voice_stale.swap(false, Ordering::AcqRel);
+		self.shared.sync_seat(changed, channel_id, data);
 		let event = self.shared.voice_state_event(session, guild_id, channel_id, data);
 		self.shared.hub.broadcast("VOICE_STATE_UPDATE", &event);
 		if let (true, Some(channel_id)) = (changed, channel_id) {

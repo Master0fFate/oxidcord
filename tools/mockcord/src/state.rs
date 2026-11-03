@@ -7,7 +7,7 @@ use parking_lot::Mutex;
 use protocol::{
 	AutoModRule, Channel, Emoji, FRIEND_SOURCE_MUTUAL_FRIENDS, FRIEND_SOURCE_MUTUAL_GUILDS, GuildProperties,
 	Member, Presence, ProtoCustomStatus, ProtoFrecencySettings, ProtoStatus, ReadState, Relationship, Role,
-	ScheduledEvent, Snowflake, StatusKind, User, UserGuildSettings, encode_status,
+	ScheduledEvent, Snowflake, StageInstance, StatusKind, User, UserGuildSettings, encode_status,
 	privacy_with_friend_sources,
 };
 use serde_json::Value;
@@ -18,6 +18,7 @@ use crate::fixtures::Fixtures;
 use crate::hub::Hub;
 use crate::ids::snowflake_at;
 use crate::scenario::VoiceJoin;
+use crate::stage::Seat;
 use crate::uploads::SendFault;
 use crate::voice::Signal;
 
@@ -80,6 +81,8 @@ pub struct Store {
 	pub proto_privacy: Vec<u8>,
 	pub uploads: HashMap<String, u64>,
 	pub nonces: HashMap<(u64, String), u64>,
+	pub stage_instances: HashMap<u64, StageInstance>,
+	pub seats: HashMap<u64, Seat>,
 	last_id: u64,
 }
 
@@ -188,6 +191,12 @@ impl Store {
 			},
 			uploads: HashMap::new(),
 			nonces: HashMap::new(),
+			stage_instances: fixtures
+				.guilds
+				.iter()
+				.map(|guild| (guild.stage_instance.channel_id.0, guild.stage_instance.clone()))
+				.collect(),
+			seats: HashMap::new(),
 			last_id,
 		}
 	}

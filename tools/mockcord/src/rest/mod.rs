@@ -5,6 +5,7 @@ mod events;
 mod expressions;
 mod guilds;
 mod rpc;
+mod stage;
 mod users;
 
 pub use expressions::guild_stickers_snapshot;
@@ -54,6 +55,13 @@ pub fn router(shared: Arc<Shared>) -> Router {
 		.route("/mock/voice/elsewhere", post(admin::voice_elsewhere))
 		.route("/mock/voice/move", post(admin::voice_move))
 		.route("/mock/voice/reassign", post(admin::voice_reassign))
+		.route("/mock/voice/server-mute", post(admin::voice_server_mute))
+		.route("/stage-instances", post(stage::create))
+		.route(
+			"/stage-instances/{id}",
+			get(stage::get).patch(stage::modify).delete(stage::delete),
+		)
+		.route("/guilds/{id}/voice-states/{uid}", patch(stage::patch_voice_state))
 		.route("/mock/voice/close/{code}", post(admin::voice_close))
 		.route("/auth/sessions", get(admin::auth_sessions))
 		.route("/auth/sessions/logout", post(admin::logout_sessions))

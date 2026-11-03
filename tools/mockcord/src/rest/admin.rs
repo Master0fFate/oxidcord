@@ -555,6 +555,14 @@ pub async fn voice_move(State(shared): Mock) -> NoContent {
 	Ok(StatusCode::NO_CONTENT)
 }
 
+pub async fn voice_server_mute(State(shared): Mock, Json(body): Json<Value>) -> NoContent {
+	shared.set_server_voice(
+		body["mute"].as_bool().unwrap_or(false),
+		body["deaf"].as_bool().unwrap_or(false),
+	)?;
+	Ok(StatusCode::NO_CONTENT)
+}
+
 pub async fn voice_reassign(State(shared): Mock) -> NoContent {
 	shared.voice_reassign()?;
 	Ok(StatusCode::NO_CONTENT)

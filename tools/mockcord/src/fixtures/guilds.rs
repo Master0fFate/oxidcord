@@ -6,8 +6,8 @@ use protocol::{
 	ClientStatus, DefaultMessageNotifications, DefaultReaction, Emoji, ExplicitContentFilter, ForumLayout,
 	ForumSortOrder, ForumTag, GuildProperties, LenientVec, Member, NsfwLevel, PartialEmoji,
 	PermissionOverwrite, PermissionOverwriteKind, Permissions, PremiumTier, Presence, Role, RoleColors,
-	ScheduledEvent, ScheduledEventKind, ScheduledEventMetadata, ScheduledEventStatus, Snowflake, StatusKind,
-	ThreadMetadata, User, VerificationLevel, VoiceState,
+	ScheduledEvent, ScheduledEventKind, ScheduledEventMetadata, ScheduledEventStatus, Snowflake,
+	StageInstance, StagePrivacy, StatusKind, ThreadMetadata, User, VerificationLevel, VoiceState,
 };
 use rand::Rng;
 use rand::rngs::StdRng;
@@ -45,6 +45,7 @@ pub struct GuildFixture {
 	pub presences: Vec<Presence>,
 	pub voice_states: Vec<VoiceState>,
 	pub scheduled_events: Vec<ScheduledEvent>,
+	pub stage_instance: StageInstance,
 	pub joined_at: DateTime<Utc>,
 	pub large: bool,
 }
@@ -714,13 +715,8 @@ fn build_scheduled_events(
 	vec![town_hall, game_night, picnic]
 }
 
-fn build_voice_states(
-	builder: &mut Builder,
-	guild_id: u64,
-	voice: &[u64],
-	members: &[Member],
-) -> Vec<VoiceState> {
-	let candidates: Vec<&Member> = members
+fn voice_candidates(members: &[Member]) -> Vec<&Member> {
+	members
 		.iter()
 		.filter(|member| {
 			member
@@ -728,7 +724,60 @@ fn build_voice_states(
 				.as_ref()
 				.is_some_and(|user| user.id.0 != CURRENT_USER_ID)
 		})
-		.collect();
+		.collect()
+}
+
+fn stage_state(
+	guild_id: u64,
+	channel_id: u64,
+	member: &Member,
+	suppress: bool,
+	request_to_speak_timestamp: Option<DateTime<Utc>>,
+) -> VoiceState {
+	let user_id = member.user.as_ref().map(|user| user.id).unwrap_or_default();
+	VoiceState {
+		guild_id: Some(Snowflake(guild_id)),
+		channel_id: Some(Snowflake(channel_id)),
+		user_id,
+		member: Some(member.clone()),
+		session_id: Some(format!("{:032x}", user_id.0)),
+		self_stream: Some(false),
+		suppress,
+		request_to_speak_timestamp,
+		..VoiceState::default()
+	}
+}
+
+fn build_stage_states(
+	guild_id: u64,
+	stage: u64,
+	members: &[Member],
+	taken: &[VoiceState],
+	anchor: DateTime<Utc>,
+) -> Vec<VoiceState> {
+	let free = voice_candidates(members).into_iter().filter(|member| {
+		member
+			.user
+			.as_ref()
+			.is_some_and(|user| taken.iter().all(|state| state.user_id != user.id))
+	});
+	let seats = [
+		(false, None),
+		(true, Some(anchor - Duration::minutes(2))),
+		(true, None),
+	];
+	free.zip(seats)
+		.map(|(member, (suppress, request))| stage_state(guild_id, stage, member, suppress, request))
+		.collect()
+}
+
+fn build_voice_states(
+	builder: &mut Builder,
+	guild_id: u64,
+	voice: &[u64],
+	members: &[Member],
+) -> Vec<VoiceState> {
+	let candidates = voice_candidates(members);
 	if candidates.is_empty() {
 		return Vec::new();
 	}
@@ -939,7 +988,17 @@ pub fn build(builder: &mut Builder, index: usize) -> GuildFixture {
 	}
 
 	let presences = build_presences(builder, &members);
-	let voice_states = build_voice_states(builder, guild_id, &layout.voice, &members);
+	let mut voice_states = build_voice_states(builder, guild_id, &layout.voice, &members);
+	let stage_states = build_stage_states(guild_id, layout.stage, &members, &voice_states, anchor);
+	voice_states.extend(stage_states);
+	let stage_instance = StageInstance {
+		id: Snowflake(builder.ids.next()),
+		guild_id: Snowflake(guild_id),
+		channel_id: Snowflake(layout.stage),
+		topic: "Community town hall".to_owned(),
+		privacy_level: StagePrivacy::GuildOnly,
+		guild_scheduled_event_id: None,
+	};
 	let member_index = members
 		.iter()
 		.enumerate()
@@ -989,6 +1048,7 @@ pub fn build(builder: &mut Builder, index: usize) -> GuildFixture {
 		presences,
 		voice_states,
 		scheduled_events,
+		stage_instance,
 		joined_at: anchor - Duration::days(400),
 		large: is_large(index),
 	}

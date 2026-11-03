@@ -78,13 +78,13 @@ fn ready_guild(shared: &Shared, store: &Store, guild: &GuildFixture) -> Value {
 		"stickers": guild_stickers_snapshot(shared, &store.current_user, guild.id),
 		"threads": threads,
 		"members": [],
-		"voice_states": guild.voice_states,
+		"voice_states": store.guild_voice_states(guild),
 		"presences": [],
 		"member_count": store.live_member_count(guild),
 		"joined_at": guild.joined_at,
 		"large": guild.large,
 		"premium_subscription_count": guild.properties.premium_subscription_count,
-		"stage_instances": [],
+		"stage_instances": store.guild_stage_instances(guild.id),
 		"guild_scheduled_events": store.open_scheduled_events(guild.id),
 	})
 }

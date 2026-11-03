@@ -32,20 +32,21 @@ impl Shared {
 		let member = guild_id
 			.and_then(|id| self.fixtures.guild(id))
 			.map_or(Value::Null, |guild| to_json(guild.current_member()));
+		let seat = self.current_seat();
 		json!({
 			"guild_id": guild_id.map(|id| id.to_string()),
 			"channel_id": channel_id.map(|id| id.to_string()),
 			"user_id": CURRENT_USER_ID.to_string(),
 			"member": member,
 			"session_id": session,
-			"deaf": false,
-			"mute": false,
+			"deaf": seat.deaf,
+			"mute": seat.mute,
 			"self_deaf": flags["self_deaf"].as_bool().unwrap_or(false),
 			"self_mute": flags["self_mute"].as_bool().unwrap_or(false),
 			"self_stream": false,
 			"self_video": flags["self_video"].as_bool().unwrap_or(false),
-			"suppress": false,
-			"request_to_speak_timestamp": flags["request_to_speak_timestamp"].clone(),
+			"suppress": seat.suppress,
+			"request_to_speak_timestamp": seat.request_to_speak_timestamp,
 		})
 	}
 
@@ -105,6 +106,19 @@ impl Shared {
 		let server = self.voice_server_event(join.guild_id, join.channel_id);
 		self.hub
 			.dispatch_to(&join.session, "VOICE_SERVER_UPDATE", &server);
+		Ok(())
+	}
+
+	pub fn set_server_voice(&self, mute: bool, deaf: bool) -> Result<(), ApiError> {
+		let join = self.current_voice()?;
+		{
+			let mut store = self.store.lock();
+			let seat = store.seats.entry(CURRENT_USER_ID).or_default();
+			seat.mute = mute;
+			seat.deaf = deaf;
+		}
+		let event = self.voice_state_event(&join.session, join.guild_id, Some(join.channel_id), &Value::Null);
+		self.hub.broadcast("VOICE_STATE_UPDATE", &event);
 		Ok(())
 	}
 

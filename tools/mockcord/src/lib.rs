@@ -17,6 +17,7 @@ mod reconnect;
 mod rest;
 mod scenario;
 mod server;
+mod stage;
 mod state;
 mod threads;
 mod traffic;
