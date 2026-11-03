@@ -477,7 +477,6 @@ impl State {
 	pub fn unread_targets(&self) -> Vec<(Snowflake, Snowflake)> {
 		self.unread_channels(None, true)
 			.into_iter()
-			.filter(|entry| !entry.muted)
 			.filter_map(|entry| Some((entry.channel_id, entry.last_message_id?)))
 			.collect()
 	}
