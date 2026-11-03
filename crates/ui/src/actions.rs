@@ -2,6 +2,7 @@ use gpui::{App, KeyBinding, actions};
 
 pub const SHELL_CONTEXT: &str = "Shell";
 pub const LIGHTBOX_CONTEXT: &str = "Lightbox";
+pub const INPUT_CONTEXT: &str = "Shell > Input";
 
 actions!(
 	oxidcord,
@@ -62,11 +63,15 @@ pub fn bind_keys(cx: &mut App) {
 		KeyBinding::new("secondary-/", ShowShortcuts, Some(SHELL_CONTEXT)),
 		KeyBinding::new("left", LightboxPrevious, Some(LIGHTBOX_CONTEXT)),
 		KeyBinding::new("right", LightboxNext, Some(LIGHTBOX_CONTEXT)),
-		KeyBinding::new("secondary-=", ZoomIn, None),
 		KeyBinding::new("secondary-+", ZoomIn, None),
 		KeyBinding::new("secondary-shift-=", ZoomIn, None),
 		KeyBinding::new("secondary-shift-+", ZoomIn, None),
+		KeyBinding::new("secondary-=", ZoomIn, None),
 		KeyBinding::new("secondary--", ZoomOut, None),
 		KeyBinding::new("secondary-0", ZoomReset, None),
+		KeyBinding::new("secondary-alt-up", PreviousGuild, Some(INPUT_CONTEXT)),
+		KeyBinding::new("secondary-alt-down", NextGuild, Some(INPUT_CONTEXT)),
+		KeyBinding::new("alt-shift-up", PreviousUnreadChannel, Some(INPUT_CONTEXT)),
+		KeyBinding::new("alt-shift-down", NextUnreadChannel, Some(INPUT_CONTEXT)),
 	]);
 }

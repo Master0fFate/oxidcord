@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use gpui::{
 	Action, AnyElement, App, FontWeight, IntoElement as _, ParentElement as _, SharedString, Styled as _,
 	Window, div,
@@ -20,30 +22,41 @@ pub fn open(window: &mut Window, cx: &mut App) {
 	if window.has_active_dialog(cx) {
 		return;
 	}
-	window.open_dialog(cx, |dialog, window, cx| {
+	let rows: [(&str, &[&dyn Action]); 14] = [
+		("shortcut-switcher", &[&OpenQuickSwitcher]),
+		("shortcut-search", &[&SearchChannel]),
+		("shortcut-friends", &[&ShowFriends]),
+		("shortcut-inbox", &[&ToggleInbox]),
+		("shortcut-mute", &[&ToggleSelfMute]),
+		("shortcut-deafen", &[&ToggleSelfDeafen]),
+		("shortcut-channel", &[&PreviousChannel, &NextChannel]),
+		("shortcut-unread", &[&PreviousUnreadChannel, &NextUnreadChannel]),
+		(
+			"shortcut-mentions",
+			&[&PreviousMentionChannel, &NextMentionChannel],
+		),
+		("shortcut-server", &[&PreviousGuild, &NextGuild]),
+		("shortcut-mark-read", &[&MarkGuildRead]),
+		("shortcut-settings", &[&OpenSettings]),
+		("shortcut-shortcuts", &[&ShowShortcuts]),
+		("shortcut-zoom", &[&ZoomIn, &ZoomOut, &ZoomReset]),
+	];
+	let resolved: Rc<Vec<(SharedString, Vec<Kbd>)>> = Rc::new(
+		rows.iter()
+			.map(|(label, actions)| {
+				let keys = actions
+					.iter()
+					.filter_map(|action| Kbd::binding_for_action(*action, Some(SHELL_CONTEXT), window))
+					.collect();
+				(cx.t(label), keys)
+			})
+			.collect(),
+	);
+	window.open_dialog(cx, move |dialog, window, cx| {
 		let theme = Theme::current(cx);
-		let rows: [(&str, &[&dyn Action]); 14] = [
-			("shortcut-switcher", &[&OpenQuickSwitcher]),
-			("shortcut-search", &[&SearchChannel]),
-			("shortcut-friends", &[&ShowFriends]),
-			("shortcut-inbox", &[&ToggleInbox]),
-			("shortcut-mute", &[&ToggleSelfMute]),
-			("shortcut-deafen", &[&ToggleSelfDeafen]),
-			("shortcut-channel", &[&PreviousChannel, &NextChannel]),
-			("shortcut-unread", &[&PreviousUnreadChannel, &NextUnreadChannel]),
-			(
-				"shortcut-mentions",
-				&[&PreviousMentionChannel, &NextMentionChannel],
-			),
-			("shortcut-server", &[&PreviousGuild, &NextGuild]),
-			("shortcut-mark-read", &[&MarkGuildRead]),
-			("shortcut-settings", &[&OpenSettings]),
-			("shortcut-shortcuts", &[&ShowShortcuts]),
-			("shortcut-zoom", &[&ZoomIn, &ZoomOut, &ZoomReset]),
-		];
-		let rows: Vec<AnyElement> = rows
+		let rows: Vec<AnyElement> = resolved
 			.iter()
-			.map(|(label, actions)| row(cx.t(label), actions, window, &theme))
+			.map(|(label, keys)| row(label.clone(), keys, &theme))
 			.collect();
 		dialog
 			.title(cx.t("shortcuts-title"))
@@ -52,7 +65,7 @@ pub fn open(window: &mut Window, cx: &mut App) {
 	});
 }
 
-fn row(label: SharedString, actions: &[&dyn Action], window: &Window, theme: &Theme) -> AnyElement {
+fn row(label: SharedString, keys: &[Kbd], theme: &Theme) -> AnyElement {
 	div()
 		.flex()
 		.items_center()
@@ -62,11 +75,11 @@ fn row(label: SharedString, actions: &[&dyn Action], window: &Window, theme: &Th
 		.text_color(theme.text_normal)
 		.child(div().font_weight(FontWeight::MEDIUM).child(label))
 		.child(
-			div().flex().items_center().gap(theme.space_4).children(
-				actions
-					.iter()
-					.filter_map(|action| Kbd::binding_for_action(*action, Some(SHELL_CONTEXT), window)),
-			),
+			div()
+				.flex()
+				.items_center()
+				.gap(theme.space_4)
+				.children(keys.iter().cloned()),
 		)
 		.into_any_element()
 }
