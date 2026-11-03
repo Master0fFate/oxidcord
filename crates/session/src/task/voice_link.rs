@@ -295,8 +295,9 @@ impl Core {
 	}
 
 	pub(super) fn set_priority_talk(&mut self, active: bool) {
-		let allowed = active && self.can_speak_with_priority();
-		if active && !allowed {
+		let target = self.voice.target.filter(|_| active);
+		let allowed = target.is_some_and(|target| self.can_speak_with_priority(target));
+		if !allowed && target.is_some_and(|target| target.guild_id.is_some()) {
 			self.reject("You need the Priority Speaker permission");
 		}
 		self.voice.priority = allowed;
@@ -305,15 +306,13 @@ impl Core {
 		}
 	}
 
-	fn can_speak_with_priority(&self) -> bool {
-		self.voice.target.is_some_and(|target| {
-			target.guild_id.is_some()
-				&& self
-					.state
-					.read()
-					.my_permissions(target.channel_id)
-					.contains(Permissions::PRIORITY_SPEAKER)
-		})
+	fn can_speak_with_priority(&self, target: Target) -> bool {
+		target.guild_id.is_some()
+			&& self
+				.state
+				.read()
+				.my_permissions(target.channel_id)
+				.contains(Permissions::PRIORITY_SPEAKER)
 	}
 
 	pub(super) fn set_input_volume(&mut self, volume: f32) {
