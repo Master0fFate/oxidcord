@@ -271,9 +271,7 @@ impl State {
 	}
 
 	pub(crate) fn is_silenced(&self, message: &Message) -> bool {
-		self.is_blocked(message.author.id)
-			|| self.is_ignored(message.author.id)
-			|| self.is_message_request(message.channel_id)
+		self.hides_messages_of(message.author.id) || self.is_message_request(message.channel_id)
 	}
 
 	pub(crate) fn wants_alert(&self, message: &Message, guild_id: Option<Snowflake>) -> bool {

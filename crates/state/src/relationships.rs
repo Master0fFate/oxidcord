@@ -56,7 +56,7 @@ impl State {
 			.is_some_and(|relationship| relationship.kind == RelationshipKind::Blocked)
 	}
 
-	pub(crate) fn hides_messages_of(&self, user_id: Snowflake) -> bool {
+	pub fn hides_messages_of(&self, user_id: Snowflake) -> bool {
 		self.relationships.get(&user_id).is_some_and(|relationship| {
 			relationship.kind == RelationshipKind::Blocked || relationship.user_ignored
 		})

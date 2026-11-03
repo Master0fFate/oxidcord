@@ -608,9 +608,7 @@ impl InboxPanel {
 					state.mentions(roles, everyone).map(|mentions| {
 						mentions
 							.iter()
-							.filter(|message| {
-								!state.is_blocked(message.author.id) && !state.is_ignored(message.author.id)
-							})
+							.filter(|message| !state.hides_messages_of(message.author.id))
 							.cloned()
 							.collect()
 					})
