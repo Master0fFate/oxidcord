@@ -81,6 +81,7 @@ struct Draft {
 	color: u32,
 	secondary: u32,
 	style: Style,
+	enhanced: bool,
 	icon: IconDraft,
 	hoist: bool,
 	mentionable: bool,
@@ -97,6 +98,15 @@ impl Draft {
 				tertiary: None,
 			},
 			Style::Holographic => RoleColorsEdit::HOLOGRAPHIC,
+		}
+	}
+
+	fn colors_changed(&self) -> bool {
+		let original = RoleColorsEdit::from(&self.original);
+		if self.enhanced {
+			self.colors() != original
+		} else {
+			self.color != original.primary
 		}
 	}
 
@@ -239,11 +249,18 @@ impl RolesPage {
 			.update(cx, |state, cx| state.set_value("", window, cx));
 		self.tab = Tab::Display;
 		self.picker_open = false;
+		let enhanced = self
+			.data
+			.read(cx)
+			.state()
+			.guild(self.guild)
+			.is_some_and(|guild| guild.has_feature(ENHANCED_ROLE_COLORS));
 		self.draft = Some(Draft {
 			id: role.id,
 			color,
 			secondary: colors.secondary.unwrap_or(COLOR_PALETTE[0]),
-			style: Style::of(colors),
+			style: if enhanced { Style::of(colors) } else { Style::Solid },
+			enhanced,
 			icon: IconDraft::Keep,
 			hoist: role.hoist,
 			mentionable: role.mentionable,
@@ -275,7 +292,7 @@ impl RolesPage {
 		let name = name.trim();
 		let name_changed = draft.original.id != self.guild && name != draft.original.name;
 		name_changed
-			|| draft.colors() != RoleColorsEdit::from(&draft.original)
+			|| draft.colors_changed()
 			|| !matches!(draft.icon, IconDraft::Keep)
 			|| draft.hoist != draft.original.hoist
 			|| draft.mentionable != draft.original.mentionable
@@ -300,7 +317,7 @@ impl RolesPage {
 			guild_id: self.guild,
 			role_id: draft.id,
 			name: (name != original.name && !name.is_empty() && original.id != self.guild).then_some(name),
-			colors: (colors != RoleColorsEdit::from(original)).then_some(colors),
+			colors: draft.colors_changed().then_some(colors),
 			icon: draft.icon_edit(),
 			permissions: (draft.permissions != original.permissions).then_some(draft.permissions),
 			hoist: (draft.hoist != original.hoist).then_some(draft.hoist),
