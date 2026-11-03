@@ -99,6 +99,8 @@ impl Core {
 			| Command::CreateInvite { .. }
 			| Command::ResolveInvite { .. }
 			| Command::AcceptInvite { .. }
+			| Command::LoadMemberVerification { .. }
+			| Command::SubmitMemberVerification { .. }
 			| Command::LoadReactionUsers { .. }
 			| Command::ForwardMessage { .. }
 			| Command::VotePoll { .. }
@@ -370,9 +372,29 @@ impl Core {
 				let raw = rest.invite(&code).await?;
 				Ok(Loaded::InvitePreview { code, raw })
 			}),
-			Command::AcceptInvite { code } => self.spawn_action("accept invite", move |rest| async move {
-				rest.accept_invite(&code).await.map(drop)
-			}),
+			Command::AcceptInvite { code } => {
+				self.select_created_guild = true;
+				let internal = self.internal.clone();
+				self.spawn_action("accept invite", move |rest| async move {
+					let accepted = rest.accept_invite(&code).await?;
+					if let Some(guild_id) = accepted.guild_id.filter(|_| accepted.show_verification_form) {
+						let form = rest.member_verification(guild_id, Some(&code)).await?;
+						let _ =
+							internal.send(Internal::Loaded(Loaded::MemberVerification { guild_id, form }));
+					}
+					Ok(())
+				});
+			}
+			Command::LoadMemberVerification { guild_id } => {
+				self.spawn_load("rules screening", move |rest| async move {
+					let form = rest.member_verification(guild_id, None).await?;
+					Ok(Loaded::MemberVerification { guild_id, form })
+				})
+			}
+			Command::SubmitMemberVerification { guild_id, form } => self
+				.spawn_action("rules screening", move |rest| async move {
+					rest.submit_join_request(guild_id, &form).await
+				}),
 			Command::LoadReactionUsers {
 				channel_id,
 				message_id,

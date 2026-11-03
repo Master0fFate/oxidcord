@@ -5,8 +5,8 @@ use chrono::{DateTime, Utc};
 use protocol::lenient::{or_default, timestamp};
 use protocol::{
 	ApplicationCommand, ApplicationCommandType, AutoModRule, Channel, CommandIndex, Gif, GifFavorites,
-	GifTrending, InteractionContext, LenientVec, Member, Message, Permissions, PinnedMessage, ScheduledEvent,
-	Snowflake, Sticker, StickerPack, ThreadMember, User,
+	GifTrending, InteractionContext, JoinRequestStatus, LenientVec, Member, MemberVerification, Message,
+	Permissions, PinnedMessage, ScheduledEvent, Snowflake, Sticker, StickerPack, ThreadMember, User,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -72,6 +72,10 @@ pub enum Loaded {
 	GuildInvites {
 		guild_id: Snowflake,
 		raw: Value,
+	},
+	MemberVerification {
+		guild_id: Snowflake,
+		form: MemberVerification,
 	},
 	AuditLog {
 		guild_id: Snowflake,
@@ -306,6 +310,7 @@ pub(crate) struct Lazy {
 	pub(crate) invites_created: HashMap<Snowflake, InviteInfo>,
 	pub(crate) invite_previews: HashMap<String, InvitePreview>,
 	pub(crate) guild_invites: HashMap<Snowflake, Vec<InviteInfo>>,
+	pub(crate) member_verifications: HashMap<Snowflake, MemberVerification>,
 	pub(crate) audit_logs: HashMap<Snowflake, AuditLog>,
 	pub(crate) bans: HashMap<Snowflake, Vec<BanEntry>>,
 	pub(crate) automod_rules: HashMap<Snowflake, Vec<AutoModRule>>,
@@ -691,6 +696,10 @@ impl State {
 					.insert(*guild_id, invites.into_iter().map(invite_info).collect());
 				changes.loaded.insert(*guild_id);
 			}
+			Loaded::MemberVerification { guild_id, form } => {
+				self.lazy.member_verifications.insert(*guild_id, form.clone());
+				changes.loaded.insert(*guild_id);
+			}
 			Loaded::AuditLog {
 				guild_id,
 				raw,
@@ -1028,6 +1037,23 @@ impl State {
 
 	pub fn invite_preview(&self, code: &str) -> Option<&InvitePreview> {
 		self.lazy.invite_previews.get(code)
+	}
+
+	pub fn member_verification(&self, guild_id: Snowflake) -> Option<&MemberVerification> {
+		self.lazy.member_verifications.get(&guild_id)
+	}
+
+	pub fn me_pending(&self, guild_id: Snowflake) -> bool {
+		let Some(me) = self.current_user_id() else {
+			return false;
+		};
+		self.guild(guild_id)
+			.and_then(|guild| guild.members.get(&me))
+			.is_some_and(|member| member.pending == Some(true))
+	}
+
+	pub fn join_request_status(&self, guild_id: Snowflake) -> Option<&JoinRequestStatus> {
+		self.guild(guild_id)?.join_request.as_ref()
 	}
 
 	pub fn guild_invites(&self, guild_id: Snowflake) -> &[InviteInfo] {

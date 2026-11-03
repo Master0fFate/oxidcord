@@ -3,8 +3,8 @@ use std::collections::{HashMap, HashSet};
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use protocol::{
-	Channel, ChannelType, DefaultMessageNotifications, Emoji, Guild, Member, Role, ScheduledEvent, Snowflake,
-	StageInstance, VoiceState,
+	Channel, ChannelType, DefaultMessageNotifications, Emoji, Guild, JoinRequestStatus, Member, Role,
+	ScheduledEvent, Snowflake, StageInstance, VoiceState,
 };
 
 use crate::member_list::MemberList;
@@ -25,6 +25,7 @@ pub struct GuildState {
 	pub joined_at: Option<DateTime<Utc>>,
 	pub large: bool,
 	pub unavailable: bool,
+	pub join_request: Option<JoinRequestStatus>,
 	pub default_notifications: Option<DefaultMessageNotifications>,
 	pub channels: IndexMap<Snowflake, Channel>,
 	pub threads: IndexMap<Snowflake, Channel>,

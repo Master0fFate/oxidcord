@@ -13,6 +13,7 @@ mod lightbox;
 mod links;
 mod login;
 mod member_list;
+mod membership_bar;
 mod message;
 mod moderation;
 mod pickers;
@@ -61,6 +62,7 @@ use self::friends::{FriendsEvent, HomePage, HomePages};
 use self::history::{History, Place};
 use self::lightbox::Lightbox;
 use self::member_list::{MemberList, MemberListEvent};
+use self::membership_bar::Membership;
 use self::message::{Gallery, Plain, Prefs, VideoFullscreenTarget, preview};
 use self::pickers::PickerTab;
 use self::plugins::{DebugPanel, PluginUi, PluginUiEvent, RightPanel as PluginRightPanel, SidebarPanel};
@@ -149,6 +151,7 @@ pub struct Shell {
 	home: bool,
 	initial_selection_sent: bool,
 	request: Option<RequestRow>,
+	membership: Option<Membership>,
 	last_channel: HashMap<Snowflake, Snowflake>,
 	last_dm: Option<Snowflake>,
 	recent_targets: Vec<SwitcherTarget>,
@@ -592,6 +595,7 @@ impl Shell {
 			home: false,
 			initial_selection_sent: false,
 			request: None,
+			membership: None,
 			last_channel: HashMap::new(),
 			last_dm: None,
 			recent_targets: Vec::new(),
@@ -873,6 +877,7 @@ impl Shell {
 		});
 		self.sync_notifications(cx);
 		self.sync_request(cx);
+		self.sync_membership(cx);
 		self.community
 			.update(cx, |community, cx| community.show_main(guild, channel, cx));
 		self.sync_pins_unread(cx);
@@ -912,6 +917,21 @@ impl Shell {
 			.and_then(|channel| self.data.read(cx).state().message_request(channel));
 		if request != self.request {
 			self.request = request;
+			cx.notify();
+		}
+	}
+
+	fn sync_membership(&mut self, cx: &mut Context<Self>) {
+		let membership = self.guild.and_then(|guild_id| {
+			let data = self.data.read(cx);
+			let state = data.state();
+			state.me_pending(guild_id).then(|| Membership {
+				guild_id,
+				status: state.join_request_status(guild_id).cloned(),
+			})
+		});
+		if membership != self.membership {
+			self.membership = membership;
 			cx.notify();
 		}
 	}
@@ -1034,6 +1054,7 @@ impl Shell {
 		{
 			self.composer
 				.update(cx, |composer, cx| composer.on_members(window, cx));
+			self.sync_membership(cx);
 		}
 		if changes.autocomplete {
 			self.composer
@@ -1767,6 +1788,10 @@ impl Render for Shell {
 			.request
 			.as_ref()
 			.map(|request| request_bar::request_bar(&self.data, request, &theme, cx));
+		let membership = self
+			.membership
+			.as_ref()
+			.map(|membership| membership_bar::membership_bar(membership, &theme, cx));
 		let forum = self.community.read(cx).forum_view(cx);
 		let thread_panel = self.community.read(cx).thread_panel(cx);
 		let thread_full = thread_panel
@@ -1922,6 +1947,7 @@ impl Render for Shell {
 														composer::accept_files(column, self.composer.clone())
 															.child(self.timeline.clone())
 															.children(request)
+															.children(membership)
 															.child(self.composer.clone())
 															.children(status_bar)
 													}

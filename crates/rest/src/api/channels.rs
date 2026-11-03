@@ -5,7 +5,7 @@ use protocol::rest::{
 	CreateMessage, EditMessage, MessagesQuery,
 };
 use protocol::{
-	BURST_REACTION, Channel, ChannelType, CommandIndex, LenientVec, Message, PinnedPage, Snowflake,
+	BURST_REACTION, Channel, ChannelType, CommandIndex, InviteAccepted, LenientVec, Message, PinnedPage, Snowflake,
 	ThreadMember, User,
 };
 use serde::Deserialize;
@@ -470,7 +470,7 @@ impl RestClient {
 		self.send(request).await
 	}
 
-	pub async fn accept_invite(&self, code: &str) -> Result<Value> {
+	pub async fn accept_invite(&self, code: &str) -> Result<InviteAccepted> {
 		let request = Request::post(format!("/invites/{}", encode_component(code))).json(&json!({}));
 		self.send(request).await
 	}

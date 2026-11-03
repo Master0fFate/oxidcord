@@ -10,6 +10,7 @@ pub mod menus;
 pub mod modal;
 pub mod notify;
 pub mod raw;
+pub mod screening;
 
 use std::cell::Cell;
 use std::rc::Rc;

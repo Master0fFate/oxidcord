@@ -1,4 +1,4 @@
-use protocol::{Channel, Emoji, Guild, LenientVec, Member, Role, Snowflake};
+use protocol::{Channel, Emoji, Guild, LenientVec, Member, MemberVerification, Role, Snowflake};
 use serde_json::json;
 
 use crate::client::RestClient;
@@ -50,5 +50,22 @@ impl RestClient {
 
 	pub async fn guild_preview(&self, id: Snowflake) -> Result<Guild> {
 		self.send(Request::get(format!("/guilds/{id}/preview"))).await
+	}
+
+	pub async fn member_verification(
+		&self,
+		guild_id: Snowflake,
+		invite_code: Option<&str>,
+	) -> Result<MemberVerification> {
+		let mut query = vec![("with_guild", "false")];
+		query.extend(invite_code.map(|code| ("invite_code", code)));
+		self.send(Request::get(format!("/guilds/{guild_id}/member-verification")).query(&query))
+			.await
+	}
+
+	pub async fn submit_join_request(&self, guild_id: Snowflake, form: &MemberVerification) -> Result<()> {
+		let body = json!({ "version": form.version, "form_fields": form.form_fields });
+		self.send_empty(Request::put(format!("/guilds/{guild_id}/requests/@me")).json(&body))
+			.await
 	}
 }

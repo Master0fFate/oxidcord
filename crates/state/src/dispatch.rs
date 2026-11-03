@@ -3,9 +3,10 @@ use std::time::{Duration, Instant};
 
 use protocol::{
 	Channel, ChannelLastMessage, ChannelPinsAck, ChannelPinsUpdate, ChannelRecipientChange, DispatchEvent,
-	GuildMemberListUpdate, GuildMembersChunk, GuildRoleChange, Member, MemberListGroup, Message, MessageAck,
-	MessagePollVote, MessageType, MessageUpdate, PassiveUpdate, Presence, RelationshipKind, Snowflake,
-	ThreadDelete, ThreadListSync, TypingStart, UnavailableGuild, UserGuildSettings, VoiceState,
+	GuildMemberListUpdate, GuildMembersChunk, GuildRoleChange, JoinRequestStatus, Member, MemberListGroup,
+	Message, MessageAck, MessagePollVote, MessageType, MessageUpdate, PassiveUpdate, Presence,
+	RelationshipKind, Snowflake, ThreadDelete, ThreadListSync, TypingStart, UnavailableGuild,
+	UserGuildSettings, VoiceState,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -136,6 +137,12 @@ impl State {
 			DispatchEvent::GuildDelete(guild) => self.guild_delete(guild),
 			DispatchEvent::GuildMemberAdd(member) | DispatchEvent::GuildMemberUpdate(member) => {
 				self.upsert_guild_member(member)
+			}
+			DispatchEvent::GuildJoinRequestCreate(change) | DispatchEvent::GuildJoinRequestUpdate(change) => {
+				self.set_join_request(change.guild_id, change.user_id(), change.current_status())
+			}
+			DispatchEvent::GuildJoinRequestDelete(delete) => {
+				self.set_join_request(delete.guild_id, delete.user_id, None)
 			}
 			DispatchEvent::GuildMemberRemove(remove) => {
 				let mut changes = Changes::default();
@@ -642,6 +649,7 @@ impl State {
 		let Some(state) = self.guilds.shift_remove(&guild.id) else {
 			return changes;
 		};
+		self.lazy.member_verifications.remove(&guild.id);
 		if self
 			.selected
 			.is_some_and(|selected| selected.guild_id == Some(guild.id))
@@ -657,6 +665,21 @@ impl State {
 		}
 		changes.messages.mark_all();
 		changes.read_state = true;
+		changes
+	}
+
+	fn set_join_request(
+		&mut self,
+		guild_id: Snowflake,
+		user_id: Option<Snowflake>,
+		status: Option<JoinRequestStatus>,
+	) -> Changes {
+		let mut changes = Changes::default();
+		let mine = user_id.is_none_or(|id| Some(id) == self.current_user_id());
+		if mine && let Some(guild) = self.guilds.get_mut(&guild_id) {
+			guild.join_request = status;
+			changes.members.insert(guild_id);
+		}
 		changes
 	}
 

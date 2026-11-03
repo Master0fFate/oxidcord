@@ -24,6 +24,7 @@ use crate::settings::{
 use crate::snowflake::Snowflake;
 use crate::token::Token;
 use crate::user::User;
+use crate::verification::{JoinRequestChange, JoinRequestDelete};
 use crate::voice::{StageInstance, VoiceState};
 
 int_enum! {
@@ -787,6 +788,9 @@ pub enum DispatchEvent {
 	ScheduledEventDelete(Box<ScheduledEvent>),
 	ScheduledEventUserAdd(ScheduledEventUser),
 	ScheduledEventUserRemove(ScheduledEventUser),
+	GuildJoinRequestCreate(Box<JoinRequestChange>),
+	GuildJoinRequestUpdate(Box<JoinRequestChange>),
+	GuildJoinRequestDelete(JoinRequestDelete),
 	PresenceUpdate(Box<Presence>),
 	TypingStart(Box<TypingStart>),
 	UserUpdate(Box<User>),
@@ -879,6 +883,9 @@ impl DispatchEvent {
 			"GUILD_SCHEDULED_EVENT_DELETE" => Self::ScheduledEventDelete(decode(name, data)?),
 			"GUILD_SCHEDULED_EVENT_USER_ADD" => Self::ScheduledEventUserAdd(decode(name, data)?),
 			"GUILD_SCHEDULED_EVENT_USER_REMOVE" => Self::ScheduledEventUserRemove(decode(name, data)?),
+			"GUILD_JOIN_REQUEST_CREATE" => Self::GuildJoinRequestCreate(decode(name, data)?),
+			"GUILD_JOIN_REQUEST_UPDATE" => Self::GuildJoinRequestUpdate(decode(name, data)?),
+			"GUILD_JOIN_REQUEST_DELETE" => Self::GuildJoinRequestDelete(decode(name, data)?),
 			"PRESENCE_UPDATE" => Self::PresenceUpdate(decode(name, data)?),
 			"TYPING_START" => Self::TypingStart(decode(name, data)?),
 			"USER_UPDATE" => Self::UserUpdate(decode(name, data)?),

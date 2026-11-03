@@ -623,6 +623,9 @@ add-server-find = Find Server
 add-server-join-confirm = Join Server
 add-server-create-confirm = Create Server
 add-server-default-name = { $name }'s server
+screening-title = Membership Screening
+screening-agree = I agree to the rules
+screening-submit = Submit
 
 leave-server-title = Leave { $name }?
 leave-server-body = You will not be able to rejoin this server unless you are invited again.

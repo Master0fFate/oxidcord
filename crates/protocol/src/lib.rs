@@ -20,6 +20,7 @@ mod settings_proto;
 mod snowflake;
 mod token;
 mod user;
+mod verification;
 mod voice;
 
 pub use automod::*;
@@ -44,4 +45,5 @@ pub use settings_proto::*;
 pub use snowflake::*;
 pub use token::*;
 pub use user::*;
+pub use verification::*;
 pub use voice::*;
