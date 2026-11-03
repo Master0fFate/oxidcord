@@ -42,6 +42,8 @@ struct ChannelItem {
 	icon: IconKind,
 	voice_channel: bool,
 	can_chat: bool,
+	can_invite: bool,
+	can_manage: bool,
 	selectable: bool,
 	locked: bool,
 	unread: bool,
@@ -56,6 +58,7 @@ struct CategoryItem {
 	id: Option<Snowflake>,
 	name: SharedString,
 	collapsed: bool,
+	can_create: bool,
 	channels: Vec<ChannelItem>,
 }
 
@@ -237,28 +240,24 @@ impl ChannelSidebar {
 			.map(|channel| self.channel_row(channel, theme, cx))
 			.collect();
 		let header = category.id.map(|id| {
-			div().pt(theme.space_16).child(
-				SectionHeader::new(("category", id.get()), category.name.clone())
-					.collapsible(category.collapsed)
+			let mut section = SectionHeader::new(("category", id.get()), category.name.clone())
+				.collapsible(category.collapsed);
+			if let Some(guild) = self.guild.filter(|_| category.can_create) {
+				section = section
 					.trailing(
 						IconButton::new(("category-add", id.get()), IconKind::Plus)
 							.icon_size(rem(16.))
 							.hit_size(rem(18.))
 							.tooltip(cx.t("tooltip-create-channel"))
-							.on_click({
-								let guild = self
-									.guild
-									.filter(|_| self.access.has(protocol::Permissions::MANAGE_CHANNELS));
-								move |_, window, cx| {
-									if let Some(guild) = guild {
-										channel_modals::open_create(window, cx, guild, Some(id));
-									}
-								}
+							.on_click(move |_, window, cx| {
+								channel_modals::open_create(window, cx, guild, Some(id));
 							}),
 					)
-					.trailing_on_hover()
-					.on_click(cx.listener(move |this, _, _, cx| this.toggle(id, cx))),
-			)
+					.trailing_on_hover();
+			}
+			div()
+				.pt(theme.space_16)
+				.child(section.on_click(cx.listener(move |this, _, _, cx| this.toggle(id, cx))))
 		});
 		div()
 			.flex()
@@ -333,8 +332,10 @@ impl ChannelSidebar {
 			unread: channel.unread,
 			muted: channel.muted,
 			joined: channel.joined,
+			can_invite: channel.can_invite,
+			can_manage: channel.can_manage,
 		};
-		let menu = channel_menu(self.guild, facts, self.access)
+		let menu = channel_menu(self.guild, facts)
 			.plugin_items("channel-context-menu", MenuTarget::channel(self.guild, id), cx)
 			.build();
 		let thread = channel.thread;
@@ -483,6 +484,7 @@ fn thread_spine(last: bool, theme: &Theme) -> AnyElement {
 
 fn channel_item(row: &ChannelRow, guild: Snowflake, state: &state::State) -> ChannelItem {
 	let voice_channel = matches!(row.kind, ChannelType::GuildVoice | ChannelType::GuildStageVoice);
+	let permissions = state.my_permissions(row.id);
 	ChannelItem {
 		id: row.id,
 		kind: row.kind,
@@ -493,9 +495,9 @@ fn channel_item(row: &ChannelRow, guild: Snowflake, state: &state::State) -> Cha
 		icon: channel_icon(row.kind),
 		voice_channel,
 		can_chat: voice_channel
-			&& state
-				.my_permissions(row.id)
-				.contains(Permissions::VIEW_CHANNEL | Permissions::READ_MESSAGE_HISTORY),
+			&& permissions.contains(Permissions::VIEW_CHANNEL | Permissions::READ_MESSAGE_HISTORY),
+		can_invite: permissions.contains(Permissions::CREATE_INSTANT_INVITE),
+		can_manage: permissions.contains(Permissions::MANAGE_CHANNELS),
 		selectable: selectable(row.kind, row.locked),
 		locked: row.locked,
 		unread: row.unread,
@@ -532,6 +534,11 @@ fn category_item(node: &ChannelTreeNode, guild: Snowflake, state: &state::State)
 			.map(|category| category.name.clone().into())
 			.unwrap_or_default(),
 		collapsed: node.collapsed,
+		can_create: node.category.as_ref().is_some_and(|category| {
+			state
+				.my_permissions(category.id)
+				.contains(Permissions::MANAGE_CHANNELS)
+		}),
 		channels: with_thread_ends(
 			node.children
 				.iter()

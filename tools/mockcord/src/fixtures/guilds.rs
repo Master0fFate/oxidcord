@@ -170,13 +170,21 @@ fn guild_channel(
 	}
 }
 
-fn muted_overwrite(muted_role: u64) -> PermissionOverwrite {
+fn role_overwrite(role: u64, allow: Permissions, deny: Permissions) -> PermissionOverwrite {
 	PermissionOverwrite {
-		id: Snowflake(muted_role),
+		id: Snowflake(role),
 		kind: PermissionOverwriteKind::Role,
-		allow: Permissions::empty(),
-		deny: Permissions::SEND_MESSAGES | Permissions::ADD_REACTIONS | Permissions::SEND_MESSAGES_IN_THREADS,
+		allow,
+		deny,
 	}
+}
+
+fn muted_overwrite(muted_role: u64) -> PermissionOverwrite {
+	role_overwrite(
+		muted_role,
+		Permissions::empty(),
+		Permissions::SEND_MESSAGES | Permissions::ADD_REACTIONS | Permissions::SEND_MESSAGES_IN_THREADS,
+	)
 }
 
 fn text_channel_name(index: usize) -> String {
@@ -383,7 +391,10 @@ fn build_channels(builder: &mut Builder, guild_id: u64, roles: &RoleIds) -> Chan
 		Some(text_category),
 	);
 	announcement.topic = Some("news and releases".to_owned());
-	announcement.permission_overwrites = LenientVec::from(vec![muted_overwrite(roles.muted)]);
+	announcement.permission_overwrites = LenientVec::from(vec![
+		muted_overwrite(roles.muted),
+		role_overwrite(roles.members, Permissions::MANAGE_CHANNELS, Permissions::empty()),
+	]);
 	add_channel(builder, &mut layout.all, announcement);
 	layout.message.push(announcement_id);
 
@@ -419,7 +430,7 @@ fn build_channels(builder: &mut Builder, guild_id: u64, roles: &RoleIds) -> Chan
 		None,
 	);
 	add_channel(builder, &mut layout.all, category);
-	for (name, limit) in [("Lounge", 0), ("Gaming", 5)] {
+	for (name, limit) in [("Lounge", 0), ("Gaming", 2)] {
 		let id = builder.ids.next();
 		let mut voice = guild_channel(
 			id,
@@ -431,6 +442,13 @@ fn build_channels(builder: &mut Builder, guild_id: u64, roles: &RoleIds) -> Chan
 		);
 		voice.bitrate = Some(64_000);
 		voice.user_limit = Some(limit);
+		if limit == 0 {
+			voice.permission_overwrites = LenientVec::from(vec![role_overwrite(
+				roles.members,
+				Permissions::empty(),
+				Permissions::CONNECT,
+			)]);
+		}
 		add_channel(builder, &mut layout.all, voice);
 		layout.voice.push(id);
 	}
@@ -614,7 +632,12 @@ fn build_voice_states(
 	let mut states = Vec::new();
 	let mut cursor = 0;
 	for &channel_id in voice {
-		let occupants = 2 + builder.rng.random_range(0..2);
+		let limit = builder.channels[&channel_id].user_limit.unwrap_or(0);
+		let occupants = if limit > 0 {
+			limit as usize
+		} else {
+			2 + builder.rng.random_range(0..2)
+		};
 		for _ in 0..occupants {
 			let member = candidates[cursor % candidates.len()];
 			cursor += 1;

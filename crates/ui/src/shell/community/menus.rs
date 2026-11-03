@@ -19,6 +19,8 @@ pub struct ChannelFacts {
 	pub unread: bool,
 	pub muted: bool,
 	pub joined: bool,
+	pub can_invite: bool,
+	pub can_manage: bool,
 }
 
 fn copy(text: String, what: &'static str) {
@@ -34,29 +36,16 @@ fn is_thread(kind: ChannelType) -> bool {
 	)
 }
 
-pub fn channel_menu(
-	guild: Option<Snowflake>,
-	facts: ChannelFacts,
-	access: GuildAccess,
-) -> ContextMenuBuilder {
-	ContextMenuBuilder::new().lazy(move |cx| channel_menu_now(guild, &facts, &access, cx))
+pub fn channel_menu(guild: Option<Snowflake>, facts: ChannelFacts) -> ContextMenuBuilder {
+	ContextMenuBuilder::new().lazy(move |cx| channel_menu_now(guild, &facts, cx))
 }
 
-fn channel_menu_now(
-	guild: Option<Snowflake>,
-	facts: &ChannelFacts,
-	access: &GuildAccess,
-	cx: &App,
-) -> ContextMenuBuilder {
+fn channel_menu_now(guild: Option<Snowflake>, facts: &ChannelFacts, cx: &App) -> ContextMenuBuilder {
 	let id = facts.id;
 	let scope = Scope::Channel { guild, channel: id };
 	let mut menu = notify::mark_read_item(ContextMenuBuilder::new(), scope, facts.unread, cx).separator();
 	let thread = is_thread(facts.kind);
-	if guild.is_some()
-		&& !thread
-		&& facts.kind != ChannelType::GuildCategory
-		&& access.has(Permissions::CREATE_INSTANT_INVITE)
-	{
+	if guild.is_some() && !thread && facts.kind != ChannelType::GuildCategory && facts.can_invite {
 		menu = menu.item(
 			cx.t("menu-invite-channel"),
 			Some(IconKind::Members),
@@ -83,7 +72,7 @@ fn channel_menu_now(
 	}
 	if let Some(guild) = guild
 		&& !thread
-		&& access.has(Permissions::MANAGE_CHANNELS)
+		&& facts.can_manage
 	{
 		let name = facts.name.clone();
 		menu = menu

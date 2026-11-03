@@ -69,6 +69,8 @@ pub const MODERATION_PERMISSIONS: Permissions = Permissions::MANAGE_NICKNAMES
 pub const SETTINGS_PERMISSIONS: Permissions = Permissions::MANAGE_GUILD
 	.union(Permissions::MANAGE_ROLES)
 	.union(Permissions::MANAGE_GUILD_EXPRESSIONS)
+	.union(Permissions::CREATE_GUILD_EXPRESSIONS)
+	.union(Permissions::MANAGE_NICKNAMES)
 	.union(Permissions::VIEW_AUDIT_LOG)
 	.union(Permissions::BAN_MEMBERS)
 	.union(Permissions::KICK_MEMBERS)
