@@ -344,6 +344,11 @@ impl Composer {
 		});
 	}
 
+	pub fn prefill_command(&mut self, name: &str, window: &mut Window, cx: &mut Context<Self>) {
+		let existing = self.input.read(cx).value().to_string();
+		self.set_text(format!("/{name} {existing}"), window, cx);
+	}
+
 	fn tokenized(&self, text: String, cx: &Context<Self>) -> InputContent {
 		let data = self.data.read(cx);
 		let snapshot = data.state();

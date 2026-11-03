@@ -706,6 +706,10 @@ impl Community {
 				cx.emit(CommunityEvent::OpenProfile { user: *user, at: *at })
 			}
 			TimelineEvent::Reply(message) => self.reply_in_thread(*message, window, cx),
+			TimelineEvent::PrefillCommand(name) => {
+				let composer = self.panel.read(cx).composer().clone();
+				composer.update(cx, |composer, cx| composer.prefill_command(name, window, cx));
+			}
 			TimelineEvent::OpenEmoji { message_id, at } => {
 				if let Some(channel) = self.panel.read(cx).thread() {
 					let target = PickerTarget::Reaction {

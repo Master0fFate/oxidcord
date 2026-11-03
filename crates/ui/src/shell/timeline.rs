@@ -57,6 +57,7 @@ pub enum TimelineEvent {
 		user: Snowflake,
 		at: Point<Pixels>,
 	},
+	PrefillCommand(String),
 }
 
 pub struct Timeline {
@@ -814,14 +815,7 @@ impl Timeline {
 				let guild_id = data.state().channel_guild(channel_id);
 				data.send(Command::SelectChannel { guild_id, channel_id });
 			}
-			RowAction::PrefillCommand(name) => {
-				if let Some(channel_id) = self.channel {
-					self.data.read(cx).send(Command::SetComposerText {
-						channel_id,
-						content: format!("/{name} "),
-					});
-				}
-			}
+			RowAction::PrefillCommand(name) => cx.emit(TimelineEvent::PrefillCommand(name)),
 		}
 	}
 

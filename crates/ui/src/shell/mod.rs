@@ -1281,6 +1281,9 @@ impl Shell {
 				}
 			}
 			TimelineEvent::OpenProfile { user, at } => self.open_profile(*user, *at, Anchor::TopLeft, cx),
+			TimelineEvent::PrefillCommand(name) => self
+				.composer
+				.update(cx, |composer, cx| composer.prefill_command(name, window, cx)),
 		}
 	}
 
