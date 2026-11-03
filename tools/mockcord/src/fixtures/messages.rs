@@ -3,9 +3,10 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, Duration, Utc};
 use protocol::{
 	Attachment, AttachmentFlags, Channel, Embed, EmbedAuthor, EmbedField, EmbedFooter, EmbedKind, EmbedMedia,
-	EmbedProvider, Emoji, LenientVec, Message, MessageFlags, MessageReference, MessageReferenceKind,
-	MessageType, PartialEmoji, Poll, PollAnswer, PollAnswerCount, PollLayout, PollMedia, PollResults,
-	Reaction, ReactionCountDetails, Role, RoleSubscriptionData, Snowflake, StickerFormat, StickerItem, User,
+	EmbedProvider, Emoji, LenientVec, Message, MessageActivity, MessageApplication, MessageFlags,
+	MessageReference, MessageReferenceKind, MessageType, PartialEmoji, Poll, PollAnswer, PollAnswerCount,
+	PollLayout, PollMedia, PollResults, Reaction, ReactionCountDetails, Role, RoleSubscriptionData,
+	Snowflake, StickerFormat, StickerItem, User,
 };
 use rand::Rng;
 use rand::rngs::StdRng;
@@ -17,6 +18,7 @@ use super::previews;
 use crate::forward::snapshot_of;
 use crate::ids::snowflake_at;
 use crate::json::to_json;
+use crate::rest::{RPC_APP_ID, RPC_APP_NAME};
 
 const SPAN_MS: i64 = 30 * 24 * 3600 * 1000;
 const CLUSTER_SIZE: usize = 4;
@@ -104,6 +106,7 @@ enum Special {
 	Unknown,
 	Malformed,
 	Components,
+	GameInvite,
 	RichSource,
 	ReplyRich,
 	ReplyForward,
@@ -223,6 +226,7 @@ fn special_list(spec: &ChannelSpec) -> Vec<Special> {
 		Timestamps,
 		Webhook,
 		SystemAuthor,
+		GameInvite,
 	];
 	if spec.guild_id.is_some() && spec.variant == 0 {
 		list.push(AutoMod);
@@ -704,6 +708,7 @@ impl<'a> Generator<'a, '_> {
 				message.attachments = LenientVec::from(vec![self.image_attachment(message.id.0, 0)]);
 			}
 			Special::Components => self.components(message, author),
+			Special::GameInvite => Self::game_invite(message),
 			Special::RichSource => self.rich_source(message, author),
 			Special::ReplyRich => match self.last_rich {
 				Some(target) => self.reply_to(message, target),
@@ -814,6 +819,20 @@ impl<'a> Generator<'a, '_> {
 		message.application_id = Some(author.id);
 		message.attachments = LenientVec::from(images.into_iter().chain([notes]).collect::<Vec<_>>());
 		message.components = serde_json::from_value(components).unwrap_or_default();
+	}
+
+	fn game_invite(message: &mut Message) {
+		message.activity = Some(MessageActivity {
+			kind: Some(MessageActivity::JOIN),
+			party_id: Some("mock-party".to_owned()),
+			session_id: Some("mock-session".to_owned()),
+		});
+		message.application_id = Some(Snowflake(RPC_APP_ID));
+		message.application = Some(MessageApplication {
+			id: Snowflake(RPC_APP_ID),
+			name: Some(RPC_APP_NAME.to_owned()),
+			..MessageApplication::default()
+		});
 	}
 
 	fn mentions(&mut self, message: &mut Message, author: &User) {

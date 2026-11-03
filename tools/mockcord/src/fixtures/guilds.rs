@@ -2,9 +2,9 @@ use std::collections::{BTreeMap, HashMap};
 
 use chrono::{DateTime, Duration, Utc};
 use protocol::{
-	Activity, ActivityAssets, ActivityKind, ActivityTimestamps, Channel, ChannelFlags, ChannelType,
-	ClientStatus, DefaultMessageNotifications, DefaultReaction, Emoji, ExplicitContentFilter, ForumLayout,
-	ForumSortOrder, ForumTag, GuildProperties, LenientVec, Member, NsfwLevel, PartialEmoji,
+	Activity, ActivityAssets, ActivityKind, ActivityParty, ActivityTimestamps, Channel, ChannelFlags,
+	ChannelType, ClientStatus, DefaultMessageNotifications, DefaultReaction, Emoji, ExplicitContentFilter,
+	ForumLayout, ForumSortOrder, ForumTag, GuildProperties, LenientVec, Member, NsfwLevel, PartialEmoji,
 	PermissionOverwrite, PermissionOverwriteKind, Permissions, PremiumTier, Presence, Role, RoleColors,
 	ScheduledEvent, ScheduledEventKind, ScheduledEventMetadata, ScheduledEventStatus, Snowflake,
 	StageInstance, StagePrivacy, StatusKind, SystemChannelFlags, ThreadMetadata, User, VerificationLevel,
@@ -284,8 +284,14 @@ fn now_ms() -> i64 {
 }
 
 fn playing(rng: &mut StdRng) -> Activity {
+	let id = corpus::hex_hash(rng);
 	Activity {
-		id: Some(corpus::hex_hash(rng)),
+		session_id: Some(format!("{id}-session")),
+		party: Some(ActivityParty {
+			id: Some(format!("{id}-party")),
+			size: vec![2, 4],
+		}),
+		id: Some(id),
 		name: (*corpus::pick(rng, corpus::GAMES)).to_owned(),
 		kind: ActivityKind::Playing,
 		created_at: Some(now_ms()),
@@ -295,6 +301,7 @@ fn playing(rng: &mut StdRng) -> Activity {
 		}),
 		application_id: Some(Snowflake(rng.random_range(10u64.pow(17)..10u64.pow(18)))),
 		details: Some("In a session".to_owned()),
+		flags: Some(Activity::FLAG_INSTANCE | Activity::FLAG_JOIN),
 		..Activity::default()
 	}
 }

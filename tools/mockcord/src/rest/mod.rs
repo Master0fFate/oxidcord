@@ -89,6 +89,10 @@ pub fn router(shared: Arc<Shared>) -> Router {
 		.route("/users/@me/channels", post(users::create_dm))
 		.route("/users/{id}", get(users::user))
 		.route("/users/{id}/profile", get(users::profile))
+		.route(
+			"/users/{id}/sessions/{session_id}/activities/{application_id}/{kind}",
+			get(rpc::activity_secret),
+		)
 		.route("/read-states/ack-bulk", post(admin::ack_bulk))
 		.route(
 			"/invites/{code}",

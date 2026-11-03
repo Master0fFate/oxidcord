@@ -57,6 +57,15 @@ pub async fn external_assets(Path(id): Path<u64>, Json(body): Json<Value>) -> Ap
 	Ok(Json(Value::Array(proxied)))
 }
 
+pub async fn activity_secret(Path((_, session_id, _, kind)): Path<(u64, String, u64, u8)>) -> ApiResult {
+	match kind {
+		1 | 2 => Ok(Json(
+			json!({ "secret": format!("mock-secret-{kind}-{session_id}") }),
+		)),
+		_ => Err(ApiError::not_found()),
+	}
+}
+
 pub async fn connections() -> Json<Value> {
 	Json(json!([]))
 }
