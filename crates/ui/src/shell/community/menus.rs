@@ -1,8 +1,11 @@
+use std::sync::Arc;
+
 use gpui::{App, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::button::ButtonVariant;
-use protocol::{ChannelType, Permissions, Snowflake};
+use protocol::{ApplicationCommand, ApplicationCommandType, ChannelType, Permissions, Snowflake};
 use session::Command;
+use state::AppCommand;
 
 use super::access::GuildAccess;
 use super::event_create;
@@ -37,6 +40,50 @@ fn is_thread(kind: ChannelType) -> bool {
 		kind,
 		ChannelType::PublicThread | ChannelType::PrivateThread | ChannelType::AnnouncementThread
 	)
+}
+
+pub fn apps_submenu<Run, Handler>(commands: Vec<AppCommand>, cx: &App, run: Run) -> ContextMenuBuilder
+where
+	Run: Fn(Arc<ApplicationCommand>) -> Handler,
+	Handler: Fn(&mut Window, &mut App) + 'static,
+{
+	if commands.is_empty() {
+		return ContextMenuBuilder::new();
+	}
+	let several = commands
+		.windows(2)
+		.any(|pair| pair[0].application_name() != pair[1].application_name());
+	let entries = commands
+		.into_iter()
+		.fold(ContextMenuBuilder::new(), |menu, found| {
+			let label = if several {
+				format!("{} · {}", found.command.name, found.application_name())
+			} else {
+				found.command.name.clone()
+			};
+			menu.item(label, None, run(found.command))
+		});
+	ContextMenuBuilder::new().submenu(cx.t("menu-apps"), Some(IconKind::Apps), entries)
+}
+
+pub fn user_apps(guild: Option<Snowflake>, channel: Snowflake, user: Snowflake) -> ContextMenuBuilder {
+	ContextMenuBuilder::new().lazy(move |cx| {
+		let commands =
+			data_handle(cx)
+				.read(cx)
+				.state()
+				.app_commands(ApplicationCommandType::User, guild, channel);
+		apps_submenu(commands, cx, |command| {
+			move |_, cx| {
+				data_handle(cx).read(cx).send(Command::RunContextCommand {
+					guild_id: guild,
+					channel_id: channel,
+					target_id: user,
+					command: Arc::clone(&command),
+				})
+			}
+		})
+	})
 }
 
 pub fn channel_menu(guild: Option<Snowflake>, facts: ChannelFacts) -> ContextMenuBuilder {

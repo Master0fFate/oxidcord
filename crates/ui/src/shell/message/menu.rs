@@ -8,7 +8,6 @@ use gpui::{
 };
 use gpui_base::TextSelection;
 use protocol::{ApplicationCommandType, Attachment, Message, MessageFlags, MessageType, Snowflake};
-use state::AppCommand;
 
 use super::body::{Plain, snippet};
 use super::{Dispatch, ImageTarget, MessageAccess, Prefs, RowAction, RowEnv, media};
@@ -17,6 +16,7 @@ use crate::i18n::Translate as _;
 use crate::icons::IconKind;
 use crate::images::Images;
 use crate::lookup::Lookup;
+use crate::shell::community::menus::apps_submenu;
 use crate::shell::community::{CommunityHandle, save_file};
 use crate::shell::plugins::{MenuTarget, PluginMenu as _, client_options};
 use crate::theme::{Theme, rem};
@@ -499,34 +499,15 @@ impl MenuSource {
 
 	fn apps(&self, cx: &App) -> ContextMenuBuilder {
 		let data = super::super::community::data_handle(cx);
-		let commands: Vec<AppCommand> = data.read(cx).state().app_commands(
+		let commands = data.read(cx).state().app_commands(
 			ApplicationCommandType::Message,
 			self.guild,
 			self.message.channel_id,
 		);
-		if commands.is_empty() {
-			return ContextMenuBuilder::new();
-		}
-		let several = commands
-			.windows(2)
-			.any(|pair| pair[0].application_name != pair[1].application_name);
 		let id = self.message.id;
-		let entries = commands
-			.into_iter()
-			.fold(ContextMenuBuilder::new(), |menu, found| {
-				let label = if several {
-					format!("{} · {}", found.command.name, found.application_name)
-				} else {
-					found.command.name.clone()
-				};
-				let command = Box::new(found.command);
-				menu.item(
-					label,
-					None,
-					self.action(RowAction::RunCommand { message: id, command }),
-				)
-			});
-		ContextMenuBuilder::new().submenu(cx.t("menu-apps"), Some(IconKind::Apps), entries)
+		apps_submenu(commands, cx, |command| {
+			self.action(RowAction::RunCommand { message: id, command })
+		})
 	}
 
 	fn image_search(&self, cx: &App) -> ContextMenuBuilder {

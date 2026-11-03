@@ -107,13 +107,13 @@ fn choice_suggestion(name: String, value: Value) -> Suggestion {
 }
 
 fn command_suggestion(app: &AppCommand, draft: SlashDraft, label: String) -> Suggestion {
-	let detail = [Some(app.application_name.as_str()), draft.description()]
+	let detail = [Some(app.application_name()), draft.description()]
 		.into_iter()
 		.flatten()
 		.filter(|part| !part.is_empty())
 		.collect::<Vec<_>>()
 		.join(" · ");
-	let visual = match &app.application_icon {
+	let visual = match app.application_icon() {
 		Some(icon) => Visual::Image(media::cdn::application_icon_url(
 			app.command.application_id.get(),
 			icon,

@@ -770,10 +770,10 @@ impl Timeline {
 			RowAction::UseComponent(used) => self.data.read(cx).send(Command::UseComponent(used)),
 			RowAction::RunCommand { message, command } => {
 				if let Some(channel_id) = self.channel {
-					self.data.read(cx).send(Command::RunMessageCommand {
+					self.data.read(cx).send(Command::RunContextCommand {
 						guild_id: self.guild,
 						channel_id,
-						message_id: message,
+						target_id: message,
 						command,
 					});
 				}

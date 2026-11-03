@@ -279,7 +279,7 @@ impl Core {
 			| Command::UseComponent(_)
 			| Command::SubmitModal(_)
 			| Command::DismissEphemeral { .. }
-			| Command::RunMessageCommand { .. }
+			| Command::RunContextCommand { .. }
 			| Command::RunChatCommand { .. }
 			| Command::CompleteCommandOption { .. }
 			| Command::SaveMessage { .. }
@@ -694,12 +694,12 @@ impl Core {
 				});
 				self.persist.submit(Job::DeleteMessages(vec![message_id]));
 			}
-			Command::RunMessageCommand {
+			Command::RunContextCommand {
 				guild_id,
 				channel_id,
-				message_id,
+				target_id,
 				command,
-			} => self.run_message_command(guild_id, channel_id, message_id, *command),
+			} => self.run_context_command(guild_id, channel_id, target_id, &command),
 			Command::RunChatCommand {
 				guild_id,
 				channel_id,
@@ -1105,12 +1105,12 @@ impl Core {
 		body
 	}
 
-	fn run_message_command(
+	fn run_context_command(
 		&mut self,
 		guild_id: Option<Snowflake>,
 		channel_id: Snowflake,
-		message_id: Snowflake,
-		command: ApplicationCommand,
+		target_id: Snowflake,
+		command: &ApplicationCommand,
 	) {
 		let Some(session_id) = self.live_session_id() else {
 			return;
@@ -1124,8 +1124,8 @@ impl Core {
 			channel_id,
 			session_id,
 			nonce,
-			command: &command,
-			target_id: Some(message_id),
+			command,
+			target_id: Some(target_id),
 			options: &[],
 		});
 		self.spawn_confirmed("run app command", Some(aborted), move |rest| async move {

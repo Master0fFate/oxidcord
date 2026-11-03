@@ -20,6 +20,7 @@ use crate::i18n::Translate as _;
 use crate::icons::IconKind;
 use crate::images::Images;
 use crate::model::role_color;
+use crate::shell::community::menus::user_apps;
 use crate::theme::{Theme, with_alpha};
 
 pub type CloseFn = Rc<dyn Fn(&mut Window, &mut App)>;
@@ -141,7 +142,13 @@ pub fn action_row(
 			);
 		}
 		if relation != Relation::Blocked {
-			let menu = manage_items(ContextMenuBuilder::new(), id, &profile.name, &profile.facts, cx).build();
+			let menu = manage_items(ContextMenuBuilder::new(), id, &profile.name, &profile.facts, cx);
+			let selected = data.read(cx).state().selected();
+			let menu = match selected {
+				Some(selected) => menu.extend(user_apps(selected.guild_id, selected.channel_id, id)),
+				None => menu,
+			}
+			.build();
 			row = row.child(
 				Button::new("profile-more")
 					.small()

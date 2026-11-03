@@ -12,6 +12,7 @@ use state::{DmSectionView, PluginBadge, UserOverride};
 
 use super::account::{RelationFacts, manage_items, primary_items, relation_facts};
 use super::community::developer_mode;
+use super::community::menus::user_apps;
 use super::community::notify::{Scope, mark_read_item, mute_items};
 use super::plugins::{self, MenuTarget, PluginMenu as _};
 use crate::components::{Avatar, ContextMenuBuilder, IconButton, MentionBadge, SectionHeader};
@@ -412,7 +413,7 @@ impl DmSidebar {
 		let menu = match dm.user {
 			Some(user) => {
 				let menu = primary_items(menu, user, dm.facts.relation, cx);
-				manage_items(menu, user, &dm.name, &dm.facts, cx)
+				manage_items(menu, user, &dm.name, &dm.facts, cx).extend(user_apps(None, id, user))
 			}
 			None => menu,
 		};

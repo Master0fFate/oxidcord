@@ -1,5 +1,6 @@
 use std::ops::Range;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use activity::SecretKind;
 use chrono::{DateTime, Utc};
@@ -987,11 +988,11 @@ pub enum Command {
 		channel_id: Snowflake,
 		message_id: Snowflake,
 	},
-	RunMessageCommand {
+	RunContextCommand {
 		guild_id: Option<Snowflake>,
 		channel_id: Snowflake,
-		message_id: Snowflake,
-		command: Box<ApplicationCommand>,
+		target_id: Snowflake,
+		command: Arc<ApplicationCommand>,
 	},
 	RunChatCommand {
 		guild_id: Option<Snowflake>,

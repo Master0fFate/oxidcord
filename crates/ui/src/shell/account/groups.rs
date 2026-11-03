@@ -17,6 +17,7 @@ use crate::icons::{Icon, IconKind};
 use crate::lookup::avatar_for;
 use crate::model::{Status, status_of};
 use crate::shell::community::files::{Fit, IMAGE_TYPES, pick_image};
+use crate::shell::community::menus::user_apps;
 use crate::theme::{Theme, rem};
 
 const AVATAR_PIXELS: u32 = 64;
@@ -365,6 +366,11 @@ impl GroupMembers {
 					tracing::warn!(%error, "could not copy the user id");
 				}
 			});
+		if Some(id) != me
+			&& let Some(channel_id) = channel
+		{
+			menu = menu.extend(user_apps(None, channel_id, id));
+		}
 		if self.can_remove
 			&& Some(id) != me
 			&& let Some(channel_id) = channel

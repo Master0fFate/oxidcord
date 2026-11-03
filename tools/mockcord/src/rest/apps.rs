@@ -24,6 +24,7 @@ const MODAL_SUBMIT: u64 = 5;
 const TIMEOUT_REASON: u64 = 2;
 const DEFERRED_DELAY: Duration = Duration::from_secs(2);
 const CHAT_INPUT_COMMAND: u64 = 1;
+const USER_COMMAND: u64 = 2;
 const MESSAGE_COMMAND: u64 = 3;
 const SUB_COMMAND_OPTION: u64 = 1;
 const STRING_OPTION: u64 = 3;
@@ -46,10 +47,10 @@ fn app_bot(shared: &Shared) -> Option<User> {
 		.cloned()
 }
 
-fn command(id: u64, application_id: u64, name: &str, contexts: &[u8]) -> Value {
+fn command(id: u64, kind: u64, application_id: u64, name: &str, contexts: &[u8]) -> Value {
 	json!({
 		"id": id.to_string(),
-		"type": MESSAGE_COMMAND,
+		"type": kind,
 		"application_id": application_id.to_string(),
 		"version": id.to_string(),
 		"name": name,
@@ -116,8 +117,9 @@ fn bot_index(shared: &Shared) -> Value {
 	};
 	let id = bot.id.get();
 	let mut commands = vec![
-		command(id + 1, id, "Quote Message", &[0]),
-		command(id + 2, id, "Translate to English", &[0, 1, 2]),
+		command(id + 1, MESSAGE_COMMAND, id, "Quote Message", &[0]),
+		command(id + 2, MESSAGE_COMMAND, id, "Translate to English", &[0, 1, 2]),
+		command(id + 6, USER_COMMAND, id, "Wave", &[0, 1, 2]),
 	];
 	commands.extend(chat_commands(id));
 	json!({
@@ -137,7 +139,10 @@ pub async fn channel_index(State(shared): State<Arc<Shared>>, Path(_): Path<u64>
 pub async fn user_index() -> Json<Value> {
 	Json(json!({
 		"applications": [{ "id": NOTES_APP_ID.to_string(), "name": "Pocket Notes", "flags": "0" }],
-		"application_commands": [command(NOTES_APP_ID + 1, NOTES_APP_ID, "Save to Notes", &[0, 1, 2])],
+		"application_commands": [
+			command(NOTES_APP_ID + 1, MESSAGE_COMMAND, NOTES_APP_ID, "Save to Notes", &[0, 1, 2]),
+			command(NOTES_APP_ID + 2, USER_COMMAND, NOTES_APP_ID, "Note About", &[0, 1, 2]),
+		],
 	}))
 }
 
@@ -260,6 +265,18 @@ fn run_message_command(shared: &Shared, channel_id: u64, data: &Value) -> Result
 	});
 	shared
 		.post_message(channel_id, &author, draft)
+		.map(|_| Reply::Success)
+}
+
+fn run_user_command(shared: &Shared, channel_id: u64, data: &Value) -> Result<Reply, ApiError> {
+	let target = parse_id(&data["target_id"]).unwrap_or_default();
+	let reply = match data["name"].as_str().unwrap_or_default() {
+		"Wave" => format!("Waved at <@{target}>"),
+		_ => format!("Noted something about <@{target}>"),
+	};
+	let author = app_bot(shared).ok_or_else(ApiError::unknown_message)?;
+	shared
+		.post_message(channel_id, &author, Draft::text(reply))
 		.map(|_| Reply::Success)
 }
 
@@ -472,6 +489,10 @@ pub(super) fn interact(shared: &Arc<Shared>, body: &Value) -> Result<(), ApiErro
 		(Some(APPLICATION_COMMAND), Some(MESSAGE_COMMAND)) => {
 			notify(shared, body, "INTERACTION_CREATE", id.clone());
 			run_message_command(shared, channel_id, data)
+		}
+		(Some(APPLICATION_COMMAND), Some(USER_COMMAND)) => {
+			notify(shared, body, "INTERACTION_CREATE", id.clone());
+			run_user_command(shared, channel_id, data)
 		}
 		(Some(APPLICATION_COMMAND), Some(CHAT_INPUT_COMMAND)) => {
 			notify(shared, body, "INTERACTION_CREATE", id.clone());

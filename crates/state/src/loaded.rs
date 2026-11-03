@@ -5,8 +5,8 @@ use std::time::Instant;
 use chrono::{DateTime, Utc};
 use protocol::lenient::{or_default, timestamp, timestamp_or_seconds};
 use protocol::{
-	ApplicationCommand, ApplicationCommandType, AutoModRule, Channel, ChannelType, CommandChoice,
-	CommandIndex, Connection, Gif, GifFavorites, GifTrending, GuildBan, InteractionContext,
+	ApplicationCommand, ApplicationCommandType, AutoModRule, Channel, ChannelType, CommandApplication,
+	CommandChoice, CommandIndex, Connection, Gif, GifFavorites, GifTrending, GuildBan, InteractionContext,
 	JoinRequestStatus, LenientVec, Member, MemberVerification, Message, Permissions, PinnedMessage,
 	ScheduledEvent, Snowflake, SoundboardSound, Sticker, StickerPack, ThreadMember, User,
 };
@@ -322,9 +322,37 @@ pub const USER_COMMANDS: Snowflake = Snowflake(0);
 
 #[derive(Debug, Clone)]
 pub struct AppCommand {
-	pub application_name: String,
-	pub application_icon: Option<String>,
-	pub command: ApplicationCommand,
+	pub application: Option<Arc<CommandApplication>>,
+	pub command: Arc<ApplicationCommand>,
+}
+
+impl AppCommand {
+	pub fn application_name(&self) -> &str {
+		self.application
+			.as_ref()
+			.map_or("", |application| application.name.as_str())
+	}
+
+	pub fn application_icon(&self) -> Option<&str> {
+		self.application
+			.as_ref()
+			.and_then(|application| application.icon.as_deref())
+	}
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct CommandScope {
+	applications: Vec<Arc<CommandApplication>>,
+	commands: Vec<Arc<ApplicationCommand>>,
+}
+
+impl From<&CommandIndex> for CommandScope {
+	fn from(index: &CommandIndex) -> Self {
+		Self {
+			applications: index.applications.iter().cloned().map(Arc::new).collect(),
+			commands: index.application_commands.iter().cloned().map(Arc::new).collect(),
+		}
+	}
 }
 
 #[derive(Debug)]
@@ -387,7 +415,7 @@ pub(crate) struct Lazy {
 	pub(crate) voice_regions: Option<Vec<VoiceRegion>>,
 	pub(crate) reaction_users: HashMap<(Snowflake, String, bool), Vec<User>>,
 	pub(crate) expressions: Expressions,
-	pub(crate) command_indexes: HashMap<Snowflake, CommandIndex>,
+	pub(crate) command_scopes: HashMap<Snowflake, CommandScope>,
 	pub(crate) command_choices: Option<CommandChoices>,
 }
 
@@ -634,7 +662,7 @@ impl State {
 				changes.loaded.insert(INBOX_KEY);
 			}
 			Loaded::CommandIndex { scope, index } => {
-				self.lazy.command_indexes.insert(*scope, index.clone());
+				self.lazy.command_scopes.insert(*scope, CommandScope::from(index));
 				changes.loaded.insert(*scope);
 			}
 			Loaded::CommandChoices { generation, choices } => {
@@ -1163,10 +1191,10 @@ impl State {
 			.map(|channel| channel.recipient_ids[0]);
 		let mut found: Vec<AppCommand> = Vec::new();
 		for scope in scopes {
-			let Some(index) = self.lazy.command_indexes.get(&scope) else {
+			let Some(index) = self.lazy.command_scopes.get(&scope) else {
 				continue;
 			};
-			for command in index.application_commands.iter() {
+			for command in &index.commands {
 				let usable = command.kind == kind
 					&& !found.iter().any(|known| known.command.id == command.id)
 					&& guild_id.is_none_or(|_| member_allows(command, permissions));
@@ -1184,16 +1212,14 @@ impl State {
 					continue;
 				}
 				found.push(AppCommand {
-					application_name: application
-						.map(|application| application.name.clone())
-						.unwrap_or_default(),
-					application_icon: application.and_then(|application| application.icon.clone()),
-					command: command.clone(),
+					application: application.cloned(),
+					command: Arc::clone(command),
 				});
 			}
 		}
 		found.sort_by(|left, right| {
-			(&left.application_name, &left.command.name).cmp(&(&right.application_name, &right.command.name))
+			(left.application_name(), &left.command.name)
+				.cmp(&(right.application_name(), &right.command.name))
 		});
 		found
 	}

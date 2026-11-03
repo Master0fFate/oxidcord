@@ -257,7 +257,7 @@ pub enum RowAction {
 	UseComponent(session::ComponentUse),
 	RunCommand {
 		message: Snowflake,
-		command: Box<protocol::ApplicationCommand>,
+		command: Arc<protocol::ApplicationCommand>,
 	},
 	Save {
 		message: Snowflake,

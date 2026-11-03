@@ -18,6 +18,7 @@ use state::{MemberListRow, RoleIcon, State, UserOverride};
 
 use super::account::{Relation, manage_items, primary_items, relation_facts};
 use super::community::developer_mode;
+use super::community::menus::user_apps;
 use super::moderation;
 use super::plugins::{self, MenuTarget, PluginMenu as _};
 use crate::components::{Avatar, ContextMenuBuilder, IconButton, role_icon};
@@ -424,7 +425,11 @@ impl MemberList {
 			} else {
 				primary_items(menu, id, facts.relation, cx)
 			};
-			manage_items(menu.separator(), id, &member.name, &facts, cx)
+			let menu = manage_items(menu.separator(), id, &member.name, &facts, cx);
+			match self.subscribed {
+				Some(windows) => menu.extend(user_apps(self.guild, windows.channel, id)),
+				None => menu,
+			}
 		};
 		let menu = if developer {
 			menu.separator()
