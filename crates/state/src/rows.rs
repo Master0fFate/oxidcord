@@ -352,7 +352,6 @@ impl State {
 					unread: status.unread,
 					muted: status.muted,
 					mentions: status.mentions,
-					muted: status.muted,
 					last_message_id: channel.last_message_id,
 				}
 			})
