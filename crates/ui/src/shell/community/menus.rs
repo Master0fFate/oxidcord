@@ -3,7 +3,7 @@ use std::sync::Arc;
 use gpui::{App, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::button::ButtonVariant;
-use protocol::{ApplicationCommand, ApplicationCommandType, ChannelType, Permissions, Snowflake};
+use protocol::{ApplicationCommand, ApplicationCommandType, ChannelType, Permissions, PrivacyChange, Snowflake};
 use session::Command;
 use state::AppCommand;
 
@@ -188,18 +188,42 @@ fn confirm_leave(window: &mut Window, cx: &mut App, guild: Snowflake, name: Stri
 	});
 }
 
+fn privacy_submenu(guild: Snowflake, dms_open: bool, requests_open: bool, cx: &App) -> ContextMenuBuilder {
+	let toggles = ContextMenuBuilder::new()
+		.checked_item(cx.t("menu-server-dms"), dms_open, move |_, cx| {
+			data_handle(cx)
+				.read(cx)
+				.send(Command::SetPrivacy(PrivacyChange::GuildDms {
+					guild_id: guild,
+					restricted: dms_open,
+				}));
+		})
+		.checked_item(cx.t("menu-server-requests"), requests_open, move |_, cx| {
+			data_handle(cx)
+				.read(cx)
+				.send(Command::SetPrivacy(PrivacyChange::GuildRequests {
+					guild_id: guild,
+					restricted: requests_open,
+				}));
+		});
+	ContextMenuBuilder::new().submenu(cx.t("menu-privacy-settings"), Some(IconKind::Shield), toggles)
+}
+
 fn guild_tail(guild: Snowflake, cx: &App) -> ContextMenuBuilder {
-	let (name, owner) = {
+	let (name, owner, dms_open, requests_open) = {
 		let data = data_handle(cx);
 		let data = data.read(cx);
 		let state = data.state();
 		let found = state.guild(guild);
+		let privacy = state.privacy();
 		(
 			found.map(|found| found.name.clone()).unwrap_or_default(),
 			found.is_some_and(|found| found.owner_id.is_some() && found.owner_id == state.current_user_id()),
+			!privacy.restricted_guilds.contains(&guild),
+			!privacy.request_restricted_guilds.contains(&guild),
 		)
 	};
-	let mut menu = ContextMenuBuilder::new();
+	let mut menu = privacy_submenu(guild, dms_open, requests_open, cx);
 	if developer_mode(cx) {
 		menu = menu.item(cx.t("menu-copy-id"), Some(IconKind::Copy), move |_, _| {
 			copy(guild.to_string(), "server id");
@@ -212,11 +236,7 @@ fn guild_tail(guild: Snowflake, cx: &App) -> ContextMenuBuilder {
 			move |window, cx| confirm_leave(window, cx, guild, name.clone()),
 		);
 	}
-	if menu.is_empty() {
-		menu
-	} else {
-		ContextMenuBuilder::new().separator().extend(menu)
-	}
+	ContextMenuBuilder::new().separator().extend(menu)
 }
 
 pub fn guild_menu(
