@@ -366,8 +366,8 @@ pub fn decode_friend_source_flags(bytes: &[u8]) -> Option<u32> {
 		.last()
 }
 
-fn decode_redactions(bytes: &[u8]) -> MediaRedactions {
-	let mut redactions = MediaRedactions::default();
+fn merge_redactions(base: MediaRedactions, bytes: &[u8]) -> MediaRedactions {
+	let mut redactions = base;
 	for (number, wire) in Fields::new(bytes) {
 		let (REDACTION_GUILDS..=REDACTION_NON_FRIEND_DM, Wire::Varint(value)) = (number, wire) else {
 			continue;
@@ -382,16 +382,16 @@ fn decode_redactions(bytes: &[u8]) -> MediaRedactions {
 	redactions
 }
 
-pub fn decode_sensitive_media(text_and_images: &[u8]) -> SensitiveMedia {
-	let mut media = SensitiveMedia::default();
+pub fn merge_sensitive_media(base: SensitiveMedia, text_and_images: &[u8]) -> SensitiveMedia {
+	let mut media = base;
 	for (number, wire) in Fields::new(text_and_images) {
 		let Wire::Bytes(inner) = wire else {
 			continue;
 		};
 		match number {
-			TEXT_EXPLICIT_CONTENT => media.explicit = decode_redactions(inner),
-			TEXT_GORE_CONTENT => media.gore = decode_redactions(inner),
-			TEXT_SELF_HARM_CONTENT => media.self_harm = decode_redactions(inner),
+			TEXT_EXPLICIT_CONTENT => media.explicit = merge_redactions(media.explicit, inner),
+			TEXT_GORE_CONTENT => media.gore = merge_redactions(media.gore, inner),
+			TEXT_SELF_HARM_CONTENT => media.self_harm = merge_redactions(media.self_harm, inner),
 			_ => {}
 		}
 	}

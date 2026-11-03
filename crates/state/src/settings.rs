@@ -3,8 +3,8 @@ use std::collections::{HashMap, HashSet};
 use chrono::Utc;
 use protocol::{
 	AttachmentFlags, FRIEND_SOURCES_ALL, MediaRedaction, MediaScope, ProtoCustomStatus, ProtoGuildFolder,
-	ProtoGuildFolders, ProtoSettings, RelationshipKind, Snowflake, UserGuildSettings,
-	decode_friend_source_flags, decode_sensitive_media, decode_settings, decode_status, encode_settings,
+	ProtoGuildFolders, ProtoSettings, RelationshipKind, SensitiveMedia, Snowflake, UserGuildSettings,
+	decode_friend_source_flags, decode_settings, decode_status, encode_settings, merge_sensitive_media,
 	privacy_with_friend_sources, status_with_custom, status_with_show_current_game, status_with_value,
 };
 use serde::Deserialize;
@@ -180,7 +180,7 @@ impl State {
 			changes.merge(self.replace_status_settings(status_bytes.unwrap_or_default()));
 		}
 		if text_and_images_bytes.is_some() || !partial {
-			changes.merge(self.replace_sensitive_media(&text_and_images_bytes.unwrap_or_default()));
+			changes.merge(self.replace_sensitive_media(&text_and_images_bytes.unwrap_or_default(), partial));
 		}
 		if privacy_bytes.is_some() || !partial {
 			changes.merge(self.replace_privacy_settings(privacy_bytes.unwrap_or_default()));
@@ -219,8 +219,13 @@ impl State {
 		changes
 	}
 
-	fn replace_sensitive_media(&mut self, bytes: &[u8]) -> Changes {
-		let media = decode_sensitive_media(bytes);
+	fn replace_sensitive_media(&mut self, bytes: &[u8], partial: bool) -> Changes {
+		let base = if partial {
+			self.sensitive_media
+		} else {
+			SensitiveMedia::default()
+		};
+		let media = merge_sensitive_media(base, bytes);
 		let changed = media != self.sensitive_media;
 		self.sensitive_media = media;
 		Changes {
