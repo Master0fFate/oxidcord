@@ -142,6 +142,11 @@ impl Fixtures {
 			.iter()
 			.filter(|guild| guild.origin != GuildOrigin::Seeded)
 			.flat_map(|guild| guild.channel_ids.iter().chain(&guild.thread_ids).copied())
+			.chain(
+				self.guilds
+					.iter()
+					.flat_map(|guild| guild.private_thread_ids.iter().copied()),
+			)
 			.collect();
 		let unread_channels = self
 			.read_states
