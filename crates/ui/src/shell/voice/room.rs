@@ -343,11 +343,24 @@ impl VoiceRoom {
 	fn toggle_focus(&mut self, user: Snowflake, cx: &mut Context<Self>) {
 		let focus = self.focused != Some(user);
 		self.focused = focus.then_some(user);
-		self.viewer = focus.then(|| {
-			let data = self.data.clone();
-			cx.new(|cx| StreamViewer::new(user, &data, cx))
-		});
+		self.viewer = None;
 		cx.notify();
+	}
+
+	fn sync_viewer(&mut self, cx: &mut Context<Self>) {
+		let wanted = self.focused.filter(|user| video_image(cx, *user).is_some());
+		match wanted {
+			Some(user)
+				if self
+					.viewer
+					.as_ref()
+					.is_some_and(|viewer| viewer.read(cx).user() == user) => {}
+			Some(user) => {
+				let data = self.data.clone();
+				self.viewer = Some(cx.new(|cx| StreamViewer::new(user, &data, cx)));
+			}
+			None => self.viewer = None,
+		}
 	}
 
 	fn focus_controls(
@@ -1300,6 +1313,7 @@ fn snapshot_screen_on(data: &Entity<Data>, cx: &gpui::App) -> bool {
 impl Render for VoiceRoom {
 	fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		self.last_render.set(Instant::now());
+		self.sync_viewer(cx);
 		let theme = Theme::current(cx);
 		let Some(snapshot) = snapshot(self.data.read(cx), &mut self.status_cache) else {
 			return div().flex_1().into_any_element();
