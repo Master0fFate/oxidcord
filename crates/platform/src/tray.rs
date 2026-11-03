@@ -4,7 +4,7 @@ use std::sync::mpsc::{self, Receiver};
 use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 
-use crate::{PlatformError, Result};
+use crate::{PlatformError, Result, badge};
 
 static CREATED: AtomicBool = AtomicBool::new(false);
 
@@ -50,6 +50,7 @@ pub struct TrayConfig {
 
 pub struct Tray {
 	icon: TrayIcon,
+	base: (Vec<u8>, u32, u32),
 }
 
 impl Tray {
@@ -58,6 +59,7 @@ impl Tray {
 			return Err(PlatformError::AlreadyCreated("tray"));
 		}
 		let (icon_rgba, width, height) = config.icon_rgba;
+		let base = (icon_rgba.clone(), width, height);
 		let (sender, receiver) = mpsc::channel();
 
 		let menu_sender = sender.clone();
@@ -81,11 +83,23 @@ impl Tray {
 			.with_menu(Box::new(build_menu(&config.menu, &config.labels)?))
 			.with_menu_on_left_click(false)
 			.build()?;
-		Ok((Tray { icon }, receiver))
+		Ok((Tray { icon, base }, receiver))
 	}
 
 	pub fn set_tooltip(&self, tooltip: &str) -> Result<()> {
 		self.icon.set_tooltip(Some(tooltip))?;
+		Ok(())
+	}
+
+	pub fn set_mentions(&self, mentions: u32) -> Result<()> {
+		let (rgba, width, height) = &self.base;
+		let mut pixels = rgba.clone();
+		if mentions > 0 {
+			let (w, h) = (*width as f32, *height as f32);
+			badge::paint_dot(&mut pixels, (*width, *height), (w * 0.72, h * 0.72), w * 0.24);
+		}
+		self.icon
+			.set_icon(Some(Icon::from_rgba(pixels, *width, *height)?))?;
 		Ok(())
 	}
 }

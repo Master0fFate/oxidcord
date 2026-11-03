@@ -1,4 +1,5 @@
 pub mod autostart;
+pub mod badge;
 pub mod clipboard;
 pub mod dialog;
 pub mod hotkeys;

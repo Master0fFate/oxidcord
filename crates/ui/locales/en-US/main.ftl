@@ -746,6 +746,7 @@ tray-open = Open
 tray-mute = Mute
 tray-deafen = Deafen
 tray-quit = Quit
+taskbar-mentions = Unread Mentions
 accounts-add = Add an Account
 accounts-manage = Manage Accounts
 accounts-done = Done

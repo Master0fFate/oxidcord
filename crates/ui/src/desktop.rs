@@ -1,7 +1,8 @@
+use std::rc::Rc;
 use std::sync::mpsc::Receiver;
 use std::thread;
 
-use gpui::{Context, Global, Task, Window};
+use gpui::{App, Context, Global, Task, Window};
 use platform::tray::{Tray, TrayConfig, TrayEvent, TrayItem, TrayLabels};
 use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
 
@@ -21,8 +22,12 @@ pub struct TrayActive;
 
 impl Global for TrayActive {}
 
+struct TrayBadge(Rc<Tray>);
+
+impl Global for TrayBadge {}
+
 pub struct Desktop {
-	_tray: Option<Tray>,
+	_tray: Option<Rc<Tray>>,
 	_tasks: Vec<Task<()>>,
 }
 
@@ -109,7 +114,9 @@ impl Desktop {
 			}
 		});
 		let tray = tray.map(|(tray, events)| {
+			let tray = Rc::new(tray);
 			cx.set_global(TrayActive);
+			cx.set_global(TrayBadge(tray.clone()));
 			tasks.push(pump(forward(events), desktop_event, window, cx));
 			tray
 		});
@@ -139,6 +146,15 @@ mod native {
 		match HasWindowHandle::window_handle(window).ok()?.as_raw() {
 			RawWindowHandle::Win32(handle) => Some(HWND(handle.hwnd.get() as *mut _)),
 			_ => None,
+		}
+	}
+
+	pub fn set_mentions(window: &Window, mentions: u32, description: &str) {
+		let Some(hwnd) = handle(window) else {
+			return;
+		};
+		if let Err(error) = platform::badge::set_taskbar_mentions(hwnd.0 as isize, mentions, description) {
+			tracing::warn!(%error, "could not update the taskbar badge");
 		}
 	}
 
@@ -173,6 +189,17 @@ mod native {
 	}
 
 	pub fn show(_: &Window) {}
+
+	pub fn set_mentions(_: &Window, _: u32, _: &str) {}
+}
+
+pub fn set_mentions(window: &Window, mentions: u32, cx: &App) {
+	if let Some(TrayBadge(tray)) = cx.try_global::<TrayBadge>()
+		&& let Err(error) = tray.set_mentions(mentions)
+	{
+		tracing::warn!(%error, "could not update the tray badge");
+	}
+	native::set_mentions(window, mentions, &cx.t("taskbar-mentions"));
 }
 
 pub fn hide_window(window: &Window) -> bool {

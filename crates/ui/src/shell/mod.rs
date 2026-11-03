@@ -1095,6 +1095,7 @@ impl Shell {
 				WINDOW_TITLE.to_owned()
 			};
 			window.set_window_title(&title);
+			crate::desktop::set_mentions(window, total, cx);
 		}
 	}
 
