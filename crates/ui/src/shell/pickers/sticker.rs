@@ -5,6 +5,7 @@ use gpui::{
 use gpui_component::scroll::ScrollableElement as _;
 use protocol::{Permissions, Snowflake, Sticker};
 use session::Command;
+use state::State;
 
 use super::{Picker, PickerEvent};
 use crate::components::{Avatar, tooltip};
@@ -31,7 +32,18 @@ struct SectionView {
 	name: SharedString,
 	icon: Option<String>,
 	guild_icon: Option<String>,
-	stickers: Vec<Sticker>,
+}
+
+fn section_stickers(state: &State, key: Section) -> &[Sticker] {
+	match key {
+		Section::Guild(id) => state.guild_stickers(id).unwrap_or_default(),
+		Section::Pack(id) => state
+			.sticker_packs()
+			.unwrap_or_default()
+			.iter()
+			.find(|pack| pack.id == id)
+			.map_or(&[][..], |pack| &pack.stickers[..]),
+	}
 }
 
 impl Picker {
@@ -91,7 +103,6 @@ impl Picker {
 						.icon
 						.as_deref()
 						.map(|hash| media::cdn::guild_icon_url(id.get(), hash, 64)),
-					stickers: stickers.to_vec(),
 				})
 			})
 			.collect();
@@ -105,7 +116,6 @@ impl Picker {
 				name: pack.name.clone().into(),
 				icon: cover_sticker.and_then(sticker_url),
 				guild_icon: None,
-				stickers: pack.stickers.to_vec(),
 			});
 		}
 		sections
@@ -256,26 +266,35 @@ impl Picker {
 			.filter(|key| sections.iter().any(|section| section.key == *key))
 			.or_else(|| sections.first().map(|section| section.key));
 		let searching = !self.query.is_empty();
-		let shown: Vec<(SharedString, Vec<Sticker>)> = if searching {
-			let matches: Vec<Sticker> = sections
-				.iter()
-				.flat_map(|section| section.stickers.iter())
-				.filter(|sticker| {
-					sticker.name.to_lowercase().contains(&self.query)
-						|| sticker
-							.tags
-							.as_deref()
-							.is_some_and(|tags| tags.to_lowercase().contains(&self.query))
-				})
-				.cloned()
-				.collect();
-			vec![(cx.t("picker-results"), matches)]
-		} else {
-			sections
-				.iter()
-				.filter(|section| Some(section.key) == active)
-				.map(|section| (section.name.clone(), section.stickers.clone()))
-				.collect()
+		let shown: Vec<(SharedString, Vec<Sticker>)> = {
+			let data = self.data.read(cx);
+			let state = data.state();
+			if searching {
+				let matches: Vec<Sticker> = sections
+					.iter()
+					.flat_map(|section| section_stickers(&state, section.key))
+					.filter(|sticker| {
+						sticker.name.to_lowercase().contains(&self.query)
+							|| sticker
+								.tags
+								.as_deref()
+								.is_some_and(|tags| tags.to_lowercase().contains(&self.query))
+					})
+					.cloned()
+					.collect();
+				vec![(cx.t("picker-results"), matches)]
+			} else {
+				sections
+					.iter()
+					.filter(|section| Some(section.key) == active)
+					.map(|section| {
+						(
+							section.name.clone(),
+							section_stickers(&state, section.key).to_vec(),
+						)
+					})
+					.collect()
+			}
 		};
 		let rail: Vec<AnyElement> = sections
 			.iter()
@@ -290,17 +309,14 @@ impl Picker {
 				)
 			})
 			.collect();
-		let hovered = self.sticker.hovered.and_then(|id| {
-			sections
-				.iter()
-				.flat_map(|section| section.stickers.iter())
-				.find(|sticker| sticker.id == id)
-		});
-		let preview = hovered.map(|sticker| {
-			(
-				SharedString::from(sticker.name.clone()),
-				SharedString::from(sticker.tags.clone().unwrap_or_default()),
-			)
+		let preview = self.sticker.hovered.and_then(|id| {
+			let data = self.data.read(cx);
+			data.state().find_sticker(id).map(|sticker| {
+				(
+					SharedString::from(sticker.name.clone()),
+					SharedString::from(sticker.tags.clone().unwrap_or_default()),
+				)
+			})
 		});
 		let lock = self.external_lock(cx);
 		let groups: Vec<AnyElement> = shown
