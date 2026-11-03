@@ -20,6 +20,13 @@ use crate::messages::{
 };
 use crate::state::{State, intern_user};
 
+fn cooldown_after(interval: Duration, at: Option<chrono::DateTime<chrono::Utc>>) -> Option<Duration> {
+	let age = at.map_or(Duration::ZERO, |at| {
+		(chrono::Utc::now() - at).to_std().unwrap_or_default()
+	});
+	interval.checked_sub(age).filter(|wait| !wait.is_zero())
+}
+
 #[derive(Deserialize, Default)]
 #[serde(default)]
 struct RawListItem {
@@ -101,8 +108,12 @@ impl State {
 			DispatchEvent::ChannelPinsAck(ack) => self.channel_pins_ack(ack),
 			DispatchEvent::ChannelCreate(channel)
 			| DispatchEvent::ChannelUpdate(channel)
-			| DispatchEvent::ThreadCreate(channel)
 			| DispatchEvent::ThreadUpdate(channel) => self.upsert_channel(channel),
+			DispatchEvent::ThreadCreate(channel) => {
+				let mut changes = self.upsert_channel(channel);
+				changes.merge(self.own_thread_created(channel));
+				changes
+			}
 			DispatchEvent::ChannelDelete(channel) => self.remove_channel(channel.id),
 			DispatchEvent::ChannelUnreadUpdate(update) => {
 				self.channels_last_message(update.guild_id, &update.channel_unread_updates)
@@ -347,14 +358,11 @@ impl State {
 		if Some(message.author.id) == self.current_user_id() {
 			self.set_read_state(channel_id, message.id, 0);
 			if matches!(message.kind, MessageType::Default | MessageType::Reply)
-				&& let Some(interval) = self.slowmode_interval(channel_id)
+				&& let Some(wait) = self
+					.slowmode_interval(channel_id)
+					.and_then(|interval| cooldown_after(interval, message.timestamp))
 			{
-				let age = message.timestamp.map_or(Duration::ZERO, |sent| {
-					(chrono::Utc::now() - sent).to_std().unwrap_or_default()
-				});
-				if let Some(wait) = interval.checked_sub(age).filter(|wait| !wait.is_zero()) {
-					changes.merge(self.start_slowmode(channel_id, wait));
-				}
+				changes.merge(self.start_slowmode(channel_id, wait));
 			}
 		} else if !is_selected
 			&& !self.is_silenced(message)
@@ -458,6 +466,27 @@ impl State {
 		changes.read_state = true;
 		changes.loaded.insert(ack.channel_id);
 		changes
+	}
+
+	fn own_thread_created(&mut self, thread: &Channel) -> Changes {
+		let Some(parent_id) = thread.parent_id else {
+			return Changes::default();
+		};
+		if thread.owner_id.is_none() || thread.owner_id != self.current_user_id() {
+			return Changes::default();
+		}
+		let created = thread
+			.thread_metadata
+			.as_ref()
+			.and_then(|metadata| metadata.create_timestamp)
+			.unwrap_or_else(|| thread.id.timestamp());
+		match self
+			.slowmode_interval(parent_id)
+			.and_then(|interval| cooldown_after(interval, Some(created)))
+		{
+			Some(wait) => self.start_thread_cooldown(parent_id, wait),
+			None => Changes::default(),
+		}
 	}
 
 	fn upsert_channel(&mut self, channel: &Channel) -> Changes {

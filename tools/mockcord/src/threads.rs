@@ -70,6 +70,7 @@ impl Shared {
 		if !kind_fits {
 			return Err(ApiError::invalid_body("Invalid thread type for this channel"));
 		}
+		self.enforce_thread_cooldown(parent_id)?;
 		let now = Utc::now();
 		let thread = Channel {
 			id: Snowflake(thread_id),

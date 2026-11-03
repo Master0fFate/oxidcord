@@ -197,6 +197,7 @@ pub async fn create_message(
 	draft.skip_echo = matches!(fault, Some(SendFault::SkipEcho));
 	shared.enforce_thread_unlocked(id)?;
 	shared.enforce_slowmode(id)?;
+	shared.unarchive_thread(id)?;
 	shared
 		.post_message(id, &shared.fixtures.current_user, draft)
 		.map(Json)

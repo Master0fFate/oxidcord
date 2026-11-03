@@ -5,7 +5,7 @@ use bytes::Bytes;
 use gpui::{
 	App, AppContext as _, ClipboardItem, Context, Entity, EventEmitter, ExternalPaths, Focusable as _,
 	InteractiveElement as _, IntoElement, ParentElement as _, Render, StatefulInteractiveElement as _,
-	Styled as _, Window, div, prelude::FluentBuilder as _,
+	Styled as _, Task, Window, div, prelude::FluentBuilder as _,
 };
 use gpui_component::Sizable as _;
 use gpui_component::button::Button;
@@ -15,6 +15,7 @@ use rest::UploadFile;
 use session::Command;
 use state::Changes;
 
+use super::cooldown;
 use super::forum::tag_label;
 use crate::components::{IconButton, dialog_footer, field};
 use crate::data::{Data, DataEvent};
@@ -44,6 +45,7 @@ pub struct NewPost {
 	body: Entity<TextareaState>,
 	files: Vec<Attached>,
 	sending: Option<u64>,
+	_cooldown: Option<Task<()>>,
 	_subscriptions: Vec<gpui::Subscription>,
 }
 
@@ -98,6 +100,7 @@ impl NewPost {
 			}),
 		];
 		Self {
+			_cooldown: cooldown::watch(data.clone(), channel, cx),
 			data,
 			channel,
 			tags,
@@ -155,6 +158,7 @@ impl NewPost {
 
 	fn can_post(&self, cx: &App) -> bool {
 		self.sending.is_none()
+			&& cooldown::remaining(&self.data, self.channel, cx).is_none()
 			&& !self.title_text(cx).is_empty()
 			&& self.has_starter(cx)
 			&& (!self.require_tag || !self.chosen.is_empty())
@@ -339,6 +343,7 @@ impl Render for NewPost {
 			})
 			.collect();
 		let enabled = self.can_post(cx);
+		let waiting = cooldown::remaining(&self.data, self.channel, cx);
 		let can_attach = self.can_attach(cx);
 		let weak_cancel = cx.weak_entity();
 		let weak_submit = cx.weak_entity();
@@ -406,6 +411,7 @@ impl Render for NewPost {
 					div().flex().flex_wrap().gap(theme.space_8).children(tag_chips),
 				))
 			})
+			.children(waiting.map(|remaining| cooldown::line(remaining, &theme, cx)))
 			.child(dialog_footer(
 				cx.t("action-cancel"),
 				cx.t("forum-post-submit"),

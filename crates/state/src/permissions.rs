@@ -20,6 +20,10 @@ pub const DM_PERMISSIONS: Permissions = Permissions::VIEW_CHANNEL
 
 const FULL_ACCESS: Permissions = Permissions::from_bits_retain(u64::MAX);
 
+const SLOWMODE_EXEMPT: Permissions = Permissions::BYPASS_SLOWMODE
+	.union(Permissions::MANAGE_MESSAGES)
+	.union(Permissions::MANAGE_CHANNELS);
+
 const TIMEOUT_PERMISSIONS: Permissions = Permissions::VIEW_CHANNEL.union(Permissions::READ_MESSAGE_HISTORY);
 
 pub(crate) fn compute_permissions(
@@ -165,10 +169,7 @@ impl State {
 			.and_then(|channel| channel.rate_limit_per_user)
 			.and_then(|seconds| u64::try_from(seconds).ok())
 			.filter(|seconds| *seconds > 0)?;
-		(!self
-			.my_permissions(channel_id)
-			.contains(Permissions::BYPASS_SLOWMODE))
-		.then(|| Duration::from_secs(seconds))
+		(!self.my_permissions(channel_id).intersects(SLOWMODE_EXEMPT)).then(|| Duration::from_secs(seconds))
 	}
 
 	pub fn can_poll(&self, channel_id: Snowflake) -> bool {

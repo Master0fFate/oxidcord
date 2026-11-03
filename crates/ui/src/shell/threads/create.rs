@@ -2,13 +2,14 @@ use std::rc::Rc;
 
 use gpui::{
 	AnyElement, App, AppContext as _, Context, Entity, EventEmitter, Focusable as _, IntoElement,
-	ParentElement as _, Render, SharedString, Styled as _, Subscription, Window, div,
+	ParentElement as _, Render, SharedString, Styled as _, Subscription, Task, Window, div,
 	prelude::FluentBuilder as _,
 };
 use gpui_component::input::{Input, InputEvent, InputState};
 use protocol::{ChannelType, Permissions, Snowflake};
 use session::Command;
 
+use super::cooldown;
 use crate::components::{PickHandler, ToggleHandler, dialog_footer, field, select, switch_row};
 use crate::data::Data;
 use crate::i18n::Translate as _;
@@ -41,6 +42,7 @@ pub struct CreateThread {
 	archive: usize,
 	invitable: bool,
 	options: Options,
+	_cooldown: Option<Task<()>>,
 	_subscription: Subscription,
 }
 
@@ -116,6 +118,7 @@ impl CreateThread {
 				},
 			);
 		Self {
+			_cooldown: cooldown::watch(data.clone(), channel, cx),
 			data,
 			channel,
 			message,
@@ -140,7 +143,7 @@ impl CreateThread {
 
 	fn submit(&mut self, _: &mut Window, cx: &mut Context<Self>) {
 		let name = self.trimmed(cx);
-		if name.is_empty() {
+		if name.is_empty() || cooldown::remaining(&self.data, self.channel, cx).is_some() {
 			return;
 		}
 		self.data.read(cx).send(Command::CreateThread {
@@ -183,7 +186,8 @@ impl Render for CreateThread {
 			})
 			.ok();
 		});
-		let enabled = !self.trimmed(cx).is_empty();
+		let waiting = cooldown::remaining(&self.data, self.channel, cx);
+		let enabled = !self.trimmed(cx).is_empty() && waiting.is_none();
 		let starter: Option<AnyElement> = self.preview.as_ref().map(|text| {
 			field(
 				cx.t("thread-starter"),
@@ -237,6 +241,7 @@ impl Render for CreateThread {
 					invitable,
 				))
 			})
+			.children(waiting.map(|remaining| cooldown::line(remaining, &theme, cx)))
 			.child(dialog_footer(
 				cx.t("action-cancel"),
 				cx.t("thread-create-confirm"),

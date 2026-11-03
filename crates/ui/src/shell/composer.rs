@@ -131,7 +131,7 @@ fn command_suggestion(app: &AppCommand, draft: SlashDraft, label: String) -> Sug
 	}
 }
 
-fn countdown(remaining: Duration) -> String {
+pub(crate) fn countdown(remaining: Duration) -> String {
 	let seconds = remaining.as_secs() + u64::from(remaining.subsec_nanos() > 0);
 	match seconds {
 		0..60 => format!("{seconds}s"),

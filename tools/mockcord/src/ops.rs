@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use chrono::{SecondsFormat, Utc};
@@ -206,7 +207,33 @@ impl Shared {
 		Ok(())
 	}
 
+	pub fn unarchive_thread(&self, channel_id: u64) -> Result<(), ApiError> {
+		let archived = self
+			.store
+			.lock()
+			.channels
+			.get(&channel_id)
+			.and_then(|channel| channel.thread_metadata.as_ref())
+			.is_some_and(|metadata| metadata.archived);
+		if archived {
+			self.modify_channel(channel_id, &json!({ "archived": false }))?;
+		}
+		Ok(())
+	}
+
 	pub fn enforce_slowmode(&self, channel_id: u64) -> Result<(), ApiError> {
+		self.enforce_interval(channel_id, |store| &mut store.slowmode)
+	}
+
+	pub fn enforce_thread_cooldown(&self, parent_id: u64) -> Result<(), ApiError> {
+		self.enforce_interval(parent_id, |store| &mut store.thread_cooldown)
+	}
+
+	fn enforce_interval(
+		&self,
+		channel_id: u64,
+		last_use: impl FnOnce(&mut Store) -> &mut HashMap<u64, Instant>,
+	) -> Result<(), ApiError> {
 		let mut store = self.store.lock();
 		let Some((guild_id, seconds)) = store.channels.get(&channel_id).and_then(|channel| {
 			let seconds = channel.rate_limit_per_user.filter(|seconds| *seconds > 0)?;
@@ -217,21 +244,21 @@ impl Shared {
 		let Some(guild) = self.fixtures.guild(guild_id) else {
 			return Ok(());
 		};
-		if guild
-			.permissions_for(guild.current_member())
-			.contains(Permissions::BYPASS_SLOWMODE)
-		{
+		if guild.permissions_for(guild.current_member()).intersects(
+			Permissions::BYPASS_SLOWMODE | Permissions::MANAGE_MESSAGES | Permissions::MANAGE_CHANNELS,
+		) {
 			return Ok(());
 		}
 		let interval = Duration::from_secs(seconds.unsigned_abs());
 		let now = Instant::now();
-		if let Some(last) = store.slowmode.get(&channel_id) {
+		let uses = last_use(&mut store);
+		if let Some(last) = uses.get(&channel_id) {
 			let elapsed = now.saturating_duration_since(*last);
 			if elapsed < interval {
 				return Err(ApiError::slowmode((interval - elapsed).as_secs_f64()));
 			}
 		}
-		store.slowmode.insert(channel_id, now);
+		uses.insert(channel_id, now);
 		Ok(())
 	}
 

@@ -60,6 +60,7 @@ pub struct State {
 	pub(crate) messages: HashMap<Snowflake, ChannelMessages>,
 	pub(crate) typing: HashMap<Snowflake, HashMap<Snowflake, Instant>>,
 	pub(crate) slowmode: HashMap<Snowflake, Instant>,
+	pub(crate) thread_cooldown: HashMap<Snowflake, Instant>,
 	pub(crate) session: SessionInfo,
 	pub(crate) guild_folders: Vec<GuildFolder>,
 	pub(crate) guild_positions: Vec<Snowflake>,
@@ -134,6 +135,26 @@ pub struct EventNotice {
 pub enum RequestOutcome {
 	Sent,
 	Failed(String),
+}
+
+fn time_left(
+	deadlines: &HashMap<Snowflake, Instant>,
+	channel_id: Snowflake,
+	interval: Duration,
+) -> Option<Duration> {
+	deadlines
+		.get(&channel_id)
+		.map(|until| until.saturating_duration_since(Instant::now()).min(interval))
+		.filter(|remaining| !remaining.is_zero())
+}
+
+fn arm(deadlines: &mut HashMap<Snowflake, Instant>, channel_id: Snowflake, wait: Duration) -> Changes {
+	let now = Instant::now();
+	deadlines.retain(|_, until| *until > now);
+	deadlines.insert(channel_id, now + wait);
+	let mut changes = Changes::default();
+	changes.slowmode.insert(channel_id);
+	changes
 }
 
 pub(crate) fn intern_user(users: &mut HashMap<Snowflake, Arc<User>>, user: &User) {
@@ -380,20 +401,23 @@ impl State {
 	}
 
 	pub fn slowmode_remaining(&self, channel_id: Snowflake) -> Option<Duration> {
-		let interval = self.slowmode_interval(channel_id)?;
-		self.slowmode
-			.get(&channel_id)
-			.map(|until| until.saturating_duration_since(Instant::now()).min(interval))
-			.filter(|remaining| !remaining.is_zero())
+		time_left(&self.slowmode, channel_id, self.slowmode_interval(channel_id)?)
+	}
+
+	pub fn thread_cooldown_remaining(&self, parent_id: Snowflake) -> Option<Duration> {
+		time_left(
+			&self.thread_cooldown,
+			parent_id,
+			self.slowmode_interval(parent_id)?,
+		)
 	}
 
 	pub(crate) fn start_slowmode(&mut self, channel_id: Snowflake, wait: Duration) -> Changes {
-		let now = Instant::now();
-		self.slowmode.retain(|_, until| *until > now);
-		self.slowmode.insert(channel_id, now + wait);
-		let mut changes = Changes::default();
-		changes.slowmode.insert(channel_id);
-		changes
+		arm(&mut self.slowmode, channel_id, wait)
+	}
+
+	pub(crate) fn start_thread_cooldown(&mut self, parent_id: Snowflake, wait: Duration) -> Changes {
+		arm(&mut self.thread_cooldown, parent_id, wait)
 	}
 
 	pub(crate) fn drop_messages(&mut self, channel_id: Snowflake) -> bool {

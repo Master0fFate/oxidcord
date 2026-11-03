@@ -207,6 +207,15 @@ impl Core {
 		true
 	}
 
+	pub(super) fn thread_cooldown_clear(&mut self, parent_id: Snowflake) -> bool {
+		let cooldown = self.state.read().thread_cooldown_remaining(parent_id);
+		if let Some(remaining) = cooldown {
+			self.reject(format!("Slowmode: {}s", remaining.as_secs() + 1));
+			return false;
+		}
+		true
+	}
+
 	pub(super) fn channel_guild_allows(
 		&mut self,
 		channel_id: Snowflake,
