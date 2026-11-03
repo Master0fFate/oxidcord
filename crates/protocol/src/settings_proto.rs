@@ -25,6 +25,7 @@ const CUSTOM_EXPIRES_AT_MS: u32 = 4;
 const PRIVACY_RESTRICTED_GUILD_IDS: u32 = 3;
 const PRIVACY_DEFAULT_GUILDS_RESTRICTED: u32 = 4;
 const PRIVACY_FRIEND_SOURCE_FLAGS: u32 = 11;
+const PRIVACY_DEFAULT_GUILDS_RESTRICTED_V2: u32 = 27;
 const PRIVACY_REQUEST_RESTRICTED_GUILD_IDS: u32 = 16;
 const PRIVACY_DEFAULT_REQUEST_RESTRICTED: u32 = 17;
 const PRIVACY_PROFILE_VISIBILITY: u32 = 32;
@@ -385,8 +386,12 @@ fn wrapped_flag(inner: &[u8]) -> bool {
 
 pub fn decode_privacy(bytes: &[u8]) -> ProtoPrivacy {
 	let mut privacy = ProtoPrivacy::default();
+	let mut guilds_restricted_v2 = None;
 	for (number, wire) in Fields::new(bytes) {
 		match (number, wire) {
+			(PRIVACY_DEFAULT_GUILDS_RESTRICTED_V2, Wire::Bytes(inner)) => {
+				guilds_restricted_v2 = Some(wrapped_flag(inner));
+			}
 			(PRIVACY_RESTRICTED_GUILD_IDS, wire) => push_ids(&mut privacy.restricted_guilds, wire),
 			(PRIVACY_DEFAULT_GUILDS_RESTRICTED, Wire::Varint(restricted)) => {
 				privacy.default_guilds_restricted = restricted != 0;
@@ -408,6 +413,9 @@ pub fn decode_privacy(bytes: &[u8]) -> ProtoPrivacy {
 			}
 			_ => {}
 		}
+	}
+	if let Some(restricted) = guilds_restricted_v2 {
+		privacy.default_guilds_restricted = restricted;
 	}
 	privacy
 }
@@ -725,9 +733,11 @@ pub fn privacy_with(privacy: &[u8], change: PrivacyChange) -> Vec<u8> {
 			PRIVACY_FRIEND_SOURCE_FLAGS,
 			Some(&uint_wrapper(u64::from(flags))),
 		),
-		PrivacyChange::DefaultGuildDms { restricted } => {
-			with_varint(privacy, PRIVACY_DEFAULT_GUILDS_RESTRICTED, u64::from(restricted))
-		}
+		PrivacyChange::DefaultGuildDms { restricted } => with_field(
+			&with_varint(privacy, PRIVACY_DEFAULT_GUILDS_RESTRICTED, u64::from(restricted)),
+			PRIVACY_DEFAULT_GUILDS_RESTRICTED_V2,
+			Some(&uint_wrapper(u64::from(restricted))),
+		),
 		PrivacyChange::GuildDms { guild_id, restricted } => {
 			with_listed_guild(privacy, PRIVACY_RESTRICTED_GUILD_IDS, guild_id, restricted)
 		}
