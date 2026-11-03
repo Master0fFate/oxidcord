@@ -35,6 +35,7 @@ pub struct AuditPage {
 	data: Entity<Data>,
 	guild: Snowflake,
 	filters: Vec<i64>,
+	labels: Vec<SharedString>,
 	filter: usize,
 	expanded: HashSet<Snowflake>,
 	_subscription: Subscription,
@@ -101,10 +102,22 @@ impl AuditPage {
 				cx.notify();
 			}
 		});
+		let filters = filters();
+		let labels = filters
+			.iter()
+			.map(|value| {
+				if *value == ALL_ACTIONS {
+					cx.t("audit-filter-all")
+				} else {
+					cx.t(&format!("audit-filter-{value}"))
+				}
+			})
+			.collect();
 		Self {
 			data,
 			guild,
-			filters: filters(),
+			filters,
+			labels,
 			filter: 0,
 			expanded: HashSet::new(),
 			_subscription: subscription,
@@ -297,17 +310,6 @@ impl AuditPage {
 impl Render for AuditPage {
 	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
-		let labels: Vec<SharedString> = self
-			.filters
-			.iter()
-			.map(|value| {
-				if *value == ALL_ACTIONS {
-					cx.t("audit-filter-all")
-				} else {
-					cx.t(&format!("audit-filter-{value}"))
-				}
-			})
-			.collect();
 		let weak = cx.weak_entity();
 		let weak_rows = weak.clone();
 		let pick: PickHandler = Rc::new(move |index, _, cx| {
@@ -349,8 +351,8 @@ impl Render for AuditPage {
 					.pb(theme.space_16)
 					.child(select(
 						"audit-filter",
-						labels[self.filter].clone(),
-						&labels,
+						self.labels[self.filter].clone(),
+						&self.labels,
 						self.filter,
 						pick,
 					)),
