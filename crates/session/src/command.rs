@@ -609,7 +609,7 @@ pub enum Command {
 		nsfw: Option<bool>,
 		slowmode: Option<u32>,
 		position: Option<i64>,
-		parent_id: Option<Snowflake>,
+		parent_id: Option<Option<Snowflake>>,
 		voice: VoiceChannelEdit,
 	},
 	SetVoiceStatus {

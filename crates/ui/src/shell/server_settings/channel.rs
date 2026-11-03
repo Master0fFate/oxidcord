@@ -286,11 +286,7 @@ impl EditChannel {
 			slowmode: (self.text_like() && self.slowmode != *old_slowmode)
 				.then(|| SLOWMODES[self.slowmode].1),
 			position: None,
-			parent_id: if self.parent != self.original_parent {
-				self.parent
-			} else {
-				None
-			},
+			parent_id: (self.parent != self.original_parent).then_some(self.parent),
 			voice: self
 				.voice
 				.as_ref()
@@ -490,43 +486,44 @@ impl EditChannel {
 				.ok();
 			})
 		};
-		let categories: Vec<(Snowflake, String)> = {
+		let categories: Vec<(i64, Snowflake, String)> = {
 			let state = self.data.read(cx).state();
 			state
 				.guild(self.guild)
 				.map(|guild| {
-					guild
+					let mut found: Vec<_> = guild
 						.channels
 						.values()
 						.filter(|channel| channel.kind == ChannelType::GuildCategory)
-						.map(|channel| (channel.id, channel.name.clone().unwrap_or_default()))
-						.collect()
+						.map(|channel| {
+							(
+								channel.position.unwrap_or(0),
+								channel.id,
+								channel.name.clone().unwrap_or_default(),
+							)
+						})
+						.collect();
+					found.sort_unstable_by_key(|(position, id, _)| (*position, *id));
+					found
 				})
 				.unwrap_or_default()
 		};
-		let mut labels: Vec<SharedString> = Vec::new();
-		let mut ids: Vec<Option<Snowflake>> = Vec::new();
-		if self.original_parent.is_none() {
-			labels.push(cx.t("channel-no-category"));
-			ids.push(None);
-		}
-		for (id, name) in categories {
+		let mut labels: Vec<SharedString> = vec![cx.t("channel-no-category")];
+		let mut ids: Vec<Option<Snowflake>> = vec![None];
+		for (_, id, name) in categories {
 			labels.push(name.into());
 			ids.push(Some(id));
 		}
 		let selected_parent = ids.iter().position(|id| *id == self.parent).unwrap_or(0);
-		let pick_parent: PickHandler = {
-			let ids = ids.clone();
-			Rc::new(move |index, _, cx| {
-				if let Some(parent) = ids.get(index).copied().flatten() {
-					weak.update(cx, |this, cx| {
-						this.parent = Some(parent);
-						cx.notify();
-					})
-					.ok();
-				}
-			})
-		};
+		let pick_parent: PickHandler = Rc::new(move |index, _, cx| {
+			if let Some(parent) = ids.get(index).copied() {
+				weak.update(cx, |this, cx| {
+					this.parent = parent;
+					cx.notify();
+				})
+				.ok();
+			}
+		});
 		let text = self.text_like();
 		div()
 			.flex()
@@ -556,22 +553,19 @@ impl EditChannel {
 					))
 			})
 			.children(self.voice.clone())
-			.when(
-				!labels.is_empty() && self.kind != ChannelType::GuildCategory,
-				|form| {
-					form.child(field(
-						cx.t("channel-category"),
-						theme,
-						select(
-							"channel-category",
-							labels[selected_parent].clone(),
-							&labels,
-							selected_parent,
-							pick_parent,
-						),
-					))
-				},
-			)
+			.when(self.kind != ChannelType::GuildCategory, |form| {
+				form.child(field(
+					cx.t("channel-category"),
+					theme,
+					select(
+						"channel-category",
+						labels[selected_parent].clone(),
+						&labels,
+						selected_parent,
+						pick_parent,
+					),
+				))
+			})
 			.into_any_element()
 	}
 
