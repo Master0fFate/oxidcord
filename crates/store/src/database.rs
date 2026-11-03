@@ -163,6 +163,20 @@ impl Database {
 		Ok(())
 	}
 
+	pub fn keep_floor(&self, channel_id: u64, keep: u32) -> Result<Option<u64>> {
+		let floor: Option<i64> = self
+			.conn
+			.lock()
+			.prepare_cached(
+				"SELECT id FROM messages WHERE channel_id = ?1 ORDER BY id DESC LIMIT 1 OFFSET ?2",
+			)?
+			.query_row(params![channel_id as i64, keep.saturating_sub(1)], |row| {
+				row.get(0)
+			})
+			.optional()?;
+		Ok(floor.map(|id| id as u64))
+	}
+
 	pub fn trim_channel(&self, channel_id: u64, keep: u32) -> Result<()> {
 		self.conn
 			.lock()

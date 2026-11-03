@@ -24,7 +24,7 @@ use state::{
 	AlertVerdict, Changes, ChannelDecoration, ClientOptions, Event, LoadDirection, Loaded, LocalEvent,
 	Selection, SharedState, TYPING_TIMEOUT, UiIntent, UserOverride,
 };
-use store::Store;
+use store::{Database, Store};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc;
 use tokio::time::{Instant, sleep_until};
@@ -120,6 +120,10 @@ pub(crate) enum Internal {
 		answer: PluginAnswer,
 	},
 	Rejected(String),
+	CacheOpened {
+		user_id: Snowflake,
+		db: Option<Arc<Database>>,
+	},
 	RestoreRead(Vec<ReadSnapshot>),
 	FriendRequestSent(String),
 	FriendRequestFailed {
@@ -384,7 +388,7 @@ impl Core {
 	) {
 		self.start_plugins();
 		self.restore().await;
-		self.restore_recents().await;
+		self.restore_recents();
 		let mut gateway_open = true;
 		loop {
 			let flush_at = self.notifier.deadline();
@@ -457,7 +461,7 @@ impl Core {
 		self.apply_local(LocalEvent::ConnectionChanged { connected: false });
 	}
 
-	fn restore_selection(&mut self) {
+	pub(super) fn restore_selection(&mut self) {
 		let Some(saved) = self
 			.persist
 			.database()
@@ -805,6 +809,7 @@ impl Core {
 			}
 			Internal::PluginApplied { loaded, answer } => self.on_plugin_applied(loaded, answer),
 			Internal::Rejected(reason) => self.reject(reason),
+			Internal::CacheOpened { user_id, db } => self.on_cache_opened(user_id, db),
 			Internal::RestoreRead(snapshots) => {
 				for snapshot in snapshots {
 					self.apply_dispatch(&DispatchEvent::MessageAck(MessageAck {

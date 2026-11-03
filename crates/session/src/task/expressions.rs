@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use protocol::{CreateMessage, Gif, GifTrending, Permissions, Snowflake, Sticker, unicode_emoji_list};
 use rest::UploadFile;
 use serde::Serialize;
@@ -7,13 +5,12 @@ use state::{EmojiRef, Loaded, RECENT_CAP};
 
 use super::commands::image_mime;
 use super::outgoing::Outgoing;
-use super::{Command, Core};
+use super::{Command, Core, Internal};
 use crate::persist::{self, Job};
 
 const GIF_MEDIA_FORMAT: &str = "gif";
 const GIF_PAGE: u16 = 50;
 const GIF_SUGGESTIONS: u8 = 10;
-const RECENT_LOAD_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn promote<T>(list: &mut Vec<T>, item: T, is_same: impl Fn(&T, &T) -> bool) {
 	list.retain(|entry| !is_same(entry, &item));
@@ -226,29 +223,21 @@ impl Core {
 		)
 	}
 
-	pub(super) async fn restore_recents(&mut self) {
+	pub(super) fn restore_recents(&self) {
 		let Some(db) = self.persist.database() else {
 			return;
 		};
-		let loading = tokio::task::spawn_blocking(move || {
-			(
-				persist::load_recent::<EmojiRef>(&db, persist::RECENT_EMOJI_KEY),
-				persist::load_recent::<Gif>(&db, persist::RECENT_GIFS_KEY),
-				persist::load_recent::<Sticker>(&db, persist::RECENT_STICKERS_KEY),
-			)
+		let internal = self.internal.clone();
+		self.runtime.spawn_blocking(move || {
+			let recents = [
+				Loaded::RecentEmoji(persist::load_recent(&db, persist::RECENT_EMOJI_KEY)),
+				Loaded::RecentGifs(persist::load_recent(&db, persist::RECENT_GIFS_KEY)),
+				Loaded::RecentStickers(persist::load_recent(&db, persist::RECENT_STICKERS_KEY)),
+			];
+			for loaded in recents {
+				let _ = internal.send(Internal::Loaded(loaded));
+			}
 		});
-		let Ok(Ok((emoji, gifs, stickers))) = tokio::time::timeout(RECENT_LOAD_TIMEOUT, loading).await else {
-			return;
-		};
-		if !emoji.is_empty() {
-			self.on_loaded(Loaded::RecentEmoji(emoji));
-		}
-		if !gifs.is_empty() {
-			self.on_loaded(Loaded::RecentGifs(gifs));
-		}
-		if !stickers.is_empty() {
-			self.on_loaded(Loaded::RecentStickers(stickers));
-		}
 	}
 
 	pub(super) fn remember_reaction(&mut self, emoji: &str) {

@@ -1,9 +1,20 @@
 use std::sync::Arc;
 
 use protocol::{ChannelType, Snowflake, Token};
-use store::Database;
+use store::{Database, Store};
 
 use super::{Core, Internal};
+
+fn known_account(store: &Store, token: &Token) -> Option<Snowflake> {
+	let saved_token = |user_id| store.accounts.token_for(user_id).ok().flatten();
+	match token.user_id() {
+		Some(user_id) => saved_token(user_id).map(|_| user_id),
+		None => {
+			let current = store.accounts.current()?;
+			(saved_token(current).as_deref() == Some(token.as_str())).then_some(current)
+		}
+	}
+}
 
 impl Core {
 	pub(super) fn refresh_token(&mut self, token: Token) {
@@ -45,33 +56,59 @@ impl Core {
 	}
 
 	pub(super) async fn open_current_cache(&mut self) -> Option<Arc<Database>> {
-		let user_id = self.store.accounts.current()?;
 		let store = self.store.clone();
-		let opened = tokio::task::spawn_blocking(move || store.open_account_cache(user_id)).await;
-		match opened {
-			Ok(Ok(db)) => {
-				let db = Arc::new(db);
-				self.persist.attach(user_id, Arc::clone(&db));
-				Some(db)
+		let token = self.token.clone();
+		let opened = tokio::task::spawn_blocking(move || {
+			let user_id = known_account(&store, &token)?;
+			match store.open_account_cache(user_id) {
+				Ok(db) => Some((user_id, db)),
+				Err(error) => {
+					tracing::warn!(%error, "could not open the account cache");
+					None
+				}
 			}
-			Ok(Err(error)) => {
-				tracing::warn!(%error, "could not open the account cache");
-				None
-			}
-			Err(_) => None,
-		}
+		})
+		.await;
+		let Ok(Some((user_id, db))) = opened else {
+			return None;
+		};
+		let db = Arc::new(db);
+		self.persist.attach(user_id, Arc::clone(&db));
+		Some(db)
 	}
 
 	pub(super) fn attach_cache(&mut self, user_id: Snowflake) {
-		if self.persist.owner() == Some(user_id) {
+		if self.persist.owner() == Some(user_id) || self.persist.is_opening(user_id) {
 			return;
 		}
-		match self.store.open_account_cache(user_id) {
-			Ok(db) => self.persist.attach(user_id, Arc::new(db)),
-			Err(error) => {
-				tracing::warn!(%error, "could not open the account cache");
-				self.persist.detach();
+		self.persist.begin_open(user_id);
+		let store = self.store.clone();
+		let internal = self.internal.clone();
+		self.runtime.spawn_blocking(move || {
+			let db = match store.open_account_cache(user_id) {
+				Ok(db) => Some(Arc::new(db)),
+				Err(error) => {
+					tracing::warn!(%error, "could not open the account cache");
+					None
+				}
+			};
+			let _ = internal.send(Internal::CacheOpened { user_id, db });
+		});
+	}
+
+	pub(super) fn on_cache_opened(&mut self, user_id: Snowflake, db: Option<Arc<Database>>) {
+		if !self.persist.is_opening(user_id) {
+			return;
+		}
+		match db {
+			Some(db) => {
+				self.persist.attach(user_id, db);
+				self.restore_recents();
+				if self.state.read().selected().is_none() {
+					self.restore_selection();
+				}
 			}
+			None => self.persist.detach(),
 		}
 	}
 

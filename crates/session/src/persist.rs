@@ -2,6 +2,7 @@ use std::mem;
 use std::sync::Arc;
 
 use anyhow::Result;
+use parking_lot::Mutex;
 use protocol::{Channel, LenientVec, Message, Ready, Snowflake};
 use serde::de::DeserializeOwned;
 use store::{Database, ReadState, Table};
@@ -51,10 +52,17 @@ struct AccountCache {
 	db: Arc<Database>,
 }
 
+struct Opening {
+	user_id: Snowflake,
+	held: Vec<Job>,
+}
+
 pub(crate) struct Persistor {
+	runtime: Handle,
 	queue: mpsc::Sender<Queued>,
 	task: JoinHandle<()>,
 	cache: Option<AccountCache>,
+	opening: Mutex<Option<Opening>>,
 }
 
 impl Persistor {
@@ -62,18 +70,43 @@ impl Persistor {
 		let (queue, jobs) = mpsc::channel(QUEUE_CAPACITY);
 		let task = runtime.spawn(write_loop(jobs));
 		Self {
+			runtime: runtime.clone(),
 			queue,
 			task,
 			cache: None,
+			opening: Mutex::new(None),
 		}
 	}
 
+	pub(crate) fn begin_open(&mut self, user_id: Snowflake) {
+		self.cache = None;
+		*self.opening.get_mut() = Some(Opening {
+			user_id,
+			held: Vec::new(),
+		});
+	}
+
+	pub(crate) fn is_opening(&self, user_id: Snowflake) -> bool {
+		self.opening
+			.lock()
+			.as_ref()
+			.is_some_and(|opening| opening.user_id == user_id)
+	}
+
 	pub(crate) fn attach(&mut self, user_id: Snowflake, db: Arc<Database>) {
+		let held = match self.opening.get_mut().take() {
+			Some(opening) if opening.user_id == user_id => opening.held,
+			_ => Vec::new(),
+		};
 		self.cache = Some(AccountCache { user_id, db });
+		for job in held {
+			self.submit(job);
+		}
 	}
 
 	pub(crate) fn detach(&mut self) {
 		self.cache = None;
+		*self.opening.get_mut() = None;
 	}
 
 	pub(crate) fn owner(&self) -> Option<Snowflake> {
@@ -86,6 +119,11 @@ impl Persistor {
 
 	pub(crate) fn submit(&self, job: Job) {
 		let Some(cache) = &self.cache else {
+			if let Some(opening) = self.opening.lock().as_mut()
+				&& opening.held.len() < QUEUE_CAPACITY
+			{
+				opening.held.push(job);
+			}
 			return;
 		};
 		let queued = Queued {
@@ -98,8 +136,17 @@ impl Persistor {
 	}
 
 	pub(crate) fn wipe(&mut self) {
-		self.submit(Job::Wipe);
-		self.detach();
+		let cache = self.cache.take();
+		*self.opening.get_mut() = None;
+		let Some(AccountCache { db, .. }) = cache else {
+			return;
+		};
+		let queue = self.queue.clone();
+		self.runtime.spawn(async move {
+			if queue.send(Queued { db, job: Job::Wipe }).await.is_err() {
+				tracing::warn!("cache wipe was not queued");
+			}
+		});
 	}
 
 	pub(crate) async fn close(self) {
@@ -134,10 +181,15 @@ fn write(db: &Database, job: Job) -> Result<()> {
 		}
 		Job::PrivateChannels(channels) => write_private_channels(db, channels),
 		Job::Messages { channel_id, messages } => {
+			let floor = db.keep_floor(channel_id.get(), KEPT_MESSAGES_PER_CHANNEL)?;
 			let encoded = messages
 				.iter()
+				.filter(|message| floor.is_none_or(|floor| message.id.get() >= floor))
 				.map(|message| Ok((message.id.get(), serde_json::to_vec(&**message)?)))
 				.collect::<Result<Vec<_>>>()?;
+			if encoded.is_empty() {
+				return Ok(());
+			}
 			let rows: Vec<(u64, &[u8])> = encoded.iter().map(|(id, json)| (*id, json.as_slice())).collect();
 			db.put_messages_batch(channel_id.get(), &rows)?;
 			Ok(db.trim_channel(channel_id.get(), KEPT_MESSAGES_PER_CHANNEL)?)
