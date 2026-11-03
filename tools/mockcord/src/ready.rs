@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
 
 use protocol::{
-	Channel, ChannelType, Presence, ProtoGuildFolder, ProtoGuildFolders, ProtoSettings, RelationshipKind,
-	Snowflake, User, encode_settings,
+	Channel, ChannelType, MediaRedaction, MediaRedactions, Presence, ProtoGuildFolder, ProtoGuildFolders,
+	ProtoSettings, RelationshipKind, SensitiveMedia, Snowflake, User, encode_sensitive_media,
+	encode_settings,
 };
 use rand::Rng;
 use serde_json::{Value, json};
@@ -21,6 +22,22 @@ const MOCK_FOLDER_NAME: &str = "Mock folder";
 const MOCK_FOLDER_GUILDS: usize = 2;
 const PRIORITIZED_READY_PAYLOAD: u64 = 32;
 const USER_SETTINGS_PROTO_CAPABILITY: u64 = 512;
+const UNSET_REDACTIONS: MediaRedactions = MediaRedactions {
+	guilds: MediaRedaction::Unset,
+	friend_dm: MediaRedaction::Unset,
+	non_friend_dm: MediaRedaction::Unset,
+};
+const MOCK_SENSITIVE_MEDIA: SensitiveMedia = SensitiveMedia {
+	explicit: MediaRedactions {
+		guilds: MediaRedaction::Blur,
+		..UNSET_REDACTIONS
+	},
+	gore: MediaRedactions {
+		guilds: MediaRedaction::Block,
+		..UNSET_REDACTIONS
+	},
+	self_harm: UNSET_REDACTIONS,
+};
 
 pub fn is_thread(kind: ChannelType) -> bool {
 	matches!(
@@ -140,6 +157,7 @@ pub fn user_settings_proto(fixtures: &Fixtures, store: &Store) -> String {
 		.collect();
 	encode_settings(&ProtoSettings {
 		status_bytes: Some(store.proto_status.clone()),
+		text_and_images_bytes: Some(encode_sensitive_media(&MOCK_SENSITIVE_MEDIA)),
 		privacy_bytes: Some(store.proto_privacy.clone()),
 		guild_folders: Some(ProtoGuildFolders {
 			folders: vec![ProtoGuildFolder {

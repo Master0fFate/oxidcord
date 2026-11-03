@@ -59,8 +59,9 @@ use self::composer::{Composer, ComposerEvent};
 use self::dm_sidebar::{DmSidebar, DmSidebarEvent};
 use self::friends::{FriendsEvent, HomePage, HomePages};
 use self::history::{History, Place};
+use self::lightbox::Lightbox;
 use self::member_list::{MemberList, MemberListEvent};
-use self::message::{ImageTarget, VideoFullscreenTarget, snippet};
+use self::message::{Gallery, VideoFullscreenTarget, snippet};
 use self::pickers::PickerTab;
 use self::plugins::{DebugPanel, PluginUi, PluginUiEvent, RightPanel as PluginRightPanel, SidebarPanel};
 use self::profile::{ProfileCard, ProfileEvent};
@@ -117,7 +118,7 @@ enum Notified {
 }
 
 enum Overlay {
-	Lightbox(ImageTarget),
+	Lightbox(Entity<Lightbox>),
 	VideoFullscreen(VideoFullscreenTarget),
 	Profile {
 		card: Entity<ProfileCard>,
@@ -449,10 +450,7 @@ impl Shell {
 			window,
 			|this, _, event: &CommunityEvent, window, cx| {
 				match event {
-					CommunityEvent::OpenImage(target) => {
-						this.overlay = Some(Overlay::Lightbox(target.clone()));
-						cx.notify();
-					}
+					CommunityEvent::OpenImage(gallery) => this.open_lightbox(gallery.clone(), window, cx),
 					CommunityEvent::OpenVideoFullscreen(target) => {
 						this.overlay = Some(Overlay::VideoFullscreen(target.clone()));
 						cx.notify();
@@ -1247,10 +1245,7 @@ impl Shell {
 	fn on_timeline(&mut self, event: &TimelineEvent, window: &mut Window, cx: &mut Context<Self>) {
 		match event {
 			TimelineEvent::OpenLink(url, origin) => links::open_link(url, *origin, &self.backend, window, cx),
-			TimelineEvent::OpenImage(target) => {
-				self.overlay = Some(Overlay::Lightbox(target.clone()));
-				cx.notify();
-			}
+			TimelineEvent::OpenImage(gallery) => self.open_lightbox(gallery.clone(), window, cx),
 			TimelineEvent::OpenVideoFullscreen(target) => {
 				self.overlay = Some(Overlay::VideoFullscreen(target.clone()));
 				cx.notify();
@@ -1314,6 +1309,17 @@ impl Shell {
 		});
 		self._subscriptions.push(subscription);
 		self.overlay = Some(Overlay::Profile { card, at, anchor });
+		cx.notify();
+	}
+
+	fn open_lightbox(&mut self, gallery: Gallery, window: &mut Window, cx: &mut Context<Self>) {
+		let weak = cx.weak_entity();
+		let close = Rc::new(move |window: &mut Window, cx: &mut gpui::App| {
+			weak.update(cx, |this, cx| this.close_overlay(window, cx)).ok();
+		});
+		let backend = self.backend.clone();
+		let lightbox = cx.new(|cx| Lightbox::new(gallery, backend, close, window, cx));
+		self.overlay = Some(Overlay::Lightbox(lightbox));
 		cx.notify();
 	}
 
@@ -1642,13 +1648,11 @@ impl Shell {
 	) -> Option<gpui::AnyElement> {
 		let overlay = self.overlay.as_ref()?;
 		Some(match overlay {
-			Overlay::Lightbox(target) => {
-				let weak = cx.weak_entity();
-				let close = Rc::new(move |window: &mut Window, cx: &mut gpui::App| {
-					weak.update(cx, |this, cx| this.close_overlay(window, cx)).ok();
-				});
-				lightbox::lightbox(target, &self.backend, window, theme, cx, close)
-			}
+			Overlay::Lightbox(lightbox) => div()
+				.absolute()
+				.inset_0()
+				.child(lightbox.clone())
+				.into_any_element(),
 			Overlay::VideoFullscreen(target) => {
 				let weak = cx.weak_entity();
 				let close = Rc::new(move |window: &mut Window, cx: &mut gpui::App| {

@@ -241,8 +241,7 @@ impl Harness {
 		ensure!(
 			gif.attachments
 				.first()
-				.and_then(|attachment| attachment.flags)
-				.is_some_and(|flags| flags & ANIMATED_FLAG != 0),
+				.is_some_and(|attachment| attachment.flags.contains(protocol::AttachmentFlags::IS_ANIMATED)),
 			"the gif attachment is not flagged as animated"
 		);
 		let link_media = gif_link

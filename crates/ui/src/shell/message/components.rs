@@ -1,4 +1,5 @@
 use std::cell::Cell;
+use std::rc::Rc;
 
 use gpui::{
 	AnyElement, App, ElementId, FontWeight, Hsla, InteractiveElement as _, IntoElement, ObjectFit,
@@ -17,7 +18,7 @@ use session::ComponentUse;
 
 use super::body::{BodyEnv, render_body};
 use super::media::{self, fit, picture, proxied_media};
-use super::{ImageTarget, RowAction, point_media};
+use super::{Gallery, ImageTarget, RowAction, point_media};
 use crate::components::{ContextMenuBuilder, unicode_emoji};
 use crate::i18n::Translate as _;
 use crate::icons::{Icon, IconKind};
@@ -109,10 +110,18 @@ impl Builder<'_> {
 			kind if kind.is_select() => Some(self.select(component)),
 			ComponentType::Section => Some(self.section(component)),
 			ComponentType::TextDisplay => component.content.as_deref().map(|text| self.text(text)),
-			ComponentType::Thumbnail => component
-				.media
-				.as_ref()
-				.map(|media| self.image(media, THUMBNAIL_SIZE, THUMBNAIL_SIZE, component.spoiler)),
+			ComponentType::Thumbnail => component.media.as_ref().map(|media| {
+				self.image(
+					media,
+					Look {
+						width: THUMBNAIL_SIZE,
+						height: THUMBNAIL_SIZE,
+						spoiler: component.spoiler,
+						description: component.description.as_deref(),
+					},
+					Gallery::single(image_target(media)),
+				)
+			}),
 			ComponentType::MediaGallery => Some(self.gallery(&component.items)),
 			ComponentType::File => component.file.as_ref().map(|file| self.file(component, file)),
 			ComponentType::Separator => Some(self.separator(component)),
@@ -406,8 +415,14 @@ impl Builder<'_> {
 			.into_any_element()
 	}
 
-	fn image(&self, media: &UnfurledMedia, width: f32, height: f32, spoiler: bool) -> AnyElement {
+	fn image(&self, media: &UnfurledMedia, look: Look, gallery: Gallery) -> AnyElement {
 		let theme = self.theme;
+		let Look {
+			width,
+			height,
+			spoiler,
+			description,
+		} = look;
 		if let Some(index) = self.concealed(spoiler) {
 			return div()
 				.flex()
@@ -424,15 +439,9 @@ impl Builder<'_> {
 			.as_deref()
 			.is_some_and(|kind| kind == "image/gif");
 		let shown = proxied_media(source, animated, width, height);
-		let target = ImageTarget {
-			url: media.url.clone(),
-			name: file_name(&media.url),
-			width: media.width.unwrap_or_default().max(0) as u32,
-			height: media.height.unwrap_or_default().max(0) as u32,
-		};
-		let pointed = point_media(&target, source, None);
+		let pointed = point_media(&gallery.items[gallery.start], None);
 		let dispatch = self.env.dispatch.clone();
-		div()
+		let image = div()
 			.id(self.id())
 			.w(rem(width))
 			.h(rem(height))
@@ -440,7 +449,7 @@ impl Builder<'_> {
 			.overflow_hidden()
 			.cursor_pointer()
 			.on_mouse_down(gpui::MouseButton::Right, pointed)
-			.on_click(move |_, window, cx| dispatch(RowAction::OpenImage(target.clone()), window, cx))
+			.on_click(move |_, window, cx| dispatch(RowAction::OpenImage(gallery.clone()), window, cx))
 			.child(picture(
 				&shown,
 				None,
@@ -450,7 +459,8 @@ impl Builder<'_> {
 				theme,
 				self.cx,
 			))
-			.into_any_element()
+			.into_any_element();
+		media::with_alt(image, self.id(), description, theme, self.cx)
 	}
 
 	fn gallery(&self, items: &[GalleryItem]) -> AnyElement {
@@ -468,9 +478,19 @@ impl Builder<'_> {
 			);
 			return div()
 				.mt(theme.space_4)
-				.child(self.image(&item.media, width, height, item.spoiler))
+				.child(self.image(
+					&item.media,
+					Look {
+						width,
+						height,
+						spoiler: item.spoiler,
+						description: item.description.as_deref(),
+					},
+					Gallery::single(image_target(&item.media)),
+				))
 				.into_any_element();
 		}
+		let (targets, starts) = gallery_targets(&shown);
 		let columns = if matches!(shown.len(), 2 | 4) { 2. } else { 3. };
 		let cell = ((GALLERY_WIDTH - GALLERY_GAP * (columns - 1.)) / columns).floor();
 		div()
@@ -480,12 +500,28 @@ impl Builder<'_> {
 			.mt(theme.space_4)
 			.w(rem(GALLERY_WIDTH))
 			.max_w_full()
-			.children(shown.iter().map(|item| {
+			.children(shown.iter().zip(starts).map(|(item, start)| {
 				if is_video(&item.media) {
-					self.video_tile(&item.media, cell)
-				} else {
-					self.image(&item.media, cell, cell, item.spoiler)
+					return self.video_tile(&item.media, cell);
 				}
+				let gallery = if item.spoiler {
+					Gallery::single(image_target(&item.media))
+				} else {
+					Gallery {
+						items: targets.clone(),
+						start,
+					}
+				};
+				self.image(
+					&item.media,
+					Look {
+						width: cell,
+						height: cell,
+						spoiler: item.spoiler,
+						description: item.description.as_deref(),
+					},
+					gallery,
+				)
 			}))
 			.into_any_element()
 	}
@@ -648,6 +684,42 @@ fn button_colors(style: ButtonStyle, theme: &Theme) -> (Hsla, Hsla, Hsla) {
 			theme.header_primary,
 		),
 	}
+}
+
+struct Look<'a> {
+	width: f32,
+	height: f32,
+	spoiler: bool,
+	description: Option<&'a str>,
+}
+
+fn image_target(media: &UnfurledMedia) -> ImageTarget {
+	ImageTarget {
+		url: media.url.clone(),
+		fetch: media.proxy_url.as_deref().unwrap_or(&media.url).to_owned(),
+		name: file_name(&media.url),
+		width: media.width.unwrap_or_default().max(0) as u32,
+		height: media.height.unwrap_or_default().max(0) as u32,
+	}
+}
+
+fn joins_gallery(item: &GalleryItem) -> bool {
+	!is_video(&item.media) && !item.spoiler
+}
+
+fn gallery_targets(items: &[&GalleryItem]) -> (Rc<[ImageTarget]>, Vec<usize>) {
+	let mut targets = Vec::new();
+	let starts = items
+		.iter()
+		.map(|item| {
+			let start = targets.len();
+			if joins_gallery(item) {
+				targets.push(image_target(&item.media));
+			}
+			start
+		})
+		.collect();
+	(targets.into(), starts)
 }
 
 fn is_video(media: &UnfurledMedia) -> bool {

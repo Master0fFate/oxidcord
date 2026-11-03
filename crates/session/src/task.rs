@@ -1174,6 +1174,7 @@ impl Core {
 			| Command::AttachSticker { .. }
 			| Command::SetComposerText { .. }
 			| Command::SaveAttachment { .. }
+			| Command::SaveFile { .. }
 			| Command::SetClientOption { .. }
 			| Command::SetDmSections { .. }
 			| Command::SetNotificationSettings { .. }

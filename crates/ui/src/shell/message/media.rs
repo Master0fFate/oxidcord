@@ -1,6 +1,8 @@
+use std::rc::Rc;
+
 use chrono::Utc;
 use gpui::{
-	AnyElement, App, FontWeight, InteractiveElement as _, IntoElement, MouseButton, ObjectFit,
+	AnyElement, App, ElementId, FontWeight, InteractiveElement as _, IntoElement, MouseButton, ObjectFit,
 	ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _, StyledImage as _, div,
 	img, prelude::FluentBuilder as _,
 };
@@ -15,8 +17,8 @@ use media::providers::{self, Candidate, Layout};
 use plugin_host::ViewContext;
 use plugin_host::api::model::{AttachmentLayout, AttachmentOverride, ClickTarget, EmojiRef};
 use protocol::{
-	Attachment, Embed, EmbedKind, EmbedMedia, Gif, GifFormat, Message, PartialEmoji, Poll, PollAnswer,
-	Reaction, Snowflake, StickerItem,
+	Attachment, AttachmentFlags, Embed, EmbedKind, EmbedMedia, Gif, GifFormat, MediaRedaction, Message,
+	PartialEmoji, Poll, PollAnswer, Reaction, Snowflake, StickerItem,
 };
 
 use super::body::{BodyEnv, render_body};
@@ -24,7 +26,7 @@ use super::player::{self, AudioSource, FileInfo, LoopSource, VideoSource, VoiceS
 use super::provider;
 use super::reaction_tip;
 use super::{
-	GifFavoriteOverrides, ImageTarget, RowAction, point_link, point_media, with_attachment_menu,
+	Gallery, GifFavoriteOverrides, ImageTarget, RowAction, point_link, point_media, with_attachment_menu,
 	with_link_menu,
 };
 use crate::components::{IconButton, StatusEmoji, tooltip, unicode_emoji};
@@ -55,8 +57,8 @@ const POLL_EMOJI: f32 = 20.;
 const ANIMATED_FLAG: u64 = 1 << 5;
 const EMBED_ITEM: u64 = 1 << 62;
 const GIF_STAR: f32 = 26.;
-const SPOILER_FLAG: u64 = 1 << 3;
 const SPOILER_ITEM: usize = 1 << 40;
+const SENSITIVE_ITEM: usize = 1 << 41;
 const SPOILER_PREFIX: &str = "SPOILER_";
 const STACKED_MAX_HEIGHT: f32 = 720.;
 const BLUR_DIVISOR: f32 = 24.;
@@ -131,7 +133,7 @@ pub(super) fn proxied_media(url: &str, animated: bool, width: f32, height: f32) 
 }
 
 fn attachment_animated(attachment: &Attachment) -> bool {
-	attachment.flags.is_some_and(|flags| flags & ANIMATED_FLAG != 0)
+	attachment.flags.contains(AttachmentFlags::IS_ANIMATED)
 		|| is_gif(attachment.content_type.as_deref(), &attachment.filename)
 }
 
@@ -161,11 +163,107 @@ fn is_image(attachment: &Attachment) -> bool {
 }
 
 fn is_spoiler(attachment: &Attachment) -> bool {
-	attachment.filename.starts_with(SPOILER_PREFIX)
-		|| attachment.flags.is_some_and(|flags| flags & SPOILER_FLAG != 0)
+	attachment.filename.starts_with(SPOILER_PREFIX) || attachment.flags.contains(AttachmentFlags::IS_SPOILER)
 }
 
-fn veiled(content: AnyElement, index: usize, env: &BodyEnv, cx: &App) -> AnyElement {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Cover {
+	Spoiler,
+	Sensitive,
+	Blocked,
+}
+
+impl Cover {
+	fn item(self, index: usize) -> usize {
+		match self {
+			Cover::Sensitive => SENSITIVE_ITEM | index,
+			_ => SPOILER_ITEM | index,
+		}
+	}
+
+	fn label(self) -> &'static str {
+		match self {
+			Cover::Sensitive => "attachment-sensitive-tag",
+			_ => "attachment-spoiler-tag",
+		}
+	}
+}
+
+fn cover_of(attachment: &Attachment, index: usize, env: &BodyEnv) -> Option<Cover> {
+	if (env.in_spoiler_channel() || is_spoiler(attachment)) && !env.is_revealed(Cover::Spoiler.item(index)) {
+		return Some(Cover::Spoiler);
+	}
+	match env.redaction(attachment.flags) {
+		MediaRedaction::Block => Some(Cover::Blocked),
+		MediaRedaction::Blur if !env.is_revealed(Cover::Sensitive.item(index)) => Some(Cover::Sensitive),
+		_ => None,
+	}
+}
+
+fn blocked(attachment: &Attachment, env: &BodyEnv, cx: &App) -> AnyElement {
+	let theme = env.theme;
+	div()
+		.id(("attachment-blocked", attachment.id.get()))
+		.mt(theme.space_4)
+		.flex()
+		.items_center()
+		.gap(theme.space_8)
+		.px(theme.space_12)
+		.py(theme.space_8)
+		.self_start()
+		.rounded(theme.radius_md)
+		.border_1()
+		.border_color(theme.code_border)
+		.bg(theme.background_secondary)
+		.text_size(theme.font_sm)
+		.text_color(theme.text_muted)
+		.child(
+			Icon::new(IconKind::EyeOff)
+				.size(rem(16.))
+				.color(theme.interactive_muted),
+		)
+		.child(cx.t("attachment-sensitive-hidden"))
+		.into_any_element()
+}
+
+fn alt_badge(id: ElementId, description: &str, theme: &Theme, cx: &App) -> AnyElement {
+	div()
+		.id(id)
+		.absolute()
+		.left(theme.space_8)
+		.bottom(theme.space_8)
+		.px(theme.space_4)
+		.rounded(theme.radius_sm)
+		.bg(with_alpha(theme.background_floating, 0.85))
+		.text_size(theme.font_tiny)
+		.font_weight(FontWeight::BOLD)
+		.text_color(theme.header_primary)
+		.cursor_default()
+		.tooltip(tooltip(description.to_owned()))
+		.on_click(|_, _, cx| cx.stop_propagation())
+		.child(cx.t("attachment-alt-tag"))
+		.into_any_element()
+}
+
+pub(super) fn with_alt(
+	content: AnyElement,
+	id: ElementId,
+	description: Option<&str>,
+	theme: &Theme,
+	cx: &App,
+) -> AnyElement {
+	let Some(description) = description.filter(|text| !text.is_empty()) else {
+		return content;
+	};
+	div()
+		.relative()
+		.self_start()
+		.child(content)
+		.child(alt_badge(id, description, theme, cx))
+		.into_any_element()
+}
+
+fn veiled(content: AnyElement, index: usize, cover: Cover, env: &BodyEnv, cx: &App) -> AnyElement {
 	let theme = env.theme;
 	let dispatch = env.dispatch.clone();
 	let message = env.message_id;
@@ -190,11 +288,7 @@ fn veiled(content: AnyElement, index: usize, env: &BodyEnv, cx: &App) -> AnyElem
 				.cursor_pointer()
 				.on_click(move |_, window, cx| {
 					cx.stop_propagation();
-					dispatch(
-						RowAction::ToggleSpoiler(message, SPOILER_ITEM | index),
-						window,
-						cx,
-					)
+					dispatch(RowAction::ToggleSpoiler(message, cover.item(index)), window, cx)
 				})
 				.child(
 					div()
@@ -205,10 +299,38 @@ fn veiled(content: AnyElement, index: usize, env: &BodyEnv, cx: &App) -> AnyElem
 						.text_size(theme.font_sm)
 						.font_weight(FontWeight::BOLD)
 						.text_color(theme.header_primary)
-						.child(cx.t("attachment-spoiler-tag")),
+						.child(cx.t(cover.label())),
 				),
 		)
 		.into_any_element()
+}
+
+fn image_target(attachment: &Attachment) -> ImageTarget {
+	let (width, height) = dimensions(attachment.width, attachment.height);
+	let source = image_source(attachment);
+	ImageTarget {
+		fetch: source.clone(),
+		url: source,
+		name: attachment.filename.clone(),
+		width: width as u32,
+		height: height as u32,
+	}
+}
+
+fn attachment_gallery(items: &[Attachment], inline: bool, env: &BodyEnv) -> (Rc<[ImageTarget]>, Vec<usize>) {
+	let mut targets = Vec::new();
+	let positions = items
+		.iter()
+		.enumerate()
+		.map(|(index, attachment)| {
+			let position = targets.len();
+			if inline && is_image(attachment) && cover_of(attachment, index, env).is_none() {
+				targets.push(image_target(attachment));
+			}
+			position
+		})
+		.collect();
+	(targets.into(), positions)
 }
 
 pub fn attachments(items: &[Attachment], env: &BodyEnv, inline: bool, cx: &App) -> Vec<AnyElement> {
@@ -216,33 +338,52 @@ pub fn attachments(items: &[Attachment], env: &BodyEnv, inline: bool, cx: &App) 
 	let look = Look {
 		stacked: layout == Some(AttachmentLayout::Stacked),
 	};
-	let spoiler_channel = env.in_spoiler_channel();
+	let (targets, positions) = attachment_gallery(items, inline, env);
 	items
 		.iter()
 		.enumerate()
 		.map(|(index, attachment)| {
 			let kind = playable(attachment.content_type.as_deref(), &attachment.filename);
+			let inline_media = inline;
 			let inline =
 				inline || (layout == Some(AttachmentLayout::InlineVideo) && kind == Some(Playable::Video));
+			let cover = cover_of(attachment, index, env);
+			let gallery = Gallery {
+				items: targets.clone(),
+				start: positions[index],
+			};
 			let content = match (inline, kind) {
-				(true, _) if is_image(attachment) => image_attachment(attachment, look, env, cx),
+				_ if cover == Some(Cover::Blocked) => blocked(attachment, env, cx),
+				(true, _) if is_image(attachment) => image_attachment(attachment, look, gallery, env, cx),
 				(true, Some(Playable::Video)) => video_attachment(attachment, look, env, cx),
 				(true, Some(Playable::Audio)) => audio_attachment(attachment, env, cx),
 				_ => file_card(attachment, kind == Some(Playable::Video), env, cx),
 			};
-			let content = match env
+			let over = env
 				.effects()
-				.and_then(|effects| effects.attachment_override(attachment.id))
-			{
+				.and_then(|effects| effects.attachment_override(attachment.id));
+			let content = match over {
 				Some(over) => customized(content, attachment, over, look, env, cx),
 				None => content,
 			};
-			let hidden =
-				(spoiler_channel || is_spoiler(attachment)) && !env.is_revealed(SPOILER_ITEM | index);
-			let content = if hidden {
-				veiled(content, index, env, cx)
+			let content = if inline_media
+				&& is_image(attachment)
+				&& cover != Some(Cover::Blocked)
+				&& over.is_none_or(|over| over.alt.is_none())
+			{
+				with_alt(
+					content,
+					("attachment-alt", attachment.id.get()).into(),
+					attachment.description.as_deref(),
+					env.theme,
+					cx,
+				)
 			} else {
 				content
+			};
+			let content = match cover {
+				Some(cover @ (Cover::Spoiler | Cover::Sensitive)) => veiled(content, index, cover, env, cx),
+				_ => content,
 			};
 			with_actions(content, attachment, env, cx)
 		})
@@ -432,7 +573,7 @@ fn video_attachment(attachment: &Attachment, look: Look, env: &BodyEnv, cx: &App
 		env,
 		cx,
 	);
-	with_attachment_menu(&link, attachment.id.get(), video)
+	with_attachment_menu(&link, attachment, video)
 }
 
 fn audio_attachment(attachment: &Attachment, env: &BodyEnv, cx: &App) -> AnyElement {
@@ -442,7 +583,7 @@ fn audio_attachment(attachment: &Attachment, env: &BodyEnv, cx: &App) -> AnyElem
 	};
 	let url = attachment_source(attachment);
 	let link = url.clone();
-	if attachment.waveform.is_some() {
+	if env.is_voice_message() {
 		let voice = player::voice_message(
 			VoiceSource {
 				key,
@@ -453,7 +594,7 @@ fn audio_attachment(attachment: &Attachment, env: &BodyEnv, cx: &App) -> AnyElem
 			env,
 			cx,
 		);
-		return with_attachment_menu(&link, attachment.id.get(), voice);
+		return with_attachment_menu(&link, attachment, voice);
 	}
 	let audio = player::audio(
 		AudioSource {
@@ -464,22 +605,22 @@ fn audio_attachment(attachment: &Attachment, env: &BodyEnv, cx: &App) -> AnyElem
 		env,
 		cx,
 	);
-	with_attachment_menu(&link, attachment.id.get(), audio)
+	with_attachment_menu(&link, attachment, audio)
 }
 
-fn image_attachment(attachment: &Attachment, look: Look, env: &BodyEnv, cx: &App) -> AnyElement {
+fn image_attachment(
+	attachment: &Attachment,
+	look: Look,
+	gallery: Gallery,
+	env: &BodyEnv,
+	cx: &App,
+) -> AnyElement {
 	let theme = env.theme;
 	let (native_width, native_height) = dimensions(attachment.width, attachment.height);
 	let (width, height) = sized(look, native_width, native_height);
-	let source = image_source(attachment);
-	let shown = proxied_media(&source, attachment_animated(attachment), width, height);
-	let target = ImageTarget {
-		url: source,
-		name: attachment.filename.clone(),
-		width: native_width as u32,
-		height: native_height as u32,
-	};
-	let pointed = point_media(&target, &target.url, Some(attachment.id.get()));
+	let target = image_target(attachment);
+	let shown = proxied_media(&target.url, attachment_animated(attachment), width, height);
+	let pointed = point_media(&target, Some(attachment.id.get()));
 	let dispatch = env.dispatch.clone();
 	let at = env.message_at();
 	let attachment_id = attachment.id.get();
@@ -499,7 +640,7 @@ fn image_attachment(attachment: &Attachment, look: Look, env: &BodyEnv, cx: &App
 				cx.stop_propagation();
 				return;
 			}
-			dispatch(RowAction::OpenImage(target.clone()), window, cx)
+			dispatch(RowAction::OpenImage(gallery.clone()), window, cx)
 		})
 		.child(picture(
 			&shown,
@@ -522,8 +663,12 @@ fn file_card(attachment: &Attachment, video: bool, env: &BodyEnv, cx: &App) -> A
 	let icon = if video { IconKind::Play } else { IconKind::File };
 	let dispatch = env.dispatch.clone();
 	let download_dispatch = env.dispatch.clone();
-	let open_url = url.clone();
-	div()
+	let download = RowAction::Download {
+		url: url.clone(),
+		name: attachment.filename.clone(),
+	};
+	let open = download.clone();
+	let card = div()
 		.id(("file", attachment.id.get()))
 		.mt(theme.space_4)
 		.flex()
@@ -550,9 +695,7 @@ fn file_card(attachment: &Attachment, video: bool, env: &BodyEnv, cx: &App) -> A
 						.cursor_pointer()
 						.text_size(theme.font_md)
 						.text_color(theme.link)
-						.on_click(move |_, window, cx| {
-							dispatch(RowAction::Download(open_url.clone()), window, cx)
-						})
+						.on_click(move |_, window, cx| dispatch(open.clone(), window, cx))
 						.child(attachment.filename.clone()),
 				)
 				.children(size.map(|size| {
@@ -568,10 +711,11 @@ fn file_card(attachment: &Attachment, video: bool, env: &BodyEnv, cx: &App) -> A
 				.hit_size(rem(32.))
 				.tooltip(cx.t("attachment-download"))
 				.on_click(move |_, window, cx| {
-					download_dispatch(RowAction::Download(url.clone()), window, cx);
+					download_dispatch(download.clone(), window, cx);
 				}),
 		)
-		.into_any_element()
+		.into_any_element();
+	with_attachment_menu(&url, attachment, card)
 }
 
 pub fn stickers(items: &[StickerItem], env: &BodyEnv, cx: &App) -> Vec<AnyElement> {
@@ -689,11 +833,13 @@ fn bare_media(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<An
 	let animated = embed_animated(media);
 	let target = ImageTarget {
 		url: media.url.clone().unwrap_or_else(|| url.clone()),
+		fetch: url.clone(),
 		name: String::new(),
 		width: native_width as u32,
 		height: native_height as u32,
 	};
-	let pointed = point_media(&target, &url, None);
+	let pointed = point_media(&target, None);
+	let gallery = Gallery::single(target);
 	let dispatch = env.dispatch.clone();
 	Some(
 		div()
@@ -706,7 +852,7 @@ fn bare_media(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<An
 			.rounded(env.theme.radius_md)
 			.overflow_hidden()
 			.cursor_pointer()
-			.on_click(move |_, window, cx| dispatch(RowAction::OpenImage(target.clone()), window, cx))
+			.on_click(move |_, window, cx| dispatch(RowAction::OpenImage(gallery.clone()), window, cx))
 			.child(picture(
 				&proxied_media(&url, animated, width, height),
 				media.placeholder.as_deref(),
@@ -1240,11 +1386,13 @@ fn large_media(
 		.or_else(|| embed.video.as_ref().and_then(|v| v.url.clone()));
 	let image_target = ImageTarget {
 		url: media.url.clone().unwrap_or_else(|| url.to_owned()),
+		fetch: url.to_owned(),
 		name: String::new(),
 		width: native_width as u32,
 		height: native_height as u32,
 	};
-	let pointed = point_media(&image_target, url, None);
+	let pointed = point_media(&image_target, None);
+	let gallery = Gallery::single(image_target);
 	let link_target = target_url.clone().map(|url| point_link(&url));
 	let dispatch = env.dispatch.clone();
 	div()
@@ -1265,7 +1413,7 @@ fn large_media(
 		.on_click(move |_, window, cx| {
 			let action = match (&target_url, playable) {
 				(Some(url), true) => RowAction::OpenLink(url.clone()),
-				_ => RowAction::OpenImage(image_target.clone()),
+				_ => RowAction::OpenImage(gallery.clone()),
 			};
 			dispatch(action, window, cx);
 		})

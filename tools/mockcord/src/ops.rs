@@ -2,9 +2,10 @@ use std::time::{Duration, Instant};
 
 use chrono::{SecondsFormat, Utc};
 use protocol::{
-	Attachment, AttachmentDescriptor, ChannelType, CreateMessage, EditMessage, LenientVec, Message,
-	MessageFlags, MessageReference, MessageReferenceKind, MessageType, Nonce, Permissions, Poll, PollAnswer,
-	PollCreate, ReadState, ReadStateKind, RelationshipKind, Snowflake, StickerFormat, StickerItem, User,
+	Attachment, AttachmentDescriptor, AttachmentFlags, ChannelType, CreateMessage, EditMessage, LenientVec,
+	Message, MessageFlags, MessageReference, MessageReferenceKind, MessageType, Nonce, Permissions, Poll,
+	PollAnswer, PollCreate, ReadState, ReadStateKind, RelationshipKind, Snowflake, StickerFormat,
+	StickerItem, User,
 };
 use serde_json::{Value, json};
 
@@ -17,7 +18,6 @@ use crate::state::{Shared, Store};
 
 const BURST_COLOR: &str = "#ff73fa";
 const MAX_POLL_ANSWERS: usize = 10;
-const SPOILER_FLAG: u64 = 1 << 3;
 
 pub struct UploadedFile {
 	pub filename: String,
@@ -719,7 +719,11 @@ fn uploaded_attachment(
 		description: descriptor.and_then(|descriptor| descriptor.description.clone()),
 		content_type: file.content_type.clone(),
 		size: Some(file.size as i64),
-		flags: Some(if spoiler { SPOILER_FLAG } else { 0 }),
+		flags: if spoiler {
+			AttachmentFlags::IS_SPOILER
+		} else {
+			AttachmentFlags::empty()
+		},
 		..Attachment::default()
 	}
 }

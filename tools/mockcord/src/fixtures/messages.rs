@@ -2,10 +2,10 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Duration, Utc};
 use protocol::{
-	Attachment, Channel, Embed, EmbedAuthor, EmbedField, EmbedFooter, EmbedKind, EmbedMedia, EmbedProvider,
-	Emoji, LenientVec, Message, MessageFlags, MessageReference, MessageReferenceKind, MessageType,
-	PartialEmoji, Poll, PollAnswer, PollAnswerCount, PollLayout, PollMedia, PollResults, Reaction,
-	ReactionCountDetails, Role, RoleSubscriptionData, Snowflake, StickerFormat, StickerItem, User,
+	Attachment, AttachmentFlags, Channel, Embed, EmbedAuthor, EmbedField, EmbedFooter, EmbedKind, EmbedMedia,
+	EmbedProvider, Emoji, LenientVec, Message, MessageFlags, MessageReference, MessageReferenceKind,
+	MessageType, PartialEmoji, Poll, PollAnswer, PollAnswerCount, PollLayout, PollMedia, PollResults,
+	Reaction, ReactionCountDetails, Role, RoleSubscriptionData, Snowflake, StickerFormat, StickerItem, User,
 };
 use rand::Rng;
 use rand::rngs::StdRng;
@@ -461,9 +461,12 @@ impl<'a> Generator<'a, '_> {
 			Special::Reply => self.reply(message),
 			Special::Images => {
 				message.content = "screenshots from today".to_owned();
-				let attachments = (0..2)
+				let mut attachments = (0..4)
 					.map(|n| self.image_attachment(message.id.0, n))
 					.collect::<Vec<_>>();
+				attachments[0].description = Some("A mountain lake at sunrise".to_owned());
+				attachments[2].flags = AttachmentFlags::CONTAINS_EXPLICIT_CONTENT;
+				attachments[3].flags = AttachmentFlags::CONTAINS_GORE_CONTENT;
 				message.attachments = LenientVec::from(attachments);
 			}
 			Special::EmbedRich => {
@@ -615,12 +618,9 @@ impl<'a> Generator<'a, '_> {
 			}
 			Special::AudioFile => {
 				message.content = "new track".to_owned();
-				message.attachments = LenientVec::from(vec![self.file_attachment(
-					message.id.0,
-					"song.mp3",
-					"audio/mpeg",
-					None,
-				)]);
+				let mut track = self.file_attachment(message.id.0, "song.mp3", "audio/mpeg", None);
+				track.waveform = Some(VOICE_WAVEFORM.to_owned());
+				message.attachments = LenientVec::from(vec![track]);
 			}
 			Special::VoiceMessage => {
 				let mut voice = self.file_attachment(message.id.0, "voice.ogg", "audio/ogg", None);
@@ -631,7 +631,7 @@ impl<'a> Generator<'a, '_> {
 			}
 			Special::GifFile => {
 				let mut gif = self.file_attachment(message.id.0, "loop.gif", "image/gif", Some((200, 120)));
-				gif.flags = Some(ANIMATED_FLAG);
+				gif.flags = AttachmentFlags::IS_ANIMATED;
 				message.attachments = LenientVec::from(vec![gif]);
 			}
 			Special::GifLink => {
@@ -782,7 +782,7 @@ impl<'a> Generator<'a, '_> {
 					"accessory": { "type": 11, "media": media(&images[0]) }
 				},
 				{ "type": 14, "divider": true, "spacing": 1 },
-				{ "type": 12, "items": images.iter().map(|image| json!({ "media": media(image) })).collect::<Vec<_>>() },
+				{ "type": 12, "items": images.iter().enumerate().map(|(index, image)| json!({ "media": media(image), "description": (index == 0).then_some("The release banner") })).collect::<Vec<_>>() },
 				{ "type": 13, "file": media(&notes), "name": notes.filename, "size": notes.size },
 				{ "type": 14, "divider": false, "spacing": 2 },
 				{
@@ -971,7 +971,6 @@ impl<'a> Generator<'a, '_> {
 			url: Some(url),
 			width: Some(width),
 			height: Some(height),
-			flags: Some(0),
 			placeholder: Some(thumbhash(self.rng, width >= height)),
 			..Attachment::default()
 		}
@@ -998,7 +997,6 @@ impl<'a> Generator<'a, '_> {
 			url: Some(url),
 			width: size.map(|(width, _)| width),
 			height: size.map(|(_, height)| height),
-			flags: Some(0),
 			placeholder: size.map(|(width, height)| thumbhash(self.rng, width >= height)),
 			..Attachment::default()
 		}

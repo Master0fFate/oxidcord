@@ -21,11 +21,11 @@ use protocol::{ChannelType, Snowflake};
 use session::Command;
 use state::{Changes, MessageRow, UnreadSince};
 
-use super::community::act;
+use super::community::{act, save_file};
 use super::inline_emoji::{self, EmojiTokens};
 use super::message::{
-	Dispatch, DocumentCache, Editing, FLASH_DURATION, GifFavoriteOverrides, ImageTarget, MessageAccess,
-	Prefs, RowAction, RowEnv, VideoFullscreenTarget, Welcome, can_edit, render_row,
+	Dispatch, DocumentCache, Editing, FLASH_DURATION, Gallery, GifFavoriteOverrides, MessageAccess, Prefs,
+	RowAction, RowEnv, VideoFullscreenTarget, Welcome, can_edit, render_row,
 };
 use super::moderation;
 use super::plugins::{self, LinkOrigin, PluginBridge};
@@ -46,7 +46,7 @@ const GROUP_LOOKBACK: usize = 6;
 
 pub enum TimelineEvent {
 	OpenLink(String, LinkOrigin),
-	OpenImage(ImageTarget),
+	OpenImage(Gallery),
 	OpenVideoFullscreen(VideoFullscreenTarget),
 	Reply(Snowflake),
 	OpenEmoji {
@@ -596,10 +596,11 @@ impl Timeline {
 
 	fn on_row_action(&mut self, action: RowAction, window: &mut Window, cx: &mut Context<Self>) {
 		match action {
-			RowAction::OpenLink(url) | RowAction::Download(url) => {
+			RowAction::OpenLink(url) => {
 				let origin = self.link_origin(None);
 				cx.emit(TimelineEvent::OpenLink(url, origin));
 			}
+			RowAction::Download { url, name } => save_file(&url, name, cx),
 			RowAction::OpenMessageLink { url, message_id } => {
 				let origin = self.link_origin(Some(Snowflake(message_id)));
 				cx.emit(TimelineEvent::OpenLink(url, origin));

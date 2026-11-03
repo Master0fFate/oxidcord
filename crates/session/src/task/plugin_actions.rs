@@ -104,6 +104,7 @@ impl Core {
 				message_id,
 				attachment_id,
 			} => self.save_attachment(channel_id, message_id, attachment_id),
+			Command::SaveFile { url, name } => self.save_download(url, suggested_name(&name)),
 			Command::SetClientOption { plugin_id, option } => self.set_client_option(plugin_id, option),
 			Command::SetDmSections { plugin_id, sections } => self.set_dm_sections(plugin_id, sections),
 			Command::SetNotificationSettings {
@@ -223,6 +224,10 @@ impl Core {
 			self.reject("That attachment is larger than 100 MiB");
 			return;
 		}
+		self.save_download(url, name);
+	}
+
+	fn save_download(&mut self, url: String, name: String) {
 		let Some(fetcher) = self.save_media.clone() else {
 			self.reject("Downloads are unavailable");
 			return;

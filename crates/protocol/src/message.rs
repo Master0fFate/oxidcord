@@ -104,6 +104,28 @@ bitflags! {
 
 flags_serde!(MessageFlags, number);
 
+bitflags! {
+	#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+	pub struct AttachmentFlags: u64 {
+		const IS_CLIP = 1 << 0;
+		const IS_THUMBNAIL = 1 << 1;
+		const IS_REMIX = 1 << 2;
+		const IS_SPOILER = 1 << 3;
+		const CONTAINS_EXPLICIT_CONTENT = 1 << 4;
+		const IS_ANIMATED = 1 << 5;
+		const CONTAINS_GORE_CONTENT = 1 << 6;
+		const CONTAINS_SELF_HARM_CONTENT = 1 << 7;
+	}
+}
+
+flags_serde!(AttachmentFlags, number);
+
+impl AttachmentFlags {
+	pub const SENSITIVE: Self = Self::CONTAINS_EXPLICIT_CONTENT
+		.union(Self::CONTAINS_GORE_CONTENT)
+		.union(Self::CONTAINS_SELF_HARM_CONTENT);
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Nonce(pub String);
 
@@ -157,7 +179,7 @@ pub struct Attachment {
 	pub ephemeral: Option<bool>,
 	pub duration_secs: Option<f64>,
 	pub waveform: Option<String>,
-	pub flags: Option<u64>,
+	pub flags: AttachmentFlags,
 	pub placeholder: Option<String>,
 }
 

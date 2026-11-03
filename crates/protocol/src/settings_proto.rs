@@ -5,9 +5,16 @@ use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
 
 use crate::snowflake::Snowflake;
 
+const PRELOADED_TEXT_AND_IMAGES: u32 = 6;
 const PRELOADED_PRIVACY: u32 = 8;
 const PRELOADED_STATUS: u32 = 11;
 const PRELOADED_GUILD_FOLDERS: u32 = 14;
+const TEXT_EXPLICIT_CONTENT: u32 = 29;
+const TEXT_GORE_CONTENT: u32 = 32;
+const TEXT_SELF_HARM_CONTENT: u32 = 35;
+const REDACTION_GUILDS: u32 = 1;
+const REDACTION_FRIEND_DM: u32 = 2;
+const REDACTION_NON_FRIEND_DM: u32 = 3;
 const STATUS_VALUE: u32 = 1;
 const STATUS_CUSTOM: u32 = 2;
 const STATUS_SHOW_CURRENT_GAME: u32 = 3;
@@ -64,8 +71,74 @@ pub struct ProtoGuildFolders {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ProtoSettings {
 	pub status_bytes: Option<Vec<u8>>,
+	pub text_and_images_bytes: Option<Vec<u8>>,
 	pub privacy_bytes: Option<Vec<u8>>,
 	pub guild_folders: Option<ProtoGuildFolders>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MediaRedaction {
+	#[default]
+	Unset,
+	Show,
+	Blur,
+	Block,
+}
+
+impl MediaRedaction {
+	fn to_wire(self) -> u64 {
+		match self {
+			Self::Unset => 0,
+			Self::Show => 1,
+			Self::Blur => 2,
+			Self::Block => 3,
+		}
+	}
+
+	fn from_wire(value: u64) -> Self {
+		match value {
+			1 => Self::Show,
+			2 => Self::Blur,
+			3 => Self::Block,
+			_ => Self::Unset,
+		}
+	}
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediaScope {
+	Guild,
+	FriendDm,
+	NonFriendDm,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct MediaRedactions {
+	pub guilds: MediaRedaction,
+	pub friend_dm: MediaRedaction,
+	pub non_friend_dm: MediaRedaction,
+}
+
+impl MediaRedactions {
+	pub fn at(&self, scope: MediaScope) -> MediaRedaction {
+		let chosen = match scope {
+			MediaScope::Guild => self.guilds,
+			MediaScope::FriendDm => self.friend_dm,
+			MediaScope::NonFriendDm => self.non_friend_dm,
+		};
+		match (chosen, scope) {
+			(MediaRedaction::Unset, MediaScope::NonFriendDm) => MediaRedaction::Block,
+			(MediaRedaction::Unset, _) => MediaRedaction::Show,
+			(chosen, _) => chosen,
+		}
+	}
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SensitiveMedia {
+	pub explicit: MediaRedactions,
+	pub gore: MediaRedactions,
+	pub self_harm: MediaRedactions,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -293,12 +366,47 @@ pub fn decode_friend_source_flags(bytes: &[u8]) -> Option<u32> {
 		.last()
 }
 
+fn decode_redactions(bytes: &[u8]) -> MediaRedactions {
+	let mut redactions = MediaRedactions::default();
+	for (number, wire) in Fields::new(bytes) {
+		let (REDACTION_GUILDS..=REDACTION_NON_FRIEND_DM, Wire::Varint(value)) = (number, wire) else {
+			continue;
+		};
+		let redaction = MediaRedaction::from_wire(value);
+		match number {
+			REDACTION_GUILDS => redactions.guilds = redaction,
+			REDACTION_FRIEND_DM => redactions.friend_dm = redaction,
+			_ => redactions.non_friend_dm = redaction,
+		}
+	}
+	redactions
+}
+
+pub fn decode_sensitive_media(text_and_images: &[u8]) -> SensitiveMedia {
+	let mut media = SensitiveMedia::default();
+	for (number, wire) in Fields::new(text_and_images) {
+		let Wire::Bytes(inner) = wire else {
+			continue;
+		};
+		match number {
+			TEXT_EXPLICIT_CONTENT => media.explicit = decode_redactions(inner),
+			TEXT_GORE_CONTENT => media.gore = decode_redactions(inner),
+			TEXT_SELF_HARM_CONTENT => media.self_harm = decode_redactions(inner),
+			_ => {}
+		}
+	}
+	media
+}
+
 pub fn decode_settings(encoded: &str) -> Option<ProtoSettings> {
 	let bytes = LENIENT.decode(encoded.trim()).ok()?;
 	let mut settings = ProtoSettings::default();
 	for (number, wire) in Fields::new(&bytes) {
 		match (number, wire) {
 			(PRELOADED_STATUS, Wire::Bytes(inner)) => settings.status_bytes = Some(inner.to_vec()),
+			(PRELOADED_TEXT_AND_IMAGES, Wire::Bytes(inner)) => {
+				settings.text_and_images_bytes = Some(inner.to_vec());
+			}
 			(PRELOADED_PRIVACY, Wire::Bytes(inner)) => settings.privacy_bytes = Some(inner.to_vec()),
 			(PRELOADED_GUILD_FOLDERS, Wire::Bytes(inner)) => {
 				settings.guild_folders = Some(decode_folders(inner));
@@ -483,6 +591,34 @@ fn encode_custom_status(custom: &ProtoCustomStatus) -> Vec<u8> {
 	out
 }
 
+fn encode_redactions(redactions: &MediaRedactions) -> Vec<u8> {
+	let mut out = Vec::new();
+	put_uint(&mut out, REDACTION_GUILDS, redactions.guilds.to_wire());
+	put_uint(&mut out, REDACTION_FRIEND_DM, redactions.friend_dm.to_wire());
+	put_uint(
+		&mut out,
+		REDACTION_NON_FRIEND_DM,
+		redactions.non_friend_dm.to_wire(),
+	);
+	out
+}
+
+pub fn encode_sensitive_media(media: &SensitiveMedia) -> Vec<u8> {
+	let mut out = Vec::new();
+	put_bytes(
+		&mut out,
+		TEXT_EXPLICIT_CONTENT,
+		&encode_redactions(&media.explicit),
+	);
+	put_bytes(&mut out, TEXT_GORE_CONTENT, &encode_redactions(&media.gore));
+	put_bytes(
+		&mut out,
+		TEXT_SELF_HARM_CONTENT,
+		&encode_redactions(&media.self_harm),
+	);
+	out
+}
+
 pub fn encode_status(status: &ProtoStatus) -> Vec<u8> {
 	let mut out = Vec::new();
 	if let Some(value) = &status.status {
@@ -553,6 +689,9 @@ fn encode_folders(folders: &ProtoGuildFolders) -> Vec<u8> {
 
 pub fn encode_settings(settings: &ProtoSettings) -> String {
 	let mut out = Vec::new();
+	if let Some(text_and_images) = &settings.text_and_images_bytes {
+		put_bytes(&mut out, PRELOADED_TEXT_AND_IMAGES, text_and_images);
+	}
 	if let Some(privacy) = &settings.privacy_bytes {
 		put_bytes(&mut out, PRELOADED_PRIVACY, privacy);
 	}

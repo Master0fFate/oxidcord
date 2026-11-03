@@ -328,6 +328,7 @@ search-page = { $page } / { $pages }
 lightbox-loading = Loading image...
 lightbox-open = Open original
 lightbox-close = Close
+lightbox-count = { $current } / { $total }
 
 link-title = Leave Oxidcord?
 link-body = This link goes to an external site:
@@ -904,6 +905,7 @@ title-forward = Forward
 menu-search-image = Search Image
 menu-copy-image = Copy Image
 menu-save-image = Save Image
+menu-save-file = Save File
 menu-copy-image-link = Copy Image Link
 menu-open-image-link = Open Image Link
 menu-open-link = Open Link

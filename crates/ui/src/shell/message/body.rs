@@ -11,7 +11,7 @@ use markdown::highlight::{TokenKind, highlight};
 use markdown::{Color, Document, GuildNavKind, Node, Resolve, TimestampStyle};
 use media::SizeHint;
 use plugin_host::api::model::{CodeBlockNode, EmojiRef};
-use protocol::{ChannelFlags, Message, Snowflake};
+use protocol::{AttachmentFlags, ChannelFlags, MediaRedaction, Message, MessageFlags, Snowflake};
 
 use super::selectable::SelectableRun;
 use super::{Dispatch, Prefs, RowAction};
@@ -45,6 +45,8 @@ pub struct BodyEnv<'a> {
 	pub prefs: Prefs,
 	patch: Option<&'a PatchEffects>,
 	channel_id: Option<u64>,
+	author: Option<Snowflake>,
+	message_flags: MessageFlags,
 	emoji_menus: Cell<u32>,
 	timestamps: Cell<u32>,
 	spoilers: Cell<usize>,
@@ -74,6 +76,8 @@ impl<'a> BodyEnv<'a> {
 			prefs,
 			patch: None,
 			channel_id: None,
+			author: None,
+			message_flags: MessageFlags::empty(),
 			emoji_menus: Cell::new(0),
 			timestamps: Cell::new(0),
 			spoilers: Cell::new(0),
@@ -87,6 +91,12 @@ impl<'a> BodyEnv<'a> {
 		self
 	}
 
+	pub fn posted(mut self, author: Snowflake, flags: MessageFlags) -> Self {
+		self.author = Some(author);
+		self.message_flags = flags;
+		self
+	}
+
 	pub fn in_channel(mut self, channel_id: u64) -> Self {
 		self.channel_id = Some(channel_id);
 		self
@@ -94,6 +104,20 @@ impl<'a> BodyEnv<'a> {
 
 	pub(super) fn effects(&self) -> Option<&PatchEffects> {
 		self.patch
+	}
+
+	pub(super) fn is_voice_message(&self) -> bool {
+		self.message_flags.contains(MessageFlags::IS_VOICE_MESSAGE)
+	}
+
+	pub(super) fn redaction(&self, flags: AttachmentFlags) -> MediaRedaction {
+		match self.author {
+			Some(author) if flags.intersects(AttachmentFlags::SENSITIVE) => self
+				.lookup
+				.state
+				.media_redaction(self.lookup.guild, author, flags),
+			_ => MediaRedaction::Show,
+		}
 	}
 
 	pub(super) fn channel_id(&self) -> Option<u64> {

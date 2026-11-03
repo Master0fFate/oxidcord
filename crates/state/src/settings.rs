@@ -2,8 +2,9 @@ use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
 use protocol::{
-	FRIEND_SOURCES_ALL, ProtoCustomStatus, ProtoGuildFolder, ProtoGuildFolders, ProtoSettings, Snowflake,
-	UserGuildSettings, decode_friend_source_flags, decode_settings, decode_status, encode_settings,
+	AttachmentFlags, FRIEND_SOURCES_ALL, MediaRedaction, MediaScope, ProtoCustomStatus, ProtoGuildFolder,
+	ProtoGuildFolders, ProtoSettings, RelationshipKind, Snowflake, UserGuildSettings,
+	decode_friend_source_flags, decode_sensitive_media, decode_settings, decode_status, encode_settings,
 	privacy_with_friend_sources, status_with_custom, status_with_show_current_game, status_with_value,
 };
 use serde::Deserialize;
@@ -62,6 +63,42 @@ impl State {
 
 	pub fn show_current_game(&self) -> bool {
 		self.status_settings.show_current_game
+	}
+
+	pub fn media_redaction(
+		&self,
+		guild_id: Option<Snowflake>,
+		author: Snowflake,
+		flags: AttachmentFlags,
+	) -> MediaRedaction {
+		if self.current_user_id() == Some(author) {
+			return MediaRedaction::Show;
+		}
+		let scope = if guild_id.is_some() {
+			MediaScope::Guild
+		} else if self
+			.relationship(author)
+			.is_some_and(|relationship| relationship.kind == RelationshipKind::Friend)
+		{
+			MediaScope::FriendDm
+		} else {
+			MediaScope::NonFriendDm
+		};
+		let media = &self.sensitive_media;
+		[
+			(AttachmentFlags::CONTAINS_EXPLICIT_CONTENT, media.explicit),
+			(AttachmentFlags::CONTAINS_GORE_CONTENT, media.gore),
+			(AttachmentFlags::CONTAINS_SELF_HARM_CONTENT, media.self_harm),
+		]
+		.into_iter()
+		.filter(|(flag, _)| flags.contains(*flag))
+		.fold(MediaRedaction::Show, |strongest, (_, redactions)| {
+			match (strongest, redactions.at(scope)) {
+				(MediaRedaction::Block, _) | (_, MediaRedaction::Block) => MediaRedaction::Block,
+				(MediaRedaction::Blur, _) | (_, MediaRedaction::Blur) => MediaRedaction::Blur,
+				_ => MediaRedaction::Show,
+			}
+		})
 	}
 
 	pub fn friend_source_flags(&self) -> u32 {
@@ -132,6 +169,7 @@ impl State {
 		let mut changes = Changes::default();
 		let Some(ProtoSettings {
 			status_bytes,
+			text_and_images_bytes,
 			privacy_bytes,
 			guild_folders,
 		}) = decode_settings(encoded)
@@ -140,6 +178,9 @@ impl State {
 		};
 		if status_bytes.is_some() || !partial {
 			changes.merge(self.replace_status_settings(status_bytes.unwrap_or_default()));
+		}
+		if text_and_images_bytes.is_some() || !partial {
+			changes.merge(self.replace_sensitive_media(&text_and_images_bytes.unwrap_or_default()));
 		}
 		if privacy_bytes.is_some() || !partial {
 			changes.merge(self.replace_privacy_settings(privacy_bytes.unwrap_or_default()));
@@ -176,6 +217,16 @@ impl State {
 		self.proto_status = bytes;
 		self.status_settings = status;
 		changes
+	}
+
+	fn replace_sensitive_media(&mut self, bytes: &[u8]) -> Changes {
+		let media = decode_sensitive_media(bytes);
+		let changed = media != self.sensitive_media;
+		self.sensitive_media = media;
+		Changes {
+			user_settings: changed,
+			..Changes::default()
+		}
 	}
 
 	fn replace_privacy_settings(&mut self, bytes: Vec<u8>) -> Changes {

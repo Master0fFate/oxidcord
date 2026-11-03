@@ -827,6 +827,10 @@ pub enum Command {
 		message_id: Snowflake,
 		attachment_id: Snowflake,
 	},
+	SaveFile {
+		url: String,
+		name: String,
+	},
 	SetClientOption {
 		plugin_id: String,
 		option: ClientOption,

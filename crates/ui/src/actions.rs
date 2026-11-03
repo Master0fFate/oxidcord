@@ -1,6 +1,7 @@
 use gpui::{App, KeyBinding, actions};
 
 pub const SHELL_CONTEXT: &str = "Shell";
+pub const LIGHTBOX_CONTEXT: &str = "Lightbox";
 
 actions!(
 	oxidcord,
@@ -10,6 +11,8 @@ actions!(
 		CloseOverlay,
 		PreviousChannel,
 		NextChannel,
+		LightboxPrevious,
+		LightboxNext,
 		ZoomIn,
 		ZoomOut,
 		ZoomReset,
@@ -23,6 +26,8 @@ pub fn bind_keys(cx: &mut App) {
 		KeyBinding::new("escape", CloseOverlay, Some(SHELL_CONTEXT)),
 		KeyBinding::new("alt-up", PreviousChannel, Some(SHELL_CONTEXT)),
 		KeyBinding::new("alt-down", NextChannel, Some(SHELL_CONTEXT)),
+		KeyBinding::new("left", LightboxPrevious, Some(LIGHTBOX_CONTEXT)),
+		KeyBinding::new("right", LightboxNext, Some(LIGHTBOX_CONTEXT)),
 		KeyBinding::new("secondary-=", ZoomIn, None),
 		KeyBinding::new("secondary-+", ZoomIn, None),
 		KeyBinding::new("secondary-shift-=", ZoomIn, None),

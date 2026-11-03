@@ -150,9 +150,25 @@ impl Global for GifFavoriteOverrides {}
 #[derive(Clone)]
 pub struct ImageTarget {
 	pub url: String,
+	pub fetch: String,
 	pub name: String,
 	pub width: u32,
 	pub height: u32,
+}
+
+#[derive(Clone)]
+pub struct Gallery {
+	pub items: Rc<[ImageTarget]>,
+	pub start: usize,
+}
+
+impl Gallery {
+	pub fn single(target: ImageTarget) -> Self {
+		Self {
+			items: Rc::new([target]),
+			start: 0,
+		}
+	}
 }
 
 #[derive(Clone, Debug)]
@@ -171,10 +187,13 @@ pub enum RowAction {
 		url: String,
 		message_id: u64,
 	},
-	Download(String),
+	Download {
+		url: String,
+		name: String,
+	},
 	ToggleSpoiler(u64, usize),
 	ToggleBlocked(Snowflake),
-	OpenImage(ImageTarget),
+	OpenImage(Gallery),
 	OpenVideoFullscreen(VideoFullscreenTarget),
 	React {
 		channel_id: Snowflake,
@@ -1004,7 +1023,8 @@ fn forward_block(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 			.jumbo(document.is_only_emoji());
 		lines.push(render_body(&document, &body_env, cx));
 	}
-	let body_env = BodyEnv::new(theme, env.lookup, env.dispatch, id, env.revealed, env.prefs);
+	let body_env = BodyEnv::new(theme, env.lookup, env.dispatch, id, env.revealed, env.prefs)
+		.posted(message.author.id, source.flags);
 	if !source.flags.contains(protocol::MessageFlags::IS_COMPONENTS_V2) {
 		lines.extend(media::attachments(
 			&source.attachments,
@@ -1310,6 +1330,7 @@ fn content_column(
 		env.prefs,
 	)
 	.patch(effects)
+	.posted(message.author.id, message.flags)
 	.in_channel(message.channel_id.get());
 	let filtered = media_source(message, effects);
 	let media_message = filtered.as_ref().unwrap_or(message);

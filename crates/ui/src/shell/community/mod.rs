@@ -28,7 +28,7 @@ use store::Settings;
 
 use super::composer::{Composer, ComposerEvent};
 use super::links;
-use super::message::{ImageTarget, ReactionRequests, VideoFullscreenTarget};
+use super::message::{Gallery, ReactionRequests, VideoFullscreenTarget};
 use super::pickers::{Picker, PickerEvent, PickerTab, SkinTone};
 use super::plugins::LinkOrigin;
 use super::server_settings::{Page, ServerSettings, ServerSettingsEvent};
@@ -39,6 +39,7 @@ use super::threads::{
 };
 use super::timeline::TimelineEvent;
 use crate::data::Data;
+use crate::images::Images;
 use crate::theme::rem;
 
 const POPOVER_GAP: f32 = 12.;
@@ -66,6 +67,11 @@ pub fn data_handle(cx: &gpui::App) -> Entity<Data> {
 	cx.global::<CommunityHandle>().data.clone()
 }
 
+pub fn save_file(url: &str, name: String, cx: &gpui::App) {
+	let url = cx.global::<Images>().resolve(url);
+	data_handle(cx).read(cx).send(Command::SaveFile { url, name });
+}
+
 pub fn settings(cx: &gpui::App) -> Settings {
 	(cx.global::<CommunityHandle>().backend.read)()
 }
@@ -79,7 +85,7 @@ pub fn developer_mode(cx: &gpui::App) -> bool {
 }
 
 pub enum CommunityEvent {
-	OpenImage(ImageTarget),
+	OpenImage(Gallery),
 	OpenVideoFullscreen(VideoFullscreenTarget),
 	OpenProfile { user: Snowflake, at: Point<Pixels> },
 	Jump { channel: Snowflake, message: Snowflake },

@@ -56,6 +56,15 @@ pub struct FileInfo {
 	pub download: String,
 }
 
+impl FileInfo {
+	pub fn save(&self) -> RowAction {
+		RowAction::Download {
+			url: self.download.clone(),
+			name: self.name.clone(),
+		}
+	}
+}
+
 pub struct VideoSource<'a> {
 	pub key: MediaKey,
 	pub url: String,
@@ -574,7 +583,7 @@ pub fn video(source: VideoSource, env: &BodyEnv, cx: &App) -> AnyElement {
 			frame.child(failure(
 				key,
 				playback.missing_decoder(key),
-				source.file.as_ref().map(|file| file.download.clone()),
+				source.file.as_ref().map(FileInfo::save),
 				env,
 				cx,
 			))
@@ -740,7 +749,7 @@ pub fn video_modal(
 fn header(key: MediaKey, file: FileInfo, group: SharedString, env: &BodyEnv) -> AnyElement {
 	let theme = env.theme;
 	let dispatch = env.dispatch.clone();
-	let download = file.download;
+	let save = file.save();
 	div()
 		.absolute()
 		.left_0()
@@ -779,7 +788,7 @@ fn header(key: MediaKey, file: FileInfo, group: SharedString, env: &BodyEnv) -> 
 			control(element_id("media-download", key), IconKind::Download, white(1.)).on_click(
 				move |_, window, cx| {
 					cx.stop_propagation();
-					dispatch(RowAction::Download(download.clone()), window, cx);
+					dispatch(save.clone(), window, cx);
 				},
 			),
 		)
@@ -789,7 +798,7 @@ fn header(key: MediaKey, file: FileInfo, group: SharedString, env: &BodyEnv) -> 
 fn failure(
 	key: MediaKey,
 	codec: Option<String>,
-	download: Option<String>,
+	download: Option<RowAction>,
 	env: &BodyEnv,
 	cx: &App,
 ) -> AnyElement {
@@ -817,7 +826,7 @@ fn failure(
 				.text_color(white(0.9))
 				.child(label),
 		)
-		.when_some(download, |frame, url| {
+		.when_some(download, |frame, save| {
 			frame.child(
 				div()
 					.id(element_id("media-fallback-download", key))
@@ -832,7 +841,7 @@ fn failure(
 					.hover(|style| style.bg(white(0.26)))
 					.on_click(move |_, window, cx| {
 						cx.stop_propagation();
-						dispatch(RowAction::Download(url.clone()), window, cx);
+						dispatch(save.clone(), window, cx);
 					})
 					.child(Icon::new(IconKind::Download).size(rem(13.)).color(white(1.)))
 					.child(
@@ -893,8 +902,8 @@ pub fn audio(source: AudioSource, env: &BodyEnv, cx: &App) -> AnyElement {
 	let failed = status.is_some_and(|status| status.state == State::Failed);
 	let dispatch = env.dispatch.clone();
 	let download_dispatch = env.dispatch.clone();
-	let download = source.file.download.clone();
-	let open = source.file.download.clone();
+	let download = source.file.save();
+	let open = download.clone();
 	let icon_color = theme.interactive_normal;
 	div()
 		.id(element_id("media-audio", key))
@@ -935,9 +944,7 @@ pub fn audio(source: AudioSource, env: &BodyEnv, cx: &App) -> AnyElement {
 								.text_size(theme.font_md)
 								.text_color(theme.link)
 								.hover(|style| style.underline())
-								.on_click(move |_, window, cx| {
-									dispatch(RowAction::Download(open.clone()), window, cx)
-								})
+								.on_click(move |_, window, cx| dispatch(open.clone(), window, cx))
 								.child(source.file.name),
 						)
 						.children(source.file.size.map(|size| {
@@ -954,9 +961,7 @@ pub fn audio(source: AudioSource, env: &BodyEnv, cx: &App) -> AnyElement {
 						icon_color,
 					)
 					.tooltip(crate::components::tooltip(cx.t("attachment-download")))
-					.on_click(move |_, window, cx| {
-						download_dispatch(RowAction::Download(download.clone()), window, cx)
-					}),
+					.on_click(move |_, window, cx| download_dispatch(download.clone(), window, cx)),
 				),
 		)
 		.child(if failed {

@@ -65,6 +65,7 @@ pub struct State {
 	pub(crate) proto_privacy: Vec<u8>,
 	pub(crate) status_settings: ProtoStatus,
 	pub(crate) friend_source_flags: Option<u32>,
+	pub(crate) sensitive_media: protocol::SensitiveMedia,
 	pub(crate) collapsed_categories: HashSet<Snowflake>,
 	pub(crate) revealed_blocked: HashSet<Snowflake>,
 	pub(crate) drafts: HashMap<Snowflake, String>,

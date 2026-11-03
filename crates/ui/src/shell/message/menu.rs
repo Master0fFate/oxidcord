@@ -7,7 +7,7 @@ use gpui::{
 	StatefulInteractiveElement as _, Styled as _, Window, div, prelude::FluentBuilder as _,
 };
 use gpui_base::TextSelection;
-use protocol::{Message, MessageFlags, MessageType, Snowflake};
+use protocol::{Attachment, Message, MessageFlags, MessageType, Snowflake};
 use state::MessageCommand;
 
 use super::body::{Plain, snippet};
@@ -17,7 +17,7 @@ use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::IconKind;
 use crate::images::Images;
 use crate::lookup::Lookup;
-use crate::shell::community::CommunityHandle;
+use crate::shell::community::{CommunityHandle, save_file};
 use crate::shell::plugins::{MenuTarget, PluginMenu as _, client_options};
 use crate::theme::{Theme, rem};
 
@@ -46,6 +46,7 @@ enum Pointed {
 	Link {
 		url: String,
 		attachment: Option<u64>,
+		name: Option<String>,
 	},
 }
 
@@ -61,12 +62,11 @@ impl Global for PointedState {}
 
 pub(in crate::shell) fn point_media(
 	target: &ImageTarget,
-	fetch: &str,
 	attachment: Option<u64>,
 ) -> impl Fn(&MouseDownEvent, &mut Window, &mut App) + 'static {
 	remember(Pointed::Image {
 		link: target.url.clone(),
-		fetch: fetch.to_owned(),
+		fetch: target.fetch.clone(),
 		name: target.name.clone(),
 		attachment,
 	})
@@ -76,6 +76,7 @@ pub(in crate::shell) fn point_link(url: &str) -> impl Fn(&MouseDownEvent, &mut W
 	remember(Pointed::Link {
 		url: url.to_owned(),
 		attachment: None,
+		name: None,
 	})
 }
 
@@ -86,13 +87,18 @@ pub(in crate::shell) fn with_link_menu(url: &str, element: AnyElement) -> AnyEle
 		.into_any_element()
 }
 
-pub(in crate::shell) fn with_attachment_menu(url: &str, attachment: u64, element: AnyElement) -> AnyElement {
+pub(in crate::shell) fn with_attachment_menu(
+	url: &str,
+	attachment: &Attachment,
+	element: AnyElement,
+) -> AnyElement {
 	div()
 		.on_mouse_down(
 			gpui::MouseButton::Right,
 			remember(Pointed::Link {
 				url: url.to_owned(),
-				attachment: Some(attachment),
+				attachment: Some(attachment.id.get()),
+				name: Some(attachment.filename.clone()),
 			}),
 		)
 		.child(element)
@@ -576,11 +582,24 @@ impl MenuSource {
 						cx.global::<Images>().copy_image(&fetch)
 					})
 					.item(cx.t("menu-save-image"), Some(IconKind::Download), move |_, cx| {
-						cx.global::<Images>().save_image(&save, name.clone())
+						save_file(&save, name.clone(), cx)
 					})
 					.extend(self.link_items(link, "menu-copy-image-link", "menu-open-image-link", cx))
 			}
-			Some(Pointed::Link { url, .. }) => self.link_items(url, "menu-copy-link", "menu-open-link", cx),
+			Some(Pointed::Link { url, name, .. }) => {
+				let menu = match name {
+					Some(name) => {
+						let save = url.clone();
+						ContextMenuBuilder::new().separator().item(
+							cx.t("menu-save-file"),
+							Some(IconKind::Download),
+							move |_, cx| save_file(&save, name.clone(), cx),
+						)
+					}
+					None => ContextMenuBuilder::new(),
+				};
+				menu.extend(self.link_items(url, "menu-copy-link", "menu-open-link", cx))
+			}
 			None => ContextMenuBuilder::new(),
 		}
 	}
@@ -612,7 +631,7 @@ fn pointed_plugin_items(base: &MenuTarget, cx: &App) -> ContextMenuBuilder {
 			menu = menu.plugin_items("image-context-menu", image.clone(), cx);
 			(image, attachment)
 		}
-		Some(Pointed::Link { url, attachment }) => {
+		Some(Pointed::Link { url, attachment, .. }) => {
 			let link = base.clone().with_url(url);
 			menu = menu.plugin_items("link-context-menu", link.clone(), cx);
 			(link, attachment)
