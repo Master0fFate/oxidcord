@@ -10,7 +10,7 @@ use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::scroll::ScrollableElement as _;
 use gpui_component::switch::Switch;
-use protocol::{Channel, ChannelFlags, DefaultReaction, ForumLayout, ForumSortOrder, ForumTag, Snowflake};
+use protocol::{Channel, ChannelFlags, ChannelType, DefaultReaction, ForumLayout, ForumSortOrder, ForumTag, Snowflake};
 use session::{ForumEdit, ForumTagEdit};
 
 use super::channel::SLOWMODES;
@@ -69,6 +69,7 @@ enum Target {
 pub struct ForumSettings {
 	guild: Snowflake,
 	data: Entity<Data>,
+	kind: ChannelType,
 	tags: Vec<TagRow>,
 	require_tag: bool,
 	reaction: Option<EmojiChoice>,
@@ -148,6 +149,7 @@ impl ForumSettings {
 		let mut settings = Self {
 			guild,
 			data,
+			kind: channel.kind,
 			tags,
 			require_tag: channel.flags.contains(ChannelFlags::REQUIRE_TAG),
 			reaction,
@@ -260,7 +262,8 @@ impl ForumSettings {
 				})
 			}),
 			default_sort_order: (now.sort != was.sort).then(|| SORTS[now.sort].1),
-			default_layout: (now.layout != was.layout).then(|| LAYOUTS[now.layout].1),
+			default_layout: (self.kind == ChannelType::GuildForum && now.layout != was.layout)
+				.then(|| LAYOUTS[now.layout].1),
 			default_thread_slowmode: (now.slowmode != was.slowmode).then(|| SLOWMODES[now.slowmode].1),
 			require_tag: (now.require_tag != was.require_tag).then_some(now.require_tag),
 		}
@@ -391,6 +394,9 @@ impl ForumSettings {
 					.tooltip(cx.t("forum-tag-remove"))
 					.on_click(cx.listener(move |this, _, _, cx| {
 						if index < this.tags.len() {
+							if matches!(this.picking, Some(Target::Tag(at)) if at >= index) {
+								this.picking = None;
+							}
 							this.tags.remove(index);
 							cx.notify();
 						}
@@ -502,14 +508,16 @@ impl Render for ForumSettings {
 				require,
 			))
 			.child(self.reaction_section(&theme, cx))
-			.child(self.choice(
-				"forum-layout",
-				LAYOUTS.iter().map(|(key, _)| *key).collect(),
-				self.layout,
-				|this, index| this.layout = index,
-				&theme,
-				cx,
-			))
+			.when(self.kind == ChannelType::GuildForum, |form| {
+				form.child(self.choice(
+					"forum-layout",
+					LAYOUTS.iter().map(|(key, _)| *key).collect(),
+					self.layout,
+					|this, index| this.layout = index,
+					&theme,
+					cx,
+				))
+			})
 			.child(self.choice(
 				"forum-sort",
 				SORTS.iter().map(|(key, _)| *key).collect(),
