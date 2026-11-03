@@ -47,7 +47,7 @@ pub use state::{
 pub use threads::ForumPost;
 pub use views::{
 	ChannelRow, ChannelTreeNode, DmRow, GuildSummary, JoinBlock, MemberListRow, MemberRow, MessageRow,
-	MessageView, RelationshipRow, RenderedMessage, UserOverride,
+	MessageView, RelationshipRow, RenderedMessage, RequestRow, UserOverride,
 };
 pub use voice::{
 	Call, MicTest, StreamInfo, StreamSummary, VideoKind, VoiceLevels, VoiceSession, VoiceStats, VoiceStatus,

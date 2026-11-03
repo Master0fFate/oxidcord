@@ -17,7 +17,7 @@ use crate::permissions::compute_permissions;
 use crate::state::State;
 use crate::views::{
 	ChannelRow, ChannelTreeNode, DmRow, GuildSummary, JoinBlock, MemberListRow, MemberRow, MessageRow,
-	MessageView,
+	MessageView, RequestRow,
 };
 
 const GROUPING_WINDOW: TimeDelta = TimeDelta::minutes(7);
@@ -381,24 +381,11 @@ impl State {
 
 	pub fn dm_rows(&self) -> Vec<DmRow> {
 		let now = Utc::now();
-		let settings = self.global_settings.as_ref();
 		let mut rows: Vec<DmRow> = self
 			.private_channels
 			.values()
-			.map(|channel| {
-				let status = self.channel_status(channel, settings, true, now);
-				DmRow {
-					channel_id: channel.id,
-					name: self.dm_name(channel),
-					icon: channel.icon.clone(),
-					recipients: channel.recipient_ids.clone(),
-					unread: status.unread,
-					muted: status.muted,
-					mentions: status.mentions,
-					request: channel.is_request(),
-					last_message_id: channel.last_message_id,
-				}
-			})
+			.filter(|channel| !channel.is_request())
+			.map(|channel| self.dm_row_at(channel, now))
 			.collect();
 		rows.sort_by_key(|row| Reverse((row.last_message_id, row.channel_id)));
 		rows
@@ -408,6 +395,58 @@ impl State {
 		let mut rows = self.dm_rows();
 		rows.retain(|row| !row.muted && (row.unread || row.mentions > 0));
 		rows
+	}
+
+	pub fn dm_row(&self, channel_id: Snowflake) -> Option<DmRow> {
+		let channel = self.private_channels.get(&channel_id)?;
+		Some(self.dm_row_at(channel, Utc::now()))
+	}
+
+	fn dm_row_at(&self, channel: &Channel, now: DateTime<Utc>) -> DmRow {
+		let status = self.channel_status(channel, self.global_settings.as_ref(), true, now);
+		DmRow {
+			channel_id: channel.id,
+			name: self.dm_name(channel),
+			icon: channel.icon.clone(),
+			recipients: channel.recipient_ids.clone(),
+			unread: status.unread,
+			muted: status.muted,
+			mentions: status.mentions,
+			last_message_id: channel.last_message_id,
+		}
+	}
+
+	pub fn message_requests(&self) -> Vec<RequestRow> {
+		let mut rows: Vec<RequestRow> = self
+			.private_channels
+			.values()
+			.filter_map(|channel| self.request_row(channel))
+			.collect();
+		rows.sort_by_key(|row| Reverse((row.person.since, row.channel_id)));
+		rows
+	}
+
+	pub fn message_request(&self, channel_id: Snowflake) -> Option<RequestRow> {
+		self.request_row(self.private_channels.get(&channel_id)?)
+	}
+
+	pub fn message_request_count(&self) -> usize {
+		self.private_channels
+			.values()
+			.filter(|channel| channel.is_request())
+			.count()
+	}
+
+	fn request_row(&self, channel: &Channel) -> Option<RequestRow> {
+		if !channel.is_request() {
+			return None;
+		}
+		let user_id = *channel.recipient_ids.first()?;
+		Some(RequestRow {
+			channel_id: channel.id,
+			spam: channel.is_spam_request(),
+			person: self.person_row(user_id, None, channel.is_message_request_timestamp),
+		})
 	}
 
 	pub fn dm_name(&self, channel: &Channel) -> String {

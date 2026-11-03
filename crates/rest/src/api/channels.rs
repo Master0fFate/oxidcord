@@ -9,6 +9,8 @@ use crate::error::{RestError, Result};
 use crate::request::{Request, UploadFile, encode_component};
 
 const PUBLIC_THREAD: i64 = 11;
+const CONSENT_ACCEPTED: i64 = 2;
+const MESSAGE_REQUEST_BATCH: usize = 50;
 
 #[derive(Debug, Clone, Default)]
 pub struct SearchQuery {
@@ -462,6 +464,26 @@ impl RestClient {
 			"/channels/{channel_id}/recipients/{user_id}"
 		)))
 		.await
+	}
+
+	pub async fn accept_message_request(&self, channel_id: Snowflake) -> Result<()> {
+		let request = Request::put(format!("/channels/{channel_id}/recipients/@me"))
+			.json(&json!({ "consent_status": CONSENT_ACCEPTED }));
+		self.send_empty(request).await
+	}
+
+	pub async fn reject_message_request(&self, channel_id: Snowflake) -> Result<()> {
+		self.send_empty(Request::delete(format!("/channels/{channel_id}/recipients/@me")))
+			.await
+	}
+
+	pub async fn reject_message_requests(&self, channel_ids: &[Snowflake]) -> Result<()> {
+		for batch in channel_ids.chunks(MESSAGE_REQUEST_BATCH) {
+			let request =
+				Request::put("/channels/recipients/@me/batch-reject").json(&json!({ "channel_ids": batch }));
+			self.send_empty(request).await?;
+		}
+		Ok(())
 	}
 
 	pub async fn set_channel_overwrite(

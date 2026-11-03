@@ -155,8 +155,14 @@ pub struct DmRow {
 	pub unread: bool,
 	pub muted: bool,
 	pub mentions: u32,
-	pub request: bool,
 	pub last_message_id: Option<Snowflake>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RequestRow {
+	pub channel_id: Snowflake,
+	pub spam: bool,
+	pub person: RelationshipRow,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

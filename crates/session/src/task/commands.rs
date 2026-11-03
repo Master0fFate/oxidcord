@@ -132,6 +132,8 @@ impl Core {
 			| Command::SetGroupIcon { .. }
 			| Command::TransferGroup { .. }
 			| Command::CloseDm { .. }
+			| Command::AcceptMessageRequest { .. }
+			| Command::RejectMessageRequests { .. }
 			| Command::MuteChannel { .. }
 			| Command::UnmuteChannel { .. }
 			| Command::MuteGuild { .. }
@@ -522,6 +524,19 @@ impl Core {
 				.spawn_action("close conversation", move |rest| async move {
 					rest.delete_channel(channel_id).await.map(drop)
 				}),
+			Command::AcceptMessageRequest { channel_id } => {
+				self.spawn_action("accept message request", move |rest| async move {
+					rest.accept_message_request(channel_id).await
+				});
+			}
+			Command::RejectMessageRequests { channel_ids } => {
+				self.spawn_action("ignore message requests", move |rest| async move {
+					match channel_ids.as_slice() {
+						[channel_id] => rest.reject_message_request(*channel_id).await,
+						_ => rest.reject_message_requests(&channel_ids).await,
+					}
+				});
+			}
 			Command::MuteChannel {
 				channel_id,
 				guild_id,

@@ -441,6 +441,7 @@ impl State {
 			found.extend(
 				self.private_channels
 					.values()
+					.filter(|channel| !channel.is_request())
 					.map(|channel| self.unread_entry(channel, settings, true, now)),
 			);
 		}

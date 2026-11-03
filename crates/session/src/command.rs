@@ -472,6 +472,12 @@ pub enum Command {
 	CloseDm {
 		channel_id: Snowflake,
 	},
+	AcceptMessageRequest {
+		channel_id: Snowflake,
+	},
+	RejectMessageRequests {
+		channel_ids: Vec<Snowflake>,
+	},
 	EditGuild {
 		guild_id: Snowflake,
 		name: Option<String>,
