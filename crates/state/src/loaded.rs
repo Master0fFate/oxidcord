@@ -25,6 +25,7 @@ pub const COMMAND_CHOICES_KEY: Snowflake = Snowflake(3);
 #[derive(Debug, Clone)]
 pub enum Loaded {
 	Mentions(Vec<Message>),
+	MentionDismissed(Snowflake),
 	CommandIndex {
 		scope: Snowflake,
 		index: CommandIndex,
@@ -573,6 +574,12 @@ impl State {
 					.collect();
 				self.lazy.mentions = Some(shared);
 				changes.loaded.insert(INBOX_KEY);
+			}
+			Loaded::MentionDismissed(message_id) => {
+				if let Some(mentions) = &mut self.lazy.mentions {
+					mentions.retain(|message| message.id != *message_id);
+					changes.loaded.insert(INBOX_KEY);
+				}
 			}
 			Loaded::CommandIndex { scope, index } => {
 				self.lazy.command_indexes.insert(*scope, index.clone());

@@ -243,7 +243,8 @@ impl Core {
 			| Command::CreateForumPost { .. }
 			| Command::LoadPins { .. }
 			| Command::AckPins { .. }
-			| Command::LoadMentions
+			| Command::LoadMentions { .. }
+			| Command::DismissMention { .. }
 			| Command::PinMessage { .. }
 			| Command::UnpinMessage { .. }
 			| Command::LoadProfile { .. }
@@ -307,6 +308,7 @@ impl Core {
 			| Command::MuteGuild { .. }
 			| Command::UnmuteGuild { .. }
 			| Command::SetChannelNotifications { .. }
+			| Command::MarkAllRead
 			| Command::MarkGuildRead { .. }
 			| Command::MarkChannelRead { .. }
 			| Command::MarkUnread { .. }
@@ -469,10 +471,18 @@ impl Core {
 					})
 				});
 			}
-			Command::LoadMentions => self.spawn_load("mentions", move |rest| async move {
-				let messages = rest.mentions(MENTIONS_PAGE).await?;
-				Ok(Loaded::Mentions(messages.into_vec()))
-			}),
+			Command::LoadMentions { roles, everyone } => {
+				self.spawn_load("mentions", move |rest| async move {
+					let messages = rest.mentions(MENTIONS_PAGE, roles, everyone).await?;
+					Ok(Loaded::Mentions(messages.into_vec()))
+				})
+			}
+			Command::DismissMention { message_id } => {
+				self.spawn_load("dismiss mention", move |rest| async move {
+					rest.delete_mention(message_id).await?;
+					Ok(Loaded::MentionDismissed(message_id))
+				})
+			}
 			Command::PinMessage {
 				channel_id,
 				message_id,
@@ -871,7 +881,14 @@ impl Core {
 					json!({ "message_notifications": i64::from(level) }),
 				);
 			}
-			Command::MarkGuildRead { guild_id } => self.mark_guild_read(guild_id),
+			Command::MarkAllRead => {
+				let unread = self.state.read().unread_targets();
+				self.mark_read(&unread, "ack all");
+			}
+			Command::MarkGuildRead { guild_id } => {
+				let unread = self.state.read().guild_unread_targets(guild_id);
+				self.mark_read(&unread, "ack guild");
+			}
 			Command::MarkChannelRead { channel_id } => {
 				let latest = self
 					.state
@@ -1188,10 +1205,9 @@ impl Core {
 		);
 	}
 
-	fn mark_guild_read(&mut self, guild_id: Snowflake) {
-		let unread = self.state.read().guild_unread_targets(guild_id);
+	fn mark_read(&mut self, unread: &[(Snowflake, Snowflake)], what: &'static str) {
 		let snapshots = self.read_snapshots(unread.iter().map(|(channel_id, _)| *channel_id));
-		for (channel_id, message_id) in &unread {
+		for (channel_id, message_id) in unread {
 			self.ack_local(*channel_id, *message_id);
 		}
 		for chunk in unread.chunks(ACK_BULK_LIMIT) {
@@ -1206,7 +1222,7 @@ impl Core {
 				.copied()
 				.collect();
 			self.spawn_confirmed(
-				"ack guild",
+				what,
 				Some(Internal::RestoreRead(restore)),
 				move |rest| async move { rest.ack_bulk(chunk).await },
 			);

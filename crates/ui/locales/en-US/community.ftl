@@ -809,7 +809,16 @@ stickers-edit = Edit
 stickers-edit-title = Edit Sticker
 stickers-edit-save = Save
 
-inbox-title = Mentions
+inbox-title = Inbox
+inbox-tab-unreads = Unreads
+inbox-tab-mentions = Mentions
+inbox-empty-unreads = You are all caught up.
+inbox-mark-all-read = Mark all read
+inbox-dismiss = Dismiss
+inbox-filter-all = All mentions
+inbox-filter-no-roles = No roles
+inbox-filter-no-everyone = No everyone
+inbox-filter-direct = Direct only
 inbox-empty = No recent mentions.
 inbox-loading = Loading mentions...
 

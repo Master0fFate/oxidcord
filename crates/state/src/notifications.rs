@@ -474,6 +474,13 @@ impl State {
 		found
 	}
 
+	pub fn unread_targets(&self) -> Vec<(Snowflake, Snowflake)> {
+		self.unread_channels(None, true)
+			.into_iter()
+			.filter_map(|entry| Some((entry.channel_id, entry.last_message_id?)))
+			.collect()
+	}
+
 	pub fn guild_unread_targets(&self, guild_id: Snowflake) -> Vec<(Snowflake, Snowflake)> {
 		let (Some(guild), Some(me)) = (self.guilds.get(&guild_id), self.current_user_id()) else {
 			return Vec::new();

@@ -103,6 +103,11 @@ pub async fn get_note(State(shared): Mock, Path(id): Path<u64>) -> ApiResult {
 	Ok(Json(shared.note(id)?))
 }
 
+pub async fn delete_mention(State(shared): Mock, Path(id): Path<u64>) -> NoContent {
+	shared.store.lock().dismissed_mentions.insert(id);
+	Ok(StatusCode::NO_CONTENT)
+}
+
 pub async fn put_note(State(shared): Mock, Path(id): Path<u64>, Json(body): Json<Value>) -> NoContent {
 	shared.set_note(id, body["note"].as_str().unwrap_or_default())?;
 	Ok(StatusCode::NO_CONTENT)

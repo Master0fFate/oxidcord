@@ -27,8 +27,43 @@ pub async fn me(State(shared): State<Arc<Shared>>, headers: HeaderMap) -> ApiRes
 		.ok_or_else(ApiError::unauthorized)
 }
 
-pub async fn my_mentions() -> Json<Value> {
-	Json(json!([]))
+fn mentions_me(message: &Value, include_everyone: bool) -> bool {
+	let me = CURRENT_USER_ID.to_string();
+	let direct = message["mentions"]
+		.as_array()
+		.is_some_and(|users| users.iter().any(|user| user["id"].as_str() == Some(&me)));
+	direct || (include_everyone && message["mention_everyone"].as_bool() == Some(true))
+}
+
+pub async fn my_mentions(
+	State(shared): State<Arc<Shared>>,
+	Query(params): Query<HashMap<String, String>>,
+) -> Json<Value> {
+	let limit = params
+		.get("limit")
+		.and_then(|limit| limit.parse().ok())
+		.unwrap_or(25)
+		.min(100);
+	let include_everyone = params.get("everyone").is_none_or(|value| value != "false");
+	let store = shared.store.lock();
+	let mut found: Vec<(&u64, &Value)> = store
+		.messages
+		.values()
+		.flatten()
+		.filter(|(id, message)| {
+			!store.dismissed_mentions.contains(id)
+				&& message["author"]["id"].as_str() != Some(&CURRENT_USER_ID.to_string())
+				&& mentions_me(message, include_everyone)
+		})
+		.collect();
+	found.sort_unstable_by_key(|(id, _)| std::cmp::Reverse(**id));
+	Json(Value::Array(
+		found
+			.into_iter()
+			.take(limit)
+			.map(|(_, message)| message.clone())
+			.collect(),
+	))
 }
 
 pub async fn my_guilds(State(shared): State<Arc<Shared>>) -> Json<Value> {

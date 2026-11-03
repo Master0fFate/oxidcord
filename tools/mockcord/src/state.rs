@@ -69,6 +69,7 @@ pub struct Store {
 	pub invites: BTreeMap<String, Value>,
 	pub absent_guilds: BTreeSet<u64>,
 	pub ended_sessions: BTreeSet<String>,
+	pub dismissed_mentions: BTreeSet<u64>,
 	pub guild_bios: HashMap<(u64, u64), String>,
 	pub audit: HashMap<u64, Vec<Value>>,
 	pub joined_threads: BTreeSet<u64>,
@@ -167,6 +168,7 @@ impl Store {
 				.map(|guild| guild.id)
 				.collect(),
 			ended_sessions: BTreeSet::new(),
+			dismissed_mentions: BTreeSet::new(),
 			guild_bios: HashMap::new(),
 			audit: crate::admin::seed_audit(fixtures),
 			pinned_at: fixtures.pinned_at(),

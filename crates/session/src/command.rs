@@ -550,7 +550,13 @@ pub enum Command {
 	AckPins {
 		channel_id: Snowflake,
 	},
-	LoadMentions,
+	LoadMentions {
+		roles: bool,
+		everyone: bool,
+	},
+	DismissMention {
+		message_id: Snowflake,
+	},
 	PinMessage {
 		channel_id: Snowflake,
 		message_id: Snowflake,
@@ -858,6 +864,7 @@ pub enum Command {
 		channel_id: Snowflake,
 		level: NotificationLevel,
 	},
+	MarkAllRead,
 	MarkGuildRead {
 		guild_id: Snowflake,
 	},

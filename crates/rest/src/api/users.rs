@@ -82,13 +82,18 @@ impl RestClient {
 		Ok(secret.secret)
 	}
 
-	pub async fn mentions(&self, limit: u8) -> Result<LenientVec<Message>> {
+	pub async fn mentions(&self, limit: u8, roles: bool, everyone: bool) -> Result<LenientVec<Message>> {
 		let request = Request::get("/users/@me/mentions").query(&[
 			("limit", limit.to_string().as_str()),
-			("roles", "true"),
-			("everyone", "true"),
+			("roles", if roles { "true" } else { "false" }),
+			("everyone", if everyone { "true" } else { "false" }),
 		]);
 		self.send(request).await
+	}
+
+	pub async fn delete_mention(&self, message_id: Snowflake) -> Result<()> {
+		self.send_empty(Request::delete(format!("/users/@me/mentions/{message_id}")))
+			.await
 	}
 
 	pub async fn relationships(&self) -> Result<LenientVec<Relationship>> {

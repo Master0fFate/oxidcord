@@ -49,6 +49,7 @@ pub fn router(shared: Arc<Shared>) -> Router {
 		.route("/users/@me/settings-proto/1", patch(admin::patch_settings_proto))
 		.route("/users/@me/guilds", get(users::my_guilds))
 		.route("/users/@me/mentions", get(users::my_mentions))
+		.route("/users/@me/mentions/{id}", delete(admin::delete_mention))
 		.route(
 			"/users/@me/saved-messages/{id}/{mid}",
 			put(channels::save_message).delete(channels::save_message),
