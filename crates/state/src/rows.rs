@@ -17,7 +17,7 @@ use crate::permissions::compute_permissions;
 use crate::state::State;
 use crate::views::{
 	ChannelRow, ChannelTreeNode, DmRow, GuildSummary, JoinBlock, MemberListRow, MemberRow, MessageRow,
-	MessageView, PendingUpload, RequestRow, UnreadSince,
+	MessageView, PendingUpload, RenderedMessage, RequestRow, UnreadSince,
 };
 
 const GROUPING_WINDOW: TimeDelta = TimeDelta::minutes(7);
@@ -582,22 +582,22 @@ impl State {
 		})
 	}
 
-	fn starter_message(&self, message: &Message) -> Option<Arc<Message>> {
+	fn starter_message(&self, message: &Message) -> Option<(Arc<Message>, Option<Arc<RenderedMessage>>)> {
 		if message.kind != MessageType::ThreadStarterMessage {
 			return None;
 		}
 		let reference = message.message_reference.as_ref()?;
-		let source = match &message.referenced_message {
-			Some(source) => source.as_ref().clone(),
-			None => self
-				.messages
-				.get(&reference.channel_id?)?
-				.by_id
-				.get(&reference.message_id?)?
-				.as_ref()
-				.clone(),
+		let live = self
+			.messages
+			.get(&reference.channel_id?)
+			.zip(reference.message_id)
+			.and_then(|(cache, id)| cache.by_id.get(&id).map(|source| (cache, id, source)));
+		let (source, rendered) = match live {
+			Some((cache, id, _)) if cache.is_deleted(id) => return None,
+			Some((cache, id, source)) => (source.as_ref().clone(), cache.rendered.get(&id).cloned()),
+			None => (message.referenced_message.as_ref()?.as_ref().clone(), None),
 		};
-		Some(Arc::new(Message {
+		let starter = Arc::new(Message {
 			id: message.id,
 			channel_id: message.channel_id,
 			guild_id: message.guild_id,
@@ -610,7 +610,8 @@ impl State {
 			poll: None,
 			thread: None,
 			..source
-		}))
+		});
+		Some((starter, rendered))
 	}
 
 	fn message_view(
@@ -622,7 +623,7 @@ impl State {
 		pending: Option<&PendingMessage>,
 	) -> MessageView {
 		let starter = self.starter_message(message);
-		let message = starter.as_ref().unwrap_or(message);
+		let message = starter.as_ref().map_or(message, |(starter, _)| starter);
 		let author = &message.author;
 		let member = guild
 			.and_then(|guild| guild.members.get(&author.id))
@@ -643,7 +644,10 @@ impl State {
 				pending.altered_by.clone(),
 			),
 			None => (
-				cache.rendered.get(&message.id).cloned(),
+				match &starter {
+					Some((_, rendered)) => rendered.clone(),
+					None => cache.rendered.get(&message.id).cloned(),
+				},
 				self.sent_by_plugin(message.id).map(str::to_owned),
 				self.altered_by(message.id).map(str::to_owned),
 			),
