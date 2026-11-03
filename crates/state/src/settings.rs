@@ -4,7 +4,7 @@ use chrono::Utc;
 use protocol::{
 	FRIEND_SOURCES_ALL, ProtoCustomStatus, ProtoGuildFolder, ProtoGuildFolders, ProtoSettings, Snowflake,
 	UserGuildSettings, decode_friend_source_flags, decode_settings, decode_status, encode_settings,
-	privacy_with_friend_sources, status_with_custom, status_with_show_current_game,
+	privacy_with_friend_sources, status_with_custom, status_with_show_current_game, status_with_value,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -68,24 +68,32 @@ impl State {
 		self.friend_source_flags.unwrap_or(FRIEND_SOURCES_ALL)
 	}
 
-	pub fn custom_status_patch(&self, custom: Option<&ProtoCustomStatus>) -> String {
-		self.status_patch(status_with_custom(&self.proto_status, custom))
+	pub fn custom_status_patch(&mut self, custom: Option<&ProtoCustomStatus>) -> String {
+		let status = status_with_custom(&self.proto_status, custom);
+		self.status_patch(status)
 	}
 
-	pub fn show_current_game_patch(&self, shown: bool) -> String {
-		self.status_patch(status_with_show_current_game(&self.proto_status, shown))
+	pub fn show_current_game_patch(&mut self, shown: bool) -> String {
+		let status = status_with_show_current_game(&self.proto_status, shown);
+		self.status_patch(status)
 	}
 
-	pub fn friend_sources_patch(&self, flags: u32) -> String {
+	pub fn friend_sources_patch(&mut self, flags: u32) -> String {
+		self.proto_privacy = privacy_with_friend_sources(&self.proto_privacy, flags);
+		self.friend_source_flags = decode_friend_source_flags(&self.proto_privacy);
 		encode_settings(&ProtoSettings {
-			privacy_bytes: Some(privacy_with_friend_sources(&self.proto_privacy, flags)),
+			privacy_bytes: Some(self.proto_privacy.clone()),
 			..ProtoSettings::default()
 		})
 	}
 
-	fn status_patch(&self, status: Vec<u8>) -> String {
+	fn status_patch(&mut self, mut status: Vec<u8>) -> String {
+		if let Some(chosen) = &self.chosen_status {
+			status = status_with_value(&status, chosen.as_str());
+		}
+		self.proto_status = status;
 		encode_settings(&ProtoSettings {
-			status_bytes: Some(status),
+			status_bytes: Some(self.proto_status.clone()),
 			..ProtoSettings::default()
 		})
 	}
@@ -146,9 +154,17 @@ impl State {
 	}
 
 	fn replace_status_settings(&mut self, bytes: Vec<u8>) -> Changes {
+		let mut bytes = bytes;
 		let mut status = decode_status(&bytes);
 		let now_ms = now_ms();
-		status.custom_status = status.custom_status.filter(|custom| !custom.expired_at(now_ms));
+		if status
+			.custom_status
+			.as_ref()
+			.is_some_and(|custom| custom.expired_at(now_ms))
+		{
+			status.custom_status = None;
+			bytes = status_with_custom(&bytes, None);
+		}
 		let mut changes = Changes::default();
 		if let Some(chosen) = &status.status {
 			changes.own_status = self.restore_status(chosen);
@@ -179,6 +195,7 @@ impl State {
 			.is_some_and(|custom| custom.expired_at(now_ms()));
 		if expired {
 			self.status_settings.custom_status = None;
+			self.proto_status = status_with_custom(&self.proto_status, None);
 		}
 		Changes {
 			own_status: expired,

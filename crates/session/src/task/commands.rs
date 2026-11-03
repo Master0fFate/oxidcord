@@ -531,11 +531,11 @@ impl Core {
 				message_id,
 			} => self.mark_unread(channel_id, message_id),
 			Command::SetShowCurrentGame(shown) => {
-				let patch = self.state.read().show_current_game_patch(shown);
+				let patch = self.state.write().show_current_game_patch(shown);
 				self.patch_settings_proto(patch, "activity sharing");
 			}
 			Command::SetFriendSources(flags) => {
-				let patch = self.state.read().friend_sources_patch(flags);
+				let patch = self.state.write().friend_sources_patch(flags);
 				self.patch_settings_proto(patch, "friend requests");
 			}
 			Command::SetGuildLayout(layout) => {
@@ -576,7 +576,8 @@ impl Core {
 					emoji_name: emoji,
 					expires_at_ms: expires.and_then(|at| u64::try_from(at.timestamp_millis()).ok()),
 				});
-				let patch = self.state.read().custom_status_patch(custom.as_ref());
+				self.custom_status = None;
+				let patch = self.state.write().custom_status_patch(custom.as_ref());
 				self.patch_settings_proto(patch, "custom status");
 			}
 			Command::SetStatus(status) => {

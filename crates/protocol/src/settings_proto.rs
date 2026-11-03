@@ -503,6 +503,10 @@ pub fn status_with_custom(status: &[u8], custom: Option<&ProtoCustomStatus>) -> 
 	with_field(status, STATUS_CUSTOM, custom.map(encode_custom_status).as_deref())
 }
 
+pub fn status_with_value(status: &[u8], value: &str) -> Vec<u8> {
+	with_field(status, STATUS_VALUE, Some(&string_wrapper(value)))
+}
+
 pub fn status_with_show_current_game(status: &[u8], shown: bool) -> Vec<u8> {
 	with_field(
 		status,
