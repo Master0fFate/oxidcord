@@ -1114,22 +1114,16 @@ impl State {
 		channel_id: Snowflake,
 	) -> Vec<AppCommand> {
 		let permissions = self.my_permissions(channel_id);
-		let scopes = [
-			(
-				guild_id.unwrap_or(channel_id),
-				Permissions::USE_APPLICATION_COMMANDS,
-			),
-			(USER_COMMANDS, Permissions::USE_APPLICATION_COMMANDS),
-		];
+		if guild_id.is_some() && !permissions.contains(Permissions::USE_APPLICATION_COMMANDS) {
+			return Vec::new();
+		}
+		let scopes = [guild_id.unwrap_or(channel_id), USER_COMMANDS];
 		let dm_recipient = self
 			.channel(channel_id)
 			.filter(|channel| channel.recipient_ids.len() == 1)
 			.map(|channel| channel.recipient_ids[0]);
 		let mut found: Vec<AppCommand> = Vec::new();
-		for (scope, needed) in scopes {
-			if guild_id.is_some() && !permissions.contains(needed) {
-				continue;
-			}
+		for scope in scopes {
 			let Some(index) = self.lazy.command_indexes.get(&scope) else {
 				continue;
 			};
