@@ -5,9 +5,10 @@ use std::time::Instant;
 use chrono::{DateTime, Utc};
 use protocol::lenient::{or_default, timestamp};
 use protocol::{
-	ApplicationCommand, ApplicationCommandType, AutoModRule, Channel, CommandIndex, Gif, GifFavorites,
-	GifTrending, GuildBan, InteractionContext, JoinRequestStatus, LenientVec, Member, MemberVerification,
-	Message, Permissions, PinnedMessage, ScheduledEvent, Snowflake, Sticker, StickerPack, ThreadMember, User,
+	ApplicationCommand, ApplicationCommandType, AutoModRule, Channel, CommandChoice, CommandIndex, Gif,
+	GifFavorites, GifTrending, GuildBan, InteractionContext, JoinRequestStatus, LenientVec, Member,
+	MemberVerification, Message, Permissions, PinnedMessage, ScheduledEvent, Snowflake, Sticker, StickerPack,
+	ThreadMember, User,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -19,6 +20,7 @@ use crate::state::{State, intern_user};
 
 pub const INBOX_KEY: Snowflake = Snowflake(1);
 const VOICE_REGIONS_KEY: Snowflake = Snowflake(2);
+pub const COMMAND_CHOICES_KEY: Snowflake = Snowflake(3);
 
 #[derive(Debug, Clone)]
 pub enum Loaded {
@@ -26,6 +28,10 @@ pub enum Loaded {
 	CommandIndex {
 		scope: Snowflake,
 		index: CommandIndex,
+	},
+	CommandChoices {
+		generation: u64,
+		choices: Vec<CommandChoice>,
 	},
 	Pins {
 		channel_id: Snowflake,
@@ -288,9 +294,16 @@ pub(crate) struct ArchivedThreads {
 pub const USER_COMMANDS: Snowflake = Snowflake(0);
 
 #[derive(Debug, Clone)]
-pub struct MessageCommand {
+pub struct AppCommand {
 	pub application_name: String,
+	pub application_icon: Option<String>,
 	pub command: ApplicationCommand,
+}
+
+#[derive(Debug)]
+pub(crate) struct CommandChoices {
+	generation: u64,
+	choices: Vec<CommandChoice>,
 }
 
 fn context_allows(command: &ApplicationCommand, in_guild: bool) -> bool {
@@ -335,6 +348,7 @@ pub(crate) struct Lazy {
 	pub(crate) reaction_users: HashMap<(Snowflake, String, bool), Vec<User>>,
 	pub(crate) expressions: Expressions,
 	pub(crate) command_indexes: HashMap<Snowflake, CommandIndex>,
+	pub(crate) command_choices: Option<CommandChoices>,
 }
 
 #[derive(Deserialize, Default)]
@@ -558,6 +572,13 @@ impl State {
 			Loaded::CommandIndex { scope, index } => {
 				self.lazy.command_indexes.insert(*scope, index.clone());
 				changes.loaded.insert(*scope);
+			}
+			Loaded::CommandChoices { generation, choices } => {
+				self.lazy.command_choices = Some(CommandChoices {
+					generation: *generation,
+					choices: choices.clone(),
+				});
+				changes.loaded.insert(COMMAND_CHOICES_KEY);
 			}
 			Loaded::Pins {
 				channel_id,
@@ -1006,11 +1027,20 @@ impl State {
 		self.lazy.mentions.as_deref()
 	}
 
-	pub fn message_commands(
+	pub fn command_choices(&self, generation: u64) -> Option<&[CommandChoice]> {
+		self.lazy
+			.command_choices
+			.as_ref()
+			.filter(|answer| answer.generation == generation)
+			.map(|answer| answer.choices.as_slice())
+	}
+
+	pub fn app_commands(
 		&self,
+		kind: ApplicationCommandType,
 		guild_id: Option<Snowflake>,
 		channel_id: Snowflake,
-	) -> Vec<MessageCommand> {
+	) -> Vec<AppCommand> {
 		let permissions = self.my_permissions(channel_id);
 		let scopes = [
 			(
@@ -1019,7 +1049,7 @@ impl State {
 			),
 			(USER_COMMANDS, Permissions::USE_EXTERNAL_APPS),
 		];
-		let mut found: Vec<MessageCommand> = Vec::new();
+		let mut found: Vec<AppCommand> = Vec::new();
 		for (scope, needed) in scopes {
 			if guild_id.is_some() && !permissions.contains(needed) {
 				continue;
@@ -1028,7 +1058,7 @@ impl State {
 				continue;
 			};
 			for command in index.application_commands.iter() {
-				let usable = command.kind == ApplicationCommandType::Message
+				let usable = command.kind == kind
 					&& !found.iter().any(|known| known.command.id == command.id)
 					&& context_allows(command, guild_id.is_some())
 					&& guild_id.is_none_or(|_| member_allows(command, permissions));
@@ -1039,10 +1069,11 @@ impl State {
 					.applications
 					.iter()
 					.find(|application| application.id == command.application_id);
-				found.push(MessageCommand {
+				found.push(AppCommand {
 					application_name: application
 						.map(|application| application.name.clone())
 						.unwrap_or_default(),
+					application_icon: application.and_then(|application| application.icon.clone()),
 					command: command.clone(),
 				});
 			}

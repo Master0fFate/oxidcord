@@ -4,9 +4,10 @@ use activity::ActivityRules;
 use chrono::{DateTime, Utc};
 use protocol::rest::{ComponentInteraction, ComponentInteractionData};
 use protocol::{
-	ApplicationCommand, Channel, ChannelFlags, ChannelPosition, ChannelType, CreateMessage, DispatchEvent,
-	MessageAck, MessageFlags, MessageReference, MessageReferenceKind, PermissionOverwriteKind, Permissions,
-	ProtoCustomStatus, SCHEDULED_EVENT_GUILD_ONLY, Snowflake, StatusKind, ThreadMember,
+	ApplicationCommand, Channel, ChannelFlags, ChannelPosition, ChannelType, CommandAutocomplete,
+	CreateMessage, DispatchEvent, InteractionOption, MessageAck, MessageFlags, MessageReference,
+	MessageReferenceKind, Nonce, PermissionOverwriteKind, Permissions, ProtoCustomStatus,
+	SCHEDULED_EVENT_GUILD_ONLY, Snowflake, StatusKind, ThreadMember,
 };
 use rest::api::ArchivedScope;
 use rest::api::image_data_uri;
@@ -20,6 +21,7 @@ use crate::command::{ComponentUse, ForumEdit, ForumTagEdit, GuildEdit, RoleColor
 
 const COMPONENT_INTERACTION: u8 = 3;
 const APPLICATION_COMMAND_INTERACTION: u8 = 2;
+const AUTOCOMPLETE_INTERACTION: u8 = 4;
 
 const PNG: &str = "image/png";
 const GIF: &str = "image/gif";
@@ -30,6 +32,16 @@ const BAN_PAGE_LIMIT: usize = 1000;
 const ARCHIVED_PAGE: u8 = 50;
 const MENTIONS_PAGE: u8 = 25;
 const PINS_PAGE: u8 = 50;
+
+struct CommandCall<'a> {
+	kind: u8,
+	guild_id: Option<Snowflake>,
+	channel_id: Snowflake,
+	nonce: Nonce,
+	command: &'a ApplicationCommand,
+	target_id: Option<Snowflake>,
+	options: &'a [InteractionOption],
+}
 
 fn sessions_or_empty(result: rest::Result<Value>) -> Value {
 	result.unwrap_or_else(|error| {
@@ -247,6 +259,8 @@ impl Core {
 			| Command::SendPoll { .. }
 			| Command::UseComponent(_)
 			| Command::RunMessageCommand { .. }
+			| Command::RunChatCommand { .. }
+			| Command::CompleteCommandOption { .. }
 			| Command::SaveMessage { .. }
 			| Command::PublishMessage { .. }) => self.on_text_command(command),
 			command @ (Command::SendSticker { .. }
@@ -635,6 +649,20 @@ impl Core {
 				message_id,
 				command,
 			} => self.run_message_command(guild_id, channel_id, message_id, *command),
+			Command::RunChatCommand {
+				guild_id,
+				channel_id,
+				command,
+				options,
+				files,
+			} => self.run_chat_command(guild_id, channel_id, *command, options, files),
+			Command::CompleteCommandOption {
+				guild_id,
+				channel_id,
+				command,
+				options,
+				generation,
+			} => self.complete_command_option(guild_id, channel_id, *command, options, generation),
 			Command::SaveMessage {
 				channel_id,
 				message_id,
@@ -954,6 +982,31 @@ impl Core {
 		}
 	}
 
+	fn command_body(&self, call: CommandCall) -> Value {
+		let command = call.command;
+		let mut body = json!({
+			"type": call.kind,
+			"application_id": command.application_id,
+			"guild_id": call.guild_id,
+			"channel_id": call.channel_id,
+			"session_id": self.state.read().session().session_id.clone(),
+			"nonce": call.nonce,
+			"data": {
+				"version": command.version,
+				"id": command.id,
+				"name": command.name,
+				"type": command.kind,
+				"application_command": command,
+				"options": call.options,
+				"attachments": [],
+			},
+		});
+		if let Some(target_id) = call.target_id {
+			body["data"]["target_id"] = json!(target_id);
+		}
+		body
+	}
+
 	fn run_message_command(
 		&mut self,
 		guild_id: Option<Snowflake>,
@@ -961,26 +1014,82 @@ impl Core {
 		message_id: Snowflake,
 		command: ApplicationCommand,
 	) {
-		let body = json!({
-			"type": APPLICATION_COMMAND_INTERACTION,
-			"application_id": command.application_id,
-			"guild_id": guild_id,
-			"channel_id": channel_id,
-			"session_id": self.state.read().session().session_id.clone(),
-			"nonce": self.next_nonce().0,
-			"data": {
-				"version": command.version,
-				"id": command.id,
-				"name": command.name,
-				"type": command.kind,
-				"target_id": message_id,
-				"application_command": command,
-				"options": [],
-				"attachments": [],
-			},
+		let nonce = self.next_nonce();
+		let body = self.command_body(CommandCall {
+			kind: APPLICATION_COMMAND_INTERACTION,
+			guild_id,
+			channel_id,
+			nonce,
+			command: &command,
+			target_id: Some(message_id),
+			options: &[],
 		});
 		self.spawn_action("run app command", move |rest| async move {
-			rest.create_interaction(&body).await
+			rest.create_interaction(body, Vec::new()).await
+		});
+	}
+
+	fn run_chat_command(
+		&mut self,
+		guild_id: Option<Snowflake>,
+		channel_id: Snowflake,
+		command: ApplicationCommand,
+		options: Vec<InteractionOption>,
+		files: Vec<UploadFile>,
+	) {
+		let nonce = self.next_nonce();
+		let body = self.command_body(CommandCall {
+			kind: APPLICATION_COMMAND_INTERACTION,
+			guild_id,
+			channel_id,
+			nonce,
+			command: &command,
+			target_id: None,
+			options: &options,
+		});
+		self.spawn_action("run app command", move |rest| async move {
+			rest.create_interaction(body, files).await
+		});
+	}
+
+	fn complete_command_option(
+		&mut self,
+		guild_id: Option<Snowflake>,
+		channel_id: Snowflake,
+		command: ApplicationCommand,
+		options: Vec<InteractionOption>,
+		generation: u64,
+	) {
+		let nonce = self.next_nonce();
+		self.completion = Some((nonce.clone(), generation));
+		let body = self.command_body(CommandCall {
+			kind: AUTOCOMPLETE_INTERACTION,
+			guild_id,
+			channel_id,
+			nonce,
+			command: &command,
+			target_id: None,
+			options: &options,
+		});
+		let rest = self.rest.clone();
+		self.runtime.spawn(async move {
+			if let Err(error) = rest.create_interaction(body, Vec::new()).await {
+				tracing::debug!(%error, "command options could not be completed");
+			}
+		});
+	}
+
+	pub(super) fn on_command_choices(&mut self, response: CommandAutocomplete) {
+		let Some((nonce, generation)) = &self.completion else {
+			return;
+		};
+		if response.nonce.as_ref() != Some(nonce) {
+			return;
+		}
+		let generation = *generation;
+		self.on_loaded(Loaded::CommandChoices {
+			generation,
+			choices: response.choices.into_vec(),
 		});
 	}
 

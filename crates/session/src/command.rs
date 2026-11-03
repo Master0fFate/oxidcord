@@ -11,10 +11,10 @@ use plugin_host::api::{HostError, User as PluginUser};
 use plugin_host::{Navigation, Permission, PickedPath, ViewContext};
 use protocol::{
 	ApplicationCommand, AutoModRule, ChannelPosition, ChannelType, ComponentType,
-	DefaultMessageNotifications, DefaultReaction, ForumLayout, ForumSortOrder, Gif, MemberVerification,
-	MessageFlags, Nonce, NotificationLevel, PermissionOverwriteKind, Permissions, PollCreate, Role,
-	RoleColors, ScheduledEventKind, ScheduledEventStatus, Snowflake, StatusKind, SystemChannelFlags,
-	VideoQualityMode,
+	DefaultMessageNotifications, DefaultReaction, ForumLayout, ForumSortOrder, Gif, InteractionOption,
+	MemberVerification, MessageFlags, Nonce, NotificationLevel, PermissionOverwriteKind, Permissions,
+	PollCreate, Role, RoleColors, ScheduledEventKind, ScheduledEventStatus, Snowflake, StatusKind,
+	SystemChannelFlags, VideoQualityMode,
 };
 use rest::UploadFile;
 use rest::api::SearchQuery;
@@ -934,6 +934,20 @@ pub enum Command {
 		channel_id: Snowflake,
 		message_id: Snowflake,
 		command: Box<ApplicationCommand>,
+	},
+	RunChatCommand {
+		guild_id: Option<Snowflake>,
+		channel_id: Snowflake,
+		command: Box<ApplicationCommand>,
+		options: Vec<InteractionOption>,
+		files: Vec<UploadFile>,
+	},
+	CompleteCommandOption {
+		guild_id: Option<Snowflake>,
+		channel_id: Snowflake,
+		command: Box<ApplicationCommand>,
+		options: Vec<InteractionOption>,
+		generation: u64,
 	},
 	SaveMessage {
 		channel_id: Snowflake,

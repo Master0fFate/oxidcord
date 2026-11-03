@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::{Map, Number, Value};
 
+use crate::channel::ChannelType;
 use crate::lenient::{LenientVec, int_enum};
+use crate::message::Nonce;
 use crate::snowflake::Snowflake;
 
 int_enum! {
@@ -21,6 +23,75 @@ int_enum! {
 	}
 }
 
+int_enum! {
+	pub enum CommandOptionType {
+		SubCommand = 1,
+		SubCommandGroup = 2,
+		String = 3,
+		Integer = 4,
+		Boolean = 5,
+		User = 6,
+		Channel = 7,
+		Role = 8,
+		Mentionable = 9,
+		Number = 10,
+		Attachment = 11,
+	}
+}
+
+impl CommandOptionType {
+	pub fn is_group(self) -> bool {
+		matches!(self, Self::SubCommand | Self::SubCommandGroup)
+	}
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CommandChoice {
+	pub name: String,
+	pub value: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ApplicationCommandOption {
+	#[serde(rename = "type")]
+	pub kind: CommandOptionType,
+	pub name: String,
+	pub description: Option<String>,
+	pub required: bool,
+	pub choices: LenientVec<CommandChoice>,
+	pub options: LenientVec<ApplicationCommandOption>,
+	pub channel_types: Vec<ChannelType>,
+	pub min_value: Option<Number>,
+	pub max_value: Option<Number>,
+	pub min_length: Option<u32>,
+	pub max_length: Option<u32>,
+	pub autocomplete: bool,
+	#[serde(flatten)]
+	pub rest: Map<String, Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct InteractionOption {
+	#[serde(rename = "type")]
+	pub kind: CommandOptionType,
+	pub name: String,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub value: Option<Value>,
+	#[serde(skip_serializing_if = "Vec::is_empty")]
+	pub options: Vec<InteractionOption>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub focused: Option<bool>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct CommandAutocomplete {
+	pub nonce: Option<Nonce>,
+	pub choices: LenientVec<CommandChoice>,
+}
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ApplicationCommand {
@@ -33,6 +104,7 @@ pub struct ApplicationCommand {
 	pub version: Option<Snowflake>,
 	pub default_member_permissions: Option<String>,
 	pub contexts: Option<Vec<InteractionContext>>,
+	pub options: LenientVec<ApplicationCommandOption>,
 	pub nsfw: bool,
 	#[serde(flatten)]
 	pub rest: Map<String, Value>,

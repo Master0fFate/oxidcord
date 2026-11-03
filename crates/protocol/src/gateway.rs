@@ -9,6 +9,7 @@ use serde_json::Value;
 use serde_json::value::RawValue;
 
 use crate::channel::{Channel, ChannelType, ThreadMember};
+use crate::command::CommandAutocomplete;
 use crate::emoji::{Emoji, PartialEmoji, Sticker};
 use crate::error::DecodeError;
 use crate::guild::{Guild, ScheduledEvent, UnavailableGuild};
@@ -827,6 +828,7 @@ pub enum DispatchEvent {
 	InteractionCreate(Value),
 	InteractionSuccess(Value),
 	InteractionFailure(Value),
+	ApplicationCommandAutocompleteResponse(CommandAutocomplete),
 	Unknown { name: String, data: Box<RawValue> },
 }
 
@@ -924,6 +926,9 @@ impl DispatchEvent {
 			"INTERACTION_CREATE" => Self::InteractionCreate(decode(name, data)?),
 			"INTERACTION_SUCCESS" => Self::InteractionSuccess(decode(name, data)?),
 			"INTERACTION_FAILURE" => Self::InteractionFailure(decode(name, data)?),
+			"APPLICATION_COMMAND_AUTOCOMPLETE_RESPONSE" => {
+				Self::ApplicationCommandAutocompleteResponse(decode(name, data)?)
+			}
 			_ => Self::Unknown {
 				name: name.to_owned(),
 				data: data.to_owned(),

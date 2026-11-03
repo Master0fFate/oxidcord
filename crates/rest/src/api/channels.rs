@@ -564,8 +564,17 @@ impl RestClient {
 			.await
 	}
 
-	pub async fn create_interaction(&self, body: &Value) -> Result<()> {
-		self.send_empty(Request::post("/interactions").json(body)).await
+	pub async fn create_interaction(&self, mut body: Value, files: Vec<UploadFile>) -> Result<()> {
+		let request = Request::post("/interactions");
+		if files.is_empty() {
+			return self.send_empty(request.json(&body)).await;
+		}
+		body["data"]["attachments"] = files
+			.iter()
+			.enumerate()
+			.map(|(index, file)| json!(descriptor(index, file, None)))
+			.collect();
+		self.send_empty(request.multipart(files, &body)).await
 	}
 
 	pub async fn component_interaction(&self, body: &ComponentInteraction) -> Result<()> {

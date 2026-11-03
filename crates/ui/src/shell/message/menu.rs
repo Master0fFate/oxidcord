@@ -7,8 +7,8 @@ use gpui::{
 	StatefulInteractiveElement as _, Styled as _, Window, div, prelude::FluentBuilder as _,
 };
 use gpui_base::TextSelection;
-use protocol::{Attachment, Message, MessageFlags, MessageType, Snowflake};
-use state::MessageCommand;
+use protocol::{ApplicationCommandType, Attachment, Message, MessageFlags, MessageType, Snowflake};
+use state::AppCommand;
 
 use super::body::{Plain, snippet};
 use super::{Dispatch, ImageTarget, MessageAccess, Prefs, RowAction, RowEnv, media};
@@ -499,10 +499,11 @@ impl MenuSource {
 
 	fn apps(&self, cx: &App) -> ContextMenuBuilder {
 		let data = super::super::community::data_handle(cx);
-		let commands: Vec<MessageCommand> = data
-			.read(cx)
-			.state()
-			.message_commands(self.guild, self.message.channel_id);
+		let commands: Vec<AppCommand> = data.read(cx).state().app_commands(
+			ApplicationCommandType::Message,
+			self.guild,
+			self.message.channel_id,
+		);
 		if commands.is_empty() {
 			return ContextMenuBuilder::new();
 		}

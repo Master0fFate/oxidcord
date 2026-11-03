@@ -290,6 +290,7 @@ pub(crate) struct Core {
 	member_channel: Option<Snowflake>,
 	member_ranges: Vec<[u32; 2]>,
 	command_scopes: HashSet<Snowflake>,
+	completion: Option<(Nonce, u64)>,
 	typing_expiry: Option<Instant>,
 	nonce_sequence: u64,
 	voice: VoiceLink,
@@ -384,6 +385,7 @@ impl Core {
 			member_channel: None,
 			member_ranges: member_ranges(0..0),
 			command_scopes: HashSet::new(),
+			completion: None,
 			typing_expiry: None,
 			nonce_sequence: 0,
 			voice: VoiceLink::new(parts.voice_io, parts.shared_voice),
@@ -756,6 +758,9 @@ impl Core {
 			DispatchEvent::GuildCreate(guild) => self.select_new_guild(guild.id),
 			DispatchEvent::UserUpdate(user) => self.activity.set_user(Some(*user)),
 			DispatchEvent::UserConnectionsUpdate(_) => self.activity.refresh_connections(),
+			DispatchEvent::ApplicationCommandAutocompleteResponse(response) => {
+				self.on_command_choices(response);
+			}
 			_ => {}
 		}
 	}
