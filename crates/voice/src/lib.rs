@@ -13,6 +13,7 @@ mod gate;
 mod jitter;
 mod media;
 mod mixer;
+mod processing;
 mod remote;
 mod resample;
 mod rtp;

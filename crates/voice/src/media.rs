@@ -17,6 +17,7 @@ use crate::denoise::Denoiser;
 use crate::gate::{VoiceGate, meter_level, rms, to_db};
 use crate::jitter::Push;
 use crate::mixer::{Mixer, soft_clip};
+use crate::processing::{Stages, VoiceProcessor};
 use crate::remote::{Frame, RemoteStream};
 use crate::rtp;
 use crate::shared::{Control, InputMode, Shared};
@@ -70,6 +71,7 @@ pub(crate) struct Media {
 	playback: PlaybackChain,
 	encoder: VoiceEncoder,
 	applied_bitrate: u32,
+	processor: VoiceProcessor,
 	denoiser: Denoiser,
 	gate: VoiceGate,
 	mixer: Mixer,
@@ -108,6 +110,7 @@ impl Media {
 			system_frame: vec![0.0; FRAME_SAMPLES],
 			encoder: VoiceEncoder::new()?,
 			applied_bitrate: DEFAULT_BITRATE_BPS,
+			processor: VoiceProcessor::new(),
 			denoiser: Denoiser::new(),
 			gate: VoiceGate::default(),
 			mixer: Mixer::new(STEREO_FRAME_SAMPLES),
@@ -196,6 +199,11 @@ impl Media {
 		self.shared
 			.input_level
 			.store(input_level.max(previous * METER_DECAY));
+		self.processor.set_stages(Stages {
+			echo_cancellation: self.shared.echo_cancellation.load(Ordering::Relaxed),
+			auto_gain: self.shared.auto_gain.load(Ordering::Relaxed),
+		});
+		self.processor.process_capture(frame);
 		if self.shared.noise_suppression.load(Ordering::Relaxed) {
 			self.denoiser.process(frame);
 		}
@@ -548,6 +556,7 @@ impl Media {
 			self.shared.output_volume.load()
 		};
 		let level = meter_level(rms(self.mixer.finish(master)));
+		self.processor.analyze_playback(self.mixer.output());
 		let previous = self.shared.output_level.load();
 		self.shared.output_level.store(level.max(previous * METER_DECAY));
 		active

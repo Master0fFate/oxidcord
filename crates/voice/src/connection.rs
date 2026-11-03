@@ -182,6 +182,14 @@ impl VoiceConnection {
 		self.shared.noise_suppression.store(enabled, Ordering::Relaxed);
 	}
 
+	pub fn set_echo_cancellation(&self, enabled: bool) {
+		self.shared.echo_cancellation.store(enabled, Ordering::Relaxed);
+	}
+
+	pub fn set_auto_gain(&self, enabled: bool) {
+		self.shared.auto_gain.store(enabled, Ordering::Relaxed);
+	}
+
 	pub fn set_audio_bitrate(&self, bitrate_bps: u32) {
 		self.shared.audio_bitrate.store(bitrate_bps, Ordering::Relaxed);
 	}

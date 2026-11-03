@@ -38,6 +38,7 @@ tls_codec.workspace = true
 hmac.workspace = true
 sha2.workspace = true
 nnnoiseless = { workspace = true, optional = true }
+sonora.workspace = true
 openh264.workspace = true
 
 [target.'cfg(windows)'.dependencies]
