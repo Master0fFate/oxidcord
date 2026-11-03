@@ -914,6 +914,7 @@ impl Core {
 		}
 		*self.voice.shared.lock() = Some(connection.clone());
 		self.video.lock().attach(&connection);
+		self.apply_local(LocalEvent::VoiceE2ee(None));
 		self.voice.pump = Some(self.spawn_pump(connection.clone()));
 		self.voice.connection = Some(connection);
 		if self.voice.camera {
