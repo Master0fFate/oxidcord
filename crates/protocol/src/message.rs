@@ -325,6 +325,21 @@ pub struct Poll {
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
+pub struct PinnedMessage {
+	#[serde(deserialize_with = "timestamp")]
+	pub pinned_at: Option<DateTime<Utc>>,
+	pub message: Message,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PinnedPage {
+	pub items: LenientVec<PinnedMessage>,
+	pub has_more: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct CallInfo {
 	pub participants: Vec<Snowflake>,
 	#[serde(deserialize_with = "timestamp")]

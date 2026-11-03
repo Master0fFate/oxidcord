@@ -121,9 +121,12 @@ impl Harness {
 		let pinned = |state: &State| {
 			state
 				.pins(channel_id)
-				.is_some_and(|pins| pins.iter().any(|message| message.id == message_id))
+				.is_some_and(|pins| pins.iter().any(|pin| pin.message.id == message_id))
 		};
-		self.session.send(Command::LoadPins { channel_id });
+		self.session.send(Command::LoadPins {
+			channel_id,
+			before: None,
+		});
 		self.until("the pin list to load", |state| state.pins(channel_id).is_some())
 			.await?;
 		self.session.send(Command::PinMessage {

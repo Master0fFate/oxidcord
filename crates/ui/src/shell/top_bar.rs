@@ -66,6 +66,7 @@ pub struct TopBar {
 	members_visible: bool,
 	notifications: Option<(Snowflake, Snowflake)>,
 	notifications_muted: bool,
+	pins_unread: bool,
 	search: Entity<InputState>,
 	search_focused: bool,
 	search_width: Pairs<(), bool>,
@@ -111,6 +112,7 @@ impl TopBar {
 			members_visible: true,
 			notifications: None,
 			notifications_muted: false,
+			pins_unread: false,
 			search,
 			search_focused: false,
 			search_width: Pairs::default(),
@@ -175,6 +177,13 @@ impl TopBar {
 		if self.notifications != target || self.notifications_muted != muted {
 			self.notifications = target;
 			self.notifications_muted = muted;
+			cx.notify();
+		}
+	}
+
+	pub fn set_pins_unread(&mut self, unread: bool, cx: &mut Context<Self>) {
+		if self.pins_unread != unread {
+			self.pins_unread = unread;
 			cx.notify();
 		}
 	}
@@ -702,6 +711,7 @@ impl Render for TopBar {
 					.child(
 						IconButton::new("top-pinned", IconKind::Pin)
 							.tooltip(cx.t("top-bar-pinned"))
+							.badge(self.pins_unread)
 							.on_click(cx.listener(|_, event: &ClickEvent, _, cx| {
 								cx.emit(TopBarEvent::Pins { at: event.position() })
 							})),

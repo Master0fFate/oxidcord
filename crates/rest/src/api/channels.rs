@@ -1,5 +1,7 @@
 use protocol::rest::{AttachmentDescriptor, ComponentInteraction, CreateMessage, EditMessage, MessagesQuery};
-use protocol::{BURST_REACTION, Channel, CommandIndex, LenientVec, Message, Snowflake, ThreadMember, User};
+use protocol::{
+	BURST_REACTION, Channel, CommandIndex, LenientVec, Message, PinnedPage, Snowflake, ThreadMember, User,
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -157,17 +159,27 @@ impl RestClient {
 	}
 
 	pub async fn pin_message(&self, channel_id: Snowflake, id: Snowflake) -> Result<()> {
-		self.send_empty(Request::put(format!("/channels/{channel_id}/pins/{id}")))
+		self.send_empty(Request::put(format!("/channels/{channel_id}/messages/pins/{id}")))
 			.await
 	}
 
 	pub async fn unpin_message(&self, channel_id: Snowflake, id: Snowflake) -> Result<()> {
-		self.send_empty(Request::delete(format!("/channels/{channel_id}/pins/{id}")))
-			.await
+		self.send_empty(Request::delete(format!(
+			"/channels/{channel_id}/messages/pins/{id}"
+		)))
+		.await
 	}
 
-	pub async fn pins(&self, channel_id: Snowflake) -> Result<LenientVec<Message>> {
-		self.send(Request::get(format!("/channels/{channel_id}/pins")))
+	pub async fn pins(&self, channel_id: Snowflake, before: Option<&str>, limit: u8) -> Result<PinnedPage> {
+		let mut request = Request::get(format!("/channels/{channel_id}/messages/pins"));
+		if let Some(before) = before {
+			request = request.query(&[("before", before.to_owned())]);
+		}
+		self.send(request.query(&[("limit", limit.to_string())])).await
+	}
+
+	pub async fn ack_pins(&self, channel_id: Snowflake) -> Result<()> {
+		self.send_empty(Request::post(format!("/channels/{channel_id}/pins/ack")))
 			.await
 	}
 

@@ -2,10 +2,10 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use protocol::{
-	Channel, ChannelLastMessage, ChannelRecipientChange, DispatchEvent, GuildMemberListUpdate,
-	GuildMembersChunk, GuildRoleChange, Member, MemberListGroup, Message, MessageAck, MessageUpdate,
-	PassiveUpdate, Presence, RelationshipKind, Snowflake, ThreadDelete, ThreadListSync, TypingStart,
-	UnavailableGuild, UserGuildSettings, VoiceState,
+	Channel, ChannelLastMessage, ChannelPinsUpdate, ChannelRecipientChange, DispatchEvent,
+	GuildMemberListUpdate, GuildMembersChunk, GuildRoleChange, Member, MemberListGroup, Message, MessageAck,
+	MessageUpdate, PassiveUpdate, Presence, RelationshipKind, Snowflake, ThreadDelete, ThreadListSync,
+	TypingStart, UnavailableGuild, UserGuildSettings, VoiceState,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -89,6 +89,7 @@ impl State {
 				})
 			}
 			DispatchEvent::MessageAck(ack) => self.message_ack(ack),
+			DispatchEvent::ChannelPinsUpdate(update) => self.channel_pins_update(update),
 			DispatchEvent::ChannelCreate(channel)
 			| DispatchEvent::ChannelUpdate(channel)
 			| DispatchEvent::ThreadCreate(channel)
@@ -387,6 +388,17 @@ impl State {
 		changes
 	}
 
+	fn channel_pins_update(&mut self, update: &ChannelPinsUpdate) -> Changes {
+		let mut changes = Changes::default();
+		if update.last_pin_timestamp.is_some()
+			&& let Some(channel) = self.channel_mut(update.channel_id)
+		{
+			channel.last_pin_timestamp = update.last_pin_timestamp;
+			changes.loaded.insert(update.channel_id);
+		}
+		changes
+	}
+
 	fn upsert_channel(&mut self, channel: &Channel) -> Changes {
 		let mut changes = Changes::default();
 		let Some(guild_id) = channel.guild_id else {
@@ -471,6 +483,7 @@ impl State {
 			}
 			if update.last_pin_timestamp.is_some() {
 				channel.last_pin_timestamp = update.last_pin_timestamp;
+				changes.loaded.insert(update.id);
 			}
 		}
 		if moved {

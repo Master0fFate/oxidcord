@@ -1,4 +1,5 @@
 use activity::ActivityRules;
+use chrono::{DateTime, Utc};
 use protocol::rest::{ComponentInteraction, ComponentInteractionData};
 use protocol::{
 	ApplicationCommand, CreateMessage, DispatchEvent, MessageAck, MessageFlags, MessageReference,
@@ -24,6 +25,7 @@ const BULK_DELETE_LIMIT: usize = 100;
 const ACK_BULK_LIMIT: usize = 100;
 const ARCHIVED_PAGE: u8 = 50;
 const MENTIONS_PAGE: u8 = 25;
+const PINS_PAGE: u8 = 50;
 
 fn sessions_or_empty(result: rest::Result<Value>) -> Value {
 	result.unwrap_or_else(|error| {
@@ -86,6 +88,7 @@ impl Core {
 			| Command::LoadActiveThreads { .. }
 			| Command::CreateForumPost { .. }
 			| Command::LoadPins { .. }
+			| Command::AckPins { .. }
 			| Command::LoadMentions
 			| Command::PinMessage { .. }
 			| Command::UnpinMessage { .. }
@@ -279,7 +282,11 @@ impl Core {
 					});
 				}
 			}
-			Command::LoadPins { channel_id } => self.load_pins(channel_id),
+			Command::LoadPins { channel_id, before } => self.load_pins(channel_id, before),
+			Command::AckPins { channel_id } => self.spawn_load("ack pins", move |rest| async move {
+				rest.ack_pins(channel_id).await?;
+				Ok(Loaded::PinsAcked(channel_id))
+			}),
 			Command::LoadMentions => self.spawn_load("mentions", move |rest| async move {
 				let messages = rest.mentions(MENTIONS_PAGE).await?;
 				Ok(Loaded::Mentions(messages.into_vec()))
@@ -420,16 +427,19 @@ impl Core {
 
 	pub(super) fn reload_pins(&self, channel_id: Snowflake) {
 		if self.state.read().pins(channel_id).is_some() {
-			self.load_pins(channel_id);
+			self.load_pins(channel_id, None);
 		}
 	}
 
-	pub(super) fn load_pins(&self, channel_id: Snowflake) {
+	fn load_pins(&self, channel_id: Snowflake, before: Option<DateTime<Utc>>) {
+		let before = before.map(timestamp);
 		self.spawn_load("pins", move |rest| async move {
-			let messages = rest.pins(channel_id).await?;
+			let page = rest.pins(channel_id, before.as_deref(), PINS_PAGE).await?;
 			Ok(Loaded::Pins {
 				channel_id,
-				messages: messages.into_vec(),
+				items: page.items.into_vec(),
+				has_more: page.has_more,
+				append: before.is_some(),
 			})
 		});
 	}

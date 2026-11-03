@@ -751,7 +751,7 @@ impl Timeline {
 			react: direct || state.can_react(channel),
 			read_history: direct || permissions.contains(protocol::Permissions::READ_MESSAGE_HISTORY),
 			manage_messages: self.guild.is_some() && state.can_manage_messages(channel),
-			pin: direct || state.can_pin(channel),
+			pin: state.can_pin(channel),
 			create_threads: self.guild.is_some()
 				&& matches!(
 					kind,

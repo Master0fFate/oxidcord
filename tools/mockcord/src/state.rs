@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
+use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
 use protocol::{
 	Channel, Emoji, FRIEND_SOURCE_MUTUAL_FRIENDS, FRIEND_SOURCE_MUTUAL_GUILDS, GuildProperties, Member,
@@ -66,6 +67,7 @@ pub struct Store {
 	pub audit: HashMap<u64, Vec<Value>>,
 	pub joined_threads: BTreeSet<u64>,
 	pub slowmode: HashMap<u64, Instant>,
+	pub pinned_at: HashMap<u64, DateTime<Utc>>,
 	pub created_guilds: HashMap<u64, Value>,
 	pub frecency: ProtoFrecencySettings,
 	pub proto_status: Vec<u8>,
@@ -144,6 +146,7 @@ impl Store {
 			ended_sessions: BTreeSet::new(),
 			guild_bios: HashMap::new(),
 			audit: crate::admin::seed_audit(fixtures),
+			pinned_at: fixtures.pinned_at(),
 			joined_threads: fixtures
 				.guilds
 				.first()

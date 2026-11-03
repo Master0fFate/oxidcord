@@ -23,6 +23,7 @@ pub struct IconButton {
 	filled_hover: bool,
 	color: Option<Hsla>,
 	tinted: bool,
+	badge: bool,
 	on_click: Option<ClickHandler>,
 }
 
@@ -38,6 +39,7 @@ impl IconButton {
 			filled_hover: false,
 			color: None,
 			tinted: false,
+			badge: false,
 			on_click: None,
 		}
 	}
@@ -78,6 +80,11 @@ impl IconButton {
 		self
 	}
 
+	pub fn badge(mut self, badge: bool) -> Self {
+		self.badge = badge;
+		self
+	}
+
 	pub fn on_click(mut self, handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
 		self.on_click = Some(Rc::new(handler));
 		self
@@ -100,6 +107,7 @@ impl RenderOnce for IconButton {
 			.color
 			.filter(|_| self.tinted)
 			.map(|color| with_alpha(color, 0.14));
+		let badge = self.badge.then_some(theme.brand);
 		let filled_hover = self.filled_hover;
 		let active = self.active;
 		let icon = Icon::new(self.icon)
@@ -109,6 +117,7 @@ impl RenderOnce for IconButton {
 		div()
 			.id(self.id)
 			.group(group)
+			.relative()
 			.flex()
 			.flex_none()
 			.items_center()
@@ -126,5 +135,16 @@ impl RenderOnce for IconButton {
 				button.on_click(move |event, window, cx| handler(event, window, cx))
 			})
 			.child(icon)
+			.when_some(badge, |button, color| {
+				button.child(
+					div()
+						.absolute()
+						.top(rem(4.))
+						.right(rem(4.))
+						.size(rem(8.))
+						.rounded_full()
+						.bg(color),
+				)
+			})
 	}
 }

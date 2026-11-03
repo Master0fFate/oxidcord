@@ -5,7 +5,7 @@ mod messages;
 mod people;
 pub(crate) mod previews;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use chrono::{DateTime, Utc};
 use protocol::{
@@ -65,6 +65,18 @@ pub struct FixtureSummary {
 }
 
 impl Fixtures {
+	pub fn pinned_at(&self) -> HashMap<u64, DateTime<Utc>> {
+		self.messages
+			.values()
+			.flatten()
+			.filter(|(_, message)| message["pinned"].as_bool() == Some(true))
+			.filter_map(|(id, message)| {
+				let time = DateTime::parse_from_rfc3339(message["timestamp"].as_str()?).ok()?;
+				Some((*id, time.with_timezone(&Utc)))
+			})
+			.collect()
+	}
+
 	pub fn generate(config: &MockConfig, anchor: DateTime<Utc>) -> Fixtures {
 		let mut rng = StdRng::seed_from_u64(config.seed);
 		let mut ids = EntityIds::default();
@@ -157,12 +169,22 @@ fn build_read_states(builder: &Builder, guilds: &[GuildFixture], private: &[u64]
 				.messages
 				.get(&channel_id)
 				.filter(|messages| !messages.is_empty())?;
-			Some(read_state(channel_id, messages, unread))
+			let pinned = builder
+				.channels
+				.get(&channel_id)
+				.and_then(|channel| channel.last_pin_timestamp)
+				.filter(|_| !unread);
+			Some(read_state(channel_id, messages, unread, pinned))
 		})
 		.collect()
 }
 
-fn read_state(channel_id: u64, messages: &BTreeMap<u64, Value>, unread: bool) -> ReadState {
+fn read_state(
+	channel_id: u64,
+	messages: &BTreeMap<u64, Value>,
+	unread: bool,
+	last_pin_timestamp: Option<DateTime<Utc>>,
+) -> ReadState {
 	let ids: Vec<u64> = messages.keys().copied().collect();
 	let newest = ids[ids.len() - 1];
 	let (last_read, mention_count) = if unread && ids.len() > 1 {
@@ -179,7 +201,7 @@ fn read_state(channel_id: u64, messages: &BTreeMap<u64, Value>, unread: bool) ->
 	ReadState {
 		id: Snowflake(channel_id),
 		last_message_id: Some(Snowflake(last_read)),
-		last_pin_timestamp: None,
+		last_pin_timestamp,
 		mention_count: Some(mention_count),
 		flags: Some(0),
 		last_viewed: Some(4000),

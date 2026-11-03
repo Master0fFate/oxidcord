@@ -1270,16 +1270,25 @@ impl Shared {
 
 	pub fn set_pin(&self, channel_id: u64, message_id: u64, pinned: bool) -> Result<(), ApiError> {
 		let mut store = self.store.lock();
-		let guild_id = store
+		let channel = store
 			.channels
-			.get(&channel_id)
-			.ok_or_else(ApiError::unknown_channel)?
-			.guild_id;
+			.get_mut(&channel_id)
+			.ok_or_else(ApiError::unknown_channel)?;
+		let guild_id = channel.guild_id;
+		if pinned {
+			channel.last_pin_timestamp = Some(Utc::now());
+		}
+		let last_pin_timestamp = channel.last_pin_timestamp;
 		let message = store
 			.message_mut(channel_id, message_id)
 			.ok_or_else(ApiError::unknown_message)?;
 		message["pinned"] = json!(pinned);
 		let value = message.clone();
+		if pinned {
+			store.pinned_at.insert(message_id, Utc::now());
+		} else {
+			store.pinned_at.remove(&message_id);
+		}
 		let gateway = self.gateway_message(&store, &value);
 		if let Some(guild_id) = guild_id {
 			store.push_audit(
@@ -1297,7 +1306,7 @@ impl Shared {
 			&json!({
 				"guild_id": guild_id.map(|id| id.to_string()),
 				"channel_id": channel_id.to_string(),
-				"last_pin_timestamp": now_iso(),
+				"last_pin_timestamp": last_pin_timestamp,
 			}),
 		);
 		Ok(())

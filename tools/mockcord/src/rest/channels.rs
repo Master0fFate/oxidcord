@@ -8,6 +8,7 @@ use axum::extract::{FromRequest, Multipart, Path, Query, Request, State};
 use axum::http::StatusCode;
 use axum::http::header::CONTENT_TYPE;
 use axum::response::{IntoResponse, Response};
+use chrono::{DateTime, SecondsFormat, Utc};
 use protocol::{BURST_REACTION, ChannelType, EditMessage, Snowflake};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -20,6 +21,7 @@ use crate::state::{Shared, Store};
 use crate::threads::ThreadRequest;
 
 const DEFAULT_PAGE_SIZE: usize = 50;
+const PINS_PAGE_SIZE: usize = 50;
 const MAX_PAGE_SIZE: usize = 100;
 const DEFAULT_SEARCH_PAGE_SIZE: usize = 25;
 const DEFAULT_ARCHIVE_MINUTES: i64 = 1440;
@@ -229,22 +231,55 @@ pub async fn remove_typed_reaction(
 	Ok(StatusCode::NO_CONTENT)
 }
 
-pub async fn pins(State(shared): State<Arc<Shared>>, Path(id): Path<u64>) -> ApiResult {
+#[derive(Deserialize, Default)]
+pub struct PinsParams {
+	before: Option<DateTime<Utc>>,
+	limit: Option<usize>,
+}
+
+pub async fn pins(
+	State(shared): State<Arc<Shared>>,
+	Path(id): Path<u64>,
+	Query(params): Query<PinsParams>,
+) -> ApiResult {
 	let store = shared.store.lock();
 	require_channel(&store, id)?;
-	let pinned: Vec<Value> = store
+	let limit = params.limit.unwrap_or(PINS_PAGE_SIZE).clamp(1, PINS_PAGE_SIZE);
+	let mut pinned: Vec<(DateTime<Utc>, u64, &Value)> = store
 		.messages
 		.get(&id)
-		.map(|messages| {
-			messages
-				.values()
-				.rev()
-				.filter(|message| message["pinned"].as_bool() == Some(true))
-				.cloned()
-				.collect()
+		.into_iter()
+		.flatten()
+		.filter(|(_, message)| message["pinned"].as_bool() == Some(true))
+		.filter_map(|(message_id, message)| {
+			let pinned_at = *store.pinned_at.get(message_id)?;
+			params
+				.before
+				.is_none_or(|before| pinned_at < before)
+				.then_some((pinned_at, *message_id, message))
 		})
-		.unwrap_or_default();
-	Ok(Json(Value::Array(pinned)))
+		.collect();
+	pinned.sort_by_key(|(pinned_at, message_id, _)| Reverse((*pinned_at, *message_id)));
+	let has_more = pinned.len() > limit;
+	let items: Vec<Value> = pinned
+		.into_iter()
+		.take(limit)
+		.map(|(pinned_at, _, message)| {
+			json!({
+				"pinned_at": pinned_at.to_rfc3339_opts(SecondsFormat::AutoSi, true),
+				"message": message,
+			})
+		})
+		.collect();
+	Ok(Json(json!({ "items": items, "has_more": has_more })))
+}
+
+pub async fn ack_pins(
+	State(shared): State<Arc<Shared>>,
+	Path(id): Path<u64>,
+) -> Result<StatusCode, ApiError> {
+	shared.ack_pins(id)?;
+	Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn typing(State(shared): State<Arc<Shared>>, Path(id): Path<u64>) -> Result<StatusCode, ApiError> {

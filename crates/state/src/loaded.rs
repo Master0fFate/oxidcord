@@ -5,8 +5,8 @@ use chrono::{DateTime, Utc};
 use protocol::lenient::timestamp;
 use protocol::{
 	ApplicationCommand, ApplicationCommandType, Channel, CommandIndex, Gif, GifFavorites, GifTrending,
-	InteractionContext, LenientVec, Member, Message, Permissions, Snowflake, Sticker, StickerPack,
-	ThreadMember, User,
+	InteractionContext, LenientVec, Member, Message, Permissions, PinnedMessage, Snowflake, Sticker,
+	StickerPack, ThreadMember, User,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -26,8 +26,11 @@ pub enum Loaded {
 	},
 	Pins {
 		channel_id: Snowflake,
-		messages: Vec<Message>,
+		items: Vec<PinnedMessage>,
+		has_more: bool,
+		append: bool,
 	},
+	PinsAcked(Snowflake),
 	ArchivedThreads {
 		channel_id: Snowflake,
 		threads: Vec<Channel>,
@@ -211,6 +214,18 @@ pub struct AuthSession {
 	pub location: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct Pin {
+	pub pinned_at: Option<DateTime<Utc>>,
+	pub message: Arc<Message>,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct PinList {
+	pub(crate) pins: Vec<Pin>,
+	pub(crate) has_more: bool,
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct ArchivedThreads {
 	pub(crate) ids: Vec<Snowflake>,
@@ -249,7 +264,7 @@ fn member_allows(command: &ApplicationCommand, permissions: Permissions) -> bool
 #[derive(Debug, Default)]
 pub(crate) struct Lazy {
 	pub(crate) mentions: Option<Vec<Arc<Message>>>,
-	pub(crate) pins: HashMap<Snowflake, Vec<Arc<Message>>>,
+	pub(crate) pins: HashMap<Snowflake, PinList>,
 	pub(crate) archived: HashMap<Snowflake, ArchivedThreads>,
 	pub(crate) profiles: HashMap<Snowflake, UserProfile>,
 	pub(crate) notes: HashMap<Snowflake, String>,
@@ -474,16 +489,37 @@ impl State {
 				self.lazy.command_indexes.insert(*scope, index.clone());
 				changes.loaded.insert(*scope);
 			}
-			Loaded::Pins { channel_id, messages } => {
+			Loaded::Pins {
+				channel_id,
+				items,
+				has_more,
+				append,
+			} => {
 				let guild_id = self.channel_guild(*channel_id);
-				let shared = messages
+				let pins: Vec<Pin> = items
 					.iter()
-					.map(|message| {
-						self.ingest_message_people(guild_id, message);
-						Arc::new(message.clone())
+					.map(|item| {
+						self.ingest_message_people(guild_id, &item.message);
+						Pin {
+							pinned_at: item.pinned_at,
+							message: Arc::new(item.message.clone()),
+						}
 					})
 					.collect();
-				self.lazy.pins.insert(*channel_id, shared);
+				let list = self.lazy.pins.entry(*channel_id).or_default();
+				if !*append {
+					list.pins.clear();
+				}
+				list.pins.extend(pins);
+				list.has_more = *has_more;
+				changes.loaded.insert(*channel_id);
+			}
+			Loaded::PinsAcked(channel_id) => {
+				let pinned_at = self
+					.channel(*channel_id)
+					.and_then(|channel| channel.last_pin_timestamp);
+				self.set_pins_read(*channel_id, pinned_at);
+				changes.read_state = true;
 				changes.loaded.insert(*channel_id);
 			}
 			Loaded::ArchivedThreads {
@@ -829,8 +865,12 @@ impl State {
 		found
 	}
 
-	pub fn pins(&self, channel_id: Snowflake) -> Option<&[Arc<Message>]> {
-		self.lazy.pins.get(&channel_id).map(Vec::as_slice)
+	pub fn pins(&self, channel_id: Snowflake) -> Option<&[Pin]> {
+		self.lazy.pins.get(&channel_id).map(|list| list.pins.as_slice())
+	}
+
+	pub fn pins_has_more(&self, channel_id: Snowflake) -> bool {
+		self.lazy.pins.get(&channel_id).is_some_and(|list| list.has_more)
 	}
 
 	pub fn archived_threads(&self, channel_id: Snowflake) -> Vec<&Channel> {

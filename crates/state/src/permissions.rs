@@ -15,7 +15,8 @@ pub const DM_PERMISSIONS: Permissions = Permissions::VIEW_CHANNEL
 	.union(Permissions::USE_EXTERNAL_EMOJIS)
 	.union(Permissions::USE_EXTERNAL_STICKERS)
 	.union(Permissions::SEND_VOICE_MESSAGES)
-	.union(Permissions::SEND_POLLS);
+	.union(Permissions::SEND_POLLS)
+	.union(Permissions::PIN_MESSAGES);
 
 const FULL_ACCESS: Permissions = Permissions::from_bits_retain(u64::MAX);
 

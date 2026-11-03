@@ -176,6 +176,19 @@ impl State {
 			.is_some_and(|member| mute_active(member.muted, member.mute_config.as_ref(), Utc::now()))
 	}
 
+	pub fn pins_unread(&self, channel_id: Snowflake) -> bool {
+		let Some(pinned) = self
+			.channel(channel_id)
+			.and_then(|channel| channel.last_pin_timestamp)
+		else {
+			return false;
+		};
+		self.read_states
+			.get(&channel_id)
+			.and_then(|state| state.last_pin_timestamp)
+			.is_none_or(|read| read < pinned)
+	}
+
 	pub fn channel_is_muted(&self, channel_id: Snowflake) -> bool {
 		self.channel(channel_id).is_some_and(|channel| {
 			channel_muted(
@@ -369,6 +382,18 @@ impl State {
 		});
 		state.last_message_id = Some(message_id);
 		state.mention_count = Some(i64::from(mentions));
+	}
+
+	pub(crate) fn set_pins_read(&mut self, channel_id: Snowflake, pinned_at: Option<DateTime<Utc>>) {
+		let last_message_id = self
+			.channel(channel_id)
+			.and_then(|channel| channel.last_message_id);
+		let state = self.read_states.entry(channel_id).or_insert_with(|| ReadState {
+			id: channel_id,
+			last_message_id,
+			..ReadState::default()
+		});
+		state.last_pin_timestamp = pinned_at;
 	}
 
 	pub(crate) fn bump_mentions(&mut self, channel_id: Snowflake) {

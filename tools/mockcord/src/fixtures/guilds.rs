@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use chrono::{DateTime, Duration, Utc};
 use protocol::{
@@ -10,6 +10,7 @@ use protocol::{
 };
 use rand::Rng;
 use rand::rngs::StdRng;
+use serde_json::Value;
 
 use super::messages::{self, ChannelSpec};
 use super::people;
@@ -26,6 +27,7 @@ const SLOWMODE_SECONDS: i64 = 10;
 const SLOWMODE_CHANNEL_INDEX: usize = 1;
 const LARGE_GUILD_STRIDE: usize = 3;
 const LARGE_GUILD_MEMBERS: usize = 650;
+const PIN_BACKLOG: usize = 60;
 
 pub struct GuildFixture {
 	pub id: u64,
@@ -185,6 +187,14 @@ fn muted_overwrite(muted_role: u64) -> PermissionOverwrite {
 		Permissions::empty(),
 		Permissions::SEND_MESSAGES | Permissions::ADD_REACTIONS | Permissions::SEND_MESSAGES_IN_THREADS,
 	)
+}
+
+fn pin_backlog(messages: &mut BTreeMap<u64, Value>) {
+	messages
+		.values_mut()
+		.filter(|message| message["type"].as_i64() == Some(0))
+		.take(PIN_BACKLOG)
+		.for_each(|message| message["pinned"] = Value::Bool(true));
 }
 
 fn text_channel_name(index: usize) -> String {
@@ -787,7 +797,10 @@ pub fn build(builder: &mut Builder, index: usize) -> GuildFixture {
 		generated.push((thread.id.0, messages::generate(&mut builder.rng, &spec)));
 		variant += 1;
 	}
-	for (channel_id, channel_messages) in generated {
+	for (channel_id, mut channel_messages) in generated {
+		if index == 0 && channel_id == first_text {
+			pin_backlog(&mut channel_messages);
+		}
 		if let Some(channel) = builder.channels.get_mut(&channel_id) {
 			channel.last_message_id = channel_messages.keys().next_back().copied().map(Snowflake);
 			channel.message_count = Some(channel_messages.len() as i64);

@@ -160,8 +160,12 @@ pub fn router(shared: Arc<Shared>) -> Router {
 			"/channels/{id}/messages/{mid}/threads",
 			post(channels::thread_from_message),
 		)
-		.route("/channels/{id}/pins", get(channels::pins))
-		.route("/channels/{id}/pins/{mid}", put(admin::pin).delete(admin::unpin))
+		.route("/channels/{id}/messages/pins", get(channels::pins))
+		.route(
+			"/channels/{id}/messages/pins/{mid}",
+			put(admin::pin).delete(admin::unpin),
+		)
+		.route("/channels/{id}/pins/ack", post(channels::ack_pins))
 		.route(
 			"/channels/{id}/permissions/{tid}",
 			put(admin::put_overwrite).delete(admin::delete_overwrite),

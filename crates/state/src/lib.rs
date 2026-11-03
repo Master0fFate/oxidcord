@@ -26,7 +26,7 @@ pub use expressions::{
 pub use guild::GuildState;
 pub use loaded::{
 	AuditChange, AuditEntry, AuditLog, AuthSession, BanEntry, ConnectedAccount, GuildProfile, INBOX_KEY,
-	InviteInfo, InvitePreview, Loaded, MessageCommand, ProfileBadge, USER_COMMANDS, UserProfile,
+	InviteInfo, InvitePreview, Loaded, MessageCommand, Pin, ProfileBadge, USER_COMMANDS, UserProfile,
 	audit_action_label,
 };
 pub use member_list::{MemberList, MemberSlot};

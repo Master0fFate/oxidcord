@@ -589,6 +589,21 @@ impl Shared {
 		self.hub.broadcast("MESSAGE_ACK", &data);
 		Ok(())
 	}
+
+	pub fn ack_pins(&self, channel_id: u64) -> Result<(), ApiError> {
+		let mut store = self.store.lock();
+		let last_pin_timestamp = store
+			.channels
+			.get(&channel_id)
+			.ok_or_else(ApiError::unknown_channel)?
+			.last_pin_timestamp;
+		store
+			.read_states
+			.entry(channel_id)
+			.or_insert_with(|| blank_read_state(channel_id))
+			.last_pin_timestamp = last_pin_timestamp;
+		Ok(())
+	}
 }
 
 fn blank_read_state(channel_id: u64) -> ReadState {

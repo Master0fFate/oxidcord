@@ -850,6 +850,7 @@ impl Shell {
 			bar.set_plugin_context(context, cx);
 		});
 		self.sync_notifications(cx);
+		self.sync_pins_unread(cx);
 		self.community
 			.update(cx, |community, cx| community.show_main(guild, channel, cx));
 		self.timeline.update(cx, |timeline, cx| {
@@ -871,6 +872,13 @@ impl Shell {
 		let muted = target.is_some_and(|(_, channel)| self.data.read(cx).state().channel_is_muted(channel));
 		self.top_bar
 			.update(cx, |bar, cx| bar.set_notifications(target, muted, cx));
+	}
+
+	fn sync_pins_unread(&mut self, cx: &mut Context<Self>) {
+		let unread = self
+			.channel
+			.is_some_and(|channel| self.data.read(cx).state().pins_unread(channel));
+		self.top_bar.update(cx, |bar, cx| bar.set_pins_unread(unread, cx));
 	}
 
 	fn set_typing(&mut self, cx: &mut Context<Self>) {
@@ -903,6 +911,12 @@ impl Shell {
 		self.home_pages.on_changes(changes, cx);
 		if changes.guild_list {
 			self.sync_notifications(cx);
+		}
+		if self
+			.channel
+			.is_some_and(|channel| changes.loaded.contains(channel))
+		{
+			self.sync_pins_unread(cx);
 		}
 		if changes.private_channels || changes.relationships || changes.presence_any() {
 			self.groups.refresh(cx);

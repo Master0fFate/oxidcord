@@ -390,6 +390,10 @@ pub enum Command {
 	},
 	LoadPins {
 		channel_id: Snowflake,
+		before: Option<DateTime<Utc>>,
+	},
+	AckPins {
+		channel_id: Snowflake,
 	},
 	LoadMentions,
 	PinMessage {

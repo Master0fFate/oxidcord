@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use gpui::{
 	AnyElement, App, Context, Entity, EventEmitter, FontWeight, IntoElement, ParentElement as _, Render,
 	Styled as _, Window, div, prelude::FluentBuilder as _,
@@ -29,6 +30,7 @@ pub enum PinsEvent {
 pub struct PinsPanel {
 	data: Entity<Data>,
 	channel: Snowflake,
+	acking: bool,
 }
 
 impl EventEmitter<PinsEvent> for PinsPanel {}
@@ -79,12 +81,40 @@ pub fn confirm(
 
 impl PinsPanel {
 	pub fn new(data: Entity<Data>, channel: Snowflake, cx: &mut Context<Self>) -> Self {
-		data.read(cx).send(Command::LoadPins { channel_id: channel });
-		Self { data, channel }
+		data.read(cx).send(Command::LoadPins {
+			channel_id: channel,
+			before: None,
+		});
+		let mut panel = Self {
+			data,
+			channel,
+			acking: false,
+		};
+		panel.ack_unread(cx);
+		panel
 	}
 
 	pub fn refresh(&mut self, cx: &mut Context<Self>) {
+		self.ack_unread(cx);
 		cx.notify();
+	}
+
+	fn ack_unread(&mut self, cx: &App) {
+		let data = self.data.read(cx);
+		let unread = data.state().pins_unread(self.channel);
+		if unread && !self.acking {
+			data.send(Command::AckPins {
+				channel_id: self.channel,
+			});
+		}
+		self.acking = unread;
+	}
+
+	fn load_more(&self, before: DateTime<Utc>, cx: &App) {
+		self.data.read(cx).send(Command::LoadPins {
+			channel_id: self.channel,
+			before: Some(before),
+		});
 	}
 
 	fn card(
@@ -182,17 +212,20 @@ impl PinsPanel {
 impl Render for PinsPanel {
 	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
-		let (messages, can_manage, count) = {
+		let (messages, cursor, loaded, can_manage) = {
 			let data = self.data.read(cx);
 			let state = data.state();
-			let messages: Vec<Arc<Message>> = state
-				.pins(self.channel)
-				.map(|pins| pins.iter().rev().cloned().collect())
+			let pins = state.pins(self.channel);
+			let messages: Vec<Arc<Message>> = pins
+				.map(|pins| pins.iter().map(|pin| pin.message.clone()).collect())
 				.unwrap_or_default();
-			let count = messages.len();
-			(messages, state.can_pin(self.channel), count)
+			let cursor = state
+				.pins_has_more(self.channel)
+				.then(|| pins.and_then(|pins| pins.last()?.pinned_at))
+				.flatten();
+			(messages, cursor, pins.is_some(), state.can_pin(self.channel))
 		};
-		let loaded = self.data.read(cx).state().pins(self.channel).is_some();
+		let count = messages.len();
 		let cards: Vec<AnyElement> = messages
 			.iter()
 			.map(|message| self.card(message, can_manage, &theme, cx))
@@ -258,6 +291,16 @@ impl Render for PinsPanel {
 										.color(theme.interactive_muted),
 								)
 								.child(cx.t("pins-empty")),
+						)
+					})
+					.when_some(cursor, |list, cursor| {
+						list.child(
+							div().flex().justify_center().pb(theme.space_8).child(
+								Button::new("pins-more")
+									.outline()
+									.label(cx.t("audit-load-more"))
+									.on_click(cx.listener(move |this, _, _, cx| this.load_more(cursor, cx))),
+							),
 						)
 					})
 					.overflow_y_scrollbar()
