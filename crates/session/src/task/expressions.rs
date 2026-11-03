@@ -83,6 +83,16 @@ enum SoundRefusal {
 	Rest(rest::RestError),
 }
 
+fn sound_mime(file: &[u8]) -> Option<&'static str> {
+	if file.starts_with(b"OggS") {
+		Some("audio/ogg")
+	} else if file.starts_with(b"ID3") || matches!(file, [0xFF, second, ..] if second & 0xE0 == 0xE0) {
+		Some("audio/mpeg")
+	} else {
+		None
+	}
+}
+
 async fn upload_sound(
 	rest: &rest::RestClient,
 	guild_id: Snowflake,
@@ -92,19 +102,15 @@ async fn upload_sound(
 	if file.len() > SOUND_MAX_BYTES {
 		return Err(SoundRefusal::Invalid("Sounds can be at most 512 KB"));
 	}
-	let probe = file.clone();
-	let decoded = tokio::task::spawn_blocking(move || voice::decode_sound(probe)).await;
+	let mime = sound_mime(&file).ok_or(SoundRefusal::Invalid("That audio file can't be used"))?;
+	let data_uri = image_data_uri(mime, &file);
+	let decoded = tokio::task::spawn_blocking(move || voice::decode_sound(file)).await;
 	match decoded {
 		Ok(Ok(sound)) if sound.duration().as_secs_f32() <= SOUND_MAX_SECONDS => {}
 		Ok(Ok(_)) => return Err(SoundRefusal::Invalid("Sounds can be at most 5.2 seconds")),
 		_ => return Err(SoundRefusal::Invalid("That audio file can't be used")),
 	}
-	let mime = if file.starts_with(b"OggS") {
-		"audio/ogg"
-	} else {
-		"audio/mpeg"
-	};
-	rest.create_guild_sound(guild_id, name, &image_data_uri(mime, &file), 1.0)
+	rest.create_guild_sound(guild_id, name, &data_uri, 1.0)
 		.await
 		.map(drop)
 		.map_err(SoundRefusal::Rest)
