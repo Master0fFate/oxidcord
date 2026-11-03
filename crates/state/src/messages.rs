@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use protocol::{
-	Message, MessageUpdate, Nonce, PartialEmoji, PollAnswerCount, PollResults, Reaction,
+	Message, MessageFlags, MessageUpdate, Nonce, PartialEmoji, PollAnswerCount, PollResults, Reaction,
 	ReactionCountDetails, Snowflake,
 };
 
@@ -80,7 +80,11 @@ impl ChannelMessages {
 	}
 
 	pub fn newest_id(&self) -> Option<Snowflake> {
-		self.ordered.last().map(|message| message.id)
+		self.ordered
+			.iter()
+			.rev()
+			.find(|message| !is_ephemeral(message))
+			.map(|message| message.id)
 	}
 
 	pub fn is_detached(&self) -> bool {
@@ -101,7 +105,7 @@ impl ChannelMessages {
 	}
 
 	pub fn push_live(&mut self, message: Arc<Message>) -> bool {
-		if self.detached {
+		if self.detached && !is_ephemeral(&message) {
 			self.extend_tail_gap(message.id);
 			return false;
 		}
@@ -119,17 +123,24 @@ impl ChannelMessages {
 	) {
 		let was_empty = self.ordered.is_empty();
 		let received = messages.len();
+		let mut kept = Vec::new();
 		if direction == LoadDirection::Around {
+			kept = self
+				.ordered
+				.iter()
+				.filter(|message| is_ephemeral(message))
+				.cloned()
+				.collect();
 			self.ordered.clear();
 			self.by_id.clear();
-			self.rendered.clear();
+			self.rendered.retain(|id, _| kept.iter().any(|message| message.id == *id));
 			self.deleted.clear();
 			self.latency.clear();
 			self.gaps.clear();
 			self.stale = false;
 		}
 		self.drop_confirmed_pending(&messages);
-		for message in messages {
+		for message in messages.into_iter().chain(kept) {
 			self.insert(message);
 		}
 		match direction {
@@ -346,6 +357,10 @@ impl ChannelMessages {
 		let upper = upper.max(previous).unwrap_or(newest).max(newest);
 		self.gaps.push((newest, upper));
 	}
+}
+
+fn is_ephemeral(message: &Message) -> bool {
+	message.flags.contains(MessageFlags::EPHEMERAL)
 }
 
 pub fn apply_update(message: &mut Message, update: &MessageUpdate) {
