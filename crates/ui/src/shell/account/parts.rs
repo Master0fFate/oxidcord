@@ -6,15 +6,18 @@ use gpui::{
 	div, img, prelude::FluentBuilder as _,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
-use gpui_component::{Disableable as _, Sizable as _};
+use gpui_component::menu::DropdownMenu as _;
+use gpui_component::{Icon as ComponentIcon, Sizable as _};
 use media::SizeHint;
 use protocol::Snowflake;
 use session::Command;
 
 use super::profile_data::{Badge, ProfileData, Relation, RoleChip};
-use crate::components::tooltip;
+use super::relation::{manage_items, primary_action};
+use crate::components::{ContextMenuBuilder, tooltip};
 use crate::data::Data;
 use crate::i18n::Translate as _;
+use crate::icons::IconKind;
 use crate::images::Images;
 use crate::theme::{Theme, with_alpha};
 
@@ -101,7 +104,6 @@ pub fn action_row(
 	cx: &App,
 ) -> AnyElement {
 	let id = profile.id;
-	let username = profile.username.clone();
 	let mut row = div().flex().flex_wrap().items_center().gap(theme.space_8);
 	if !profile.mine {
 		let message = {
@@ -118,53 +120,29 @@ pub fn action_row(
 				.label(cx.t("profile-message"))
 				.on_click(message),
 		);
-		if !profile.bot {
-			let friend = {
-				let data = data.clone();
-				move |_: &gpui::ClickEvent, _: &mut Window, cx: &mut App| {
-					data.read(cx).send(Command::AddFriend {
-						username: username.clone(),
-						discriminator: None,
-					});
-				}
-			};
-			row = match profile.relation {
-				Relation::None => row.child(
-					Button::new("profile-add-friend")
-						.small()
-						.label(cx.t("profile-add-friend"))
-						.on_click(friend),
-				),
-				Relation::Outgoing => row.child(
-					Button::new("profile-request-sent")
-						.small()
-						.disabled(true)
-						.label(cx.t("profile-request-sent")),
-				),
-				Relation::Incoming => {
-					let data = data.clone();
-					row.child(
-						Button::new("profile-accept-friend")
-							.small()
-							.label(cx.t("friends-accept"))
-							.on_click(move |_, _, cx| {
-								data.read(cx).send(Command::AcceptFriend { user_id: id });
-							}),
-					)
-				}
-				Relation::Friend | Relation::Blocked => row,
-			};
-		}
-		if profile.relation != Relation::Blocked {
+		let relation = profile.facts.relation;
+		if let Some(action) =
+			primary_action(relation).filter(|_| !profile.bot || relation == Relation::Blocked)
+		{
 			let data = data.clone();
 			row = row.child(
-				Button::new("profile-block")
+				Button::new("profile-relation")
+					.small()
+					.label(cx.t(action.label))
+					.on_click(move |_, _, cx| {
+						data.read(cx).send((action.command)(id));
+					}),
+			);
+		}
+		if relation != Relation::Blocked {
+			let menu = manage_items(ContextMenuBuilder::new(), id, &profile.name, &profile.facts, cx).build();
+			row = row.child(
+				Button::new("profile-more")
 					.small()
 					.ghost()
-					.label(cx.t("profile-block"))
-					.on_click(move |_, _, cx| {
-						data.read(cx).send(Command::BlockUser { user_id: id });
-					}),
+					.tooltip(cx.t("friends-more"))
+					.icon(ComponentIcon::default().path(IconKind::More.path()))
+					.dropdown_menu(menu),
 			);
 		}
 	}

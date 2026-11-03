@@ -108,6 +108,12 @@ enum RightPanel {
 	Search,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum Notified {
+	Channel(Snowflake),
+	Requests,
+}
+
 enum Overlay {
 	Lightbox(ImageTarget),
 	VideoFullscreen(VideoFullscreenTarget),
@@ -147,7 +153,7 @@ pub struct Shell {
 	pending_jump: Option<Snowflake>,
 	seen_alert: u64,
 	seen_intent: u64,
-	notification_clicks: UnboundedSender<Snowflake>,
+	notification_clicks: UnboundedSender<Notified>,
 	title_mentions: u32,
 	rail: Entity<ServerRail>,
 	channel_sidebar: Entity<ChannelSidebar>,
@@ -328,6 +334,13 @@ impl Shell {
 				DmSidebarEvent::OpenShop => this.open_home_page(HomePage::Shop, cx),
 				DmSidebarEvent::CreateGroup => account::open_create(this.data.clone(), window, cx),
 				DmSidebarEvent::CloseDm(id) => this.confirm_close_dm(*id, window, cx),
+				DmSidebarEvent::OpenProfile { user, at } => {
+					this.open_profile(*user, *at, Anchor::TopLeft, cx)
+				}
+				DmSidebarEvent::Call(id) => {
+					this.select(None, *id, cx);
+					this.send(Command::StartCall { channel_id: *id }, cx);
+				}
 			},
 		));
 
@@ -530,8 +543,8 @@ impl Shell {
 
 		let (notification_clicks, mut clicked) = unbounded_channel();
 		let notification_task = cx.spawn_in(window, async move |this, cx| {
-			while let Some(channel) = clicked.recv().await {
-				let opened = this.update_in(cx, |shell, window, cx| shell.open_notified(channel, window, cx));
+			while let Some(target) = clicked.recv().await {
+				let opened = this.update_in(cx, |shell, window, cx| shell.open_notified(target, window, cx));
 				if opened.is_err() {
 					break;
 				}
@@ -872,7 +885,7 @@ impl Shell {
 		if changes.selection {
 			self.sync_selection(window, cx);
 		}
-		if changes.guild_list || changes.read_state {
+		if changes.guild_list || changes.read_state || changes.relationships {
 			self.rail.update(cx, |rail, cx| rail.refresh(cx));
 		}
 		self.home_pages.on_changes(changes, cx);
@@ -957,11 +970,14 @@ impl Shell {
 			self.composer
 				.update(cx, |composer, cx| composer.on_autocomplete(window, cx));
 		}
-		if changes.read_state || changes.guild_list || changes.private_channels {
+		if changes.read_state || changes.guild_list || changes.private_channels || changes.relationships {
 			self.update_mentions(window, cx);
 		}
 		if changes.alerts {
 			self.raise_alerts(window, cx);
+		}
+		if changes.friend_notice {
+			self.raise_friend_notice(cx);
 		}
 		if changes.intents {
 			self.consume_intents(window, cx);
@@ -1064,6 +1080,7 @@ impl Shell {
 				.map(|summary| summary.mentions)
 				.sum::<u32>()
 				+ state.dm_rows().iter().map(|row| row.mentions).sum::<u32>()
+				+ state.pending_incoming_count()
 		};
 		if total != self.title_mentions {
 			self.title_mentions = total;
@@ -1113,15 +1130,60 @@ impl Shell {
 		for (channel, notification) in notifications {
 			let clicks = self.notification_clicks.clone();
 			platform::notifications::show_with_click(notification, move || {
-				clicks.send(channel).ok();
+				clicks.send(Notified::Channel(channel)).ok();
 			});
 		}
 	}
 
-	fn open_notified(&mut self, channel: Snowflake, window: &mut Window, cx: &mut Context<Self>) {
+	fn raise_friend_notice(&mut self, cx: &mut Context<Self>) {
+		let settings = (self.backend.read)().notifications;
+		let name = {
+			let data = self.data.read(cx);
+			let state = data.state();
+			if state.own_status() == StatusKind::Dnd || !(settings.enabled || settings.sounds) {
+				return;
+			}
+			let Some(notice) = state.last_friend_notice() else {
+				return;
+			};
+			state.display_name(None, notice.user_id)
+		};
+		if settings.sounds && !crate::data::streamer_mode(cx).mutes_sounds() {
+			let volume = plugins::client_options(cx).notification_volume;
+			platform::sound::play_chime_at(volume.map_or(1., |volume| f32::from(volume.min(100)) / 100.));
+		}
+		if settings.enabled {
+			let clicks = self.notification_clicks.clone();
+			let notification = Notification {
+				title: name,
+				body: if settings.show_content {
+					cx.t("friends-request-notice").to_string()
+				} else {
+					String::new()
+				},
+				icon_path: None,
+				app_id: crate::APP_ID.to_owned(),
+			};
+			platform::notifications::show_with_click(notification, move || {
+				clicks.send(Notified::Requests).ok();
+			});
+		}
+	}
+
+	fn open_notified(&mut self, target: Notified, window: &mut Window, cx: &mut Context<Self>) {
 		crate::desktop::show_window(window);
-		let guild = self.data.read(cx).state().channel_guild(channel);
-		self.select(guild, channel, cx);
+		match target {
+			Notified::Channel(channel) => {
+				let guild = self.data.read(cx).state().channel_guild(channel);
+				self.select(guild, channel, cx);
+			}
+			Notified::Requests => {
+				self.show_friends(window, cx);
+				self.home_pages
+					.friends
+					.update(cx, |page, cx| page.show_pending(cx));
+			}
+		}
 	}
 
 	fn run_search(&mut self, query: String, cx: &mut Context<Self>) {

@@ -14,6 +14,7 @@ use protocol::Snowflake;
 use session::Command;
 use state::{MemberListRow, State, UserOverride};
 
+use super::account::{Relation, manage_items, primary_items, relation_facts};
 use super::community::developer_mode;
 use super::moderation;
 use super::plugins::{self, MenuTarget, PluginMenu as _};
@@ -251,19 +252,32 @@ impl MemberList {
 		});
 		let id = member.id;
 		let data = self.data.clone();
-		let menu = ContextMenuBuilder::new()
-			.item(cx.t("menu-profile"), Some(IconKind::Profile), {
-				let weak = cx.weak_entity();
-				move |window, cx| {
-					let at = window.mouse_position();
-					weak.update(cx, |_, cx| cx.emit(MemberListEvent::OpenProfile { user: id, at }))
-						.ok();
-				}
-			})
-			.item(cx.t("menu-message"), Some(IconKind::Chat), move |_, cx| {
+		let (me, facts) = {
+			let data = self.data.read(cx);
+			(data.me(), relation_facts(&data.state(), id))
+		};
+		let own = me == Some(id);
+		let menu = ContextMenuBuilder::new().item(cx.t("menu-profile"), Some(IconKind::Profile), {
+			let weak = cx.weak_entity();
+			move |window, cx| {
+				let at = window.mouse_position();
+				weak.update(cx, |_, cx| cx.emit(MemberListEvent::OpenProfile { user: id, at }))
+					.ok();
+			}
+		});
+		let menu = if own {
+			menu
+		} else {
+			let menu = menu.item(cx.t("menu-message"), Some(IconKind::Chat), move |_, cx| {
 				data.read(cx).send(Command::OpenDm { user_id: id });
-			})
-			.disabled_item(cx.t("menu-add-friend"), Some(IconKind::FriendRequests));
+			});
+			let menu = if member.bot && facts.relation != Relation::Blocked {
+				menu
+			} else {
+				primary_items(menu, id, facts.relation, cx)
+			};
+			manage_items(menu.separator(), id, &member.name, &facts, cx)
+		};
 		let menu = if developer {
 			menu.separator()
 				.item(cx.t("menu-copy-user-id"), Some(IconKind::Copy), move |_, _| {
@@ -278,7 +292,6 @@ impl MemberList {
 			Some(guild) => moderation::user_items(menu, guild, id, &member.name),
 			None => menu,
 		};
-		let me = self.data.read(cx).me();
 		let menu = menu
 			.plugin_items("user-context-menu", MenuTarget::user(self.guild, id, me), cx)
 			.build();

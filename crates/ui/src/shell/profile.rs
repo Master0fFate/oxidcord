@@ -3,9 +3,9 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gpui::{
-	Context, Entity, EventEmitter, FontWeight, InteractiveElement as _, IntoElement, ParentElement as _,
-	Render, StatefulInteractiveElement as _, Styled as _, Subscription, Task, Window, div,
-	prelude::FluentBuilder as _,
+	AppContext as _, Context, Entity, EventEmitter, FontWeight, InteractiveElement as _, IntoElement,
+	ParentElement as _, Render, StatefulInteractiveElement as _, Styled as _, Subscription, Task, Window,
+	div, prelude::FluentBuilder as _,
 };
 use plugin_host::ViewContext;
 use protocol::Snowflake;
@@ -36,6 +36,7 @@ pub struct ProfileCard {
 	user: Snowflake,
 	guild: Option<Snowflake>,
 	requested_icons: HashSet<Snowflake>,
+	note: Option<Entity<account::NoteBox>>,
 	ticking: bool,
 	_subscription: Subscription,
 	_ticker: Task<()>,
@@ -94,6 +95,7 @@ impl ProfileCard {
 			user,
 			guild,
 			requested_icons: HashSet::new(),
+			note: None,
 			ticking: false,
 			_subscription: subscription,
 			_ticker: ticker,
@@ -102,7 +104,7 @@ impl ProfileCard {
 }
 
 impl Render for ProfileCard {
-	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+	fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
 		let (profile, activities) = {
 			let data = self.data.read(cx);
@@ -125,6 +127,10 @@ impl Render for ProfileCard {
 			return div().into_any_element();
 		};
 		let (user, guild) = (self.user, self.guild);
+		if !profile.mine && self.note.is_none() {
+			let data = self.data.clone();
+			self.note = Some(cx.new(|cx| account::NoteBox::new(data, user, window, cx)));
+		}
 		let backend = self.backend.clone();
 		let open: account::OpenLink = Rc::new(move |url, window, cx| {
 			links::open_link(url, LinkOrigin::default(), &backend, window, cx);
@@ -313,6 +319,7 @@ impl Render for ProfileCard {
 								.child(div().flex().flex_wrap().gap(theme.space_4).children(roles)),
 						)
 					})
+					.children(self.note.clone())
 					.children(plugin_sections)
 					.children(stats)
 					.child(actions),

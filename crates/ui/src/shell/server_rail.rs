@@ -192,7 +192,8 @@ impl ServerRail {
 		let data = self.data.read(cx);
 		let state = data.state();
 		let entries = rail_entries(&state);
-		let home_mentions = state.dm_rows().iter().map(|row| row.mentions).sum();
+		let home_mentions =
+			state.dm_rows().iter().map(|row| row.mentions).sum::<u32>() + state.pending_incoming_count();
 		drop(state);
 		if entries != self.entries || home_mentions != self.home_mentions {
 			self.entries = entries;

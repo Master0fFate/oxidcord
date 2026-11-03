@@ -32,13 +32,15 @@ impl State {
 		self.rows_where(|relationship| relationship.user_ignored)
 	}
 
-	pub fn pending_incoming_count(&self) -> usize {
-		self.relationships
+	pub fn pending_incoming_count(&self) -> u32 {
+		let pending = self
+			.relationships
 			.values()
 			.filter(|relationship| {
 				relationship.kind == RelationshipKind::IncomingRequest && !relationship.is_spam_request
 			})
-			.count()
+			.count();
+		u32::try_from(pending).unwrap_or(u32::MAX)
 	}
 
 	pub fn is_ignored(&self, user_id: Snowflake) -> bool {

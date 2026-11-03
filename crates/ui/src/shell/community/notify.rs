@@ -97,6 +97,7 @@ pub fn mark_read_item(menu: ContextMenuBuilder, scope: Scope, unread: bool, cx: 
 
 pub fn mute_items(menu: ContextMenuBuilder, scope: Scope, muted: bool, cx: &App) -> ContextMenuBuilder {
 	let noun = cx.t(match scope {
+		Scope::Channel { guild: None, .. } => "mute-conversation",
 		Scope::Channel { .. } => "mute-channel",
 		Scope::Guild(_) => "mute-server",
 		Scope::Thread { post: true, .. } => "mute-post",
@@ -104,6 +105,7 @@ pub fn mute_items(menu: ContextMenuBuilder, scope: Scope, muted: bool, cx: &App)
 	});
 	if muted {
 		let label = cx.t(match scope {
+			Scope::Channel { guild: None, .. } => "unmute-conversation",
 			Scope::Channel { .. } => "unmute-channel",
 			Scope::Guild(_) => "unmute-server",
 			Scope::Thread { post: true, .. } => "unmute-post",

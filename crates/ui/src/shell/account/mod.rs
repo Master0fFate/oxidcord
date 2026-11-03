@@ -2,10 +2,12 @@ mod activity;
 mod custom_status;
 mod full_profile;
 mod groups;
+mod note;
 pub mod pages;
 mod parts;
 mod picker;
 mod profile_data;
+mod relation;
 pub(crate) mod rich;
 mod status;
 
@@ -14,8 +16,8 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gpui::{
-	Context, Entity, InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Render,
-	Styled as _, Subscription, Task, Window, div,
+	AppContext as _, Context, Entity, InteractiveElement as _, IntoElement, MouseButton, ParentElement as _,
+	Render, Styled as _, Subscription, Task, Window, div,
 };
 use protocol::Snowflake;
 use session::Command;
@@ -23,6 +25,7 @@ use session::Command;
 pub use self::activity::{ActivityView, OpenLink, activities, activity_deck};
 use self::full_profile::{FullProfile, FullTab};
 pub use self::groups::{GroupEvent, Groups};
+pub use self::note::NoteBox;
 pub use self::pages::{
 	AccountPages, DataDir, Note, PageEvent, Target, activity_page, chat_page, note_page, streamer_page,
 };
@@ -30,7 +33,8 @@ pub use self::parts::{
 	CloseFn, action_row, avatar_ring, badges_row, banner, role_chip, section_label, stat_line,
 };
 pub use self::picker::{confirm_close, open_create};
-pub use self::profile_data::ProfileData;
+pub use self::profile_data::{ProfileData, Relation, RelationFacts, relation_facts};
+pub use self::relation::{manage_items, primary_items};
 pub use self::rich::markdown_text;
 pub use self::status::{StatusMenu, StatusMenuEvent};
 use super::plugins::LinkOrigin;
@@ -96,6 +100,7 @@ impl AccountHub {
 			user,
 			guild,
 			tab: FullTab::Info,
+			note: None,
 		});
 		cx.notify();
 	}
@@ -123,7 +128,7 @@ impl AccountHub {
 }
 
 impl Render for AccountHub {
-	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+	fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let Some(full) = &self.full else {
 			return div().into_any_element();
 		};
@@ -136,6 +141,12 @@ impl Render for AccountHub {
 		let Some(profile) = profile else {
 			return div().into_any_element();
 		};
+		if !profile.mine
+			&& let Some(full) = self.full.as_mut().filter(|full| full.note.is_none())
+		{
+			let data = self.data.clone();
+			full.note = Some(cx.new(|cx| NoteBox::new(data, user, window, cx)));
+		}
 		let activities = self.load_activities(user, cx);
 		let backend = self.backend.clone();
 		let open: OpenLink = Rc::new(move |url, window, cx| {

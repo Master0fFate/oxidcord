@@ -93,6 +93,8 @@ menu-delete-channel = Delete Channel
 timeline-selected = { $count } selected
 
 mute-channel = Mute Channel
+mute-conversation = Mute Conversation
+unmute-conversation = Unmute Conversation
 mute-server = Mute Server
 unmute-channel = Unmute Channel
 unmute-server = Unmute Server

@@ -30,8 +30,9 @@ pub struct MutualFriend {
 	pub avatar: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Relation {
+	#[default]
 	None,
 	Friend,
 	Outgoing,
@@ -39,10 +40,17 @@ pub enum Relation {
 	Blocked,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct RelationFacts {
+	pub relation: Relation,
+	pub ignored: bool,
+	pub nickname: Option<String>,
+	pub since: Option<chrono::NaiveDate>,
+}
+
 pub struct ProfileData {
 	pub id: Snowflake,
 	pub name: SharedString,
-	pub username: String,
 	pub handle: SharedString,
 	pub avatar: String,
 	pub banner_url: Option<String>,
@@ -58,7 +66,7 @@ pub struct ProfileData {
 	pub mutual_friend_count: usize,
 	pub connections: Vec<(String, String)>,
 	pub status: Status,
-	pub relation: Relation,
+	pub facts: RelationFacts,
 	pub mine: bool,
 	pub bot: bool,
 	pub over: Option<UserOverride>,
@@ -97,17 +105,26 @@ fn roles(state: &State, guild: Option<Snowflake>, user: Snowflake) -> Vec<RoleCh
 		.collect()
 }
 
-fn relation(state: &State, user: Snowflake) -> Relation {
-	state
-		.relationships()
-		.find(|relationship| relationship.id == user)
-		.map_or(Relation::None, |relationship| match relationship.kind {
-			RelationshipKind::Friend => Relation::Friend,
-			RelationshipKind::OutgoingRequest => Relation::Outgoing,
-			RelationshipKind::IncomingRequest => Relation::Incoming,
-			RelationshipKind::Blocked => Relation::Blocked,
-			_ => Relation::None,
-		})
+pub fn relation_facts(state: &State, user: Snowflake) -> RelationFacts {
+	let Some(relationship) = state.relationship(user) else {
+		return RelationFacts::default();
+	};
+	let relation = match relationship.kind {
+		RelationshipKind::Friend => Relation::Friend,
+		RelationshipKind::OutgoingRequest => Relation::Outgoing,
+		RelationshipKind::IncomingRequest => Relation::Incoming,
+		RelationshipKind::Blocked => Relation::Blocked,
+		_ => Relation::None,
+	};
+	RelationFacts {
+		relation,
+		ignored: relationship.user_ignored,
+		nickname: state.friend_nickname(user).map(str::to_owned),
+		since: relationship
+			.since
+			.filter(|_| relation == Relation::Friend)
+			.map(|since| since.date_naive()),
+	}
 }
 
 impl ProfileData {
@@ -188,7 +205,6 @@ impl ProfileData {
 				.and_then(|over| over.name.clone())
 				.unwrap_or_else(|| state.display_name(guild, user_id))
 				.into(),
-			username: user.username.clone(),
 			handle: handle.into(),
 			avatar,
 			banner_url: over.as_ref().and_then(|over| over.banner.clone()).or_else(|| {
@@ -240,7 +256,7 @@ impl ProfileData {
 				})
 				.unwrap_or_default(),
 			status: status_of(state, user_id),
-			relation: relation(state, user_id),
+			facts: relation_facts(state, user_id),
 			mine: state.current_user_id() == Some(user_id),
 			bot: user.bot == Some(true),
 			over,

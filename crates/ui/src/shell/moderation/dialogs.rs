@@ -40,7 +40,7 @@ const HISTORY: [(&str, u32); 7] = [
 
 pub struct Nickname {
 	data: Entity<Data>,
-	guild: Snowflake,
+	guild: Option<Snowflake>,
 	user: Snowflake,
 	input: Entity<InputState>,
 	_subscription: Subscription,
@@ -49,6 +49,20 @@ pub struct Nickname {
 impl EventEmitter<Close> for Nickname {}
 
 pub fn open_nickname(window: &mut Window, cx: &mut App, guild: Snowflake, user: Snowflake, current: String) {
+	open_nickname_dialog(window, cx, Some(guild), user, current);
+}
+
+pub fn open_friend_nickname(window: &mut Window, cx: &mut App, user: Snowflake, current: String) {
+	open_nickname_dialog(window, cx, None, user, current);
+}
+
+fn open_nickname_dialog(
+	window: &mut Window,
+	cx: &mut App,
+	guild: Option<Snowflake>,
+	user: Snowflake,
+	current: String,
+) {
 	let data = data_handle(cx);
 	let placeholder = cx.t("mod-nickname-placeholder");
 	let view = cx.new(|cx| {
@@ -75,7 +89,11 @@ pub fn open_nickname(window: &mut Window, cx: &mut App, guild: Snowflake, user: 
 		}
 	});
 	let focus = view.read(cx).input.read(cx).focus_handle(cx);
-	let title = cx.t("mod-change-nickname");
+	let title = cx.t(if guild.is_some() {
+		"mod-change-nickname"
+	} else {
+		"menu-edit-friend-nickname"
+	});
 	let width = cx.global::<Theme>().modal_width_sm;
 	modal::open(window, cx, title, width, &view, Some(focus));
 }
@@ -90,11 +108,19 @@ impl Nickname {
 			.chars()
 			.take(NICK_LIMIT)
 			.collect();
-		self.data.read(cx).send(Command::SetNickname {
-			guild_id: self.guild,
-			user_id: self.user,
-			nick: (!value.is_empty()).then_some(value),
-		});
+		let nick = (!value.is_empty()).then_some(value);
+		let command = match self.guild {
+			Some(guild_id) => Command::SetNickname {
+				guild_id,
+				user_id: self.user,
+				nick,
+			},
+			None => Command::SetFriendNickname {
+				user_id: self.user,
+				nickname: nick,
+			},
+		};
+		self.data.read(cx).send(command);
 		cx.emit(Close);
 	}
 }

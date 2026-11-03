@@ -93,7 +93,7 @@ pub fn expand(guild: Snowflake, target: Snowflake, name: &str, cx: &App) -> Cont
 			},
 		);
 	}
-	if (outranks || own && access.owner) && access.has(Permissions::MANAGE_ROLES) {
+	if (outranks || own) && access.has(Permissions::MANAGE_ROLES) {
 		let mut submenu = ContextMenuBuilder::new();
 		for (role_id, role_name, position) in roles {
 			if !access.owner && position >= access.top_role {

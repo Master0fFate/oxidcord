@@ -74,6 +74,7 @@ pub struct FriendsPage {
 	incoming: Vec<RelationshipRow>,
 	outgoing: Vec<RelationshipRow>,
 	blocked: Vec<RelationshipRow>,
+	ignored: Vec<RelationshipRow>,
 	add_outcome: AddOutcome,
 	_subscriptions: Vec<Subscription>,
 }
@@ -109,6 +110,7 @@ impl FriendsPage {
 			incoming: Vec::new(),
 			outgoing: Vec::new(),
 			blocked: Vec::new(),
+			ignored: Vec::new(),
 			add_outcome: AddOutcome::Idle,
 			_subscriptions: subscriptions,
 		};
@@ -123,6 +125,7 @@ impl FriendsPage {
 		self.incoming = state.pending_incoming();
 		self.outgoing = state.pending_outgoing();
 		self.blocked = state.blocked();
+		self.ignored = state.ignored();
 		drop(state);
 		cx.notify();
 	}
@@ -140,10 +143,20 @@ impl FriendsPage {
 		let Some(ids) = presence.ids() else {
 			return true;
 		};
-		[&self.friends, &self.incoming, &self.outgoing, &self.blocked]
-			.into_iter()
-			.flatten()
-			.any(|row| ids.contains(&row.user_id))
+		[
+			&self.friends,
+			&self.incoming,
+			&self.outgoing,
+			&self.blocked,
+			&self.ignored,
+		]
+		.into_iter()
+		.flatten()
+		.any(|row| ids.contains(&row.user_id))
+	}
+
+	pub fn show_pending(&mut self, cx: &mut Context<Self>) {
+		self.select(Tab::Pending, cx);
 	}
 
 	fn select(&mut self, tab: Tab, cx: &mut Context<Self>) {
@@ -308,11 +321,18 @@ impl FriendsPage {
 					row::Kind::Outgoing,
 				),
 			],
-			Tab::Blocked => vec![(
-				"friends-blocked-count",
-				self.visible(&self.blocked, false),
-				row::Kind::Blocked,
-			)],
+			Tab::Blocked => vec![
+				(
+					"friends-blocked-count",
+					self.visible(&self.blocked, false),
+					row::Kind::Blocked,
+				),
+				(
+					"friends-ignored-count",
+					self.visible(&self.ignored, false),
+					row::Kind::Ignored,
+				),
+			],
 			Tab::Add | Tab::Plugin(_) => Vec::new(),
 		};
 		let empty_key = match self.tab {

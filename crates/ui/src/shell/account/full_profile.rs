@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use gpui::{
-	AnyElement, Context, FontWeight, InteractiveElement as _, IntoElement, MouseButton, ObjectFit,
+	AnyElement, Context, Entity, FontWeight, InteractiveElement as _, IntoElement, MouseButton, ObjectFit,
 	ParentElement as _, StatefulInteractiveElement as _, Styled as _, StyledImage as _, div, img,
 	prelude::FluentBuilder as _,
 };
@@ -10,6 +10,7 @@ use media::SizeHint;
 use protocol::Snowflake;
 
 use super::activity::{ActivityView, OpenLink, activity_card_full};
+use super::note::NoteBox;
 use super::profile_data::ProfileData;
 use super::{AccountHub, parts, rich};
 use crate::components::{Avatar, IconButton};
@@ -32,6 +33,7 @@ pub(super) struct FullProfile {
 	pub user: Snowflake,
 	pub guild: Option<Snowflake>,
 	pub tab: FullTab,
+	pub note: Option<Entity<NoteBox>>,
 }
 
 impl FullTab {
@@ -139,9 +141,18 @@ impl AccountHub {
 								"profile-joined-server",
 								&[("date", ArgValue::from(format::day_label(joined)))],
 							)))
+						})
+						.when_some(profile.facts.since, |line, since| {
+							line.child(div().text_color(theme.text_muted).child(cx.t_args(
+								"profile-friends-since",
+								&[("date", ArgValue::from(format::day_label(since)))],
+							)))
 						}),
 				),
 		);
+		if let Some(note) = self.full.as_ref().and_then(|full| full.note.clone()) {
+			column = column.child(note);
+		}
 		if !profile.roles.is_empty() {
 			column = column.child(
 				div()

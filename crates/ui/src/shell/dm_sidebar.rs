@@ -2,14 +2,17 @@ use std::collections::{HashMap, HashSet};
 
 use gpui::{
 	AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, InteractiveElement as _, IntoElement,
-	ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div,
-	prelude::FluentBuilder as _,
+	ParentElement as _, Pixels, Point, Render, SharedString, StatefulInteractiveElement as _, Styled as _,
+	Window, div, prelude::FluentBuilder as _,
 };
 use gpui_component::menu::ContextMenuExt as _;
 use gpui_component::scroll::ScrollableElement as _;
 use protocol::Snowflake;
 use state::{DmSectionView, PluginBadge, UserOverride};
 
+use super::account::{manage_items, primary_items, relation_facts};
+use super::community::developer_mode;
+use super::community::notify::{Scope, mark_read_item, mute_items};
 use super::plugins::{self, MenuTarget, PluginMenu as _};
 use crate::components::{Avatar, ContextMenuBuilder, IconButton, MentionBadge, SectionHeader};
 use crate::data::Data;
@@ -28,6 +31,8 @@ pub enum DmSidebarEvent {
 	OpenShop,
 	CreateGroup,
 	CloseDm(Snowflake),
+	OpenProfile { user: Snowflake, at: Point<Pixels> },
+	Call(Snowflake),
 }
 
 #[derive(PartialEq)]
@@ -40,6 +45,7 @@ struct DmItem {
 	group_members: Option<usize>,
 	unread: bool,
 	mentions: u32,
+	muted: bool,
 	over: Option<UserOverride>,
 	badges: Vec<PluginBadge>,
 }
@@ -56,6 +62,7 @@ pub struct DmSidebar {
 	data: Entity<Data>,
 	dms: Vec<DmItem>,
 	sections: Vec<DmSectionView>,
+	pending: u32,
 	folded: HashSet<(String, String)>,
 	selected: Option<Selection>,
 }
@@ -68,6 +75,7 @@ impl DmSidebar {
 			data,
 			dms: Vec::new(),
 			sections: Vec::new(),
+			pending: 0,
 			folded: HashSet::new(),
 			selected: None,
 		};
@@ -107,6 +115,7 @@ impl DmSidebar {
 					group_members: single.is_none().then(|| row.recipients.len() + 1),
 					unread: row.unread,
 					mentions: row.mentions,
+					muted: row.muted,
 					over,
 					badges: state
 						.channel_decorations(row.channel_id)
@@ -117,10 +126,12 @@ impl DmSidebar {
 			})
 			.collect();
 		let sections = state.dm_sections().to_vec();
+		let pending = state.pending_incoming_count();
 		drop(state);
-		if dms != self.dms || sections != self.sections {
+		if dms != self.dms || sections != self.sections || pending != self.pending {
 			self.dms = dms;
 			self.sections = sections;
+			self.pending = pending;
 			cx.notify();
 		}
 	}
@@ -181,7 +192,10 @@ impl DmSidebar {
 					.color(rest)
 					.group_hover(group, hover),
 			)
-			.child(label)
+			.child(div().flex_1().min_w_0().truncate().child(label))
+			.when(target == Selection::Friends && self.pending > 0, |row| {
+				row.child(MentionBadge::new(self.pending))
+			})
 			.into_any_element()
 	}
 
@@ -193,6 +207,8 @@ impl DmSidebar {
 			(theme.interactive_active, theme.interactive_active)
 		} else if dm.unread {
 			(theme.header_primary, theme.interactive_normal)
+		} else if dm.muted {
+			(theme.interactive_muted, theme.interactive_normal)
 		} else {
 			(theme.text_muted, theme.interactive_normal)
 		};
@@ -319,12 +335,85 @@ impl DmSidebar {
 							})),
 					),
 			);
-		let target = MenuTarget::channel(None, id);
-		if !plugins::has_plugin_items("channel-context-menu", &target, cx) {
-			return row.into_any_element();
-		}
-		let menu = ContextMenuBuilder::new().plugin_items("channel-context-menu", target, cx);
+		let menu =
+			self.dm_menu(dm, cx)
+				.plugin_items("channel-context-menu", MenuTarget::channel(None, id), cx);
 		row.context_menu(menu.build()).into_any_element()
+	}
+
+	fn dm_menu(&self, dm: &DmItem, cx: &mut Context<Self>) -> ContextMenuBuilder {
+		let id = dm.id;
+		let weak = cx.weak_entity();
+		let menu = mark_read_item(
+			ContextMenuBuilder::new(),
+			Scope::Channel {
+				guild: None,
+				channel: id,
+			},
+			dm.unread || dm.mentions > 0,
+			cx,
+		);
+		let menu = match dm.user {
+			Some(user) => {
+				let profile = weak.clone();
+				menu.item(
+					cx.t("menu-profile"),
+					Some(IconKind::Profile),
+					move |window, cx| {
+						let at = window.mouse_position();
+						profile
+							.update(cx, |_, cx| cx.emit(DmSidebarEvent::OpenProfile { user, at }))
+							.ok();
+					},
+				)
+			}
+			None => menu,
+		};
+		let call = weak.clone();
+		let menu = menu.item(cx.t("menu-call"), Some(IconKind::Phone), move |_, cx| {
+			call.update(cx, |_, cx| cx.emit(DmSidebarEvent::Call(id))).ok();
+		});
+		let menu = match dm.user {
+			Some(user) => {
+				let facts = relation_facts(&self.data.read(cx).state(), user);
+				let menu = primary_items(menu, user, facts.relation, cx);
+				manage_items(menu, user, &dm.name, &facts, cx)
+			}
+			None => menu,
+		};
+		let menu = mute_items(
+			menu.separator(),
+			Scope::Channel {
+				guild: None,
+				channel: id,
+			},
+			dm.muted,
+			cx,
+		);
+		let close = weak;
+		let close_label = if dm.group_members.is_some() {
+			"group-leave"
+		} else {
+			"dm-close"
+		};
+		let menu = menu.danger_item(cx.t(close_label), Some(IconKind::Close), move |_, cx| {
+			close
+				.update(cx, |_, cx| cx.emit(DmSidebarEvent::CloseDm(id)))
+				.ok();
+		});
+		if !developer_mode(cx) {
+			return menu;
+		}
+		let (label, copied) = match dm.user {
+			Some(user) => ("menu-copy-user-id", user),
+			None => ("menu-copy-id", id),
+		};
+		menu.separator()
+			.item(cx.t(label), Some(IconKind::Copy), move |_, _| {
+				if let Err(error) = platform::clipboard::write_text(&copied.to_string()) {
+					tracing::warn!(%error, "could not copy the id");
+				}
+			})
 	}
 }
 

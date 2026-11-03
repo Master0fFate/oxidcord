@@ -15,6 +15,7 @@ use crate::components::{Avatar, ContextMenuBuilder, tooltip};
 use crate::i18n::Translate as _;
 use crate::icons::{Icon, IconKind};
 use crate::model::Status;
+use crate::shell::account::{Relation, RelationFacts, manage_items};
 use crate::theme::Theme;
 
 const AVATAR_PIXELS: u32 = 64;
@@ -25,6 +26,7 @@ pub(super) enum Kind {
 	Incoming,
 	Outgoing,
 	Blocked,
+	Ignored,
 }
 
 pub(super) fn status_key(status: Status) -> &'static str {
@@ -80,9 +82,12 @@ impl FriendsPage {
 		cx: &Context<Self>,
 	) -> SharedString {
 		match kind {
+			Kind::Incoming if item.spam => cx.t("friends-spam-request"),
+			Kind::Incoming if item.stranger => cx.t("friends-stranger-request"),
 			Kind::Incoming => cx.t("friends-incoming-request"),
 			Kind::Outgoing => cx.t("friends-outgoing-request"),
 			Kind::Blocked => cx.t("friends-blocked"),
+			Kind::Ignored => cx.t("friends-ignored"),
 			Kind::Friend => item
 				.activity
 				.clone()
@@ -121,7 +126,7 @@ impl FriendsPage {
 						theme,
 						message,
 					),
-					self.more_button(user, theme, cx),
+					self.more_button(item, theme, cx),
 				]
 			}
 			Kind::Incoming => vec![
@@ -158,21 +163,27 @@ impl FriendsPage {
 				theme,
 				send(|user_id| Command::RemoveRelationship { user_id }),
 			)],
+			Kind::Ignored => vec![circle_button(
+				key("friend-unignore"),
+				IconKind::Close,
+				cx.t("menu-unignore"),
+				theme.danger,
+				theme,
+				send(|user_id| Command::UnignoreUser { user_id }),
+			)],
 		}
 	}
 
-	fn more_button(&self, user: Snowflake, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
-		let remove = self.data.clone();
-		let block = self.data.clone();
-		let menu = ContextMenuBuilder::new()
-			.danger_item(cx.t("friends-remove"), Some(IconKind::Trash), move |_, cx| {
-				remove
-					.read(cx)
-					.send(Command::RemoveRelationship { user_id: user });
-			})
-			.danger_item(cx.t("friends-block"), Some(IconKind::Shield), move |_, cx| {
-				block.read(cx).send(Command::BlockUser { user_id: user });
-			})
+	fn more_button(&self, item: &RelationshipRow, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+		let user = item.user_id;
+		let facts = RelationFacts {
+			relation: Relation::Friend,
+			ignored: item.ignored,
+			nickname: item.nickname.clone(),
+			since: None,
+		};
+		let name: SharedString = item.display.clone().into();
+		let menu = manage_items(ContextMenuBuilder::new(), user, &name, &facts, cx)
 			.separator()
 			.item(cx.t("menu-copy-user-id"), Some(IconKind::Copy), move |_, _| {
 				if let Err(error) = platform::clipboard::write_text(&user.to_string()) {
