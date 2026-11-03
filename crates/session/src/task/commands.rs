@@ -429,10 +429,7 @@ impl Core {
 				let rest = self.rest.clone();
 				let internal = self.internal.clone();
 				self.runtime.spawn(async move {
-					let message = match rest
-						.send_friend_request(&username, discriminator.as_deref())
-						.await
-					{
+					let message = match rest.send_friend_request(&username, discriminator).await {
 						Ok(()) => Internal::FriendRequestSent(username),
 						Err(error) => match rest_failure("friend request", &error) {
 							Internal::Rejected(reason) => Internal::FriendRequestFailed { username, reason },

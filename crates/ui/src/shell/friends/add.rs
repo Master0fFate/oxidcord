@@ -12,12 +12,12 @@ use super::{AddOutcome, FriendsPage};
 use crate::i18n::{ArgValue, Translate as _};
 use crate::theme::Theme;
 
-fn split_tag(input: &str) -> (&str, Option<&str>) {
+fn split_tag(input: &str) -> (&str, Option<u16>) {
 	match input.rsplit_once('#') {
 		Some((name, tag))
 			if !name.is_empty() && tag.len() == 4 && tag.bytes().all(|byte| byte.is_ascii_digit()) =>
 		{
-			(name, Some(tag))
+			(name, tag.parse().ok())
 		}
 		_ => (input, None),
 	}
@@ -30,7 +30,7 @@ impl FriendsPage {
 			return;
 		}
 		let (username, discriminator) = split_tag(&name);
-		let (username, discriminator) = (username.to_owned(), discriminator.map(str::to_owned));
+		let (username, discriminator) = (username.to_owned(), discriminator);
 		let request_baseline = self
 			.data
 			.read(cx)
