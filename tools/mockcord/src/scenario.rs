@@ -27,7 +27,6 @@ impl Shared {
 		session: &str,
 		guild_id: Option<u64>,
 		channel_id: Option<u64>,
-		flags: &Value,
 	) -> Value {
 		let member = guild_id
 			.and_then(|id| self.fixtures.guild(id))
@@ -41,10 +40,10 @@ impl Shared {
 			"session_id": session,
 			"deaf": seat.deaf,
 			"mute": seat.mute,
-			"self_deaf": flags["self_deaf"].as_bool().unwrap_or(false),
-			"self_mute": flags["self_mute"].as_bool().unwrap_or(false),
+			"self_deaf": seat.self_deaf,
+			"self_mute": seat.self_mute,
 			"self_stream": false,
-			"self_video": flags["self_video"].as_bool().unwrap_or(false),
+			"self_video": seat.self_video,
 			"suppress": seat.suppress,
 			"request_to_speak_timestamp": seat.request_to_speak_timestamp,
 		})
@@ -81,12 +80,7 @@ impl Shared {
 
 	pub fn voice_elsewhere(&self) -> Result<(), ApiError> {
 		let join = self.current_voice()?;
-		let event = self.voice_state_event(
-			OTHER_DEVICE_SESSION,
-			join.guild_id,
-			Some(join.channel_id),
-			&Value::Null,
-		);
+		let event = self.voice_state_event(OTHER_DEVICE_SESSION, join.guild_id, Some(join.channel_id));
 		self.hub.broadcast("VOICE_STATE_UPDATE", &event);
 		Ok(())
 	}
@@ -94,7 +88,7 @@ impl Shared {
 	pub fn voice_move(&self) -> Result<(), ApiError> {
 		let join = self.current_voice()?;
 		let target = self.other_voice_channel(&join)?;
-		let event = self.voice_state_event(&join.session, join.guild_id, Some(target), &Value::Null);
+		let event = self.voice_state_event(&join.session, join.guild_id, Some(target));
 		self.hub.broadcast("VOICE_STATE_UPDATE", &event);
 		self.remember_voice(&join.session, join.guild_id, Some(target));
 		self.voice_close(CLOSE_DISCONNECTED);
@@ -117,7 +111,7 @@ impl Shared {
 			seat.mute = mute;
 			seat.deaf = deaf;
 		}
-		let event = self.voice_state_event(&join.session, join.guild_id, Some(join.channel_id), &Value::Null);
+		let event = self.voice_state_event(&join.session, join.guild_id, Some(join.channel_id));
 		self.hub.broadcast("VOICE_STATE_UPDATE", &event);
 		Ok(())
 	}

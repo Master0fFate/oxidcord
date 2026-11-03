@@ -16,6 +16,9 @@ pub struct Seat {
 	pub request_to_speak_timestamp: Option<DateTime<Utc>>,
 	pub mute: bool,
 	pub deaf: bool,
+	pub self_mute: bool,
+	pub self_deaf: bool,
+	pub self_video: bool,
 }
 
 impl Seat {
@@ -194,7 +197,7 @@ impl Shared {
 				}
 				(None, Some(join)) => {
 					drop(store);
-					self.voice_state_event(&join.session, join.guild_id, Some(join.channel_id), &Value::Null)
+					self.voice_state_event(&join.session, join.guild_id, Some(join.channel_id))
 				}
 				(None, None) => return Err(ApiError::unknown_channel()),
 			};
@@ -207,7 +210,7 @@ impl Shared {
 		Ok(())
 	}
 
-	pub fn sync_seat(&self, rejoined: bool, channel_id: Option<u64>) {
+	pub fn sync_seat(&self, rejoined: bool, channel_id: Option<u64>, data: &Value) {
 		let mut store = self.store.lock();
 		if rejoined {
 			let stage = channel_id.is_some_and(|id| Self::stage_guild(&store, id).is_ok());
@@ -215,6 +218,10 @@ impl Shared {
 			seat.suppress = stage;
 			seat.request_to_speak_timestamp = None;
 		}
+		let seat = store.seats.entry(CURRENT_USER_ID).or_default();
+		seat.self_mute = data["self_mute"].as_bool().unwrap_or(false);
+		seat.self_deaf = data["self_deaf"].as_bool().unwrap_or(false);
+		seat.self_video = data["self_video"].as_bool().unwrap_or(false);
 	}
 
 	pub fn current_seat(&self) -> Seat {
