@@ -285,6 +285,11 @@ fn now_ms() -> i64 {
 
 fn playing(rng: &mut StdRng) -> Activity {
 	let id = corpus::hex_hash(rng);
+	let request = if id.as_bytes()[0] % 2 == 0 {
+		Activity::FLAG_JOIN_REQUEST
+	} else {
+		0
+	};
 	Activity {
 		session_id: Some(format!("{id}-session")),
 		party: Some(ActivityParty {
@@ -301,7 +306,7 @@ fn playing(rng: &mut StdRng) -> Activity {
 		}),
 		application_id: Some(Snowflake(rng.random_range(10u64.pow(17)..10u64.pow(18)))),
 		details: Some("In a session".to_owned()),
-		flags: Some(Activity::FLAG_INSTANCE | Activity::FLAG_JOIN),
+		flags: Some(Activity::FLAG_INSTANCE | Activity::FLAG_JOIN | request),
 		..Activity::default()
 	}
 }

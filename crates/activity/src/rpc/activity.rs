@@ -194,6 +194,7 @@ fn flags(secrets: Option<&Value>, raw: &Value) -> Option<u64> {
 			Activity::FLAG_INSTANCE,
 		),
 		(secret("join"), Activity::FLAG_JOIN),
+		(secret("join"), Activity::FLAG_JOIN_REQUEST),
 		(secret("spectate"), Activity::FLAG_SPECTATE),
 	]
 	.into_iter()

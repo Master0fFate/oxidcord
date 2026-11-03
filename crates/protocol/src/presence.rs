@@ -99,6 +99,7 @@ impl Activity {
 	pub const FLAG_INSTANCE: u64 = 1 << 0;
 	pub const FLAG_JOIN: u64 = 1 << 1;
 	pub const FLAG_SPECTATE: u64 = 1 << 2;
+	pub const FLAG_JOIN_REQUEST: u64 = 1 << 3;
 
 	pub fn has_flag(&self, flag: u64) -> bool {
 		self.flags.is_some_and(|flags| flags & flag != 0)

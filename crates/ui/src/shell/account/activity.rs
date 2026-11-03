@@ -36,6 +36,7 @@ struct Invite {
 	party: String,
 	session: Option<String>,
 	join: bool,
+	ask: bool,
 	spectate: bool,
 }
 
@@ -99,6 +100,7 @@ fn invite(activity: &Activity, user: Snowflake, state: &State) -> Option<Invite>
 		application: activity.application_id?,
 		party: activity.party_id()?.to_owned(),
 		join: session.is_some() && activity.has_flag(Activity::FLAG_JOIN),
+		ask: activity.has_flag(Activity::FLAG_JOIN) && activity.has_flag(Activity::FLAG_JOIN_REQUEST),
 		spectate: session.is_some() && activity.has_flag(Activity::FLAG_SPECTATE),
 		session,
 	})
@@ -367,7 +369,7 @@ fn join_button(index: usize, label: &'static str, invite: &Invite, kind: SecretK
 }
 
 fn invite_buttons(index: usize, invite: &Invite, theme: &Theme, cx: &App) -> Option<AnyElement> {
-	let ask = (!invite.join).then(|| {
+	let ask = invite.ask.then(|| {
 		let (user_id, application_id, party_id) = (invite.user, invite.application, invite.party.clone());
 		Button::new(("activity-ask-to-join", index))
 			.outline()
