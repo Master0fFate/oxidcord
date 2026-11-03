@@ -37,7 +37,6 @@ const ACTION_EMOJI_DELETE: i64 = 62;
 const ACTION_GUILD_UPDATE: i64 = 1;
 const ACTION_PIN: i64 = 74;
 const ACTION_UNPIN: i64 = 75;
-const ACTION_BULK_DELETE: i64 = 73;
 pub const ACTION_AUTOMOD_RULE_CREATE: i64 = 140;
 pub const ACTION_AUTOMOD_RULE_UPDATE: i64 = 141;
 pub const ACTION_AUTOMOD_RULE_DELETE: i64 = 142;
@@ -1505,35 +1504,6 @@ impl Shared {
 				"guild_id": guild_id.map(|id| id.to_string()),
 				"channel_id": channel_id.to_string(),
 				"last_pin_timestamp": last_pin_timestamp,
-			}),
-		);
-		Ok(())
-	}
-
-	pub fn bulk_delete(&self, channel_id: u64, ids: &[u64]) -> Result<(), ApiError> {
-		let mut store = self.store.lock();
-		let guild_id = store
-			.channels
-			.get(&channel_id)
-			.ok_or_else(ApiError::unknown_channel)?
-			.guild_id;
-		let messages = store.messages.entry(channel_id).or_default();
-		let removed: Vec<String> = ids
-			.iter()
-			.filter(|id| messages.remove(id).is_some())
-			.map(u64::to_string)
-			.collect();
-		store.refresh_last_message(channel_id);
-		if let Some(guild_id) = guild_id {
-			store.push_audit(guild_id.0, ACTION_BULK_DELETE, None, json!([]), None);
-		}
-		drop(store);
-		self.hub.broadcast(
-			"MESSAGE_DELETE_BULK",
-			&json!({
-				"ids": removed,
-				"channel_id": channel_id.to_string(),
-				"guild_id": guild_id.map(|id| id.to_string()),
 			}),
 		);
 		Ok(())

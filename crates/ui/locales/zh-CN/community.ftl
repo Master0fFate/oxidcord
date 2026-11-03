@@ -79,14 +79,10 @@ forum-post-tags-required = 标签（至少选择一个）
 forum-post-submit = 发布
 
 menu-create-thread = 创建子区
-menu-select-message = 选择消息
-menu-deselect-message = 取消选择
-menu-delete-selected = 删除所选的 { $count } 条
 menu-report = 举报消息
 menu-invite-channel = 邀请到频道
 menu-edit-channel = 编辑频道
 menu-delete-channel = 删除频道
-timeline-selected = 已选择 { $count } 条
 
 mute-channel = 静音频道
 mute-server = 静音服务器
@@ -356,8 +352,6 @@ mod-history-3d = 过去 3 天
 mod-history-7d = 过去 7 天
 mod-reason = 原因
 mod-reason-placeholder = 原因（可选）
-mod-bulk-title = 删除 { $count } 条消息？
-mod-bulk-body = 所选消息将对所有人删除。此操作无法撤销。
 
 picker-tab-gif = GIF
 picker-tab-sticker = 贴纸
@@ -393,7 +387,6 @@ picker-emoji-flags = 旗帜
 settings-gif-usage = GIF 使用数据
 settings-gif-usage-switch = 告诉 Discord 我选择了哪些 GIF
 settings-gif-usage-hint = 将你选择的 GIF 发送给 Discord 以改善搜索结果。默认关闭。
-timeline-delete-selected = 删除
 right-group-general = 常规服务器权限
 right-view-channels = 查看频道
 right-view-channels-hint = 成员默认可以查看频道（私密频道除外）。

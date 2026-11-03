@@ -88,14 +88,10 @@ forum-post-tags-required = Tags (escolha pelo menos uma)
 forum-post-submit = Publicar
 
 menu-create-thread = Criar tópico
-menu-select-message = Selecionar mensagem
-menu-deselect-message = Desmarcar mensagem
-menu-delete-selected = Excluir { $count } selecionadas
 menu-report = Denunciar mensagem
 menu-invite-channel = Convidar para o canal
 menu-edit-channel = Editar canal
 menu-delete-channel = Excluir canal
-timeline-selected = { $count } selecionadas
 
 mute-channel = Silenciar canal
 mute-server = Silenciar servidor
@@ -377,8 +373,6 @@ mod-history-3d = Últimos 3 dias
 mod-history-7d = Últimos 7 dias
 mod-reason = Motivo
 mod-reason-placeholder = Motivo opcional
-mod-bulk-title = Excluir { $count } mensagens?
-mod-bulk-body = As mensagens selecionadas serão removidas para todo mundo. Isso não pode ser desfeito.
 
 picker-tab-gif = GIFs
 picker-tab-sticker = Figurinhas
@@ -414,7 +408,6 @@ picker-emoji-flags = Bandeiras
 settings-gif-usage = Uso de GIFs
 settings-gif-usage-switch = Contar ao Discord quais GIFs eu escolho
 settings-gif-usage-hint = Envia o GIF escolhido ao Discord para melhorar os resultados da busca. Desligado por padrão.
-timeline-delete-selected = Excluir
 right-group-general = Permissões gerais do servidor
 right-view-channels = Ver canais
 right-view-channels-hint = Membros podem ver os canais por padrão (exceto os privados).

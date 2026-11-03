@@ -23,7 +23,6 @@ const PNG: &str = "image/png";
 const GIF: &str = "image/gif";
 const DEFAULT_ARCHIVE_MINUTES: u32 = 1440;
 const REACTION_PAGE: u8 = 100;
-const BULK_DELETE_LIMIT: usize = 100;
 const ACK_BULK_LIMIT: usize = 100;
 const ARCHIVED_PAGE: u8 = 50;
 const MENTIONS_PAGE: u8 = 25;
@@ -1396,16 +1395,6 @@ impl Core {
 					self.spawn_action("remove role", move |rest| async move {
 						rest.remove_member_role(guild_id, user_id, role_id).await
 					});
-				}
-			}
-			Command::DeleteMessagesBulk { channel_id, ids } => {
-				if self.channel_allows(channel_id, Permissions::MANAGE_MESSAGES, "Manage Messages") {
-					for chunk in ids.chunks(BULK_DELETE_LIMIT) {
-						let chunk = chunk.to_vec();
-						self.spawn_action("delete messages", move |rest| async move {
-							rest.bulk_delete_messages(channel_id, &chunk).await
-						});
-					}
 				}
 			}
 			Command::MoveMember {

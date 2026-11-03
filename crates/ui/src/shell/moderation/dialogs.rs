@@ -5,8 +5,6 @@ use gpui::{
 	App, AppContext as _, Context, Entity, EventEmitter, Focusable as _, IntoElement, ParentElement as _,
 	Render, SharedString, Styled as _, Subscription, Window, div,
 };
-use gpui_component::WindowExt as _;
-use gpui_component::button::ButtonVariant;
 use gpui_component::input::{Input, InputEvent, InputState};
 use protocol::Snowflake;
 use session::Command;
@@ -412,27 +410,4 @@ impl Render for Ban {
 				},
 			))
 	}
-}
-
-pub fn open_bulk_delete(window: &mut Window, cx: &mut App, channel: Snowflake, ids: Vec<Snowflake>) {
-	let data = data_handle(cx);
-	let count = ids.len();
-	window.open_alert_dialog(cx, move |alert, _, cx| {
-		let data = data.clone();
-		let ids = ids.clone();
-		alert
-			.title(cx.t_args("mod-bulk-title", &[("count", ArgValue::from(count))]))
-			.description(cx.t("mod-bulk-body"))
-			.confirm()
-			.ok_text(cx.t("menu-delete"))
-			.ok_variant(ButtonVariant::Danger)
-			.cancel_text(cx.t("action-cancel"))
-			.on_ok(move |_, _, cx| {
-				data.read(cx).send(Command::DeleteMessagesBulk {
-					channel_id: channel,
-					ids: ids.clone(),
-				});
-				true
-			})
-	});
 }

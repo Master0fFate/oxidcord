@@ -629,10 +629,4 @@ impl RestClient {
 		)))
 		.await
 	}
-
-	pub async fn bulk_delete_messages(&self, channel_id: Snowflake, ids: &[Snowflake]) -> Result<()> {
-		let request = Request::post(format!("/channels/{channel_id}/messages/bulk-delete"))
-			.json(&json!({ "messages": ids }));
-		self.send_empty(request).await
-	}
 }

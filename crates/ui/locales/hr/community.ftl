@@ -91,14 +91,10 @@ forum-post-tags-required = Oznake (odaberite barem jednu)
 forum-post-submit = Objavi
 
 menu-create-thread = Stvori nit
-menu-select-message = Odaberi poruku
-menu-deselect-message = Poništi odabir poruke
-menu-delete-selected = Izbriši odabrano ({ $count })
 menu-report = Prijavi poruku
 menu-invite-channel = Pozovi u kanal
 menu-edit-channel = Uredi kanal
 menu-delete-channel = Izbriši kanal
-timeline-selected = Odabrano: { $count }
 
 mute-channel = Utišaj kanal
 mute-server = Utišaj poslužitelj
@@ -384,8 +380,6 @@ mod-history-3d = Zadnja 3 dana
 mod-history-7d = Zadnjih 7 dana
 mod-reason = Razlog
 mod-reason-placeholder = Neobavezan razlog
-mod-bulk-title = Izbrisati poruke ({ $count })?
-mod-bulk-body = Odabrane poruke bit će uklonjene za sve. To se ne može poništiti.
 
 picker-tab-gif = GIF-ovi
 picker-tab-sticker = Naljepnice
@@ -421,7 +415,6 @@ picker-emoji-flags = Zastave
 settings-gif-usage = Korištenje GIF-ova
 settings-gif-usage-switch = Javi Discordu koje GIF-ove odabirem
 settings-gif-usage-hint = Šalje odabrani GIF Discordu radi boljih rezultata pretrage. Zadano isključeno.
-timeline-delete-selected = Izbriši
 right-group-general = Opća dopuštenja poslužitelja
 right-view-channels = Pregled kanala
 right-view-channels-hint = Članovi prema zadanim postavkama mogu vidjeti kanale (osim privatnih).

@@ -91,14 +91,10 @@ forum-post-tags-required = Štítky (vyber aspoň jeden)
 forum-post-submit = Zveřejnit
 
 menu-create-thread = Vytvořit vlákno
-menu-select-message = Vybrat zprávu
-menu-deselect-message = Zrušit výběr zprávy
-menu-delete-selected = Smazat vybrané ({ $count })
 menu-report = Nahlásit zprávu
 menu-invite-channel = Pozvat do kanálu
 menu-edit-channel = Upravit kanál
 menu-delete-channel = Smazat kanál
-timeline-selected = Vybráno: { $count }
 
 mute-channel = Ztlumit kanál
 mute-server = Ztlumit server
@@ -384,8 +380,6 @@ mod-history-3d = Poslední 3 dny
 mod-history-7d = Posledních 7 dní
 mod-reason = Důvod
 mod-reason-placeholder = Volitelný důvod
-mod-bulk-title = Smazat zprávy ({ $count })?
-mod-bulk-body = Vybrané zprávy zmizí pro všechny. Nedá se to vrátit.
 
 picker-tab-gif = GIFy
 picker-tab-sticker = Nálepky
@@ -421,7 +415,6 @@ picker-emoji-flags = Vlajky
 settings-gif-usage = Používání GIFů
 settings-gif-usage-switch = Sdělovat Discordu, které GIFy vybírám
 settings-gif-usage-hint = Pošle vybraný GIF Discordu, aby se zlepšily výsledky hledání. Ve výchozím stavu vypnuto.
-timeline-delete-selected = Smazat
 right-group-general = Obecná oprávnění serveru
 right-view-channels = Zobrazit kanály
 right-view-channels-hint = Členové ve výchozím stavu vidí kanály (kromě soukromých).

@@ -71,7 +71,6 @@ pub struct Timeline {
 	poll_picks: Rc<RefCell<HashMap<Snowflake, Vec<i64>>>>,
 	documents: Rc<DocumentCache>,
 	editing: Option<Editing>,
-	selection: Rc<HashSet<Snowflake>>,
 	compact: bool,
 	connected: bool,
 	requested_older: Option<(Snowflake, Instant)>,
@@ -160,7 +159,6 @@ impl Timeline {
 			poll_picks: Rc::default(),
 			documents: Rc::new(RefCell::new(LruCache::new(capacity))),
 			editing: None,
-			selection: Rc::default(),
 			compact,
 			connected: false,
 			requested_older: None,
@@ -234,7 +232,6 @@ impl Timeline {
 		self.channel = channel;
 		self.welcome = Rc::new(Welcome { name, direct });
 		self.editing = None;
-		self.selection = Rc::default();
 		self.requested_older = None;
 		self.requested_newer = None;
 		self.detached = false;
@@ -785,15 +782,6 @@ impl Timeline {
 					});
 				}
 			}
-			RowAction::Select(message) => {
-				let mut selection = (*self.selection).clone();
-				if !selection.remove(&message) {
-					selection.insert(message);
-				}
-				self.selection = Rc::new(selection);
-				cx.notify();
-			}
-			RowAction::DeleteSelected => self.delete_selected(window, cx),
 			RowAction::Report => moderation::open_report(),
 			RowAction::StartEdit(message) => self.start_edit(message, window, cx),
 			RowAction::Delete(message) => self.confirm_delete(message, window, cx),
@@ -817,17 +805,6 @@ impl Timeline {
 			}
 			RowAction::PrefillCommand(name) => cx.emit(TimelineEvent::PrefillCommand(name)),
 		}
-	}
-
-	fn delete_selected(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-		let Some(channel) = self.channel else {
-			return;
-		};
-		let mut ids: Vec<Snowflake> = self.selection.iter().copied().collect();
-		ids.sort_unstable();
-		self.selection = Rc::default();
-		moderation::dialogs::open_bulk_delete(window, cx, channel, ids);
-		cx.notify();
 	}
 
 	fn access(&self, cx: &Context<Self>) -> MessageAccess {
@@ -860,53 +837,6 @@ impl Timeline {
 			),
 			announcement: kind == Some(ChannelType::GuildAnnouncement),
 		}
-	}
-
-	fn selection_bar(&self, theme: &Theme, cx: &mut Context<Self>) -> impl IntoElement {
-		div()
-			.flex()
-			.flex_none()
-			.items_center()
-			.justify_between()
-			.gap(theme.space_12)
-			.mx(theme.space_16)
-			.mb(theme.space_8)
-			.px(theme.space_16)
-			.py(theme.space_8)
-			.rounded(theme.radius_md)
-			.bg(theme.background_floating)
-			.border_1()
-			.border_color(theme.divider)
-			.child(
-				div()
-					.text_size(theme.font_md)
-					.text_color(theme.text_normal)
-					.child(cx.t_args(
-						"timeline-selected",
-						&[("count", crate::i18n::ArgValue::from(self.selection.len()))],
-					)),
-			)
-			.child(
-				div()
-					.flex()
-					.items_center()
-					.gap(theme.space_8)
-					.child(
-						Button::new("selection-clear")
-							.ghost()
-							.label(cx.t("action-cancel"))
-							.on_click(cx.listener(|this, _, _, cx| {
-								this.selection = Rc::default();
-								cx.notify();
-							})),
-					)
-					.child(
-						Button::new("selection-delete")
-							.danger()
-							.label(cx.t("timeline-delete-selected"))
-							.on_click(cx.listener(|this, _, window, cx| this.delete_selected(window, cx))),
-					),
-			)
 	}
 
 	fn row_index(&self, message_id: Snowflake) -> Option<usize> {
@@ -1249,7 +1179,6 @@ impl Render for Timeline {
 		let compact = self.compact;
 		let guild = self.guild;
 		let access = self.access(cx);
-		let selection = self.selection.clone();
 		let relative_seen = self.relative_seen.clone();
 		let flash = self.flash;
 		let row_theme = theme.clone();
@@ -1285,7 +1214,6 @@ impl Render for Timeline {
 						editing: editing.as_ref(),
 						welcome: &welcome,
 						access,
-						selection: &selection,
 						flash,
 						options: *state.client_options(),
 						relative_seen: &relative_seen,
@@ -1301,10 +1229,7 @@ impl Render for Timeline {
 			.min_h_0()
 			.bg(theme.background_primary)
 			.on_action(cx.listener(|this, _: &Escape, _, cx| {
-				if !this.selection.is_empty() {
-					this.selection = Rc::default();
-					cx.notify();
-				} else if !this.stop_editing(cx) {
+				if !this.stop_editing(cx) {
 					cx.propagate();
 				}
 			}))
@@ -1324,9 +1249,6 @@ impl Render for Timeline {
 					})
 					.when(detached, |area| area.child(self.present_pill(&theme, cx))),
 			)
-			.when(!self.selection.is_empty(), |timeline| {
-				timeline.child(self.selection_bar(&theme, cx))
-			})
 			.child(crate::playback::Playback::view_marker())
 	}
 }

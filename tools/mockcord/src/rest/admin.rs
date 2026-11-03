@@ -477,15 +477,6 @@ pub async fn reject_message_requests(State(shared): Mock, Json(body): Json<Value
 	shared.reject_message_requests(&ids).map(Value::Array).map(Json)
 }
 
-pub async fn bulk_delete(State(shared): Mock, Path(id): Path<u64>, Json(body): Json<Value>) -> NoContent {
-	let ids: Vec<u64> = body["messages"]
-		.as_array()
-		.map(|ids| ids.iter().filter_map(parse_id).collect())
-		.unwrap_or_default();
-	shared.bulk_delete(id, &ids)?;
-	Ok(StatusCode::NO_CONTENT)
-}
-
 pub async fn pin(State(shared): Mock, Path((id, message_id)): Path<(u64, u64)>) -> NoContent {
 	shared.set_pin(id, message_id, true)?;
 	Ok(StatusCode::NO_CONTENT)

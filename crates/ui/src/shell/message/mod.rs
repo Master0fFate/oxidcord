@@ -247,8 +247,6 @@ pub enum RowAction {
 		channel_id: Snowflake,
 		message_id: Snowflake,
 	},
-	Select(Snowflake),
-	DeleteSelected,
 	Report,
 	UseComponent(session::ComponentUse),
 	RunCommand {
@@ -295,7 +293,6 @@ pub struct RowEnv<'a> {
 	pub editing: Option<&'a Editing>,
 	pub welcome: &'a Welcome,
 	pub access: MessageAccess,
-	pub selection: &'a HashSet<Snowflake>,
 	pub flash: Option<Snowflake>,
 	pub options: ClientOptions,
 	pub relative_seen: &'a Cell<bool>,
@@ -1616,25 +1613,13 @@ fn interactive(
 	if view.pending || view.deleted {
 		return row.into_any_element();
 	}
-	let id = view.message.id;
-	let selectable = env.access.manage_messages;
-	let selecting = !env.selection.is_empty();
-	let dispatch = env.dispatch.clone();
 	let guild = view.message.guild_id.or(env.lookup.guild);
 	let clicked = view.message.clone();
 	let aux_clicked = view.message.clone();
 	let row = row
 		.capture_any_mouse_down(|_, window, cx| capture_pointer(window, cx))
-		.when(env.selection.contains(&id), |row| {
-			row.bg(crate::theme::with_alpha(env.theme.brand, 0.14))
-		})
-		.on_click(move |event, window, cx| {
-			if message_click(&clicked, guild, event, ClickTarget::Body, cx) {
-				return;
-			}
-			if selectable && (event.modifiers().shift || selecting) {
-				dispatch(RowAction::Select(id), window, cx);
-			}
+		.on_click(move |event, _, cx| {
+			message_click(&clicked, guild, event, ClickTarget::Body, cx);
 		})
 		.on_aux_click(move |event, _, cx| {
 			if event.is_middle_click() {

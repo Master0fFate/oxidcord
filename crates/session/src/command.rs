@@ -695,10 +695,6 @@ pub enum Command {
 		user_id: Snowflake,
 		role_id: Snowflake,
 	},
-	DeleteMessagesBulk {
-		channel_id: Snowflake,
-		ids: Vec<Snowflake>,
-	},
 	MoveMember {
 		guild_id: Snowflake,
 		user_id: Snowflake,

@@ -88,15 +88,11 @@ forum-post-tags-required = Tags (pick at least one)
 forum-post-submit = Post
 
 menu-create-thread = Create Thread
-menu-select-message = Select Message
-menu-deselect-message = Deselect Message
-menu-delete-selected = Delete { $count } Selected
 menu-report = Report Message
 menu-invite-channel = Invite to Channel
 menu-edit-channel = Edit Channel
 menu-voice-status = Set Status
 menu-delete-channel = Delete Channel
-timeline-selected = { $count } selected
 
 mute-channel = Mute Channel
 mute-conversation = Mute Conversation
@@ -464,8 +460,6 @@ mod-history-3d = Previous 3 days
 mod-history-7d = Previous 7 days
 mod-reason = Reason
 mod-reason-placeholder = Optional reason
-mod-bulk-title = Delete { $count } messages?
-mod-bulk-body = The selected messages are removed for everyone. This cannot be undone.
 
 picker-tab-gif = GIFs
 picker-tab-sticker = Stickers
@@ -503,7 +497,6 @@ picker-emoji-flags = Flags
 settings-gif-usage = GIF Usage
 settings-gif-usage-switch = Tell Discord which GIFs I pick
 settings-gif-usage-hint = Sends the GIF you choose back to Discord to improve search results. Off by default.
-timeline-delete-selected = Delete
 right-group-general = General Server Permissions
 right-view-channels = View Channels
 right-view-channels-hint = Members can view channels by default (excluding private channels).

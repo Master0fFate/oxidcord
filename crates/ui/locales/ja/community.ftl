@@ -79,14 +79,10 @@ forum-post-tags-required = タグ（1つ以上選択）
 forum-post-submit = 投稿
 
 menu-create-thread = スレッドを作成
-menu-select-message = メッセージを選択
-menu-deselect-message = 選択を解除
-menu-delete-selected = 選択した{ $count }件を削除
 menu-report = メッセージを報告
 menu-invite-channel = チャンネルに招待
 menu-edit-channel = チャンネルを編集
 menu-delete-channel = チャンネルを削除
-timeline-selected = { $count }件選択中
 
 mute-channel = チャンネルをミュート
 mute-server = サーバーをミュート
@@ -356,8 +352,6 @@ mod-history-3d = 過去3日間
 mod-history-7d = 過去7日間
 mod-reason = 理由
 mod-reason-placeholder = 理由（任意）
-mod-bulk-title = { $count }件のメッセージを削除しますか？
-mod-bulk-body = 選択したメッセージは全員に対して削除されます。この操作は取り消せません。
 
 picker-tab-gif = GIF
 picker-tab-sticker = スタンプ
@@ -393,7 +387,6 @@ picker-emoji-flags = 旗
 settings-gif-usage = GIFの利用状況
 settings-gif-usage-switch = 選んだGIFをDiscordに送る
 settings-gif-usage-hint = 検索結果の改善のため、選んだGIFをDiscordに送信します。デフォルトはオフです。
-timeline-delete-selected = 削除
 right-group-general = サーバー全般の権限
 right-view-channels = チャンネルを見る
 right-view-channels-hint = メンバーはデフォルトでチャンネルを閲覧できます（プライベートチャンネルを除く）。

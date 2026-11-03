@@ -88,14 +88,10 @@ forum-post-tags-required = Tags (mindestens einen auswählen)
 forum-post-submit = Posten
 
 menu-create-thread = Thread erstellen
-menu-select-message = Nachricht auswählen
-menu-deselect-message = Auswahl aufheben
-menu-delete-selected = { $count } ausgewählte löschen
 menu-report = Nachricht melden
 menu-invite-channel = In Kanal einladen
 menu-edit-channel = Kanal bearbeiten
 menu-delete-channel = Kanal löschen
-timeline-selected = { $count } ausgewählt
 
 mute-channel = Kanal stummschalten
 mute-server = Server stummschalten
@@ -377,8 +373,6 @@ mod-history-3d = Letzte 3 Tage
 mod-history-7d = Letzte 7 Tage
 mod-reason = Grund
 mod-reason-placeholder = Optionaler Grund
-mod-bulk-title = { $count } Nachrichten löschen?
-mod-bulk-body = Die ausgewählten Nachrichten werden für alle entfernt. Das kann nicht rückgängig gemacht werden.
 
 picker-tab-gif = GIFs
 picker-tab-sticker = Sticker
@@ -414,7 +408,6 @@ picker-emoji-flags = Flaggen
 settings-gif-usage = GIF-Nutzung
 settings-gif-usage-switch = Discord mitteilen, welche GIFs ich auswähle
 settings-gif-usage-hint = Sendet das gewählte GIF an Discord, um die Suchergebnisse zu verbessern. Standardmäßig aus.
-timeline-delete-selected = Löschen
 right-group-general = Allgemeine Serverberechtigungen
 right-view-channels = Kanäle ansehen
 right-view-channels-hint = Mitglieder können Kanäle standardmäßig sehen (außer private Kanäle).

@@ -94,14 +94,10 @@ forum-post-tags-required = Теги (выберите хотя бы один)
 forum-post-submit = Опубликовать
 
 menu-create-thread = Создать ветку
-menu-select-message = Выбрать сообщение
-menu-deselect-message = Снять выбор
-menu-delete-selected = Удалить выбранные ({ $count })
 menu-report = Пожаловаться на сообщение
 menu-invite-channel = Пригласить в канал
 menu-edit-channel = Изменить канал
 menu-delete-channel = Удалить канал
-timeline-selected = Выбрано: { $count }
 
 mute-channel = Заглушить канал
 mute-server = Заглушить сервер
@@ -391,8 +387,6 @@ mod-history-3d = За последние 3 дня
 mod-history-7d = За последние 7 дней
 mod-reason = Причина
 mod-reason-placeholder = Причина (необязательно)
-mod-bulk-title = Удалить сообщения ({ $count })?
-mod-bulk-body = Выбранные сообщения исчезнут для всех. Это действие нельзя отменить.
 
 picker-tab-gif = GIF
 picker-tab-sticker = Стикеры
@@ -428,7 +422,6 @@ picker-emoji-flags = Флаги
 settings-gif-usage = Использование GIF
 settings-gif-usage-switch = Сообщать Discord, какие GIF я выбираю
 settings-gif-usage-hint = Отправляет выбранный GIF в Discord, чтобы улучшить результаты поиска. По умолчанию выключено.
-timeline-delete-selected = Удалить
 right-group-general = Общие права сервера
 right-view-channels = Просматривать каналы
 right-view-channels-hint = Участники по умолчанию видят каналы (кроме приватных).

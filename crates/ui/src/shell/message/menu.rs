@@ -13,7 +13,7 @@ use state::MessageCommand;
 use super::body::{Plain, snippet};
 use super::{Dispatch, ImageTarget, MessageAccess, Prefs, RowAction, RowEnv, media};
 use crate::components::{ContextMenuBuilder, unicode_emoji};
-use crate::i18n::{ArgValue, Translate as _};
+use crate::i18n::Translate as _;
 use crate::icons::IconKind;
 use crate::images::Images;
 use crate::lookup::Lookup;
@@ -204,8 +204,6 @@ pub(super) struct MenuSource {
 	access: MessageAccess,
 	me: Option<Snowflake>,
 	dispatch: Dispatch,
-	selected: bool,
-	selection: usize,
 	developer: bool,
 	guild: Option<Snowflake>,
 }
@@ -217,8 +215,6 @@ impl MenuSource {
 			access: env.access,
 			me: env.me,
 			dispatch: env.dispatch.clone(),
-			selected: env.selection.contains(&message.id),
-			selection: env.selection.len(),
 			developer: env.prefs.developer_mode,
 			guild: message.guild_id.or(env.lookup.guild),
 		}
@@ -368,28 +364,7 @@ impl MenuSource {
 				self.action(RowAction::Publish(id)),
 			);
 		}
-		if self.access.manage_messages {
-			menu = menu.item(
-				cx.t(if self.selected {
-					"menu-deselect-message"
-				} else {
-					"menu-select-message"
-				}),
-				Some(IconKind::Check),
-				self.action(RowAction::Select(id)),
-			);
-		}
 		menu = menu.separator();
-		if self.access.manage_messages && self.selection > 0 {
-			menu = menu.danger_item(
-				cx.t_args(
-					"menu-delete-selected",
-					&[("count", ArgValue::from(self.selection))],
-				),
-				Some(IconKind::Trash),
-				self.action(RowAction::DeleteSelected),
-			);
-		}
 		if can.delete {
 			menu = menu.danger_item(
 				cx.t("menu-delete"),
