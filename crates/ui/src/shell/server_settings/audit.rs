@@ -81,6 +81,13 @@ fn target_label(state: &State, guild: Snowflake, entry: &AuditEntry) -> String {
 			.and_then(|channel| channel.name.clone())
 			.or(named)
 			.map_or_else(|| id.to_string(), |name| format!("#{name}")),
+		140..=142 => state
+			.automod_rules(guild)
+			.iter()
+			.find(|rule| rule.id == id)
+			.map(|rule| rule.name.clone())
+			.or(named)
+			.unwrap_or_else(|| id.to_string()),
 		30..=32 => state
 			.guild(guild)
 			.and_then(|found| found.roles.get(&id).map(|role| role.name.clone()))

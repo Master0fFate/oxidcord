@@ -113,8 +113,9 @@ impl Shared {
 		rule.guild_id = Some(Snowflake(guild_id));
 		rule.creator_id = Some(Snowflake(CURRENT_USER_ID));
 		let value = to_json(&rule);
+		let changes = json!([{ "key": "name", "new_value": rule.name }]);
 		store.automod_rules.entry(guild_id).or_default().push(rule);
-		store.push_audit(guild_id, ACTION_AUTOMOD_RULE_CREATE, Some(id), json!([]), None);
+		store.push_audit(guild_id, ACTION_AUTOMOD_RULE_CREATE, Some(id), changes, None);
 		Ok(value)
 	}
 
@@ -132,11 +133,12 @@ impl Shared {
 		}
 		*slot = decode(merged)?;
 		let value = to_json(&*slot);
+		let changes = json!([{ "key": "name", "new_value": slot.name }]);
 		store.push_audit(
 			guild_id,
 			ACTION_AUTOMOD_RULE_UPDATE,
 			Some(rule_id),
-			json!([]),
+			changes,
 			None,
 		);
 		Ok(value)
@@ -149,16 +151,17 @@ impl Shared {
 			.automod_rules
 			.get_mut(&guild_id)
 			.ok_or_else(ApiError::not_found)?;
-		let before = rules.len();
+		let name = rules
+			.iter()
+			.find(|rule| rule.id.0 == rule_id)
+			.map(|rule| rule.name.clone())
+			.ok_or_else(ApiError::not_found)?;
 		rules.retain(|rule| rule.id.0 != rule_id);
-		if rules.len() == before {
-			return Err(ApiError::not_found());
-		}
 		store.push_audit(
 			guild_id,
 			ACTION_AUTOMOD_RULE_DELETE,
 			Some(rule_id),
-			json!([]),
+			json!([{ "key": "name", "old_value": name }]),
 			None,
 		);
 		Ok(())
