@@ -6,10 +6,10 @@ use store::{Database, Store};
 use super::{Core, Internal};
 
 fn known_account(store: &Store, token: &Token) -> Option<Snowflake> {
-	match token.user_id() {
-		Some(user_id) => store.accounts.token_for(user_id).ok().flatten().map(|_| user_id),
-		None => store.accounts.current(),
-	}
+	let decoded = token.user_id();
+	let user_id = decoded.or_else(|| store.accounts.current())?;
+	let saved = store.accounts.token_for(user_id).ok().flatten()?;
+	(decoded.is_some() || saved == token.as_str()).then_some(user_id)
 }
 
 impl Core {
