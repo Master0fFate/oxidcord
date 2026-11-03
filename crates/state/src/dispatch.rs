@@ -4,8 +4,8 @@ use std::time::Instant;
 use protocol::{
 	Channel, ChannelLastMessage, ChannelPinsUpdate, ChannelRecipientChange, DispatchEvent,
 	GuildMemberListUpdate, GuildMembersChunk, GuildRoleChange, Member, MemberListGroup, Message, MessageAck,
-	MessageUpdate, PassiveUpdate, Presence, RelationshipKind, Snowflake, ThreadDelete, ThreadListSync,
-	TypingStart, UnavailableGuild, UserGuildSettings, VoiceState,
+	MessagePollVote, MessageUpdate, PassiveUpdate, Presence, RelationshipKind, Snowflake, ThreadDelete,
+	ThreadListSync, TypingStart, UnavailableGuild, UserGuildSettings, VoiceState,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -14,7 +14,9 @@ use serde_json::value::RawValue;
 use crate::changes::Changes;
 use crate::guild::{is_thread, stripped_member};
 use crate::member_list::MemberSlot;
-use crate::messages::{ReactionChange, add_reaction, apply_update, remove_emoji, remove_reaction};
+use crate::messages::{
+	ReactionChange, add_reaction, apply_poll_vote, apply_update, remove_emoji, remove_reaction,
+};
 use crate::state::{State, intern_user};
 
 #[derive(Deserialize, Default)]
@@ -88,6 +90,8 @@ impl State {
 					remove_emoji(message, &remove.emoji)
 				})
 			}
+			DispatchEvent::MessagePollVoteAdd(vote) => self.poll_vote(vote, 1),
+			DispatchEvent::MessagePollVoteRemove(vote) => self.poll_vote(vote, -1),
 			DispatchEvent::MessageAck(ack) => self.message_ack(ack),
 			DispatchEvent::ChannelPinsUpdate(update) => self.channel_pins_update(update),
 			DispatchEvent::ChannelCreate(channel)
@@ -354,6 +358,13 @@ impl State {
 			changes.messages.insert(channel_id);
 		}
 		changes
+	}
+
+	fn poll_vote(&mut self, vote: &MessagePollVote, delta: i64) -> Changes {
+		let mine = Some(vote.user_id) == self.current_user_id();
+		self.edit_message(vote.channel_id, vote.message_id, |message| {
+			apply_poll_vote(message, vote.answer_id, delta, mine)
+		})
 	}
 
 	fn messages_delete(&mut self, channel_id: Snowflake, ids: &[Snowflake]) -> Changes {

@@ -701,6 +701,9 @@ impl Core {
 			DispatchEvent::MessageReactionRemoveEmoji(reaction) => {
 				self.persist_cached_message(reaction.channel_id, reaction.message_id);
 			}
+			DispatchEvent::MessagePollVoteAdd(vote) | DispatchEvent::MessagePollVoteRemove(vote) => {
+				self.persist_cached_message(vote.channel_id, vote.message_id);
+			}
 			DispatchEvent::MessageDelete(delete) => {
 				self.persist.submit(Job::DeleteMessages(vec![delete.id]));
 			}

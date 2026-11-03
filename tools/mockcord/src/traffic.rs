@@ -27,6 +27,7 @@ const DELETE_EVERY: u64 = 4;
 const THREAD_MENTION_EVERY: u64 = 5;
 const SILENT_MENTION_CHANCE: f64 = 0.3;
 const STORM_EVERY: u64 = 5;
+const POLL_VOTE_EVERY: u64 = 4;
 const STORM_USERS: std::ops::RangeInclusive<usize> = 3..=5;
 const STORM_EMOJI: [&str; 4] = ["🔥", "🎉", "👍", "😂"];
 const STATUSES: [StatusKind; 4] = [
@@ -206,6 +207,34 @@ async fn message_loop(shared: Arc<Shared>) {
 		if round.is_multiple_of(STORM_EVERY) {
 			react_in_bulk(&shared, &recent);
 		}
+		if round.is_multiple_of(POLL_VOTE_EVERY) {
+			vote_in_poll(&shared);
+		}
+	}
+}
+
+fn vote_in_poll(shared: &Shared) {
+	let Some((channel_id, message_id, answers)) = shared.open_poll() else {
+		return;
+	};
+	let mut rng = live_rng();
+	let voters: Vec<u64> = shared
+		.fixtures
+		.users
+		.keys()
+		.copied()
+		.filter(|&id| id != CURRENT_USER_ID)
+		.collect();
+	if voters.is_empty() || answers.is_empty() {
+		return;
+	}
+	let user_id = *pick(&mut rng, &voters);
+	let answer_id = *pick(&mut rng, &answers);
+	if shared
+		.cast_poll_vote(user_id, channel_id, message_id, answer_id)
+		.is_ok()
+	{
+		tracing::info!(channel_id, "live poll vote");
 	}
 }
 

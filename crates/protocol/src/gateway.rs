@@ -456,6 +456,16 @@ impl MessageReactionRemove {
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
+pub struct MessagePollVote {
+	pub user_id: Snowflake,
+	pub channel_id: Snowflake,
+	pub message_id: Snowflake,
+	pub guild_id: Option<Snowflake>,
+	pub answer_id: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct MessageReactionRemoveAll {
 	pub channel_id: Snowflake,
 	pub message_id: Snowflake,
@@ -687,6 +697,8 @@ pub enum DispatchEvent {
 	MessageReactionRemove(MessageReactionRemove),
 	MessageReactionRemoveAll(MessageReactionRemoveAll),
 	MessageReactionRemoveEmoji(MessageReactionRemoveEmoji),
+	MessagePollVoteAdd(MessagePollVote),
+	MessagePollVoteRemove(MessagePollVote),
 	MessageAck(MessageAck),
 	ChannelCreate(Box<Channel>),
 	ChannelUpdate(Box<Channel>),
@@ -765,6 +777,8 @@ impl DispatchEvent {
 			"MESSAGE_REACTION_REMOVE" => Self::MessageReactionRemove(decode(name, data)?),
 			"MESSAGE_REACTION_REMOVE_ALL" => Self::MessageReactionRemoveAll(decode(name, data)?),
 			"MESSAGE_REACTION_REMOVE_EMOJI" => Self::MessageReactionRemoveEmoji(decode(name, data)?),
+			"MESSAGE_POLL_VOTE_ADD" => Self::MessagePollVoteAdd(decode(name, data)?),
+			"MESSAGE_POLL_VOTE_REMOVE" => Self::MessagePollVoteRemove(decode(name, data)?),
 			"MESSAGE_ACK" => Self::MessageAck(decode(name, data)?),
 			"CHANNEL_CREATE" => Self::ChannelCreate(decode(name, data)?),
 			"CHANNEL_UPDATE" => Self::ChannelUpdate(decode(name, data)?),

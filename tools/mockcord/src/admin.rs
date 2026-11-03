@@ -160,6 +160,38 @@ fn permissions_of(value: &Value) -> Permissions {
 	serde_json::from_value(value.clone()).unwrap_or_else(|_| Permissions::empty())
 }
 
+fn poll_results(message: &mut Value) -> Result<&mut Value, ApiError> {
+	if message["poll"].is_null() {
+		return Err(ApiError::invalid_body("This message has no poll"));
+	}
+	let results = &mut message["poll"]["results"];
+	if !results.is_object() {
+		*results = json!({ "is_finalized": false, "answer_counts": [] });
+	}
+	Ok(results)
+}
+
+fn answer_counts(results: &mut Value) -> Result<&mut Vec<Value>, ApiError> {
+	results["answer_counts"]
+		.as_array_mut()
+		.ok_or_else(ApiError::unknown_message)
+}
+
+fn adjust_answer(counts: &mut Vec<Value>, answer_id: i64, delta: i64, mine: bool) {
+	let position = counts
+		.iter()
+		.position(|count| count["id"].as_i64() == Some(answer_id))
+		.unwrap_or_else(|| {
+			counts.push(json!({ "id": answer_id, "count": 0, "me_voted": false }));
+			counts.len() - 1
+		});
+	let count = &mut counts[position];
+	count["count"] = json!((count["count"].as_i64().unwrap_or(0) + delta).max(0));
+	if mine {
+		count["me_voted"] = json!(delta > 0);
+	}
+}
+
 fn user_ids(value: &Value) -> Vec<Snowflake> {
 	value
 		.as_array()
@@ -1352,44 +1384,131 @@ impl Shared {
 		let message = store
 			.message_mut(channel_id, message_id)
 			.ok_or_else(ApiError::unknown_message)?;
-		if message["poll"].is_null() {
-			return Err(ApiError::invalid_body("This message has no poll"));
-		}
-		let results = &mut message["poll"]["results"];
-		if !results.is_object() {
-			*results = json!({ "is_finalized": false, "answer_counts": [] });
-		}
+		let results = poll_results(message)?;
 		if finalize {
 			results["is_finalized"] = json!(true);
-		} else {
-			let counts = results["answer_counts"]
-				.as_array_mut()
-				.ok_or_else(ApiError::unknown_message)?;
-			for count in counts
-				.iter_mut()
-				.filter(|count| count["me_voted"].as_bool() == Some(true))
-			{
-				count["count"] = json!(count["count"].as_i64().unwrap_or(1) - 1);
-				count["me_voted"] = json!(false);
-			}
-			for answer in answers {
-				match counts
-					.iter_mut()
-					.find(|count| count["id"].as_i64() == Some(*answer))
-				{
-					Some(count) => {
-						count["count"] = json!(count["count"].as_i64().unwrap_or(0) + 1);
-						count["me_voted"] = json!(true);
-					}
-					None => counts.push(json!({ "id": answer, "count": 1, "me_voted": true })),
-				}
-			}
+			let value = message.clone();
+			let gateway = self.gateway_message(&store, &value);
+			drop(store);
+			self.hub.broadcast("MESSAGE_UPDATE", &gateway);
+			return Ok(value);
+		}
+		let counts = answer_counts(results)?;
+		let previous: Vec<i64> = counts
+			.iter()
+			.filter(|count| count["me_voted"].as_bool() == Some(true))
+			.filter_map(|count| count["id"].as_i64())
+			.collect();
+		let removed: Vec<i64> = previous
+			.iter()
+			.copied()
+			.filter(|id| !answers.contains(id))
+			.collect();
+		let added: Vec<i64> = answers
+			.iter()
+			.copied()
+			.filter(|id| !previous.contains(id))
+			.collect();
+		for &id in &removed {
+			adjust_answer(counts, id, -1, true);
+		}
+		for &id in &added {
+			adjust_answer(counts, id, 1, true);
 		}
 		let value = message.clone();
-		let gateway = self.gateway_message(&store, &value);
+		let guild_id = store
+			.channels
+			.get(&channel_id)
+			.and_then(|channel| channel.guild_id);
 		drop(store);
-		self.hub.broadcast("MESSAGE_UPDATE", &gateway);
+		for id in removed {
+			self.announce_vote(
+				"MESSAGE_POLL_VOTE_REMOVE",
+				CURRENT_USER_ID,
+				channel_id,
+				message_id,
+				guild_id,
+				id,
+			);
+		}
+		for id in added {
+			self.announce_vote(
+				"MESSAGE_POLL_VOTE_ADD",
+				CURRENT_USER_ID,
+				channel_id,
+				message_id,
+				guild_id,
+				id,
+			);
+		}
 		Ok(value)
+	}
+
+	pub fn cast_poll_vote(
+		&self,
+		user_id: u64,
+		channel_id: u64,
+		message_id: u64,
+		answer_id: i64,
+	) -> Result<(), ApiError> {
+		let mut store = self.store.lock();
+		let message = store
+			.message_mut(channel_id, message_id)
+			.ok_or_else(ApiError::unknown_message)?;
+		let results = poll_results(message)?;
+		adjust_answer(answer_counts(results)?, answer_id, 1, false);
+		let guild_id = store
+			.channels
+			.get(&channel_id)
+			.and_then(|channel| channel.guild_id);
+		drop(store);
+		self.announce_vote(
+			"MESSAGE_POLL_VOTE_ADD",
+			user_id,
+			channel_id,
+			message_id,
+			guild_id,
+			answer_id,
+		);
+		Ok(())
+	}
+
+	pub fn open_poll(&self) -> Option<(u64, u64, Vec<i64>)> {
+		let store = self.store.lock();
+		store.messages.iter().find_map(|(channel_id, messages)| {
+			messages.iter().find_map(|(message_id, message)| {
+				let poll = &message["poll"];
+				let open = poll.is_object() && poll["results"]["is_finalized"].as_bool() != Some(true);
+				open.then(|| {
+					let answers = poll["answers"]
+						.as_array()
+						.map(|answers| answers.iter().filter_map(|a| a["answer_id"].as_i64()).collect())
+						.unwrap_or_default();
+					(*channel_id, *message_id, answers)
+				})
+			})
+		})
+	}
+
+	fn announce_vote(
+		&self,
+		event: &str,
+		user_id: u64,
+		channel_id: u64,
+		message_id: u64,
+		guild_id: Option<Snowflake>,
+		answer_id: i64,
+	) {
+		self.hub.broadcast(
+			event,
+			&json!({
+				"user_id": user_id.to_string(),
+				"channel_id": channel_id.to_string(),
+				"message_id": message_id.to_string(),
+				"guild_id": guild_id.map(|id| id.to_string()),
+				"answer_id": answer_id,
+			}),
+		);
 	}
 
 	pub fn reaction_users(

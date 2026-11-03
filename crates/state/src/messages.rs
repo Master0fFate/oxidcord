@@ -2,7 +2,10 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
 
-use protocol::{Message, MessageUpdate, Nonce, PartialEmoji, Reaction, ReactionCountDetails, Snowflake};
+use protocol::{
+	Message, MessageUpdate, Nonce, PartialEmoji, PollAnswerCount, PollResults, Reaction,
+	ReactionCountDetails, Snowflake,
+};
 
 use crate::event::LoadDirection;
 use crate::views::RenderedMessage;
@@ -421,6 +424,31 @@ pub fn add_reaction(message: &mut Message, change: &ReactionChange) {
 		}
 	} else {
 		reaction.me |= change.mine;
+	}
+}
+
+pub fn apply_poll_vote(message: &mut Message, answer_id: i64, delta: i64, mine: bool) {
+	let Some(poll) = message.poll.as_mut() else {
+		return;
+	};
+	let counts = &mut poll
+		.results
+		.get_or_insert_with(PollResults::default)
+		.answer_counts;
+	let position = counts
+		.iter()
+		.position(|entry| entry.id == answer_id)
+		.unwrap_or_else(|| {
+			counts.push(PollAnswerCount {
+				id: answer_id,
+				..PollAnswerCount::default()
+			});
+			counts.len() - 1
+		});
+	let entry = &mut counts[position];
+	entry.count = (entry.count + delta).max(0);
+	if mine {
+		entry.me_voted = delta > 0;
 	}
 }
 
