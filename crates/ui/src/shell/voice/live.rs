@@ -19,7 +19,7 @@ const FACE_AVATAR_PIXELS: u32 = 32;
 
 pub struct Face {
 	name: SharedString,
-	avatar: String,
+	avatar: SharedString,
 }
 
 pub struct LiveStream {
@@ -44,7 +44,7 @@ pub fn live_streams(
 				.take(MAX_FACES)
 				.map(|viewer| Face {
 					name: state.display_name(guild, *viewer).into(),
-					avatar: avatar_for(state, *viewer, FACE_AVATAR_PIXELS),
+					avatar: avatar_for(state, *viewer, FACE_AVATAR_PIXELS).into(),
 				})
 				.collect();
 			(

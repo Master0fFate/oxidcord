@@ -1,9 +1,9 @@
 use gpui::{
-	Context, Entity, InteractiveElement as _, IntoElement, MouseButton, ObjectFit, ParentElement as _,
-	Render, StatefulInteractiveElement as _, Styled as _, StyledImage as _, Subscription, Task, Window, div,
-	img, prelude::FluentBuilder as _,
+	App, Context, Entity, InteractiveElement as _, IntoElement, MouseButton, ObjectFit, ParentElement as _,
+	Render, SharedString, StatefulInteractiveElement as _, Styled as _, StyledImage as _, Subscription, Task,
+	Window, div, img, prelude::FluentBuilder as _,
 };
-use protocol::{ChannelType, Snowflake};
+use protocol::Snowflake;
 use session::Command;
 
 use super::popout;
@@ -18,72 +18,67 @@ const PIP_ASPECT: f32 = 9. / 16.;
 
 struct Target {
 	owner: Snowflake,
-	stream_key: String,
+	stream_key: SharedString,
 	guild_id: Option<Snowflake>,
 	channel_id: Snowflake,
 }
 
 pub struct StreamPip {
 	data: Entity<Data>,
-	visible: bool,
+	target: Option<Target>,
 	_frames: Task<()>,
 	_data: Subscription,
 }
 
+fn resolve(data: &Entity<Data>, cx: &App) -> Option<Target> {
+	let data = data.read(cx);
+	let state = data.state();
+	let voice = state.voice()?;
+	let stream_key = voice.watching.as_deref()?;
+	let owner = state
+		.streams()
+		.find(|stream| stream.stream_key == stream_key)?
+		.user_id;
+	let in_room = state
+		.selected()
+		.is_some_and(|selected| selected.channel_id == voice.channel_id);
+	(!in_room).then(|| Target {
+		owner,
+		stream_key: stream_key.to_owned().into(),
+		guild_id: voice.guild_id,
+		channel_id: voice.channel_id,
+	})
+}
+
 impl StreamPip {
 	pub fn new(data: Entity<Data>, cx: &mut Context<Self>) -> Self {
-		let observed = cx.observe(&data, |_, _, cx| cx.notify());
+		let observed = cx.observe(&data, |this, data, cx| {
+			this.target = resolve(&data, cx);
+			cx.notify();
+		});
 		Self {
+			target: resolve(&data, cx),
 			data,
-			visible: false,
 			_frames: follow_frames(cx, |pip, cx| {
-				if pip.visible {
+				if pip.target.is_some() {
 					cx.notify();
 				}
 			}),
 			_data: observed,
 		}
 	}
-
-	fn target(&self, cx: &Context<Self>) -> Option<Target> {
-		let data = self.data.read(cx);
-		let state = data.state();
-		let voice = state.voice()?;
-		let stream_key = voice.watching.clone()?;
-		let owner = state
-			.streams()
-			.find(|stream| stream.stream_key == stream_key)?
-			.user_id;
-		let in_room = state.selected().is_some_and(|selected| {
-			selected.channel_id == voice.channel_id
-				|| state.channel(selected.channel_id).is_some_and(|channel| {
-					matches!(
-						channel.kind,
-						ChannelType::GuildVoice | ChannelType::GuildStageVoice
-					)
-				})
-		});
-		(!in_room).then_some(Target {
-			owner,
-			stream_key,
-			guild_id: voice.guild_id,
-			channel_id: voice.channel_id,
-		})
-	}
 }
 
 impl Render for StreamPip {
 	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-		let target = self.target(cx);
-		self.visible = target.is_some();
-		let Some(target) = target else {
+		let Some(target) = &self.target else {
 			return div().into_any_element();
 		};
 		let theme = Theme::current(cx);
 		let image = video_image(cx, target.owner);
 		let width = theme.voice_pip_width;
 		let (guild_id, channel_id, owner) = (target.guild_id, target.channel_id, target.owner);
-		let stream_key = target.stream_key;
+		let stream_key = target.stream_key.clone();
 		div()
 			.id("voice-pip")
 			.absolute()
@@ -128,7 +123,7 @@ impl Render for StreamPip {
 							.tooltip(cx.t("voice-stop-watching"))
 							.on_click(cx.listener(move |this, _, _, cx| {
 								this.data.read(cx).send(Command::StopWatchingStream {
-									stream_key: stream_key.clone(),
+									stream_key: stream_key.to_string(),
 								});
 							})),
 					),
