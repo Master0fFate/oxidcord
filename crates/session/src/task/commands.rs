@@ -1372,12 +1372,29 @@ impl Core {
 					});
 				}
 			}
-			Command::SaveAutomodRule { guild_id, rule } => {
+			Command::SaveAutomodRule {
+				guild_id,
+				rule,
+				original,
+			} => {
 				if self.guild_allows(guild_id, Permissions::MANAGE_GUILD, "Manage Server") {
 					self.spawn_load("save automod rule", move |rest| async move {
-						rest.save_automod_rule(guild_id, &rule).await?;
-						let raw = rest.automod_rules(guild_id).await?;
-						Ok(Loaded::AutomodRules { guild_id, raw })
+						let raw = rest
+							.save_automod_rule(guild_id, &rule, original.as_deref())
+							.await?;
+						Ok(Loaded::AutomodRule { guild_id, raw })
+					});
+				}
+			}
+			Command::SetAutomodEnabled {
+				guild_id,
+				rule_id,
+				enabled,
+			} => {
+				if self.guild_allows(guild_id, Permissions::MANAGE_GUILD, "Manage Server") {
+					self.spawn_load("save automod rule", move |rest| async move {
+						let raw = rest.set_automod_rule_enabled(guild_id, rule_id, enabled).await?;
+						Ok(Loaded::AutomodRule { guild_id, raw })
 					});
 				}
 			}
@@ -1385,8 +1402,7 @@ impl Core {
 				if self.guild_allows(guild_id, Permissions::MANAGE_GUILD, "Manage Server") {
 					self.spawn_load("delete automod rule", move |rest| async move {
 						rest.delete_automod_rule(guild_id, rule_id).await?;
-						let raw = rest.automod_rules(guild_id).await?;
-						Ok(Loaded::AutomodRules { guild_id, raw })
+						Ok(Loaded::AutomodRuleDeleted { guild_id, rule_id })
 					});
 				}
 			}

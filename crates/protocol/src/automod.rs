@@ -48,6 +48,7 @@ pub struct AutoModTriggerMetadata {
 	#[serde(deserialize_with = "or_default")]
 	pub allow_list: Vec<String>,
 	pub mention_total_limit: Option<i64>,
+	#[serde(deserialize_with = "or_default")]
 	pub mention_raid_protection_enabled: bool,
 }
 

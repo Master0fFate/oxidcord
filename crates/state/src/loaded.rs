@@ -88,6 +88,14 @@ pub enum Loaded {
 		guild_id: Snowflake,
 		raw: Value,
 	},
+	AutomodRule {
+		guild_id: Snowflake,
+		raw: Value,
+	},
+	AutomodRuleDeleted {
+		guild_id: Snowflake,
+		rule_id: Snowflake,
+	},
 	AutomodRules {
 		guild_id: Snowflake,
 		raw: Value,
@@ -745,6 +753,22 @@ impl State {
 			Loaded::AutomodRules { guild_id, raw } => {
 				let rules = LenientVec::<AutoModRule>::deserialize(raw).unwrap_or_default();
 				self.lazy.automod_rules.insert(*guild_id, rules.into_vec());
+				changes.loaded.insert(*guild_id);
+			}
+			Loaded::AutomodRule { guild_id, raw } => {
+				if let Ok(rule) = AutoModRule::deserialize(raw) {
+					let rules = self.lazy.automod_rules.entry(*guild_id).or_default();
+					match rules.iter_mut().find(|known| known.id == rule.id) {
+						Some(known) => *known = rule,
+						None => rules.push(rule),
+					}
+					changes.loaded.insert(*guild_id);
+				}
+			}
+			Loaded::AutomodRuleDeleted { guild_id, rule_id } => {
+				if let Some(rules) = self.lazy.automod_rules.get_mut(guild_id) {
+					rules.retain(|known| known.id != *rule_id);
+				}
 				changes.loaded.insert(*guild_id);
 			}
 			Loaded::RoleCounts { guild_id, raw } => {

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use gpui::{
@@ -12,19 +13,22 @@ use gpui_component::scroll::ScrollableElement as _;
 use gpui_component::switch::Switch;
 use protocol::{
 	AutoModAction, AutoModActionType, AutoModEventType, AutoModPreset, AutoModRule, AutoModTriggerType,
-	ChannelType, LenientVec, Snowflake,
+	ChannelType, LenientVec, Permissions, Snowflake,
 };
 use session::Command;
+use state::Changes;
 
 use super::kit;
 use crate::components::{
 	IconButton, PickHandler, ToggleHandler, badge, caption, field, hint, segmented, select, switch_row,
 };
-use crate::data::Data;
+use crate::data::{Data, DataEvent};
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
+use crate::shell::community::access::GuildAccess;
 use crate::theme::Theme;
 
+const SAVE_ACTION: &str = "save automod rule";
 const NAME_LIMIT: usize = 100;
 const TERM_LIMIT: usize = 60;
 const PATTERN_LIMIT: usize = 260;
@@ -102,10 +106,24 @@ struct Draft {
 	rule: AutoModRule,
 }
 
+struct Saving {
+	known: Vec<Snowflake>,
+	name: String,
+}
+
+struct RuleEntry {
+	id: Snowflake,
+	name: SharedString,
+	trigger: AutoModTriggerType,
+	enabled: bool,
+}
+
 pub struct AutomodPage {
 	data: Entity<Data>,
 	guild: Snowflake,
 	draft: Option<Draft>,
+	dirty: bool,
+	saving: Option<Saving>,
 	name: Entity<InputState>,
 	keywords: Entity<TextareaState>,
 	patterns: Entity<TextareaState>,
@@ -156,9 +174,10 @@ fn has_terms(trigger: AutoModTriggerType) -> bool {
 
 fn lines(text: &str, length: usize, count: usize) -> Vec<String> {
 	let mut found: Vec<String> = Vec::new();
+	let mut seen: HashSet<String> = HashSet::new();
 	for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
 		let term: String = line.chars().take(length).collect();
-		if !found.contains(&term) {
+		if seen.insert(term.clone()) {
 			found.push(term);
 		}
 		if found.len() == count {
@@ -230,23 +249,38 @@ impl AutomodPage {
 		let allowed = area(window, cx);
 		let mut subscriptions = Vec::new();
 		for input in [&name, &limit, &message] {
-			subscriptions.push(cx.subscribe_in(input, window, |_, _, event: &InputEvent, _, cx| {
-				if matches!(event, InputEvent::Change) {
-					cx.notify();
-				}
-			}));
+			subscriptions.push(
+				cx.subscribe_in(input, window, |this, _, event: &InputEvent, _, cx| {
+					if matches!(event, InputEvent::Change) {
+						this.refresh_dirty(cx);
+						cx.notify();
+					}
+				}),
+			);
 		}
 		for input in [&keywords, &patterns, &allowed] {
-			subscriptions.push(cx.subscribe_in(input, window, |_, _, event: &InputEvent, _, cx| {
-				if matches!(event, InputEvent::Change) {
-					cx.notify();
-				}
-			}));
+			subscriptions.push(
+				cx.subscribe_in(input, window, |this, _, event: &InputEvent, _, cx| {
+					if matches!(event, InputEvent::Change) {
+						this.refresh_dirty(cx);
+						cx.notify();
+					}
+				}),
+			);
 		}
+		subscriptions.push(
+			cx.subscribe_in(&data, window, |this, _, event: &DataEvent, window, cx| {
+				if let DataEvent::Changed(changes) = event {
+					this.on_changes(changes, window, cx);
+				}
+			}),
+		);
 		Self {
 			data,
 			guild,
 			draft: None,
+			dirty: false,
+			saving: None,
 			name,
 			keywords,
 			patterns,
@@ -286,7 +320,59 @@ impl AutomodPage {
 			original: rule.clone(),
 			rule,
 		});
+		self.refresh_dirty(cx);
 		cx.notify();
+	}
+
+	fn refresh_dirty(&mut self, cx: &App) {
+		self.dirty = self.draft.as_ref().is_some_and(|draft| {
+			let assembled = self.assembled(&draft.rule, cx);
+			assembled != draft.original && Self::valid(&assembled)
+		});
+	}
+
+	fn on_changes(&mut self, changes: &Changes, window: &mut Window, cx: &mut Context<Self>) {
+		let Some(saving) = &self.saving else {
+			return;
+		};
+		let rejected = changes.rejected
+			&& self
+				.data
+				.read(cx)
+				.state()
+				.last_rejection()
+				.is_some_and(|rejection| rejection.reason.starts_with(SAVE_ACTION));
+		if rejected {
+			self.saving = None;
+			cx.notify();
+			return;
+		}
+		let Some(draft) = &self.draft else {
+			return;
+		};
+		if !changes.loaded.contains(self.guild) {
+			return;
+		}
+		let saved = self
+			.data
+			.read(cx)
+			.state()
+			.automod_rules(self.guild)
+			.iter()
+			.find(|rule| {
+				if draft.rule.id == Snowflake::default() {
+					!saving.known.contains(&rule.id)
+						&& rule.name == saving.name
+						&& rule.trigger_type == draft.rule.trigger_type
+				} else {
+					rule.id == draft.rule.id && **rule != draft.original
+				}
+			})
+			.cloned();
+		if let Some(rule) = saved {
+			self.saving = None;
+			self.begin(rule, window, cx);
+		}
 	}
 
 	fn create(&mut self, trigger: AutoModTriggerType, window: &mut Window, cx: &mut Context<Self>) {
@@ -367,11 +453,24 @@ impl AutomodPage {
 			return;
 		};
 		let rule = self.assembled(&draft.rule, cx);
+		let known = self
+			.data
+			.read(cx)
+			.state()
+			.automod_rules(self.guild)
+			.iter()
+			.map(|known| known.id)
+			.collect();
+		let original = (rule.id != Snowflake::default()).then(|| Box::new(draft.original.clone()));
+		self.saving = Some(Saving {
+			known,
+			name: rule.name.clone(),
+		});
 		self.data.read(cx).send(Command::SaveAutomodRule {
 			guild_id: self.guild,
 			rule: Box::new(rule),
+			original,
 		});
-		self.draft = None;
 		cx.notify();
 	}
 
@@ -381,13 +480,26 @@ impl AutomodPage {
 		}
 	}
 
-	fn set_enabled(&self, rule: &AutoModRule, enabled: bool, cx: &App) {
-		let mut rule = rule.clone();
-		rule.enabled = enabled;
-		self.data.read(cx).send(Command::SaveAutomodRule {
+	fn set_enabled(&self, rule_id: Snowflake, enabled: bool, cx: &App) {
+		self.data.read(cx).send(Command::SetAutomodEnabled {
 			guild_id: self.guild,
-			rule: Box::new(rule),
+			rule_id,
+			enabled,
 		});
+	}
+
+	fn open_rule(&mut self, rule_id: Snowflake, window: &mut Window, cx: &mut Context<Self>) {
+		let rule = self
+			.data
+			.read(cx)
+			.state()
+			.automod_rules(self.guild)
+			.iter()
+			.find(|rule| rule.id == rule_id)
+			.cloned();
+		if let Some(rule) = rule {
+			self.begin(rule, window, cx);
+		}
 	}
 
 	fn confirm_delete(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -433,6 +545,7 @@ impl AutomodPage {
 				if let Some(draft) = &mut this.draft {
 					apply(&mut draft.rule);
 				}
+				this.refresh_dirty(cx);
 				cx.notify();
 			})
 			.ok();
@@ -450,6 +563,7 @@ impl AutomodPage {
 				if let Some(draft) = &mut this.draft {
 					apply(&mut draft.rule, value);
 				}
+				this.refresh_dirty(cx);
 				cx.notify();
 			})
 			.ok();
@@ -467,6 +581,7 @@ impl AutomodPage {
 				if let Some(draft) = &mut this.draft {
 					apply(&mut draft.rule, index);
 				}
+				this.refresh_dirty(cx);
 				cx.notify();
 			})
 			.ok();
@@ -669,8 +784,13 @@ impl AutomodPage {
 	}
 
 	fn actions_section(&self, rule: &AutoModRule, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+		let can_timeout =
+			GuildAccess::of(&self.data.read(cx).state(), self.guild).has(Permissions::MODERATE_MEMBERS);
 		let rows: Vec<AnyElement> = allowed_actions(rule.trigger_type)
 			.iter()
+			.filter(|kind| {
+				**kind != AutoModActionType::Timeout || can_timeout || rule.action(**kind).is_some()
+			})
 			.map(|kind| {
 				let kind = *kind;
 				let number = i64::from(kind);
@@ -816,10 +936,7 @@ impl AutomodPage {
 	}
 
 	fn editor(&self, rule: &AutoModRule, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
-		let dirty = self.draft.as_ref().is_some_and(|draft| {
-			let assembled = self.assembled(rule, cx);
-			assembled != draft.original && Self::valid(&assembled)
-		});
+		let dirty = self.dirty && self.saving.is_none();
 		let weak_reset = cx.weak_entity();
 		let weak_save = cx.weak_entity();
 		let created = rule.id != Snowflake::default();
@@ -873,6 +990,7 @@ impl AutomodPage {
 							.tooltip(cx.t("automod-back"))
 							.on_click(cx.listener(|this, _, _, cx| {
 								this.draft = None;
+								this.saving = None;
 								cx.notify();
 							})),
 					)
@@ -922,10 +1040,9 @@ impl AutomodPage {
 			.into_any_element()
 	}
 
-	fn row(&self, rule: &AutoModRule, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
-		let id = rule.id.get();
-		let open = rule.clone();
-		let toggled = rule.clone();
+	fn row(&self, rule: &RuleEntry, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+		let rule_id = rule.id;
+		let id = rule_id.get();
 		let weak = cx.weak_entity();
 		div()
 			.flex()
@@ -946,7 +1063,7 @@ impl AutomodPage {
 					.h_full()
 					.px(theme.space_12)
 					.cursor_pointer()
-					.on_click(cx.listener(move |this, _, window, cx| this.begin(open.clone(), window, cx)))
+					.on_click(cx.listener(move |this, _, window, cx| this.open_rule(rule_id, window, cx)))
 					.child(
 						Icon::new(IconKind::Gavel)
 							.size(theme.glyph_md)
@@ -971,7 +1088,7 @@ impl AutomodPage {
 									.truncate()
 									.text_size(theme.font_sm)
 									.text_color(theme.text_muted)
-									.child(cx.t(&trigger_key(rule.trigger_type))),
+									.child(cx.t(&trigger_key(rule.trigger))),
 							),
 					),
 			)
@@ -980,8 +1097,7 @@ impl AutomodPage {
 					.checked(rule.enabled)
 					.on_click(move |value: &bool, _, cx| {
 						let value = *value;
-						let rule = toggled.clone();
-						weak.update(cx, |this, cx| this.set_enabled(&rule, value, cx))
+						weak.update(cx, |this, cx| this.set_enabled(rule_id, value, cx))
 							.ok();
 					}),
 			)
@@ -989,13 +1105,25 @@ impl AutomodPage {
 	}
 
 	fn list(&self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
-		let rules = self.data.read(cx).state().automod_rules(self.guild).to_vec();
+		let rules: Vec<RuleEntry> = self
+			.data
+			.read(cx)
+			.state()
+			.automod_rules(self.guild)
+			.iter()
+			.map(|rule| RuleEntry {
+				id: rule.id,
+				name: rule.name.clone().into(),
+				trigger: rule.trigger_type,
+				enabled: rule.enabled,
+			})
+			.collect();
 		let rows: Vec<AnyElement> = rules.iter().map(|rule| self.row(rule, theme, cx)).collect();
 		let available: Vec<AutoModTriggerType> = NEW_TRIGGERS
 			.iter()
 			.copied()
 			.filter(|trigger| {
-				rules.iter().filter(|rule| rule.trigger_type == *trigger).count() < max_rules(*trigger)
+				rules.iter().filter(|rule| rule.trigger == *trigger).count() < max_rules(*trigger)
 			})
 			.collect();
 		let empty = rows.is_empty();
@@ -1050,8 +1178,12 @@ impl AutomodPage {
 impl Render for AutomodPage {
 	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
-		match self.draft.as_ref().map(|draft| draft.rule.clone()) {
-			Some(rule) => self.editor(&rule, &theme, cx),
+		match self.draft.take() {
+			Some(draft) => {
+				let editor = self.editor(&draft.rule, &theme, cx);
+				self.draft = Some(draft);
+				editor
+			}
 			None => self.list(&theme, cx),
 		}
 	}

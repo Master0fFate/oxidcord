@@ -725,6 +725,12 @@ pub enum Command {
 	SaveAutomodRule {
 		guild_id: Snowflake,
 		rule: Box<AutoModRule>,
+		original: Option<Box<AutoModRule>>,
+	},
+	SetAutomodEnabled {
+		guild_id: Snowflake,
+		rule_id: Snowflake,
+		enabled: bool,
 	},
 	DeleteAutomodRule {
 		guild_id: Snowflake,

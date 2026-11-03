@@ -4,7 +4,7 @@ use protocol::{
 	AutoModRule, AutoModTriggerType, Channel, ChannelPosition, LenientVec, Role, ScheduledEvent,
 	ScheduledEventRsvp, Snowflake, StageInstance,
 };
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 use crate::client::RestClient;
 use crate::error::Result;
@@ -51,6 +51,33 @@ fn automod_body(rule: &AutoModRule) -> Value {
 		body["trigger_metadata"] = metadata;
 	}
 	body
+}
+
+fn automod_changes(rule: &AutoModRule, original: &AutoModRule) -> Value {
+	let mut changes = Map::new();
+	if rule.name != original.name {
+		changes.insert("name".to_owned(), json!(rule.name));
+	}
+	if rule.event_type != original.event_type {
+		changes.insert("event_type".to_owned(), json!(rule.event_type));
+	}
+	if rule.actions != original.actions {
+		changes.insert("actions".to_owned(), json!(rule.actions));
+	}
+	if rule.enabled != original.enabled {
+		changes.insert("enabled".to_owned(), json!(rule.enabled));
+	}
+	if rule.exempt_roles != original.exempt_roles {
+		changes.insert("exempt_roles".to_owned(), json!(rule.exempt_roles));
+	}
+	if rule.exempt_channels != original.exempt_channels {
+		changes.insert("exempt_channels".to_owned(), json!(rule.exempt_channels));
+	}
+	let metadata = automod_metadata(rule);
+	if rule.trigger_metadata != original.trigger_metadata && !metadata.is_null() {
+		changes.insert("trigger_metadata".to_owned(), metadata);
+	}
+	Value::Object(changes)
 }
 
 impl RestClient {
@@ -138,15 +165,33 @@ impl RestClient {
 			.await
 	}
 
-	pub async fn save_automod_rule(&self, guild_id: Snowflake, rule: &AutoModRule) -> Result<Value> {
-		let mut body = automod_body(rule);
-		let request = if rule.id == Snowflake::default() {
-			body["trigger_type"] = json!(rule.trigger_type);
-			Request::post(format!("/guilds/{guild_id}/auto-moderation/rules"))
-		} else {
-			Request::patch(format!("/guilds/{guild_id}/auto-moderation/rules/{}", rule.id))
+	pub async fn save_automod_rule(
+		&self,
+		guild_id: Snowflake,
+		rule: &AutoModRule,
+		original: Option<&AutoModRule>,
+	) -> Result<Value> {
+		let request = match original {
+			Some(original) => Request::patch(format!("/guilds/{guild_id}/auto-moderation/rules/{}", rule.id))
+				.json(&automod_changes(rule, original)),
+			None => {
+				let mut body = automod_body(rule);
+				body["trigger_type"] = json!(rule.trigger_type);
+				Request::post(format!("/guilds/{guild_id}/auto-moderation/rules")).json(&body)
+			}
 		};
-		self.send(request.json(&body)).await
+		self.send(request).await
+	}
+
+	pub async fn set_automod_rule_enabled(
+		&self,
+		guild_id: Snowflake,
+		rule_id: Snowflake,
+		enabled: bool,
+	) -> Result<Value> {
+		let request = Request::patch(format!("/guilds/{guild_id}/auto-moderation/rules/{rule_id}"))
+			.json(&json!({ "enabled": enabled }));
+		self.send(request).await
 	}
 
 	pub async fn delete_automod_rule(&self, guild_id: Snowflake, rule_id: Snowflake) -> Result<()> {
