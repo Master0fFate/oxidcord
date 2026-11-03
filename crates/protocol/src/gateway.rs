@@ -404,6 +404,7 @@ pub struct MessageReactionAdd {
 	pub emoji: PartialEmoji,
 	pub message_author_id: Option<Snowflake>,
 	pub burst: Option<bool>,
+	#[serde(deserialize_with = "or_default")]
 	pub burst_colors: Vec<String>,
 	#[serde(rename = "type")]
 	pub kind: Option<i64>,
