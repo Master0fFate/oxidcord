@@ -31,7 +31,7 @@ impl NotificationsPage {
 
 	fn send_test(&mut self, cx: &mut Context<Self>) {
 		if (self.backend.read)().notifications.sounds {
-			platform::sound::play_chime();
+			platform::sound::play(platform::sound::Cue::Message, 1.);
 		}
 		let notification = platform::notifications::Notification {
 			title: cx.t("app-name").to_string(),
@@ -88,6 +88,17 @@ impl Render for NotificationsPage {
 					.on_change(cx.listener(|this, checked: &bool, _, cx| {
 						let checked = *checked;
 						this.write(move |settings| settings.notifications.sounds = checked, cx);
+					})),
+				&theme,
+			))
+			.child(row(
+				cx.t("notifications-voice-sounds"),
+				Some(cx.t("notifications-voice-sounds-note")),
+				Switch::new("notifications-voice-sounds")
+					.checked(settings.voice_sounds)
+					.on_change(cx.listener(|this, checked: &bool, _, cx| {
+						let checked = *checked;
+						this.write(move |settings| settings.notifications.voice_sounds = checked, cx);
 					})),
 				&theme,
 			))

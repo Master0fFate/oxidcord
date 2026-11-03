@@ -28,6 +28,12 @@ pub fn streamer_mode(cx: &App) -> StreamerModeSettings {
 	settings
 }
 
+pub fn notification_volume(cx: &App) -> f32 {
+	crate::shell::client_options(cx)
+		.notification_volume
+		.map_or(1., |volume| f32::from(volume.min(100)) / 100.)
+}
+
 pub enum DataEvent {
 	Changed(Box<Changes>),
 	MediaReady,

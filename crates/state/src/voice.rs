@@ -13,6 +13,8 @@ use serde_json::Value;
 use crate::changes::Changes;
 use crate::state::State;
 
+const VOICE_CUE_BACKLOG: usize = 8;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VoiceStatus {
 	Connecting,
@@ -40,6 +42,26 @@ pub struct VoiceLevels {
 pub struct MicTest {
 	pub level: f32,
 	pub remaining_secs: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VoiceCue {
+	Join,
+	Leave,
+	Mute,
+	Unmute,
+	Deafen,
+	Undeafen,
+	StreamStart,
+	StreamEnd,
+	CameraOn,
+	CameraOff,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VoiceCueEntry {
+	pub id: u64,
+	pub cue: VoiceCue,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -137,6 +159,36 @@ impl State {
 		self.voice.as_ref()
 	}
 
+	pub fn last_voice_cue_id(&self) -> u64 {
+		self.voice_cue_count
+	}
+
+	pub fn voice_cues_after(&self, seen: u64) -> impl Iterator<Item = VoiceCue> {
+		self.voice_cues
+			.iter()
+			.filter(move |entry| entry.id > seen)
+			.map(|entry| entry.cue)
+	}
+
+	fn push_voice_cue(&mut self, cue: VoiceCue) {
+		if self.voice_cues.len() == VOICE_CUE_BACKLOG {
+			self.voice_cues.pop_front();
+		}
+		self.voice_cue_count += 1;
+		self.voice_cues.push_back(VoiceCueEntry {
+			id: self.voice_cue_count,
+			cue,
+		});
+	}
+
+	fn voice_cue_changes(&mut self, cue: VoiceCue) -> Changes {
+		self.push_voice_cue(cue);
+		Changes {
+			voice_cues: true,
+			..Changes::default()
+		}
+	}
+
 	pub fn mic_test(&self) -> Option<MicTest> {
 		self.mic_test
 	}
@@ -229,6 +281,16 @@ impl State {
 		channel_id: Snowflake,
 		guild_id: Option<Snowflake>,
 	) -> Changes {
+		let was_connected = self
+			.voice
+			.as_ref()
+			.is_some_and(|session| session.status == VoiceStatus::Connected);
+		let first_connect = *status == VoiceStatus::Connected
+			&& self.voice.as_ref().is_none_or(|session| {
+				session.channel_id != channel_id
+					|| session.guild_id != guild_id
+					|| session.connected_at.is_none()
+			});
 		let changed = match (status, self.voice.as_mut()) {
 			(VoiceStatus::Disconnected { reason: None }, _) => self.voice.take().is_some(),
 			(status, Some(session)) if session.channel_id == channel_id && session.guild_id == guild_id => {
@@ -275,19 +337,44 @@ impl State {
 				true
 			}
 		};
-		voice_session_changes(changed)
+		let mut changes = voice_session_changes(changed);
+		if first_connect {
+			changes.merge(self.voice_cue_changes(VoiceCue::Join));
+		} else if was_connected && matches!(status, VoiceStatus::Disconnected { .. }) {
+			changes.merge(self.voice_cue_changes(VoiceCue::Leave));
+		}
+		changes
 	}
 
 	pub(crate) fn voice_self(&mut self, self_mute: bool, self_deaf: bool) -> Changes {
-		let changed = self
-			.voice
-			.as_mut()
-			.is_some_and(|session| (session.self_mute, session.self_deaf) != (self_mute, self_deaf));
-		if let Some(session) = self.voice.as_mut() {
-			session.self_mute = self_mute;
-			session.self_deaf = self_deaf;
+		let Some(session) = self.voice.as_mut() else {
+			return Changes::default();
+		};
+		let changed = (session.self_mute, session.self_deaf) != (self_mute, self_deaf);
+		let cue = if session.status != VoiceStatus::Connected {
+			None
+		} else if session.self_deaf != self_deaf {
+			Some(if self_deaf {
+				VoiceCue::Deafen
+			} else {
+				VoiceCue::Undeafen
+			})
+		} else if session.self_mute != self_mute {
+			Some(if self_mute {
+				VoiceCue::Mute
+			} else {
+				VoiceCue::Unmute
+			})
+		} else {
+			None
+		};
+		session.self_mute = self_mute;
+		session.self_deaf = self_deaf;
+		let mut changes = voice_session_changes(changed);
+		if let Some(cue) = cue {
+			changes.merge(self.voice_cue_changes(cue));
 		}
-		voice_session_changes(changed)
+		changes
 	}
 
 	pub(crate) fn voice_speaking(&mut self, user_id: Snowflake, speaking: bool) -> Changes {
@@ -386,18 +473,55 @@ impl State {
 
 	pub(crate) fn call_voice_state(&mut self, voice: &VoiceState) -> Changes {
 		let mut changed = false;
+		let mut moves = Vec::new();
 		for call in self.calls.values_mut() {
 			let joined = voice.channel_id == Some(call.channel_id);
 			let present = call.participants.contains(&voice.user_id);
 			if joined && !present {
 				call.participants.push(voice.user_id);
 				changed = true;
+				moves.push((call.channel_id, VoiceCue::Join));
 			} else if !joined && present {
 				call.participants.retain(|user_id| *user_id != voice.user_id);
 				changed = true;
+				moves.push((call.channel_id, VoiceCue::Leave));
 			}
 		}
-		calls_changed_if(changed)
+		let mut changes = calls_changed_if(changed);
+		for (channel_id, cue) in moves {
+			changes.merge(self.peer_cue(voice.user_id, channel_id, cue));
+		}
+		changes
+	}
+
+	pub(crate) fn peer_cue(&mut self, user_id: Snowflake, channel_id: Snowflake, cue: VoiceCue) -> Changes {
+		let in_channel = self.voice.as_ref().is_some_and(|session| {
+			session.channel_id == channel_id && session.status == VoiceStatus::Connected
+		});
+		if in_channel && self.current_user_id() != Some(user_id) {
+			self.voice_cue_changes(cue)
+		} else {
+			Changes::default()
+		}
+	}
+
+	pub(crate) fn peer_voice_moved(
+		&mut self,
+		user_id: Snowflake,
+		before: Option<Snowflake>,
+		after: Option<Snowflake>,
+	) -> Changes {
+		if before == after {
+			return Changes::default();
+		}
+		let mut changes = Changes::default();
+		if let Some(channel_id) = after {
+			changes.merge(self.peer_cue(user_id, channel_id, VoiceCue::Join));
+		}
+		if let Some(channel_id) = before {
+			changes.merge(self.peer_cue(user_id, channel_id, VoiceCue::Leave));
+		}
+		changes
 	}
 }
 
@@ -460,6 +584,7 @@ impl State {
 			},
 		);
 		let mut voice_changed = false;
+		let mut started = false;
 		if Some(owner_id) == self.current_user_id()
 			&& let Some(session) = self.voice.as_mut()
 		{
@@ -468,9 +593,14 @@ impl State {
 				viewers: stream.viewer_ids.clone(),
 			};
 			voice_changed = session.screen_share.as_ref() != Some(&info);
+			started = session.screen_share.is_none();
 			session.screen_share = Some(info);
 		}
-		stream_changes(voice_changed)
+		let mut changes = stream_changes(voice_changed);
+		if started {
+			changes.merge(self.voice_cue_changes(VoiceCue::StreamStart));
+		}
+		changes
 	}
 
 	pub(crate) fn stream_preview_changed(&mut self, stream_key: &str, url: &str) -> Changes {
@@ -487,6 +617,7 @@ impl State {
 	pub(crate) fn stream_deleted(&mut self, delete: &StreamDelete) -> Changes {
 		let removed = self.streams.remove(&delete.stream_key).is_some();
 		let mut voice_changed = false;
+		let mut ended = false;
 		if let Some(session) = self.voice.as_mut() {
 			if session
 				.screen_share
@@ -495,17 +626,22 @@ impl State {
 			{
 				session.screen_share = None;
 				voice_changed = true;
+				ended = true;
 			}
 			if session.watching.as_deref() == Some(delete.stream_key.as_str()) {
 				session.watching = None;
 				voice_changed = true;
 			}
 		}
-		if removed || voice_changed {
+		let mut changes = if removed || voice_changed {
 			stream_changes(voice_changed)
 		} else {
 			Changes::default()
+		};
+		if ended {
+			changes.merge(self.voice_cue_changes(VoiceCue::StreamEnd));
 		}
+		changes
 	}
 
 	pub(crate) fn hand_requested_changed(&mut self, requested: bool) -> Changes {
@@ -513,15 +649,40 @@ impl State {
 	}
 
 	pub(crate) fn camera_changed(&mut self, on: bool) -> Changes {
-		self.edit_voice(|session| std::mem::replace(&mut session.camera_on, on) != on)
+		let mut changes = self.edit_voice(|session| std::mem::replace(&mut session.camera_on, on) != on);
+		let connected = self
+			.voice
+			.as_ref()
+			.is_some_and(|session| session.status == VoiceStatus::Connected);
+		if changes.voice_session && connected {
+			changes.merge(self.voice_cue_changes(if on {
+				VoiceCue::CameraOn
+			} else {
+				VoiceCue::CameraOff
+			}));
+		}
+		changes
 	}
 
 	pub(crate) fn screen_share_changed(&mut self, info: Option<StreamInfo>) -> Changes {
-		self.edit_voice(|session| {
+		let starting = info.is_some();
+		let started_or_ended = self
+			.voice
+			.as_ref()
+			.is_some_and(|session| session.screen_share.is_some() != starting);
+		let mut changes = self.edit_voice(|session| {
 			let changed = session.screen_share != info;
 			session.screen_share = info;
 			changed
-		})
+		});
+		if started_or_ended {
+			changes.merge(self.voice_cue_changes(if starting {
+				VoiceCue::StreamStart
+			} else {
+				VoiceCue::StreamEnd
+			}));
+		}
+		changes
 	}
 
 	pub(crate) fn watching_changed(&mut self, stream_key: Option<String>) -> Changes {

@@ -1,12 +1,12 @@
 use std::f32::consts::{PI, TAU};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{Sender, channel};
 use std::thread;
 use std::time::Duration;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, Error, ErrorKind, FromSample, SampleFormat, SizedSample, Stream, StreamConfig};
 
-const CHIME_SECONDS: f32 = 0.38;
 const FADE_SECONDS: f32 = 0.02;
 const ATTACK_SECONDS: f32 = 0.006;
 const GLIDE_SECONDS: f32 = 0.025;
@@ -16,22 +16,114 @@ const HARMONIC_DECAY_RATIO: f32 = 3.;
 const LOW_PASS_HERTZ: f32 = 1800.;
 const PEAK_LEVEL: f32 = 0.2;
 const PLAYBACK_SLACK: Duration = Duration::from_millis(120);
-const NOTES: [Note; 2] = [
+
+const fn note(hertz: f32, start: f32, decay_seconds: f32, gain: f32) -> Note {
 	Note {
-		hertz: 392.,
-		start: 0.,
-		decay_seconds: 0.07,
-		gain: 1.,
-	},
-	Note {
-		hertz: 523.25,
-		start: 0.065,
-		decay_seconds: 0.11,
-		gain: 0.794,
-	},
+		hertz,
+		start,
+		decay_seconds,
+		gain,
+	}
+}
+
+const MESSAGE_NOTES: [Note; 2] = [note(392., 0., 0.07, 1.), note(523.25, 0.065, 0.11, 0.794)];
+const JOIN_NOTES: [Note; 3] = [
+	note(523.25, 0., 0.1, 1.),
+	note(659.25, 0.08, 0.12, 0.9),
+	note(783.99, 0.16, 0.16, 0.8),
+];
+const LEAVE_NOTES: [Note; 3] = [
+	note(659.25, 0., 0.1, 1.),
+	note(523.25, 0.09, 0.12, 0.9),
+	note(392., 0.18, 0.16, 0.8),
+];
+const MUTE_NOTES: [Note; 2] = [note(440., 0., 0.06, 1.), note(330., 0.06, 0.09, 0.9)];
+const UNMUTE_NOTES: [Note; 2] = [note(330., 0., 0.06, 1.), note(440., 0.06, 0.09, 0.9)];
+const DEAFEN_NOTES: [Note; 3] = [
+	note(349.23, 0., 0.06, 1.),
+	note(261.63, 0.07, 0.08, 0.9),
+	note(196., 0.14, 0.12, 0.8),
+];
+const UNDEAFEN_NOTES: [Note; 3] = [
+	note(196., 0., 0.06, 1.),
+	note(261.63, 0.07, 0.08, 0.9),
+	note(349.23, 0.14, 0.12, 0.8),
+];
+const STREAM_START_NOTES: [Note; 3] = [
+	note(440., 0., 0.08, 1.),
+	note(587.33, 0.07, 0.1, 0.9),
+	note(880., 0.14, 0.16, 0.8),
+];
+const STREAM_END_NOTES: [Note; 3] = [
+	note(880., 0., 0.08, 1.),
+	note(587.33, 0.07, 0.1, 0.9),
+	note(440., 0.14, 0.16, 0.8),
+];
+const CAMERA_ON_NOTES: [Note; 2] = [note(587.33, 0., 0.05, 1.), note(783.99, 0.05, 0.09, 0.9)];
+const CAMERA_OFF_NOTES: [Note; 2] = [note(783.99, 0., 0.05, 1.), note(587.33, 0.05, 0.09, 0.9)];
+const RING_NOTES: [Note; 4] = [
+	note(880., 0., 0.3, 1.),
+	note(659.25, 0.18, 0.3, 0.9),
+	note(880., 0.8, 0.3, 1.),
+	note(659.25, 0.98, 0.3, 0.9),
+];
+const RINGBACK_NOTES: [Note; 4] = [
+	note(440., 0., 0.4, 1.),
+	note(480., 0., 0.4, 1.),
+	note(440., 0.6, 0.4, 1.),
+	note(480., 0.6, 0.4, 1.),
 ];
 
 static PLAYING: AtomicBool = AtomicBool::new(false);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Cue {
+	Message,
+	Join,
+	Leave,
+	Mute,
+	Unmute,
+	Deafen,
+	Undeafen,
+	StreamStart,
+	StreamEnd,
+	CameraOn,
+	CameraOff,
+	Ring,
+	Ringback,
+}
+
+impl Cue {
+	fn notes(self) -> &'static [Note] {
+		match self {
+			Self::Message => &MESSAGE_NOTES,
+			Self::Join => &JOIN_NOTES,
+			Self::Leave => &LEAVE_NOTES,
+			Self::Mute => &MUTE_NOTES,
+			Self::Unmute => &UNMUTE_NOTES,
+			Self::Deafen => &DEAFEN_NOTES,
+			Self::Undeafen => &UNDEAFEN_NOTES,
+			Self::StreamStart => &STREAM_START_NOTES,
+			Self::StreamEnd => &STREAM_END_NOTES,
+			Self::CameraOn => &CAMERA_ON_NOTES,
+			Self::CameraOff => &CAMERA_OFF_NOTES,
+			Self::Ring => &RING_NOTES,
+			Self::Ringback => &RINGBACK_NOTES,
+		}
+	}
+
+	fn seconds(self) -> f32 {
+		match self {
+			Self::Message => 0.38,
+			Self::Join | Self::Leave | Self::Deafen | Self::Undeafen => 0.45,
+			Self::Mute | Self::Unmute => 0.28,
+			Self::StreamStart | Self::StreamEnd => 0.5,
+			Self::CameraOn | Self::CameraOff => 0.25,
+			Self::Ring => 2.2,
+			Self::Ringback => 3.,
+		}
+	}
+}
 
 struct Note {
 	hertz: f32,
@@ -61,16 +153,17 @@ impl Note {
 	}
 }
 
-fn render_chime(rate: u32, volume: f32) -> Vec<f32> {
+fn render(cue: Cue, rate: u32, volume: f32) -> Vec<f32> {
 	let rate = rate as f32;
-	let frames = (CHIME_SECONDS * rate) as usize;
+	let frames = (cue.seconds() * rate) as usize;
 	let fade_frames = FADE_SECONDS * rate;
 	let smoothing = 1. - (-TAU * LOW_PASS_HERTZ / rate).exp();
+	let notes = cue.notes();
 	let mut filtered = 0.;
 	let mut samples: Vec<f32> = (0..frames)
 		.map(|index| {
 			let at = index as f32 / rate;
-			filtered += smoothing * (NOTES.iter().map(|note| note.sample(at)).sum::<f32>() - filtered);
+			filtered += smoothing * (notes.iter().map(|note| note.sample(at)).sum::<f32>() - filtered);
 			let tail = ((frames - 1 - index) as f32 / fade_frames).min(1.);
 			filtered * (0.5 - 0.5 * (PI * tail).cos())
 		})
@@ -83,41 +176,84 @@ fn render_chime(rate: u32, volume: f32) -> Vec<f32> {
 	samples
 }
 
-pub fn play_chime() {
-	play_chime_at(1.);
+struct Playback {
+	samples: Vec<f32>,
+	position: usize,
+	repeat: bool,
 }
 
-pub fn play_chime_at(volume: f32) {
+impl Playback {
+	fn next_sample(&mut self) -> f32 {
+		if self.position >= self.samples.len() {
+			if !self.repeat {
+				return 0.;
+			}
+			self.position = 0;
+		}
+		let sample = self.samples[self.position];
+		self.position += 1;
+		sample
+	}
+}
+
+pub fn play(cue: Cue, volume: f32) {
 	let volume = volume.clamp(0., 1.);
 	if volume == 0. || PLAYING.swap(true, Ordering::AcqRel) {
 		return;
 	}
 	let spawned = thread::Builder::new()
-		.name("oxidcord-chime".to_owned())
+		.name("oxidcord-sound".to_owned())
 		.spawn(move || {
-			match open_stream(volume) {
-				Ok(_stream) => thread::sleep(Duration::from_secs_f32(CHIME_SECONDS) + PLAYBACK_SLACK),
-				Err(error) => tracing::warn!(%error, "could not play the notification sound"),
+			match open_stream(cue, volume, false) {
+				Ok(_stream) => thread::sleep(Duration::from_secs_f32(cue.seconds()) + PLAYBACK_SLACK),
+				Err(error) => tracing::warn!(%error, "could not play the sound"),
 			}
 			PLAYING.store(false, Ordering::Release);
 		});
 	if let Err(error) = spawned {
 		PLAYING.store(false, Ordering::Release);
-		tracing::warn!(%error, "could not start the notification sound thread");
+		tracing::warn!(%error, "could not start the sound thread");
 	}
 }
 
-fn open_stream(volume: f32) -> Result<Stream, Error> {
+pub struct Looping {
+	_stop: Sender<()>,
+}
+
+pub fn start_loop(cue: Cue, volume: f32) -> Option<Looping> {
+	let volume = volume.clamp(0., 1.);
+	if volume == 0. {
+		return None;
+	}
+	let (stop, stopped) = channel::<()>();
+	let spawned = thread::Builder::new()
+		.name("oxidcord-sound-loop".to_owned())
+		.spawn(move || match open_stream(cue, volume, true) {
+			Ok(_stream) => {
+				let _ = stopped.recv();
+			}
+			Err(error) => tracing::warn!(%error, "could not loop the sound"),
+		});
+	match spawned {
+		Ok(_) => Some(Looping { _stop: stop }),
+		Err(error) => {
+			tracing::warn!(%error, "could not start the sound loop thread");
+			None
+		}
+	}
+}
+
+fn open_stream(cue: Cue, volume: f32, repeat: bool) -> Result<Stream, Error> {
 	let device = cpal::default_host()
 		.default_output_device()
 		.ok_or_else(|| Error::with_message(ErrorKind::DeviceNotAvailable, "no output device"))?;
 	let supported = device.default_output_config()?;
 	let config = supported.config();
 	let stream = match supported.sample_format() {
-		SampleFormat::F32 => chime_stream::<f32>(&device, config, volume),
-		SampleFormat::I16 => chime_stream::<i16>(&device, config, volume),
-		SampleFormat::U16 => chime_stream::<u16>(&device, config, volume),
-		SampleFormat::I32 => chime_stream::<i32>(&device, config, volume),
+		SampleFormat::F32 => cue_stream::<f32>(&device, config, cue, volume, repeat),
+		SampleFormat::I16 => cue_stream::<i16>(&device, config, cue, volume, repeat),
+		SampleFormat::U16 => cue_stream::<u16>(&device, config, cue, volume, repeat),
+		SampleFormat::I32 => cue_stream::<i32>(&device, config, cue, volume, repeat),
 		format => Err(Error::with_message(
 			ErrorKind::UnsupportedConfig,
 			format!("sample format {format}"),
@@ -127,20 +263,30 @@ fn open_stream(volume: f32) -> Result<Stream, Error> {
 	Ok(stream)
 }
 
-fn chime_stream<T>(device: &Device, config: StreamConfig, volume: f32) -> Result<Stream, Error>
+fn cue_stream<T>(
+	device: &Device,
+	config: StreamConfig,
+	cue: Cue,
+	volume: f32,
+	repeat: bool,
+) -> Result<Stream, Error>
 where
 	T: SizedSample + FromSample<f32>,
 {
 	let channels = usize::from(config.channels);
-	let mut samples = render_chime(config.sample_rate, volume).into_iter();
+	let mut playback = Playback {
+		samples: render(cue, config.sample_rate, volume),
+		position: 0,
+		repeat,
+	};
 	device.build_output_stream(
 		config,
 		move |data: &mut [T], _| {
 			for frame in data.chunks_exact_mut(channels) {
-				frame.fill(T::from_sample(samples.next().unwrap_or(0.)));
+				frame.fill(T::from_sample(playback.next_sample()));
 			}
 		},
-		|error| tracing::warn!(%error, "notification sound stream error"),
+		|error| tracing::warn!(%error, "sound stream error"),
 		None,
 	)
 }

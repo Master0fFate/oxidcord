@@ -567,15 +567,20 @@ impl State {
 		for voice in update.updated_voice_states.iter() {
 			changes.merge(self.guild_voice_state(guild_id, voice));
 		}
+		let mut left = Vec::new();
 		if let Some(guild) = self.guilds.get_mut(&guild_id) {
-			let mut removed = false;
 			for user_id in update.removed_voice_states.iter() {
-				removed |= guild.voice_states.remove(user_id).is_some();
+				if let Some(stored) = guild.voice_states.remove(user_id) {
+					left.push((*user_id, stored.channel_id));
+				}
 			}
-			if removed {
+			if !left.is_empty() {
 				changes.voice.insert(guild_id);
 				changes.channel_lists.insert(guild_id);
 			}
+		}
+		for (user_id, channel_id) in left {
+			changes.merge(self.peer_voice_moved(user_id, channel_id, None));
 		}
 		changes
 	}
@@ -796,6 +801,10 @@ impl State {
 		let Some(guild) = self.guilds.get_mut(&guild_id) else {
 			return changes;
 		};
+		let before = guild
+			.voice_states
+			.get(&voice.user_id)
+			.and_then(|stored| stored.channel_id);
 		if voice.channel_id.is_some() {
 			guild.voice_states.insert(
 				voice.user_id,
@@ -809,6 +818,7 @@ impl State {
 		}
 		changes.voice.insert(guild_id);
 		changes.channel_lists.insert(guild_id);
+		changes.merge(self.peer_voice_moved(voice.user_id, before, voice.channel_id));
 		changes
 	}
 

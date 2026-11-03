@@ -56,7 +56,7 @@ A section of `settings.json` that fails to decode falls back to its default on i
 - On Windows, toasts need an AppUserModelID: call `notifications::set_app_user_model_id` at startup and pass the same id as `Notification::app_id`.
 - `idle::seconds_since_input` reads the time since the last keyboard or mouse input on Windows and macOS and returns `None` elsewhere. It backs the plugin functions `idle-seconds` and the `idle-changed` event.
 - `speech::speak_with` reads text aloud through SAPI on Windows and returns `false` elsewhere; `speech::available` tells which. It backs the plugin function `speak`.
-- `dialog` shows the native open and save dialogs used by the plugin file functions, and `sound` plays the notification chime at a given volume.
+- `dialog` shows the native open and save dialogs used by the plugin file functions, and `sound` synthesizes and plays the notification chime and the voice and call cues at a given volume, and loops the ring tones until the returned handle is dropped.
 
 ## Activity
 

@@ -21,7 +21,7 @@ use crate::plugin_shell::{AutocompleteOrder, PluginShell};
 use crate::settings::GuildFolder;
 use crate::views::RenderedMessage;
 use crate::views::UserOverride;
-use crate::voice::{Call, MicTest, StreamSummary, VoiceLevels, VoiceSession, VoiceStats};
+use crate::voice::{Call, MicTest, StreamSummary, VoiceCueEntry, VoiceLevels, VoiceSession, VoiceStats};
 
 pub const TYPING_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -92,6 +92,8 @@ pub struct State {
 	pub(crate) afk: bool,
 	pub(crate) alerts: VecDeque<Alert>,
 	pub(crate) alert_count: u64,
+	pub(crate) voice_cues: VecDeque<VoiceCueEntry>,
+	pub(crate) voice_cue_count: u64,
 	pub(crate) plugin_shell: PluginShell,
 }
 

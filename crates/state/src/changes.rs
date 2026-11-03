@@ -74,6 +74,7 @@ pub struct Changes {
 	pub friend_notice: bool,
 	pub read_state: bool,
 	pub alerts: bool,
+	pub voice_cues: bool,
 	pub session: bool,
 	pub selection: bool,
 	pub search: bool,
@@ -111,6 +112,7 @@ impl Changes {
 			friend_notice: true,
 			read_state: true,
 			alerts: true,
+			voice_cues: true,
 			session: true,
 			selection: true,
 			search: true,
@@ -147,6 +149,7 @@ impl Changes {
 			|| self.friend_notice
 			|| self.read_state
 			|| self.alerts
+			|| self.voice_cues
 			|| self.session
 			|| self.selection
 			|| self.search
@@ -182,6 +185,7 @@ impl Changes {
 		self.friend_notice |= other.friend_notice;
 		self.read_state |= other.read_state;
 		self.alerts |= other.alerts;
+		self.voice_cues |= other.voice_cues;
 		self.session |= other.session;
 		self.selection |= other.selection;
 		self.search |= other.search;

@@ -67,6 +67,7 @@ pub struct StorageSettings {
 pub struct NotificationSettings {
 	pub enabled: bool,
 	pub sounds: bool,
+	pub voice_sounds: bool,
 	pub show_content: bool,
 }
 
@@ -279,6 +280,7 @@ impl Default for NotificationSettings {
 		Self {
 			enabled: true,
 			sounds: true,
+			voice_sounds: true,
 			show_content: true,
 		}
 	}

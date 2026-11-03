@@ -80,7 +80,7 @@ use self::top_bar::{TopBar, TopBarEvent, TopBarTitle};
 use self::user_panel::{UserPanel, UserPanelEvent};
 use self::voice::{
 	CallToast, RoomEvent, StreamPip, StreamViewer, UserMenu, UserMenuEvent, ViewerEvent, VoicePanel,
-	VoiceRoom,
+	VoiceRoom, VoiceSounds,
 };
 use crate::actions::{
 	CloseOverlay, MarkGuildRead, NextChannel, NextGuild, NextMentionChannel, NextUnreadChannel,
@@ -177,6 +177,7 @@ pub struct Shell {
 	members_visible: bool,
 	pending_jump: Option<Snowflake>,
 	seen_alert: u64,
+	voice_sounds: VoiceSounds,
 	seen_friend_notice: u64,
 	seen_intent: u64,
 	notification_clicks: UnboundedSender<Notified>,
@@ -631,13 +632,14 @@ impl Shell {
 				}
 			}
 		});
-		let (seen_alert, seen_intent, seen_friend_notice) = {
+		let (seen_alert, seen_intent, seen_friend_notice, voice_sounds) = {
 			let data = data.read(cx);
 			let state = data.state();
 			(
 				state.last_alert_id(),
 				state.last_intent_id(),
 				state.last_friend_notice().map_or(0, |notice| notice.id),
+				VoiceSounds::new(&state),
 			)
 		};
 
@@ -659,6 +661,7 @@ impl Shell {
 			members_visible: true,
 			pending_jump: None,
 			seen_alert,
+			voice_sounds,
 			seen_friend_notice,
 			seen_intent,
 			notification_clicks,
@@ -1168,6 +1171,8 @@ impl Shell {
 		if changes.friend_notice {
 			self.raise_friend_notice(cx);
 		}
+		self.voice_sounds
+			.update(changes, self.data.read(cx), &self.backend, cx);
 		if changes.intents {
 			self.consume_intents(window, cx);
 		}
@@ -1319,8 +1324,10 @@ impl Shell {
 			(notifications, audible)
 		};
 		if audible && settings.sounds && !crate::data::streamer_mode(cx).mutes_sounds() {
-			let volume = plugins::client_options(cx).notification_volume;
-			platform::sound::play_chime_at(volume.map_or(1., |volume| f32::from(volume.min(100)) / 100.));
+			platform::sound::play(
+				platform::sound::Cue::Message,
+				crate::data::notification_volume(cx),
+			);
 		}
 		let media = cx.global::<Images>().media();
 		for (channel, mut notification, avatar) in notifications {
@@ -1356,8 +1363,10 @@ impl Shell {
 			state.display_name(None, notice.user_id)
 		};
 		if settings.sounds && !crate::data::streamer_mode(cx).mutes_sounds() {
-			let volume = plugins::client_options(cx).notification_volume;
-			platform::sound::play_chime_at(volume.map_or(1., |volume| f32::from(volume.min(100)) / 100.));
+			platform::sound::play(
+				platform::sound::Cue::Message,
+				crate::data::notification_volume(cx),
+			);
 		}
 		if settings.enabled {
 			let clicks = self.notification_clicks.clone();
