@@ -1114,6 +1114,9 @@ impl Core {
 					collapsed,
 				});
 			}
+			Command::ToggleBlockedRun { channel_id, first } => {
+				self.apply_local(LocalEvent::BlockedRunToggled { channel_id, first });
+			}
 			Command::JoinVoice { guild_id, channel_id } => self.join_voice(guild_id, channel_id),
 			Command::LeaveVoice => self.leave_voice(),
 			Command::SetSelfMute(muted) => self.set_self_mute(muted),

@@ -66,6 +66,7 @@ pub struct State {
 	pub(crate) status_settings: ProtoStatus,
 	pub(crate) friend_source_flags: Option<u32>,
 	pub(crate) collapsed_categories: HashSet<Snowflake>,
+	pub(crate) revealed_blocked: HashSet<Snowflake>,
 	pub(crate) drafts: HashMap<Snowflake, String>,
 	pub(crate) selected: Option<Selection>,
 	pub(crate) voice: Option<VoiceSession>,
@@ -518,6 +519,12 @@ impl State {
 				if changed {
 					self.mark_channel_dirty(*channel_id, &mut changes);
 				}
+			}
+			LocalEvent::BlockedRunToggled { channel_id, first } => {
+				if !self.revealed_blocked.remove(first) {
+					self.revealed_blocked.insert(*first);
+				}
+				changes.messages.insert(*channel_id);
 			}
 			LocalEvent::ConnectionChanged { connected } => {
 				self.session.connected = *connected;

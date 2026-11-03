@@ -447,9 +447,31 @@ impl State {
 			.map(|pending| (&pending.message, Some(pending)));
 		let mut previous: Option<(&Message, NaiveDate)> = None;
 		let mut marker_placed = false;
+		let mut blocked_run: Option<(usize, bool)> = None;
+		let mut run_between = false;
 		for (message, pending) in confirmed.chain(pending) {
 			if pending.is_none() && cache.is_hidden(message.id) {
 				continue;
+			}
+			if pending.is_none() && self.is_blocked(message.author.id) {
+				let (index, revealed) = *blocked_run.get_or_insert_with(|| {
+					let revealed = self.revealed_blocked.contains(&message.id);
+					rows.push(MessageRow::BlockedRun {
+						first: message.id,
+						count: 0,
+						revealed,
+					});
+					run_between = true;
+					(rows.len() - 1, revealed)
+				});
+				if let MessageRow::BlockedRun { count, .. } = &mut rows[index] {
+					*count += 1;
+				}
+				if !revealed {
+					continue;
+				}
+			} else {
+				blocked_run = None;
 			}
 			let day = local_day(message);
 			if previous.is_none_or(|(_, previous_day)| previous_day != day) {
@@ -462,8 +484,11 @@ impl State {
 				rows.push(MessageRow::UnreadMarker);
 				marker_placed = true;
 			}
-			let grouped = previous
-				.is_some_and(|(earlier, earlier_day)| earlier_day == day && groups_with(earlier, message));
+			let grouped = !run_between
+				&& previous.is_some_and(|(earlier, earlier_day)| {
+					earlier_day == day && groups_with(earlier, message)
+				});
+			run_between = false;
 			rows.push(MessageRow::Message(
 				self.message_view(guild, cache, message, grouped, pending),
 			));

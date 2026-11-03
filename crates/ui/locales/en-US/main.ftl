@@ -84,6 +84,12 @@ timeline-welcome-body = This is the start of the #{ $name } channel.
 timeline-welcome-direct-title = { $name }
 timeline-welcome-direct-body = This is the beginning of your direct message history with { $name }.
 timeline-new = New
+timeline-blocked = { $count ->
+    [one] { $count } blocked message
+   *[other] { $count } blocked messages
+}
+timeline-blocked-show = Show
+timeline-blocked-hide = Hide
 timeline-jump-latest = Jump to latest
 
 message-react = Add Reaction

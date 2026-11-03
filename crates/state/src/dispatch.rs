@@ -181,6 +181,7 @@ impl State {
 			DispatchEvent::UserSettingsProtoUpdate(update) => self.apply_settings_proto_update(update),
 			DispatchEvent::UserGuildSettingsUpdate(settings) => self.guild_settings_update(settings),
 			DispatchEvent::RelationshipAdd(relationship) => {
+				let was_blocked = self.is_blocked(relationship.id);
 				let notify = relationship.should_notify
 					&& relationship.kind == RelationshipKind::IncomingRequest
 					&& self
@@ -190,26 +191,30 @@ impl State {
 				if notify {
 					self.note_friend_notice(relationship.id);
 				}
-				Changes {
-					relationships: true,
-					friend_notice: notify,
-					..Changes::default()
-				}
+				let mut changes = self.relationship_changed(relationship.id, was_blocked);
+				changes.friend_notice = notify;
+				changes
 			}
-			DispatchEvent::RelationshipUpdate(update) => Changes {
-				relationships: self.update_relationship(update),
-				..Changes::default()
-			},
+			DispatchEvent::RelationshipUpdate(update) => {
+				let was_blocked = self.is_blocked(update.id);
+				let updated = self.update_relationship(update);
+				let mut changes = self.relationship_changed(update.id, was_blocked);
+				changes.relationships = updated;
+				changes
+			}
 			DispatchEvent::UserNoteUpdate(update) => {
 				self.set_note(update.id, update.note.as_deref().unwrap_or_default());
 				let mut changes = Changes::default();
 				changes.loaded.insert(update.id);
 				changes
 			}
-			DispatchEvent::RelationshipRemove(remove) => Changes {
-				relationships: self.relationships.shift_remove(&remove.id).is_some(),
-				..Changes::default()
-			},
+			DispatchEvent::RelationshipRemove(remove) => {
+				let was_blocked = self.is_blocked(remove.id);
+				let removed = self.relationships.shift_remove(&remove.id).is_some();
+				let mut changes = self.relationship_changed(remove.id, was_blocked);
+				changes.relationships = removed;
+				changes
+			}
 			DispatchEvent::VoiceStateUpdate(voice) => self.voice_state_update(voice),
 			DispatchEvent::CallCreate(payload) | DispatchEvent::CallUpdate(payload) => {
 				self.call_changed(payload)
@@ -303,7 +308,7 @@ impl State {
 				changes.merge(self.start_slowmode(channel_id, interval));
 			}
 		} else if !is_selected
-			&& !self.is_ignored(message.author.id)
+			&& !self.is_silenced(message)
 			&& (guild_id.is_none() || self.mentions_me(message, guild_id))
 		{
 			self.bump_mentions(channel_id);
@@ -633,9 +638,20 @@ impl State {
 		changes
 	}
 
+	fn relationship_changed(&self, user_id: Snowflake, was_blocked: bool) -> Changes {
+		let mut changes = Changes {
+			relationships: true,
+			..Changes::default()
+		};
+		if was_blocked != self.is_blocked(user_id) {
+			changes.messages.mark_all();
+		}
+		changes
+	}
+
 	fn typing_start(&mut self, typing: &TypingStart) -> Changes {
 		let mut changes = Changes::default();
-		if Some(typing.user_id) == self.current_user_id() {
+		if Some(typing.user_id) == self.current_user_id() || self.is_blocked(typing.user_id) {
 			return changes;
 		}
 		self.ingest_typing_member(typing);

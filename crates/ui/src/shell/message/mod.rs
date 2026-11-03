@@ -172,6 +172,7 @@ pub enum RowAction {
 	},
 	Download(String),
 	ToggleSpoiler(u64, usize),
+	ToggleBlocked(Snowflake),
 	OpenImage(ImageTarget),
 	OpenVideoFullscreen(VideoFullscreenTarget),
 	React {
@@ -331,6 +332,11 @@ pub fn render_row(row: &MessageRow, env: &RowEnv, cx: &App) -> AnyElement {
 		MessageRow::Loading => skeleton(env.theme),
 		MessageRow::DaySeparator(day) => day_separator(format::day_label(*day).into(), env.theme),
 		MessageRow::UnreadMarker => unread_marker(env.theme, cx),
+		MessageRow::BlockedRun {
+			first,
+			count,
+			revealed,
+		} => blocked_run(*first, *count, *revealed, env, cx),
 		MessageRow::Message(view) => match view.message.kind {
 			MessageType::Default
 			| MessageType::Reply
@@ -480,6 +486,36 @@ fn unread_marker(theme: &Theme, cx: &App) -> AnyElement {
 				.font_weight(FontWeight::BOLD)
 				.text_color(theme.text_on_brand)
 				.child(cx.t("timeline-new").to_uppercase()),
+		)
+		.into_any_element()
+}
+
+fn blocked_run(first: Snowflake, count: usize, revealed: bool, env: &RowEnv, cx: &App) -> AnyElement {
+	let theme = env.theme;
+	let toggle = env.dispatch.clone();
+	let hover = theme.link;
+	div()
+		.flex()
+		.items_center()
+		.gap(theme.space_8)
+		.px(theme.space_16)
+		.py(theme.space_4)
+		.text_size(theme.font_sm)
+		.text_color(theme.text_muted)
+		.child(Icon::new(IconKind::EyeOff).size(rem(14.)).color(theme.text_muted))
+		.child(cx.t_args("timeline-blocked", &[("count", ArgValue::from(count))]))
+		.child(
+			div()
+				.id(("blocked-reveal", first.get()))
+				.cursor_pointer()
+				.text_color(theme.link)
+				.hover(move |style| style.underline().text_color(hover))
+				.on_click(move |_, window, cx| toggle(RowAction::ToggleBlocked(first), window, cx))
+				.child(cx.t(if revealed {
+					"timeline-blocked-hide"
+				} else {
+					"timeline-blocked-show"
+				})),
 		)
 		.into_any_element()
 }

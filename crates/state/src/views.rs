@@ -120,6 +120,11 @@ pub enum MessageRow {
 	Message(MessageView),
 	DaySeparator(NaiveDate),
 	UnreadMarker,
+	BlockedRun {
+		first: Snowflake,
+		count: usize,
+		revealed: bool,
+	},
 	HistoryStart,
 	Loading,
 }

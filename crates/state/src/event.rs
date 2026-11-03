@@ -65,6 +65,10 @@ pub enum LocalEvent {
 		channel_id: Snowflake,
 		collapsed: bool,
 	},
+	BlockedRunToggled {
+		channel_id: Snowflake,
+		first: Snowflake,
+	},
 	ConnectionChanged {
 		connected: bool,
 	},

@@ -234,13 +234,25 @@ impl State {
 		true
 	}
 
+	pub fn is_message_request(&self, channel_id: Snowflake) -> bool {
+		self.private_channels
+			.get(&channel_id)
+			.is_some_and(Channel::is_request)
+	}
+
+	pub(crate) fn is_silenced(&self, message: &Message) -> bool {
+		self.is_blocked(message.author.id)
+			|| self.is_ignored(message.author.id)
+			|| self.is_message_request(message.channel_id)
+	}
+
 	pub(crate) fn wants_alert(&self, message: &Message, guild_id: Option<Snowflake>) -> bool {
 		let Some(me) = self.current_user_id() else {
 			return false;
 		};
 		if message.author.id == me
 			|| message.flags.contains(MessageFlags::SUPPRESS_NOTIFICATIONS)
-			|| self.is_ignored(message.author.id)
+			|| self.is_silenced(message)
 		{
 			return false;
 		}

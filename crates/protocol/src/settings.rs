@@ -24,6 +24,7 @@ int_enum! {
 		NotificationCenter = 2,
 		GuildHome = 3,
 		Onboarding = 4,
+		MessageRequests = 5,
 	}
 }
 

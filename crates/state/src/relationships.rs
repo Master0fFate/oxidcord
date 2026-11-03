@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use chrono::{DateTime, Utc};
 use protocol::{Relationship, RelationshipKind, Snowflake, StatusKind};
 
 use crate::state::State;
@@ -49,6 +50,12 @@ impl State {
 			.is_some_and(|relationship| relationship.user_ignored)
 	}
 
+	pub fn is_blocked(&self, user_id: Snowflake) -> bool {
+		self.relationships
+			.get(&user_id)
+			.is_some_and(|relationship| relationship.kind == RelationshipKind::Blocked)
+	}
+
 	fn relationship_rows(&self, kind: RelationshipKind) -> Vec<RelationshipRow> {
 		self.rows_where(|relationship| relationship.kind == kind)
 	}
@@ -58,25 +65,39 @@ impl State {
 			.values()
 			.filter(|relationship| keep(relationship))
 			.map(|relationship| {
-				let user = self.users.get(&relationship.id);
 				RelationshipRow {
-					user_id: relationship.id,
-					username: user.map(|user| user.username.clone()).unwrap_or_default(),
-					display: self.display_name(None, relationship.id),
-					avatar: user.and_then(|user| user.avatar.clone()),
-					nickname: relationship.nickname.clone(),
-					status: self
-						.presences
-						.get(&relationship.id)
-						.map_or(StatusKind::Offline, |presence| presence.status.clone()),
-					activity: self.activity_summary(relationship.id),
-					since: relationship.since,
 					ignored: relationship.user_ignored,
 					spam: relationship.is_spam_request,
 					stranger: relationship.stranger_request,
+					..self.person_row(relationship.id, relationship.nickname.clone(), relationship.since)
 				}
 			})
 			.collect()
+	}
+
+	pub(crate) fn person_row(
+		&self,
+		user_id: Snowflake,
+		nickname: Option<String>,
+		since: Option<DateTime<Utc>>,
+	) -> RelationshipRow {
+		let user = self.users.get(&user_id);
+		RelationshipRow {
+			user_id,
+			username: user.map(|user| user.username.clone()).unwrap_or_default(),
+			display: self.display_name(None, user_id),
+			avatar: user.and_then(|user| user.avatar.clone()),
+			nickname,
+			status: self
+				.presences
+				.get(&user_id)
+				.map_or(StatusKind::Offline, |presence| presence.status.clone()),
+			activity: self.activity_summary(user_id),
+			since,
+			ignored: false,
+			spam: false,
+			stranger: false,
+		}
 	}
 }
 

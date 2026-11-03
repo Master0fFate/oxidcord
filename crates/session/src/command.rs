@@ -192,6 +192,10 @@ pub enum Command {
 		guild_id: Snowflake,
 		category_id: Snowflake,
 	},
+	ToggleBlockedRun {
+		channel_id: Snowflake,
+		first: Snowflake,
+	},
 	JoinVoice {
 		guild_id: Option<Snowflake>,
 		channel_id: Snowflake,

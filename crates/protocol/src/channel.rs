@@ -185,13 +185,17 @@ pub struct Channel {
 	pub default_forum_layout: Option<ForumLayout>,
 	pub total_message_sent: Option<i64>,
 	pub is_message_request: Option<bool>,
+	#[serde(deserialize_with = "timestamp")]
+	pub is_message_request_timestamp: Option<DateTime<Utc>>,
 	pub is_spam: Option<bool>,
 }
 
 impl Channel {
+	pub fn is_spam_request(&self) -> bool {
+		self.is_spam == Some(true) || self.flags.contains(ChannelFlags::IS_SPAM)
+	}
+
 	pub fn is_request(&self) -> bool {
-		self.is_message_request == Some(true)
-			|| self.is_spam == Some(true)
-			|| self.flags.contains(ChannelFlags::IS_SPAM)
+		self.is_message_request == Some(true) || self.is_spam_request()
 	}
 }

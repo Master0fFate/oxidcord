@@ -103,6 +103,18 @@ fn same_row(a: &MessageRow, b: &MessageRow) -> bool {
 				&& x.rendered.as_ref().map(Arc::as_ptr) == y.rendered.as_ref().map(Arc::as_ptr)
 		}
 		(MessageRow::DaySeparator(x), MessageRow::DaySeparator(y)) => x == y,
+		(
+			MessageRow::BlockedRun {
+				first: x,
+				count: x_count,
+				revealed: x_revealed,
+			},
+			MessageRow::BlockedRun {
+				first: y,
+				count: y_count,
+				revealed: y_revealed,
+			},
+		) => x == y && x_count == y_count && x_revealed == y_revealed,
 		(MessageRow::UnreadMarker, MessageRow::UnreadMarker)
 		| (MessageRow::HistoryStart, MessageRow::HistoryStart)
 		| (MessageRow::Loading, MessageRow::Loading) => true,
@@ -527,6 +539,13 @@ impl Timeline {
 				}
 				self.revealed.borrow_mut().insert((message, index));
 				cx.notify();
+			}
+			RowAction::ToggleBlocked(first) => {
+				if let Some(channel_id) = self.channel {
+					self.data
+						.read(cx)
+						.send(Command::ToggleBlockedRun { channel_id, first });
+				}
 			}
 			RowAction::OpenImage(target) => cx.emit(TimelineEvent::OpenImage(target)),
 			RowAction::OpenVideoFullscreen(target) => cx.emit(TimelineEvent::OpenVideoFullscreen(target)),
