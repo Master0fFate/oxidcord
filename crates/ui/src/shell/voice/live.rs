@@ -34,7 +34,7 @@ pub fn live_streams(
 	guild: Option<Snowflake>,
 	channel: Snowflake,
 ) -> HashMap<Snowflake, LiveStream> {
-	state
+	let mut live: HashMap<Snowflake, LiveStream> = state
 		.streams()
 		.filter(|stream| stream.channel_id == channel)
 		.map(|stream| {
@@ -57,7 +57,24 @@ pub fn live_streams(
 				},
 			)
 		})
-		.collect()
+		.collect();
+	if let Some(guild) = guild
+		&& let Some(found) = state.guild(guild)
+	{
+		for voice in found
+			.voice_states
+			.values()
+			.filter(|voice| voice.channel_id == Some(channel) && voice.self_stream == Some(true))
+		{
+			live.entry(voice.user_id).or_insert_with(|| LiveStream {
+				key: format!("guild:{guild}:{channel}:{}", voice.user_id),
+				preview: None,
+				viewers: 0,
+				faces: Vec::new(),
+			});
+		}
+	}
+	live
 }
 
 pub fn viewer_stack(stream: &LiveStream, theme: &Theme) -> Option<AnyElement> {

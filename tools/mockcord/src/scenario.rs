@@ -36,7 +36,7 @@ pub fn stream_create_event(key: &str, channel_id: u64, viewers: &[u64]) -> Value
 }
 
 impl Shared {
-	pub fn occupant_stream(&self, guild_id: Option<u64>, channel_id: u64) -> Option<Value> {
+	pub fn live_occupant(&self, guild_id: Option<u64>, channel_id: u64) -> Option<VoiceState> {
 		let guild = self.fixtures.guild(guild_id?)?;
 		if guild
 			.stage_instance
@@ -45,9 +45,13 @@ impl Shared {
 		{
 			return None;
 		}
-		let owner = self.stream_occupant(guild_id, channel_id)?;
+		let mut owner = self.stream_occupant(guild_id, channel_id)?;
+		owner.self_stream = Some(true);
 		let key = format!("guild:{}:{channel_id}:{}", guild.id, owner.user_id.0);
-		Some(stream_create_event(&key, channel_id, &[]))
+		if !self.stream_previews.lock().contains(&key) {
+			self.stream_unseen.lock().insert(key);
+		}
+		Some(owner)
 	}
 
 	pub fn voice_state_event(&self, session: &str, guild_id: Option<u64>, channel_id: Option<u64>) -> Value {
@@ -156,20 +160,10 @@ impl Shared {
 
 	pub fn start_stream(&self) -> Result<(), ApiError> {
 		let join = self.current_voice()?;
-		let mut streamer = self
-			.stream_occupant(join.guild_id, join.channel_id)
+		let streamer = self
+			.live_occupant(join.guild_id, join.channel_id)
 			.ok_or(ApiError::invalid_body("Nobody in the channel to stream"))?;
-		let key = format!(
-			"guild:{}:{}:{}",
-			join.guild_id.unwrap_or_default(),
-			join.channel_id,
-			streamer.user_id
-		);
-		streamer.self_stream = Some(true);
-		self.stream_previews.lock().insert(key.clone());
 		self.hub.broadcast("VOICE_STATE_UPDATE", &to_json(&streamer));
-		self.hub
-			.broadcast("STREAM_CREATE", &stream_create_event(&key, join.channel_id, &[]));
 		Ok(())
 	}
 
@@ -183,7 +177,11 @@ impl Shared {
 	}
 
 	pub fn stream_preview(&self, key: &str) -> Result<Value, ApiError> {
-		if !self.stream_previews.lock().contains(key) {
+		let mut previews = self.stream_previews.lock();
+		if !previews.contains(key) {
+			if self.stream_unseen.lock().remove(key) {
+				previews.insert(key.to_owned());
+			}
 			return Err(ApiError::not_found());
 		}
 		Ok(json!({ "url": format!("{PREVIEW_CDN}/{}.png", key.replace(':', "-")) }))

@@ -18,7 +18,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use crate::fixtures::CURRENT_USER_ID;
 use crate::hub::{Link, Outgoing};
-use crate::json::parse_id;
+use crate::json::{parse_id, to_json};
 use crate::member_list::{self, presence_json};
 use crate::ready;
 use crate::scenario::stream_create_event;
@@ -432,8 +432,10 @@ impl Connection {
 			self.shared
 				.hub
 				.dispatch_to(session, "VOICE_SERVER_UPDATE", &server);
-			if let Some(stream) = self.shared.occupant_stream(guild_id, channel_id) {
-				self.shared.hub.dispatch_to(session, "STREAM_CREATE", &stream);
+			if let Some(streamer) = self.shared.live_occupant(guild_id, channel_id) {
+				self.shared
+					.hub
+					.broadcast("VOICE_STATE_UPDATE", &to_json(&streamer));
 			}
 		}
 	}
