@@ -73,6 +73,7 @@ pub struct Store {
 	pub audit: HashMap<u64, Vec<Value>>,
 	pub joined_threads: BTreeSet<u64>,
 	pub thread_member_settings: HashMap<u64, Value>,
+	pub thread_invitees: HashMap<u64, BTreeSet<u64>>,
 	pub slowmode: HashMap<u64, Instant>,
 	pub pinned_at: HashMap<u64, DateTime<Utc>>,
 	pub frecency: ProtoFrecencySettings,
@@ -171,17 +172,13 @@ impl Store {
 			joined_threads: fixtures
 				.guilds
 				.first()
+				.and_then(|guild| guild.thread_ids.first())
 				.into_iter()
-				.flat_map(|guild| {
-					guild
-						.thread_ids
-						.first()
-						.into_iter()
-						.chain(&guild.private_thread_ids)
-				})
+				.chain(fixtures.guilds.iter().flat_map(|guild| &guild.private_thread_ids))
 				.copied()
 				.collect(),
 			thread_member_settings: HashMap::new(),
+			thread_invitees: HashMap::new(),
 			slowmode: HashMap::new(),
 			proto_status: seed_status(),
 			proto_privacy: privacy_with_friend_sources(

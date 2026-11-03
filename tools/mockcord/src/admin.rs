@@ -1619,8 +1619,31 @@ impl Shared {
 		let mut store = self.store.lock();
 		let thread = store
 			.channels
-			.get_mut(&thread_id)
+			.get(&thread_id)
 			.filter(|channel| is_thread(channel.kind))
+			.ok_or_else(ApiError::wrong_channel_kind)?;
+		let closed = thread.kind == ChannelType::PrivateThread
+			&& thread
+				.thread_metadata
+				.as_ref()
+				.is_some_and(|metadata| metadata.invitable == Some(false));
+		let moderator = thread
+			.guild_id
+			.and_then(|guild_id| self.fixtures.guild(guild_id.0))
+			.is_some_and(|guild| {
+				guild
+					.permissions_for(guild.current_member())
+					.contains(Permissions::MANAGE_THREADS)
+			});
+		if closed && !moderator {
+			return Err(ApiError::missing_permissions());
+		}
+		if !store.thread_invitees.entry(thread_id).or_default().insert(user_id) {
+			return Ok(());
+		}
+		let thread = store
+			.channels
+			.get_mut(&thread_id)
 			.ok_or_else(ApiError::wrong_channel_kind)?;
 		let count = thread.member_count.unwrap_or(0) + 1;
 		thread.member_count = Some(count);
