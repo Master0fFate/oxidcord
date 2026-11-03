@@ -309,10 +309,22 @@ impl VoiceRoom {
 		self.effect_picker_open = !self.effect_picker_open;
 		if self.effect_picker_open {
 			self.soundboard = None;
+			let custom = self.usable_custom_emoji(cx);
 			self.effect_picker
-				.update(cx, |picker, cx| picker.open(Vec::new(), window, cx));
+				.update(cx, |picker, cx| picker.open(custom, window, cx));
 		}
 		cx.notify();
+	}
+
+	fn usable_custom_emoji(&self, cx: &Context<Self>) -> Vec<(String, u64, bool)> {
+		let data = self.data.read(cx);
+		let state = data.state();
+		let channel = state.voice().map(|voice| voice.channel_id);
+		state
+			.catalog_emojis(channel)
+			.filter(|emoji| emoji.usable)
+			.map(|emoji| (emoji.name, emoji.id.get(), emoji.animated))
+			.collect()
 	}
 
 	fn send_effect(&mut self, choice: &EmojiChoice, cx: &mut Context<Self>) {

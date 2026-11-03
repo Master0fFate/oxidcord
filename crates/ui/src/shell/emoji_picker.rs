@@ -51,10 +51,10 @@ impl EmojiChoice {
 				name: Some(glyph.clone()),
 				..PartialEmoji::default()
 			},
-			Self::Custom { id, animated, .. } => PartialEmoji {
+			Self::Custom { name, id, animated } => PartialEmoji {
 				id: Some(Snowflake(*id)),
+				name: Some(name.clone()),
 				animated: *animated,
-				..PartialEmoji::default()
 			},
 		}
 	}
