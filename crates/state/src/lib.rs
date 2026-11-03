@@ -28,7 +28,7 @@ pub use expressions::{
 	CatalogEmoji, EXPRESSIONS_KEY, EmojiCatalog, EmojiRef, GuildEmojis, RECENT_CAP, UnicodeSection,
 };
 pub use guild::GuildState;
-pub use limits::PREMIUM_UPLOAD_BYTES;
+pub use limits::{ExpressionLimits, PREMIUM_UPLOAD_BYTES};
 pub use loaded::{
 	AuditChange, AuditEntry, AuditLog, AuthSession, BanEntry, ConnectedAccount, GuildProfile, INBOX_KEY,
 	InviteInfo, InvitePreview, Loaded, MessageCommand, Pin, ProfileBadge, USER_COMMANDS, UserProfile,

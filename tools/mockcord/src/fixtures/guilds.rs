@@ -1046,11 +1046,17 @@ pub fn build(builder: &mut Builder, index: usize) -> GuildFixture {
 		verification_level: Some(VerificationLevel::Low),
 		default_message_notifications: Some(DefaultMessageNotifications::OnlyMentions),
 		explicit_content_filter: Some(ExplicitContentFilter::Disabled),
-		features: vec!["COMMUNITY".to_owned(), "NEWS".to_owned()],
+		features: ["COMMUNITY", "NEWS", "ENHANCED_ROLE_COLORS", "ROLE_ICONS"]
+			.map(str::to_owned)
+			.to_vec(),
 		system_channel_id: Some(Snowflake(layout.system)),
 		max_members: Some(500_000),
 		description: Some("A mock guild for headless runs".to_owned()),
-		premium_tier: Some(PremiumTier::Tier1),
+		premium_tier: Some(if index == 0 {
+			PremiumTier::Tier2
+		} else {
+			PremiumTier::Tier1
+		}),
 		premium_subscription_count: Some(3),
 		preferred_locale: Some("en-US".to_owned()),
 		nsfw_level: Some(NsfwLevel::Default),

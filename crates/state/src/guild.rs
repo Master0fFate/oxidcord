@@ -81,6 +81,10 @@ pub fn stripped_member(member: &Member) -> Member {
 }
 
 impl GuildState {
+	pub fn has_feature(&self, feature: &str) -> bool {
+		self.features.iter().any(|name| name == feature)
+	}
+
 	pub fn from_guild(guild: &Guild) -> Self {
 		let mut state = Self {
 			id: guild.id,

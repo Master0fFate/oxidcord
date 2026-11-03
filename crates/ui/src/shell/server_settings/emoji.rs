@@ -22,7 +22,6 @@ use crate::shell::community::files::{Fit, IMAGE_TYPES, Picked, pick_image};
 use crate::theme::Theme;
 
 const EMOJI_SIDE: u32 = 128;
-const SLOTS: usize = 50;
 const NAME_MIN: usize = 2;
 const NAME_MAX: usize = 32;
 const THUMB_PIXELS: u32 = 96;
@@ -310,6 +309,7 @@ impl Render for EmojiPage {
 		let emojis = self.emojis(cx);
 		let animated = emojis.iter().filter(|emoji| emoji.animated == Some(true)).count();
 		let still = emojis.len() - animated;
+		let limit = self.data.read(cx).state().expression_limits(self.guild).emoji;
 		let cards: Vec<AnyElement> = emojis
 			.iter()
 			.filter_map(|emoji| self.card(emoji, &theme, cx))
@@ -336,7 +336,7 @@ impl Render for EmojiPage {
 							.child(kit::count_caption(
 								cx.t_args(
 									"emoji-slots-static",
-									&[("used", ArgValue::from(still)), ("total", ArgValue::from(SLOTS))],
+									&[("used", ArgValue::from(still)), ("total", ArgValue::from(limit))],
 								),
 								&theme,
 							))
@@ -345,7 +345,7 @@ impl Render for EmojiPage {
 									"emoji-slots-animated",
 									&[
 										("used", ArgValue::from(animated)),
-										("total", ArgValue::from(SLOTS)),
+										("total", ArgValue::from(limit)),
 									],
 								),
 								&theme,
@@ -354,6 +354,7 @@ impl Render for EmojiPage {
 					.child(
 						Button::new("emoji-upload")
 							.primary()
+							.disabled(still >= limit && animated >= limit)
 							.icon(gpui_component::Icon::default().path(IconKind::Upload.path()))
 							.label(cx.t("emoji-upload"))
 							.on_click(cx.listener(|_, _, _, cx| {

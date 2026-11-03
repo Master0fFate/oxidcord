@@ -19,7 +19,6 @@ use crate::shell::community::art::{cover, sticker_url};
 use crate::shell::community::files::{Fit, Picked, STICKER_TYPES, pick_image};
 use crate::theme::Theme;
 
-const SLOTS: usize = 5;
 const NAME_MIN: usize = 2;
 const NAME_MAX: usize = 30;
 
@@ -264,6 +263,7 @@ impl Render for StickersPage {
 		}
 		let stickers = self.stickers(cx);
 		let count = stickers.len();
+		let limit = self.data.read(cx).state().expression_limits(self.guild).stickers;
 		let cards: Vec<AnyElement> = stickers
 			.iter()
 			.map(|sticker| self.card(sticker, &theme, cx))
@@ -286,13 +286,14 @@ impl Render for StickersPage {
 					.child(kit::count_caption(
 						cx.t_args(
 							"stickers-slots",
-							&[("used", ArgValue::from(count)), ("total", ArgValue::from(SLOTS))],
+							&[("used", ArgValue::from(count)), ("total", ArgValue::from(limit))],
 						),
 						&theme,
 					))
 					.child(
 						Button::new("sticker-upload")
 							.primary()
+							.disabled(count >= limit)
 							.icon(gpui_component::Icon::default().path(IconKind::Upload.path()))
 							.label(cx.t("stickers-upload"))
 							.on_click(cx.listener(|_, _, _, cx| {

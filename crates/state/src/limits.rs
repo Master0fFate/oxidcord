@@ -7,6 +7,16 @@ pub const PREMIUM_UPLOAD_BYTES: u64 = 500 * 1024 * 1024;
 const BASE_MESSAGE_CHARS: usize = 2000;
 const NITRO_MESSAGE_CHARS: usize = 4000;
 const BOOST_TIER_FOR_LARGE_UPLOADS: u8 = 3;
+const EMOJI_SLOTS_BY_TIER: [usize; 4] = [50, 100, 150, 250];
+const STICKER_SLOTS_BY_TIER: [usize; 4] = [5, 15, 30, 60];
+const MORE_EMOJI_SLOTS: usize = 200;
+const MORE_STICKER_SLOTS: usize = 60;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExpressionLimits {
+	pub emoji: usize,
+	pub stickers: usize,
+}
 
 impl State {
 	pub fn upload_limit(&self, channel_id: Snowflake) -> u64 {
@@ -22,6 +32,26 @@ impl State {
 			PREMIUM_UPLOAD_BYTES
 		} else {
 			BASE_UPLOAD_BYTES
+		}
+	}
+
+	pub fn expression_limits(&self, guild_id: Snowflake) -> ExpressionLimits {
+		let guild = self.guild(guild_id);
+		let tier = guild.map_or(0, |guild| {
+			usize::from(guild.premium_tier).min(EMOJI_SLOTS_BY_TIER.len() - 1)
+		});
+		let featured = |feature: &str| guild.is_some_and(|guild| guild.has_feature(feature));
+		ExpressionLimits {
+			emoji: if featured("MORE_EMOJI") {
+				MORE_EMOJI_SLOTS.max(EMOJI_SLOTS_BY_TIER[tier])
+			} else {
+				EMOJI_SLOTS_BY_TIER[tier]
+			},
+			stickers: if featured("MORE_STICKERS") {
+				MORE_STICKER_SLOTS.max(STICKER_SLOTS_BY_TIER[tier])
+			} else {
+				STICKER_SLOTS_BY_TIER[tier]
+			},
 		}
 	}
 
