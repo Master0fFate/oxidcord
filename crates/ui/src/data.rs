@@ -95,6 +95,9 @@ impl Data {
 	}
 
 	pub fn toggle_mute(&mut self, cx: &mut Context<Self>) {
+		if self.state().server_muted() {
+			return;
+		}
 		let muted = !self.self_mute();
 		self.local_voice.self_mute = muted;
 		self.session.send(Command::SetSelfMute(muted));

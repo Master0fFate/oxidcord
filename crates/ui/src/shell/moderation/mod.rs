@@ -7,6 +7,7 @@ use session::Command;
 
 use super::community::access::GuildAccess;
 use super::community::data_handle;
+use super::voice::seat_change;
 use crate::components::ContextMenuBuilder;
 use crate::i18n::Translate as _;
 use crate::icons::IconKind;
@@ -55,6 +56,7 @@ pub fn expand(guild: Snowflake, target: Snowflake, name: &str, cx: &App) -> Cont
 		.and_then(|member| member.communication_disabled_until)
 		.is_some_and(|until| until > Utc::now());
 	let voice = found.voice_states.get(&target).cloned();
+	let seat = seat_change(&state, guild, target);
 	let target_roles = member.map(|member| member.roles.clone()).unwrap_or_default();
 	let mut roles: Vec<(Snowflake, String, i64)> = found
 		.roles
@@ -185,6 +187,11 @@ pub fn expand(guild: Snowflake, target: Snowflake, name: &str, cx: &App) -> Cont
 				},
 			);
 		}
+	}
+	if let Some(seat) = seat {
+		menu = menu.item(cx.t(seat.label), Some(seat.icon), move |_, cx| {
+			data_handle(cx).read(cx).send(seat.command());
+		});
 	}
 	let mut punish = ContextMenuBuilder::new();
 	if outranks && access.has(Permissions::MODERATE_MEMBERS) {

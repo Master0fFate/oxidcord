@@ -7,6 +7,7 @@ use gpui_component::slider::{Slider, SliderEvent, SliderState};
 use gpui_component::switch::Switch;
 use protocol::Snowflake;
 
+use super::seat_change;
 use crate::data::Data;
 use crate::i18n::Translate as _;
 use crate::icons::{Icon, IconKind};
@@ -21,6 +22,7 @@ pub enum UserMenuEvent {
 
 pub struct UserMenu {
 	data: Entity<Data>,
+	guild: Option<Snowflake>,
 	user: Snowflake,
 	name: SharedString,
 	volume: Entity<SliderState>,
@@ -30,7 +32,13 @@ pub struct UserMenu {
 impl EventEmitter<UserMenuEvent> for UserMenu {}
 
 impl UserMenu {
-	pub fn new(data: Entity<Data>, user: Snowflake, name: SharedString, cx: &mut Context<Self>) -> Self {
+	pub fn new(
+		data: Entity<Data>,
+		guild: Option<Snowflake>,
+		user: Snowflake,
+		name: SharedString,
+		cx: &mut Context<Self>,
+	) -> Self {
 		let start = data.read(cx).user_volume(user) * FULL_PERCENT;
 		let volume = cx.new(|_| {
 			SliderState::new()
@@ -51,6 +59,7 @@ impl UserMenu {
 		let observer = cx.observe(&data, |_, _, cx| cx.notify());
 		Self {
 			data,
+			guild,
 			user,
 			name,
 			volume,
@@ -63,12 +72,14 @@ impl Render for UserMenu {
 	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
 		let user = self.user;
-		let (percent, silenced, is_me) = {
+		let (percent, silenced, is_me, seat) = {
 			let data = self.data.read(cx);
 			(
 				(data.user_volume(user) * FULL_PERCENT).round(),
 				data.is_silenced(user),
 				data.me() == Some(user),
+				self.guild
+					.and_then(|guild| seat_change(&data.state(), guild, user)),
 			)
 		};
 		let data = self.data.clone();
@@ -123,6 +134,28 @@ impl Render for UserMenu {
 						}),
 				)
 			})
+			.children(seat.map(|seat| {
+				let data = self.data.clone();
+				div()
+					.id("voice-user-seat")
+					.flex()
+					.items_center()
+					.gap(theme.space_8)
+					.px(theme.space_8)
+					.h(theme.voice_button)
+					.rounded(theme.radius_sm)
+					.cursor_pointer()
+					.text_size(theme.font_sm)
+					.text_color(theme.text_normal)
+					.hover(|style| style.bg(theme.modifier_hover))
+					.on_click(move |_, _, cx| data.read(cx).send(seat.command()))
+					.child(
+						Icon::new(seat.icon)
+							.size(theme.voice_icon_sm)
+							.color(theme.interactive_normal),
+					)
+					.child(cx.t(seat.label))
+			}))
 			.child(
 				div()
 					.id("voice-user-profile")

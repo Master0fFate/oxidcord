@@ -52,6 +52,7 @@ struct ChannelItem {
 	muted: bool,
 	mentions: u32,
 	voice: Vec<Participant>,
+	topic: Option<SharedString>,
 	user_limit: u32,
 	occupants: u32,
 	join_block: Option<JoinBlock>,
@@ -511,6 +512,16 @@ impl ChannelSidebar {
 				row.child(MentionBadge::new(channel.mentions))
 			})
 			.context_menu(menu);
+		let topic = channel.topic.clone().map(|topic| {
+			div()
+				.truncate()
+				.ml(theme.space_32 - theme.space_4)
+				.mr(theme.space_8)
+				.px(theme.space_8)
+				.text_size(theme.font_xs)
+				.text_color(theme.text_muted)
+				.child(topic)
+		});
 		let spine = thread.then(|| thread_spine(channel.last_thread, theme));
 		div()
 			.relative()
@@ -518,6 +529,7 @@ impl ChannelSidebar {
 			.flex_col()
 			.children(spine)
 			.child(row)
+			.children(topic)
 			.children(participants)
 			.into_any_element()
 	}
@@ -589,6 +601,9 @@ fn channel_item(row: &ChannelRow, guild: Snowflake, state: &state::State) -> Cha
 		} else {
 			Vec::new()
 		},
+		topic: state
+			.stage_instance(guild, row.id)
+			.map(|instance| instance.topic.clone().into()),
 		badges: state
 			.channel_decorations(row.id)
 			.iter()

@@ -173,16 +173,17 @@ impl Render for UserPanel {
 			.custom_emoji
 			.as_ref()
 			.map(|emoji| emoji.element(rem(STATUS_EMOJI_SIZE), cx));
-		let (muted, deafened, push_to_talk, talking) = {
+		let (muted, deafened, push_to_talk, talking, server_muted) = {
 			let data = self.data.read(cx);
 			(
 				data.self_mute(),
 				data.self_deaf(),
 				data.push_to_talk(),
 				data.talking(),
+				data.state().server_muted(),
 			)
 		};
-		let mic = if muted || deafened {
+		let mic = if muted || deafened || server_muted {
 			IconKind::MicOff
 		} else {
 			IconKind::Mic
@@ -192,7 +193,9 @@ impl Render for UserPanel {
 		} else {
 			IconKind::Headphones
 		};
-		let mic_tooltip = if muted {
+		let mic_tooltip = if server_muted {
+			cx.t("voice-server-muted")
+		} else if muted {
 			cx.t("user-unmute")
 		} else {
 			cx.t("user-mute")
@@ -216,7 +219,7 @@ impl Render for UserPanel {
 			.filled_hover()
 			.hit_size(rem(32.))
 			.tooltip(mic_tooltip)
-			.when(muted || deafened, |button| button.tinted(danger))
+			.when(muted || deafened || server_muted, |button| button.tinted(danger))
 			.on_click(cx.listener(|this, _, _, cx| {
 				this.data.update(cx, |data, cx| data.toggle_mute(cx));
 			}));

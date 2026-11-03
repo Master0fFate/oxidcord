@@ -5,9 +5,9 @@ use std::time::{Duration, Instant};
 
 use gpui::{
 	AnyElement, AnyView, Context, Entity, EventEmitter, FontWeight, InteractiveElement as _, IntoElement,
-	MouseButton, MouseDownEvent, ObjectFit, ParentElement as _, Pixels, Point, Rems, Render, Size,
-	StatefulInteractiveElement as _, Styled as _, StyledImage as _, Subscription, Task, Window, canvas, div,
-	img, prelude::FluentBuilder as _, px, size,
+	MouseButton, MouseDownEvent, ObjectFit, ParentElement as _, Pixels, Point, Rems, Render, SharedString,
+	Size, StatefulInteractiveElement as _, Styled as _, StyledImage as _, Subscription, Task, Window, canvas,
+	div, img, prelude::FluentBuilder as _, px, size,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::menu::DropdownMenu as _;
@@ -19,6 +19,7 @@ use super::actions;
 use super::participants::{Participant, participants};
 use super::picker;
 use super::quality::Preset;
+use super::stage::open_topic;
 use super::video_sink::Textures;
 use super::widgets::{ControlButton, live_badge, speaking_avatar, state_icons};
 use crate::components::{ContextMenuBuilder, IconButton};
@@ -34,6 +35,7 @@ const AVATAR_PIXELS: u32 = 160;
 const IDLE_REDRAW: Duration = Duration::from_millis(500);
 const STAGE_SPEAKER_SHARE: f32 = 0.55;
 const AUDIENCE_ITEM_WIDTH: f32 = 88.;
+const REQUEST_LIST_MAX_HEIGHT: f32 = 168.;
 
 pub enum RoomEvent {
 	UserMenu { user: Snowflake, at: Point<Pixels> },
@@ -67,7 +69,14 @@ struct Snapshot {
 	camera_on: bool,
 	screen_on: bool,
 	watching: Option<String>,
+	me: Option<Snowflake>,
+	audience: bool,
 	hand_raised: bool,
+	invited: bool,
+	server_muted: bool,
+	topic: Option<SharedString>,
+	moderator: bool,
+	can_speak: bool,
 	streams: HashMap<Snowflake, String>,
 	can_chat: bool,
 }
@@ -86,6 +95,7 @@ fn snapshot(data: &Data) -> Option<Snapshot> {
 	let kind = state.channel(channel).map(|channel| channel.kind);
 	let session = state.voice().filter(|voice| voice.channel_id == channel);
 	let participants = participants(&state, selected.guild_id, channel, AVATAR_PIXELS);
+	let permissions = state.my_permissions(channel);
 	Some(Snapshot {
 		guild: selected.guild_id,
 		channel,
@@ -96,12 +106,23 @@ fn snapshot(data: &Data) -> Option<Snapshot> {
 		camera_on: session.is_some_and(|voice| voice.camera_on),
 		screen_on: session.is_some_and(|voice| voice.screen_share.is_some()),
 		watching: session.and_then(|voice| voice.watching.clone()),
-		hand_raised: participants.iter().any(|person| person.me && person.hand_raised),
+		me: state.current_user_id(),
+		audience: participants.iter().any(|person| person.me && person.listener),
+		hand_raised: participants
+			.iter()
+			.any(|person| person.me && person.hand_raised.is_some()),
+		invited: state.speak_invited(),
+		server_muted: state.server_muted(),
+		topic: selected
+			.guild_id
+			.and_then(|guild| state.stage_instance(guild, channel))
+			.map(|instance| instance.topic.clone().into()),
+		moderator: permissions
+			.contains(Permissions::MANAGE_CHANNELS | Permissions::MUTE_MEMBERS | Permissions::MOVE_MEMBERS),
+		can_speak: permissions.contains(Permissions::MUTE_MEMBERS),
 		participants,
 		streams: stream_keys(&state, channel),
-		can_chat: state
-			.my_permissions(channel)
-			.contains(Permissions::VIEW_CHANNEL | Permissions::READ_MESSAGE_HISTORY),
+		can_chat: permissions.contains(Permissions::VIEW_CHANNEL | Permissions::READ_MESSAGE_HISTORY),
 	})
 }
 
@@ -505,6 +526,12 @@ impl VoiceRoom {
 	) -> AnyElement {
 		let speakers: Vec<&Participant> = snapshot.participants.iter().filter(|p| !p.listener).collect();
 		let audience: Vec<&Participant> = snapshot.participants.iter().filter(|p| p.listener).collect();
+		let mut requests: Vec<&Participant> = audience
+			.iter()
+			.copied()
+			.filter(|person| person.hand_raised.is_some() && snapshot.can_speak)
+			.collect();
+		requests.sort_by_key(|person| person.hand_raised);
 		let speaker_area = size(area.width, area.height * STAGE_SPEAKER_SHARE);
 		let audience_count = audience.len();
 		div()
@@ -512,6 +539,8 @@ impl VoiceRoom {
 			.flex_col()
 			.gap(theme.space_16)
 			.size_full()
+			.children(self.stage_header(snapshot, theme, cx))
+			.children(self.invite_banner(snapshot, theme, cx))
 			.child(div().flex_none().h(speaker_area.height).child(self.grid(
 				&speakers,
 				speaker_area,
@@ -526,19 +555,27 @@ impl VoiceRoom {
 					.flex_1()
 					.min_h_0()
 					.gap(theme.space_8)
-					.child(
-						div()
-							.text_size(theme.font_tiny)
-							.font_weight(FontWeight::BOLD)
-							.text_color(theme.header_secondary)
-							.child(
-								cx.t_args(
-									"voice-stage-audience",
-									&[("count", ArgValue::from(audience_count))],
-								)
-								.to_uppercase(),
-							),
+					.when_some(
+						snapshot.guild.filter(|_| !requests.is_empty()),
+						|column, guild_id| {
+							column
+								.child(section_label(
+									cx.t_args(
+										"voice-stage-requests",
+										&[("count", ArgValue::from(requests.len()))],
+									),
+									theme,
+								))
+								.child(self.request_list(&requests, guild_id, snapshot.channel, theme, cx))
+						},
 					)
+					.child(section_label(
+						cx.t_args(
+							"voice-stage-audience",
+							&[("count", ArgValue::from(audience_count))],
+						),
+						theme,
+					))
 					.child(
 						div()
 							.id("voice-audience")
@@ -567,7 +604,7 @@ impl VoiceRoom {
 										}),
 									)
 									.child(speaking_avatar(person, theme.voice_control, theme))
-									.when(person.hand_raised, |item| {
+									.when(person.hand_raised.is_some(), |item| {
 										item.child(
 											div().absolute().top_0().right(theme.space_12).child(
 												Icon::new(IconKind::Hand)
@@ -591,11 +628,250 @@ impl VoiceRoom {
 			.into_any_element()
 	}
 
+	fn stage_header(&self, snapshot: &Snapshot, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
+		if snapshot.topic.is_none() && !snapshot.moderator {
+			return None;
+		}
+		let channel = snapshot.channel;
+		let live = snapshot.topic.is_some();
+		let current = snapshot.topic.as_ref().map(ToString::to_string);
+		let topic = snapshot.topic.clone().unwrap_or_else(|| cx.t("voice-stage-idle"));
+		Some(
+			div()
+				.flex()
+				.flex_none()
+				.items_center()
+				.gap(theme.space_8)
+				.child(
+					Icon::new(IconKind::Stage)
+						.size(theme.voice_icon_sm)
+						.color(theme.interactive_normal),
+				)
+				.child(
+					div()
+						.flex_1()
+						.min_w_0()
+						.truncate()
+						.text_size(theme.font_md)
+						.font_weight(FontWeight::SEMIBOLD)
+						.text_color(if live {
+							theme.header_primary
+						} else {
+							theme.text_muted
+						})
+						.child(topic),
+				)
+				.when(snapshot.moderator && live, |header| {
+					header
+						.child(
+							IconButton::new("voice-stage-edit", IconKind::Edit)
+								.tooltip(cx.t("voice-stage-edit"))
+								.on_click(move |_, window, cx| {
+									open_topic(window, cx, channel, current.clone())
+								}),
+						)
+						.child(
+							Button::new("voice-stage-end")
+								.danger()
+								.label(cx.t("voice-stage-end"))
+								.on_click(cx.listener(move |this, _, _, cx| {
+									this.data.read(cx).send(Command::EndStage { channel_id: channel });
+								})),
+						)
+				})
+				.when(snapshot.moderator && !live, |header| {
+					header.child(
+						Button::new("voice-stage-start")
+							.primary()
+							.label(cx.t("voice-stage-start"))
+							.on_click(move |_, window, cx| open_topic(window, cx, channel, None)),
+					)
+				})
+				.into_any_element(),
+		)
+	}
+
+	fn invite_banner(
+		&self,
+		snapshot: &Snapshot,
+		theme: &Theme,
+		cx: &mut Context<Self>,
+	) -> Option<AnyElement> {
+		let guild_id = snapshot.guild.filter(|_| snapshot.invited)?;
+		let channel_id = snapshot.channel;
+		Some(
+			div()
+				.flex()
+				.flex_none()
+				.items_center()
+				.justify_between()
+				.gap(theme.space_8)
+				.px(theme.space_12)
+				.py(theme.space_8)
+				.rounded(theme.radius_md)
+				.bg(theme.background_secondary)
+				.child(
+					div()
+						.text_size(theme.font_sm)
+						.font_weight(FontWeight::SEMIBOLD)
+						.text_color(theme.header_primary)
+						.child(cx.t("voice-stage-invited")),
+				)
+				.child(
+					div()
+						.flex()
+						.items_center()
+						.gap(theme.space_8)
+						.child(
+							Button::new("voice-invite-decline")
+								.outline()
+								.label(cx.t("voice-stage-decline"))
+								.on_click(cx.listener(move |this, _, _, cx| {
+									this.data.read(cx).send(Command::RequestToSpeak {
+										guild_id,
+										channel_id,
+										request: false,
+									});
+								})),
+						)
+						.child(
+							Button::new("voice-invite-accept")
+								.primary()
+								.label(cx.t("voice-stage-accept"))
+								.on_click(cx.listener(move |this, _, _, cx| {
+									this.data
+										.read(cx)
+										.send(Command::AcceptSpeakInvite { guild_id, channel_id });
+								})),
+						),
+				)
+				.into_any_element(),
+		)
+	}
+
+	fn request_list(
+		&self,
+		requests: &[&Participant],
+		guild_id: Snowflake,
+		channel_id: Snowflake,
+		theme: &Theme,
+		cx: &mut Context<Self>,
+	) -> AnyElement {
+		let decide = move |user_id: Snowflake, speaker: bool| Command::SetSpeaker {
+			guild_id,
+			channel_id,
+			user_id,
+			speaker,
+		};
+		div()
+			.id("voice-requests")
+			.flex()
+			.flex_col()
+			.flex_none()
+			.max_h(rem(REQUEST_LIST_MAX_HEIGHT))
+			.overflow_y_scroll()
+			.children(requests.iter().map(|person| {
+				let user = person.user;
+				div()
+					.id(("voice-request", user.get()))
+					.flex()
+					.items_center()
+					.gap(theme.space_8)
+					.h(theme.voice_row_height)
+					.px(theme.space_8)
+					.rounded(theme.radius_sm)
+					.hover(|style| style.bg(theme.modifier_hover))
+					.child(speaking_avatar(person, theme.voice_row_avatar, theme))
+					.child(
+						div()
+							.flex_1()
+							.min_w_0()
+							.truncate()
+							.text_size(theme.font_sm)
+							.text_color(theme.text_normal)
+							.child(person.name.clone()),
+					)
+					.child(
+						IconButton::new(("voice-request-accept", user.get()), IconKind::Check)
+							.color(theme.success)
+							.tooltip(cx.t("voice-stage-accept"))
+							.on_click(cx.listener(move |this, _, _, cx| {
+								this.data.read(cx).send(decide(user, true));
+							})),
+					)
+					.child(
+						IconButton::new(("voice-request-dismiss", user.get()), IconKind::Close)
+							.tooltip(cx.t("voice-stage-dismiss"))
+							.on_click(cx.listener(move |this, _, _, cx| {
+								this.data.read(cx).send(decide(user, false));
+							})),
+					)
+			}))
+			.into_any_element()
+	}
+
+	fn stage_seat_button(
+		&self,
+		snapshot: &Snapshot,
+		guild_id: Snowflake,
+		cx: &mut Context<Self>,
+	) -> AnyElement {
+		let channel_id = snapshot.channel;
+		let me = snapshot.me;
+		let data = self.data.clone();
+		let seat = move |speaker: bool| {
+			let data = data.clone();
+			move |_: &gpui::ClickEvent, _: &mut Window, cx: &mut gpui::App| {
+				if let Some(user_id) = me {
+					data.read(cx).send(Command::SetSpeaker {
+						guild_id,
+						channel_id,
+						user_id,
+						speaker,
+					});
+				}
+			}
+		};
+		if !snapshot.audience {
+			return ControlButton::new("voice-bar-audience", IconKind::Members, cx.t("mod-move-audience"))
+				.on_click(seat(false))
+				.into_any_element();
+		}
+		if snapshot.can_speak {
+			return ControlButton::new("voice-bar-speak", IconKind::Stage, cx.t("voice-stage-speak"))
+				.on_click(seat(true))
+				.into_any_element();
+		}
+		let request = !snapshot.hand_raised;
+		let data = self.data.clone();
+		ControlButton::new(
+			"voice-bar-hand",
+			IconKind::Hand,
+			cx.t(if request {
+				"voice-stage-request"
+			} else {
+				"voice-stage-cancel-request"
+			}),
+		)
+		.highlight(snapshot.hand_raised)
+		.on_click(move |_, _, cx| {
+			data.read(cx).send(Command::RequestToSpeak {
+				guild_id,
+				channel_id,
+				request,
+			})
+		})
+		.into_any_element()
+	}
+
 	fn control_bar(&self, snapshot: &Snapshot, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
 		let data = self.data.clone();
 		let backend = self.backend.clone();
 		let preset = Preset::from_index((self.backend.read)().voice.video_preset);
-		let mic_label = cx.t(if snapshot.self_mute {
+		let mic_off = snapshot.self_mute || snapshot.self_deaf || snapshot.server_muted;
+		let mic_label = cx.t(if snapshot.server_muted {
+			"voice-server-muted"
+		} else if snapshot.self_mute {
 			"user-unmute"
 		} else {
 			"user-mute"
@@ -625,14 +901,11 @@ impl VoiceRoom {
 			.child(
 				ControlButton::new(
 					"voice-bar-mic",
-					if snapshot.self_mute || snapshot.self_deaf {
-						IconKind::MicOff
-					} else {
-						IconKind::Mic
-					},
+					if mic_off { IconKind::MicOff } else { IconKind::Mic },
 					mic_label,
 				)
-				.alert(snapshot.self_mute || snapshot.self_deaf)
+				.alert(mic_off)
+				.disabled(snapshot.server_muted)
 				.on_click({
 					let data = data.clone();
 					move |_, _, cx| data.update(cx, |data, cx| data.toggle_mute(cx))
@@ -694,30 +967,7 @@ impl VoiceRoom {
 			)
 			.when_some(
 				snapshot.guild.filter(|_| snapshot.stage_channel),
-				|bar, guild_id| {
-					let channel_id = snapshot.channel;
-					let request = !snapshot.hand_raised;
-					let data = data.clone();
-					bar.child(
-						ControlButton::new(
-							"voice-bar-hand",
-							IconKind::Hand,
-							cx.t(if request {
-								"voice-stage-request"
-							} else {
-								"voice-stage-cancel-request"
-							}),
-						)
-						.highlight(snapshot.hand_raised)
-						.on_click(move |_, _, cx| {
-							data.read(cx).send(Command::RequestToSpeak {
-								guild_id,
-								channel_id,
-								request,
-							})
-						}),
-					)
-				},
+				|bar, guild_id| bar.child(self.stage_seat_button(snapshot, guild_id, cx)),
 			)
 			.child(
 				ControlButton::new(
@@ -782,6 +1032,14 @@ impl VoiceRoom {
 			)
 			.child(self.composer.clone())
 	}
+}
+
+fn section_label(text: SharedString, theme: &Theme) -> impl IntoElement {
+	div()
+		.text_size(theme.font_tiny)
+		.font_weight(FontWeight::BOLD)
+		.text_color(theme.header_secondary)
+		.child(text.to_uppercase())
 }
 
 fn snapshot_screen_on(data: &Entity<Data>, cx: &gpui::App) -> bool {

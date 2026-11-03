@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use gpui::SharedString;
 use protocol::{Snowflake, VoiceState};
 use state::{State, VideoKind};
@@ -12,11 +13,13 @@ pub struct Participant {
 	pub speaking: bool,
 	pub muted: bool,
 	pub deafened: bool,
+	pub server_muted: bool,
+	pub server_deafened: bool,
 	pub video: Option<VideoKind>,
 	pub live: bool,
 	pub me: bool,
 	pub listener: bool,
-	pub hand_raised: bool,
+	pub hand_raised: Option<DateTime<Utc>>,
 }
 
 fn base(state: &State, guild: Option<Snowflake>, user: Snowflake, avatar_size: u32) -> Participant {
@@ -27,11 +30,13 @@ fn base(state: &State, guild: Option<Snowflake>, user: Snowflake, avatar_size: u
 		speaking: false,
 		muted: false,
 		deafened: false,
+		server_muted: false,
+		server_deafened: false,
 		video: None,
 		live: false,
 		me: state.current_user_id() == Some(user),
 		listener: false,
-		hand_raised: false,
+		hand_raised: None,
 	}
 }
 
@@ -42,8 +47,10 @@ fn from_voice_state(
 	avatar_size: u32,
 ) -> Participant {
 	let mut participant = base(state, guild, voice.user_id, avatar_size);
-	participant.muted = voice.mute || voice.self_mute;
-	participant.deafened = voice.deaf || voice.self_deaf;
+	participant.muted = voice.self_mute;
+	participant.deafened = voice.self_deaf;
+	participant.server_muted = voice.mute;
+	participant.server_deafened = voice.deaf;
 	participant.video = if voice.self_video {
 		Some(VideoKind::Camera)
 	} else if voice.self_stream == Some(true) {
@@ -53,7 +60,7 @@ fn from_voice_state(
 	};
 	participant.live = voice.self_stream == Some(true);
 	participant.listener = voice.suppress;
-	participant.hand_raised = voice.request_to_speak_timestamp.is_some();
+	participant.hand_raised = voice.request_to_speak_timestamp;
 	participant
 }
 

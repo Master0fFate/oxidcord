@@ -1548,7 +1548,7 @@ impl Shell {
 	fn open_voice_menu(&mut self, user: Snowflake, at: Point<Pixels>, cx: &mut Context<Self>) {
 		let data = self.data.clone();
 		let name: SharedString = self.data.read(cx).state().display_name(self.guild, user).into();
-		let menu = cx.new(|cx| UserMenu::new(data, user, name, cx));
+		let menu = cx.new(|cx| UserMenu::new(data, self.guild, user, name, cx));
 		let subscription = cx.subscribe(&menu, move |this, _, event: &UserMenuEvent, cx| {
 			let UserMenuEvent::Profile(user) = event;
 			this.open_profile(*user, at, Anchor::TopLeft, cx);
