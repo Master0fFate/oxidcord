@@ -251,6 +251,25 @@ impl Core {
 		});
 	}
 
+	pub(super) fn spawn_role_change<F, Fut>(&self, what: &'static str, guild_id: Snowflake, call: F)
+	where
+		F: FnOnce(RestClient) -> Fut,
+		Fut: Future<Output = rest::Result<()>> + Send + 'static,
+	{
+		if self.state.read().role_member_counts(guild_id).is_none() {
+			self.spawn_action(what, call);
+			return;
+		}
+		self.spawn_load(what, move |rest| {
+			let change = call(rest.clone());
+			async move {
+				change.await?;
+				let raw = rest.role_member_counts(guild_id).await?;
+				Ok(Loaded::RoleCounts { guild_id, raw })
+			}
+		});
+	}
+
 	pub(super) fn spawn_load<F, Fut>(&self, what: &'static str, call: F)
 	where
 		F: FnOnce(RestClient) -> Fut,

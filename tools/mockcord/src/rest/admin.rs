@@ -318,6 +318,10 @@ pub async fn modify_role(
 	shared.modify_role(id, role_id, &body).map(Json)
 }
 
+pub async fn role_member_counts(State(shared): Mock, Path(id): Path<u64>) -> ApiResult {
+	shared.role_member_counts(id).map(Json)
+}
+
 pub async fn delete_role(State(shared): Mock, Path((id, role_id)): Path<(u64, u64)>) -> NoContent {
 	shared.delete_role(id, role_id)?;
 	Ok(StatusCode::NO_CONTENT)

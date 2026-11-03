@@ -92,6 +92,10 @@ pub enum Loaded {
 		guild_id: Snowflake,
 		raw: Value,
 	},
+	RoleCounts {
+		guild_id: Snowflake,
+		raw: Value,
+	},
 	ReactionUsers {
 		message_id: Snowflake,
 		emoji: String,
@@ -316,6 +320,7 @@ pub(crate) struct Lazy {
 	pub(crate) audit_logs: HashMap<Snowflake, AuditLog>,
 	pub(crate) bans: HashMap<Snowflake, Vec<BanEntry>>,
 	pub(crate) automod_rules: HashMap<Snowflake, Vec<AutoModRule>>,
+	pub(crate) role_counts: HashMap<Snowflake, HashMap<Snowflake, u64>>,
 	pub(crate) auth_sessions: Option<Vec<AuthSession>>,
 	pub(crate) voice_regions: Option<Vec<VoiceRegion>>,
 	pub(crate) reaction_users: HashMap<(Snowflake, String, bool), Vec<User>>,
@@ -745,6 +750,10 @@ impl State {
 				self.lazy.automod_rules.insert(*guild_id, rules.into_vec());
 				changes.loaded.insert(*guild_id);
 			}
+			Loaded::RoleCounts { guild_id, raw } => {
+				self.store_role_counts(*guild_id, raw);
+				changes.loaded.insert(*guild_id);
+			}
 			Loaded::ReactionUsers {
 				message_id,
 				emoji,
@@ -882,6 +891,19 @@ impl State {
 			premium_since: parsed.premium_since,
 			user,
 		})
+	}
+
+	fn store_role_counts(&mut self, guild_id: Snowflake, raw: &Value) {
+		let mut counts: HashMap<Snowflake, u64> =
+			self.guilds.get(&guild_id).map_or_else(HashMap::new, |guild| {
+				guild.roles.keys().map(|role_id| (*role_id, 0)).collect()
+			});
+		for (role_id, count) in raw.as_object().into_iter().flatten() {
+			if let (Ok(role_id), Some(count)) = (role_id.parse::<u64>(), count.as_u64()) {
+				counts.insert(Snowflake(role_id), count);
+			}
+		}
+		self.lazy.role_counts.insert(guild_id, counts);
 	}
 
 	fn store_profile_member(
@@ -1103,6 +1125,10 @@ impl State {
 		self.auth_sessions()?
 			.iter()
 			.position(|session| session.id_hash == hash)
+	}
+
+	pub fn role_member_counts(&self, guild_id: Snowflake) -> Option<&HashMap<Snowflake, u64>> {
+		self.lazy.role_counts.get(&guild_id)
 	}
 
 	pub fn bans(&self, guild_id: Snowflake) -> &[BanEntry] {

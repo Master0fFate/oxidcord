@@ -147,6 +147,11 @@ impl RestClient {
 		self.send(request).await
 	}
 
+	pub async fn role_member_counts(&self, guild_id: Snowflake) -> Result<Value> {
+		self.send(Request::get(format!("/guilds/{guild_id}/roles/member-counts")))
+			.await
+	}
+
 	pub async fn guild_invites(&self, guild_id: Snowflake) -> Result<Value> {
 		self.send(Request::get(format!("/guilds/{guild_id}/invites")))
 			.await

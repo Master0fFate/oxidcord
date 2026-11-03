@@ -884,6 +884,25 @@ impl Shared {
 		Ok(value)
 	}
 
+	pub fn role_member_counts(&self, guild_id: u64) -> Result<Value, ApiError> {
+		let store = self.store.lock();
+		let guild = self.live_guild(&store, guild_id)?;
+		let mut counts: HashMap<u64, usize> = HashMap::new();
+		for user in guild.members.iter().filter_map(|member| member.user.as_ref()) {
+			if let Some(member) = store.member_now(guild, user.id.0) {
+				for role in member.roles {
+					*counts.entry(role.0).or_default() += 1;
+				}
+			}
+		}
+		Ok(Value::Object(
+			counts
+				.into_iter()
+				.map(|(role_id, count)| (role_id.to_string(), json!(count)))
+				.collect(),
+		))
+	}
+
 	pub fn delete_role(&self, guild_id: u64, role_id: u64) -> Result<(), ApiError> {
 		let mut store = self.store.lock();
 		self.live_guild(&store, guild_id)?;

@@ -112,6 +112,7 @@ pub fn router(shared: Arc<Shared>) -> Router {
 				.post(admin::create_role)
 				.patch(admin::reorder_roles),
 		)
+		.route("/guilds/{id}/roles/member-counts", get(admin::role_member_counts))
 		.route(
 			"/guilds/{id}/roles/{rid}",
 			patch(admin::modify_role).delete(admin::delete_role),

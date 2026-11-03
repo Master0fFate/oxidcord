@@ -1212,6 +1212,12 @@ impl Core {
 					});
 				}
 			}
+			Command::LoadRoleCounts { guild_id } => {
+				self.spawn_load("role counts", move |rest| async move {
+					let raw = rest.role_member_counts(guild_id).await?;
+					Ok(Loaded::RoleCounts { guild_id, raw })
+				});
+			}
 			Command::LoadInvites { guild_id } => {
 				if self.guild_allows(guild_id, Permissions::MANAGE_GUILD, "Manage Server") {
 					self.spawn_load("invites", move |rest| async move {
@@ -1385,7 +1391,7 @@ impl Core {
 				role_id,
 			} => {
 				if self.guild_allows(guild_id, Permissions::MANAGE_ROLES, "Manage Roles") {
-					self.spawn_action("add role", move |rest| async move {
+					self.spawn_role_change("add role", guild_id, move |rest| async move {
 						rest.add_member_role(guild_id, user_id, role_id).await
 					});
 				}
@@ -1396,7 +1402,7 @@ impl Core {
 				role_id,
 			} => {
 				if self.guild_allows(guild_id, Permissions::MANAGE_ROLES, "Manage Roles") {
-					self.spawn_action("remove role", move |rest| async move {
+					self.spawn_role_change("remove role", guild_id, move |rest| async move {
 						rest.remove_member_role(guild_id, user_id, role_id).await
 					});
 				}

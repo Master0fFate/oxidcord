@@ -630,6 +630,9 @@ pub enum Command {
 		guild_id: Snowflake,
 		rule_id: Snowflake,
 	},
+	LoadRoleCounts {
+		guild_id: Snowflake,
+	},
 	LoadInvites {
 		guild_id: Snowflake,
 	},

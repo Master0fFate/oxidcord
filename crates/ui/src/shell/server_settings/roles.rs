@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use gpui::{
@@ -18,7 +19,7 @@ use crate::components::{
 	COLOR_PALETTE, IconButton, PickHandler, ToggleHandler, color_swatch, field, hint, parse_hex_color,
 	segmented, switch_row,
 };
-use crate::data::Data;
+use crate::data::{Data, DataEvent};
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
 use crate::model::role_color;
@@ -27,6 +28,7 @@ use crate::theme::Theme;
 
 const NEW_ROLE_NAME: &str = "new role";
 const NAME_LIMIT: usize = 100;
+const EMPTY_COUNT: &str = "-";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Tab {
@@ -68,11 +70,17 @@ fn color_of(role: &Role) -> u32 {
 
 impl RolesPage {
 	pub fn new(data: Entity<Data>, guild: Snowflake, window: &mut Window, cx: &mut Context<Self>) -> Self {
+		data.read(cx).send(Command::LoadRoleCounts { guild_id: guild });
 		let name = cx.new(|cx| InputState::new(window, cx));
 		let hex = cx.new(|cx| InputState::new(window, cx).placeholder("#99aab5"));
 		let search_placeholder = cx.t("roles-search-permissions");
 		let search = cx.new(|cx| InputState::new(window, cx).placeholder(search_placeholder));
 		let subscriptions = vec![
+			cx.subscribe(&data, |_, _, event: &DataEvent, cx| {
+				if matches!(event, DataEvent::Changed(_)) {
+					cx.notify();
+				}
+			}),
 			cx.subscribe_in(&name, window, |_, _, event: &InputEvent, _, cx| {
 				if matches!(event, InputEvent::Change) {
 					cx.notify();
@@ -115,19 +123,17 @@ impl RolesPage {
 		roles
 	}
 
-	fn member_count(&self, role: &Role, cx: &App) -> usize {
+	fn member_counts(&self, cx: &App) -> HashMap<Snowflake, u64> {
 		let state = self.data.read(cx).state();
-		state.guild(self.guild).map_or(0, |guild| {
-			if role.id == guild.id {
-				guild.members.len()
-			} else {
-				guild
-					.members
-					.values()
-					.filter(|member| member.roles.contains(&role.id))
-					.count()
-			}
-		})
+		let mut counts = state.role_member_counts(self.guild).cloned().unwrap_or_default();
+		if let Some(total) = state
+			.guild(self.guild)
+			.and_then(|guild| guild.member_count)
+			.and_then(|total| u64::try_from(total).ok())
+		{
+			counts.insert(self.guild, total);
+		}
+		counts
 	}
 
 	fn begin(&mut self, role: Role, window: &mut Window, cx: &mut Context<Self>) {
@@ -286,12 +292,12 @@ impl RolesPage {
 	fn role_row(
 		&self,
 		role: &Role,
+		count: Option<u64>,
 		access: &GuildAccess,
 		theme: &Theme,
 		cx: &mut Context<Self>,
 	) -> AnyElement {
 		let id = role.id;
-		let count = self.member_count(role, cx);
 		let color = match color_of(role) {
 			0 => theme.interactive_muted,
 			value => role_color(value),
@@ -334,7 +340,7 @@ impl RolesPage {
 							.size(theme.glyph_sm)
 							.color(theme.text_muted),
 					)
-					.child(count.to_string()),
+					.child(count.map_or_else(|| EMPTY_COUNT.to_owned(), |count| count.to_string())),
 			)
 			.when(managed, |row| {
 				row.child(
@@ -359,9 +365,10 @@ impl RolesPage {
 
 	fn list(&self, access: &GuildAccess, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
 		let roles = self.roles_sorted(cx);
+		let counts = self.member_counts(cx);
 		let rows: Vec<AnyElement> = roles
 			.iter()
-			.map(|role| self.role_row(role, access, theme, cx))
+			.map(|role| self.role_row(role, counts.get(&role.id).copied(), access, theme, cx))
 			.collect();
 		div()
 			.flex()
