@@ -49,7 +49,7 @@ use gpui_component::WindowExt as _;
 use platform::notifications::Notification;
 use protocol::{ChannelType, Snowflake, StatusKind};
 use session::Command;
-use state::{Alert, Changes, State, UiIntent};
+use state::{Alert, Changes, RequestRow, State, UiIntent};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 use self::account::{AccountHub, GroupEvent, Groups};
@@ -147,6 +147,7 @@ pub struct Shell {
 	channel: Option<Snowflake>,
 	home: bool,
 	initial_selection_sent: bool,
+	request: Option<RequestRow>,
 	last_channel: HashMap<Snowflake, Snowflake>,
 	last_dm: Option<Snowflake>,
 	recent_targets: Vec<SwitcherTarget>,
@@ -575,6 +576,7 @@ impl Shell {
 			channel: None,
 			home: false,
 			initial_selection_sent: false,
+			request: None,
 			last_channel: HashMap::new(),
 			last_dm: None,
 			recent_targets: Vec::new(),
@@ -854,6 +856,7 @@ impl Shell {
 		});
 		self.sync_notifications(cx);
 		self.sync_pins_unread(cx);
+		self.sync_request(cx);
 		self.community
 			.update(cx, |community, cx| community.show_main(guild, channel, cx));
 		self.timeline.update(cx, |timeline, cx| {
@@ -882,6 +885,16 @@ impl Shell {
 			.channel
 			.is_some_and(|channel| self.data.read(cx).state().pins_unread(channel));
 		self.top_bar.update(cx, |bar, cx| bar.set_pins_unread(unread, cx));
+	}
+
+	fn sync_request(&mut self, cx: &mut Context<Self>) {
+		let request = self
+			.channel
+			.and_then(|channel| self.data.read(cx).state().message_request(channel));
+		if request != self.request {
+			self.request = request;
+			cx.notify();
+		}
 	}
 
 	fn set_typing(&mut self, cx: &mut Context<Self>) {
@@ -922,6 +935,7 @@ impl Shell {
 			self.sync_pins_unread(cx);
 		}
 		if changes.private_channels || changes.relationships || changes.presence_any() {
+			self.sync_request(cx);
 			self.groups.refresh(cx);
 			self.sync_group_header(cx);
 			self.refresh_direct_title(cx);
@@ -1720,9 +1734,9 @@ impl Render for Shell {
 			plugins::right_panel_visible(cx) && width >= rem(SIDEBAR_MIN_WIDTH).to_pixels(rem_size);
 		let status_bar = plugins::status_bar(cx);
 		let request = self
-			.channel
-			.and_then(|channel| self.data.read(cx).state().message_request(channel))
-			.map(|request| request_bar::request_bar(&self.data, &request, &theme, cx));
+			.request
+			.as_ref()
+			.map(|request| request_bar::request_bar(&self.data, request, &theme, cx));
 		let forum = self.community.read(cx).forum_view(cx);
 		let thread_panel = self.community.read(cx).thread_panel(cx);
 		let thread_full = thread_panel
