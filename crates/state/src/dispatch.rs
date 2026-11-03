@@ -766,8 +766,15 @@ impl State {
 		let Some(guild_id) = voice.guild_id else {
 			return self.call_voice_state(voice);
 		};
+		let had_request = self
+			.guild(guild_id)
+			.and_then(|guild| guild.voice_states.get(&voice.user_id))
+			.is_some_and(|stored| stored.request_to_speak_timestamp.is_some());
 		let mut changes = self.guild_voice_state(guild_id, voice);
-		if voice.request_to_speak_timestamp.is_none() && self.current_user_id() == Some(voice.user_id) {
+		if had_request
+			&& voice.request_to_speak_timestamp.is_none()
+			&& self.current_user_id() == Some(voice.user_id)
+		{
 			changes.merge(self.hand_requested_changed(false));
 		}
 		changes
