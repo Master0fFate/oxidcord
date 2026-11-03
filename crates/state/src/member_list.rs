@@ -26,8 +26,12 @@ impl MemberList {
 		self.switching = true;
 	}
 
-	pub fn accepts(&self, id: &str) -> bool {
-		self.switching || self.id.is_empty() || self.id == id
+	pub fn accepts(&self, id: &str, synced: bool) -> bool {
+		self.id == id || self.id.is_empty() || (self.switching && synced)
+	}
+
+	pub fn settle(&mut self) {
+		self.switching = false;
 	}
 
 	pub fn reset(&mut self, id: &str) {

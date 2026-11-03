@@ -883,11 +883,17 @@ impl State {
 		let Some(guild) = self.guilds.get_mut(&guild_id) else {
 			return changes;
 		};
-		if !guild.member_list.accepts(&update.id) {
+		let synced = update
+			.ops
+			.iter()
+			.any(|op| op.get("op").and_then(Value::as_str) == Some("SYNC"));
+		if !guild.member_list.accepts(&update.id, synced) {
 			return changes;
 		}
 		if guild.member_list.id != update.id {
 			guild.member_list.reset(&update.id);
+		} else if synced {
+			guild.member_list.settle();
 		}
 		for op in &update.ops {
 			self.apply_member_list_op(guild_id, op, &mut changes);

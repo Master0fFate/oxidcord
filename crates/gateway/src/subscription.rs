@@ -18,7 +18,7 @@ impl GuildSubscription {
 		self.typing |= later.typing;
 		self.threads |= later.threads;
 		self.activities |= later.activities;
-		self.channels.extend(later.channels);
+		self.channels = later.channels;
 	}
 
 	fn into_json(self) -> Value {
