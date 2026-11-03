@@ -387,28 +387,25 @@ impl Core {
 				self.patch_thread_settings(thread_id, json!({ "flags": ThreadMember::level_flag(level) }))
 			}
 			Command::LoadArchivedThreads { channel_id } => {
-				let (before, private_scope) = {
+				let private_scope = {
 					let state = self.state.read();
-					let before = state.archived_threads_cursor(channel_id).map(timestamp);
-					let private_scope = (before.is_none()
-						&& state
-							.channel(channel_id)
-							.is_some_and(|channel| channel.kind == ChannelType::GuildText))
-					.then(|| {
-						if state
-							.my_permissions(channel_id)
-							.contains(Permissions::MANAGE_THREADS)
-						{
-							ArchivedScope::Private
-						} else {
-							ArchivedScope::JoinedPrivate
-						}
-					});
-					(before, private_scope)
+					state
+						.channel(channel_id)
+						.is_some_and(|channel| channel.kind == ChannelType::GuildText)
+						.then(|| {
+							if state
+								.my_permissions(channel_id)
+								.contains(Permissions::MANAGE_THREADS)
+							{
+								ArchivedScope::Private
+							} else {
+								ArchivedScope::JoinedPrivate
+							}
+						})
 				};
-				self.load_archived_threads(channel_id, ArchivedScope::Public, before);
+				self.load_archived_threads(channel_id, ArchivedScope::Public);
 				if let Some(scope) = private_scope {
-					self.load_archived_threads(channel_id, scope, None);
+					self.load_archived_threads(channel_id, scope);
 				}
 			}
 			Command::LoadActiveThreads { guild_id } => {
@@ -675,17 +672,16 @@ impl Core {
 		(kind, Permissions::CREATE_PUBLIC_THREADS, "Create Public Threads")
 	}
 
-	fn load_archived_threads(&self, channel_id: Snowflake, scope: ArchivedScope, before: Option<String>) {
+	fn load_archived_threads(&self, channel_id: Snowflake, scope: ArchivedScope) {
 		self.spawn_load("archived threads", move |rest| async move {
 			let list = rest
-				.threads_archived(channel_id, scope, before.as_deref(), Some(ARCHIVED_PAGE))
+				.threads_archived(channel_id, scope, None, Some(ARCHIVED_PAGE))
 				.await?;
 			Ok(Loaded::ArchivedThreads {
 				channel_id,
 				threads: list.threads.into_vec(),
 				members: list.members.into_vec(),
 				has_more: list.has_more,
-				append: before.is_some(),
 				private: scope != ArchivedScope::Public,
 			})
 		});

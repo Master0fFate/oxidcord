@@ -72,7 +72,6 @@ impl InviteMembers {
 					}
 				}
 				DataEvent::MediaReady => cx.notify(),
-				_ => {}
 			}),
 			cx.subscribe_in(
 				&search,

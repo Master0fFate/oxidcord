@@ -42,7 +42,6 @@ pub enum Loaded {
 		threads: Vec<Channel>,
 		members: Vec<ThreadMember>,
 		has_more: bool,
-		append: bool,
 		private: bool,
 	},
 	ActiveThreads {
@@ -592,7 +591,6 @@ impl State {
 				threads,
 				members,
 				has_more,
-				append,
 				private,
 			} => {
 				let guild_id = self.channel_guild(*channel_id);
@@ -601,10 +599,7 @@ impl State {
 				if *private {
 					entry.private_ids = ids;
 				} else {
-					if !*append {
-						entry.ids.clear();
-					}
-					entry.ids.extend(ids);
+					entry.ids = ids;
 					entry.has_more = *has_more;
 				}
 				changes.loaded.insert(*channel_id);
@@ -1052,18 +1047,6 @@ impl State {
 			.chain(&archived.private_ids)
 			.filter_map(|id| self.channel(*id))
 			.collect()
-	}
-
-	pub fn archived_threads_cursor(&self, channel_id: Snowflake) -> Option<DateTime<Utc>> {
-		let archived = self
-			.lazy
-			.archived
-			.get(&channel_id)
-			.filter(|archived| archived.has_more)?;
-		self.channel(*archived.ids.last()?)?
-			.thread_metadata
-			.as_ref()?
-			.archive_timestamp
 	}
 
 	pub fn profile(&self, user_id: Snowflake) -> Option<&UserProfile> {
