@@ -123,12 +123,13 @@ impl ChannelMessages {
 	) {
 		let was_empty = self.ordered.is_empty();
 		let received = messages.len();
+		let at_tail = channel_last.is_none_or(|last| messages.iter().any(|message| message.id >= last));
 		let mut kept = Vec::new();
 		if direction == LoadDirection::Around {
 			kept = self
 				.ordered
 				.iter()
-				.filter(|message| is_ephemeral(message))
+				.filter(|message| at_tail && is_ephemeral(message))
 				.cloned()
 				.collect();
 			self.ordered.clear();
@@ -140,9 +141,8 @@ impl ChannelMessages {
 			self.gaps.clear();
 			self.stale = false;
 		}
-		let at_tail = channel_last.is_none_or(|last| messages.iter().any(|message| message.id >= last));
 		self.drop_confirmed_pending(&messages);
-		for message in messages.into_iter().chain(kept.into_iter().filter(|_| at_tail)) {
+		for message in messages.into_iter().chain(kept) {
 			self.insert(message);
 		}
 		match direction {
