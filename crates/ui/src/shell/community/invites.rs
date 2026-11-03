@@ -22,7 +22,7 @@ const CODE_MIN: usize = 2;
 const CODE_MAX: usize = 32;
 
 #[derive(Default, Clone)]
-pub struct InviteRequests(pub Rc<RefCell<HashSet<String>>>);
+pub struct InviteRequests(pub Rc<RefCell<HashSet<(String, Option<Snowflake>)>>>);
 
 impl Global for InviteRequests {}
 
@@ -73,7 +73,7 @@ fn request_once(link: &InviteLink, cx: &App) {
 	let Some(requests) = cx.try_global::<InviteRequests>() else {
 		return;
 	};
-	if requests.0.borrow_mut().insert(link.code.clone()) {
+	if requests.0.borrow_mut().insert((link.code.clone(), link.event)) {
 		data_handle(cx).read(cx).send(Command::ResolveInvite {
 			code: link.code.clone(),
 			event_id: link.event,
@@ -117,7 +117,7 @@ fn stage_line(topic: &str, theme: &Theme, cx: &App) -> AnyElement {
 fn card(link: &InviteLink, state: &State, theme: &Theme, cx: &App) -> Option<AnyElement> {
 	let code = link.code.as_str();
 	request_once(link, cx);
-	let preview = state.invite_preview(code).cloned()?;
+	let preview = state.invite_preview(code, link.event).cloned()?;
 	let stage = preview
 		.guild_id
 		.zip(preview.channel_id)

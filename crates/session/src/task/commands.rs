@@ -631,7 +631,7 @@ impl Core {
 			}
 			Command::ResolveInvite { code, event_id } => self.spawn_load("invite", move |rest| async move {
 				let raw = rest.invite(&code, event_id).await?;
-				Ok(Loaded::InvitePreview { code, raw })
+				Ok(Loaded::InvitePreview { code, event_id, raw })
 			}),
 			Command::AcceptInvite { code } => {
 				let internal = self.internal.clone();

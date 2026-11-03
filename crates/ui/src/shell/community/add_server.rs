@@ -151,7 +151,7 @@ impl AddServer {
 	fn joined(&self, code: &str, cx: &App) -> Option<bool> {
 		let data = self.data.read(cx);
 		let state = data.state();
-		let preview = state.invite_preview(code)?;
+		let preview = state.invite_preview(code, None)?;
 		Some(preview.guild_id.is_some_and(|id| state.guild(id).is_some()))
 	}
 
@@ -195,7 +195,7 @@ impl AddServer {
 	fn preview_card(&self, code: &str, theme: &Theme, cx: &App) -> Option<AnyElement> {
 		let data = self.data.read(cx);
 		let state = data.state();
-		let preview = state.invite_preview(code)?;
+		let preview = state.invite_preview(code, None)?;
 		let avatar = Avatar::new(preview.guild_name.clone()).size(theme.invite_card_icon);
 		let avatar = match preview.guild_id.zip(preview.guild_icon.as_deref()) {
 			Some((id, hash)) => avatar.url(media::cdn::guild_icon_url(id.get(), hash, 128)),

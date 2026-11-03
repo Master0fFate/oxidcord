@@ -97,6 +97,7 @@ pub enum Loaded {
 	},
 	InvitePreview {
 		code: String,
+		event_id: Option<Snowflake>,
 		raw: Value,
 	},
 	GuildInvites {
@@ -437,7 +438,7 @@ pub(crate) struct Lazy {
 	pub(crate) notes: HashMap<Snowflake, String>,
 	pub(crate) application_icons: HashMap<Snowflake, Option<String>>,
 	pub(crate) invites_created: HashMap<Snowflake, InviteInfo>,
-	pub(crate) invite_previews: HashMap<String, InvitePreview>,
+	pub(crate) invite_previews: HashMap<(String, Option<Snowflake>), InvitePreview>,
 	pub(crate) guild_invites: HashMap<Snowflake, Vec<InviteInfo>>,
 	pub(crate) member_verifications: HashMap<Snowflake, MemberVerification>,
 	pub(crate) audit_logs: HashMap<Snowflake, AuditLog>,
@@ -869,13 +870,13 @@ impl State {
 					changes.loaded.insert(*channel_id);
 				}
 			}
-			Loaded::InvitePreview { code, raw } => {
+			Loaded::InvitePreview { code, event_id, raw } => {
 				if let Ok(invite) = RawInvite::deserialize(raw) {
 					let guild = invite.guild.unwrap_or_default();
 					let channel = invite.channel.unwrap_or_default();
 					let guild_id = guild.id;
 					self.lazy.invite_previews.insert(
-						code.clone(),
+						(code.clone(), *event_id),
 						InvitePreview {
 							code: code.clone(),
 							guild_id,
@@ -1544,8 +1545,8 @@ impl State {
 		self.lazy.invites_created.get(&channel_id)
 	}
 
-	pub fn invite_preview(&self, code: &str) -> Option<&InvitePreview> {
-		self.lazy.invite_previews.get(code)
+	pub fn invite_preview(&self, code: &str, event_id: Option<Snowflake>) -> Option<&InvitePreview> {
+		self.lazy.invite_previews.get(&(code.to_owned(), event_id))
 	}
 
 	pub fn member_verification(&self, guild_id: Snowflake) -> Option<&MemberVerification> {
