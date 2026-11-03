@@ -340,21 +340,38 @@ impl ProfilesPage {
 	fn save(&mut self, cx: &mut Context<Self>) {
 		let data = self.data.read(cx);
 		match self.tab {
-			Tab::User => data.send(Command::EditProfile {
-				global_name: changed(self.name.read(cx).value().trim(), &self.applied.name),
-				bio: changed(&self.bio.read(cx).value(), &self.applied.bio),
-				avatar_png: self.avatar.take().map(|picked| picked.png),
-				banner_png: self.banner.take().map(|picked| picked.png),
-				pronouns: changed(self.pronouns.read(cx).value().trim(), &self.applied.pronouns),
-			}),
+			Tab::User => {
+				let name = self.name.read(cx).value().trim().to_owned();
+				let bio = self.bio.read(cx).value().to_string();
+				let pronouns = self.pronouns.read(cx).value().trim().to_owned();
+				data.send(Command::EditProfile {
+					global_name: changed(&name, &self.applied.name),
+					bio: changed(&bio, &self.applied.bio),
+					avatar_png: self.avatar.take().map(|picked| picked.png),
+					banner_png: self.banner.take().map(|picked| picked.png),
+					pronouns: changed(&pronouns, &self.applied.pronouns),
+				});
+				self.applied.name = name;
+				self.applied.bio = bio;
+				self.applied.pronouns = pronouns;
+			}
 			Tab::Server => {
 				if let Some(guild_id) = self.guild {
-					data.send(Command::SetGuildProfile {
-						guild_id,
-						nick: changed(self.nick.read(cx).value().trim(), &self.applied.nick),
-						avatar_png: self.server_avatar.take().map(|picked| picked.png),
-						bio: changed(&self.server_bio.read(cx).value(), &self.applied.server_bio),
-					});
+					let nick = self.nick.read(cx).value().trim().to_owned();
+					let bio = self.server_bio.read(cx).value().to_string();
+					let nick_change = changed(&nick, &self.applied.nick);
+					let bio_change = changed(&bio, &self.applied.server_bio);
+					let avatar_png = self.server_avatar.take().map(|picked| picked.png);
+					if nick_change.is_some() || bio_change.is_some() || avatar_png.is_some() {
+						data.send(Command::SetGuildProfile {
+							guild_id,
+							nick: nick_change,
+							avatar_png,
+							bio: bio_change,
+						});
+					}
+					self.applied.nick = nick;
+					self.applied.server_bio = bio;
 				}
 			}
 		}
