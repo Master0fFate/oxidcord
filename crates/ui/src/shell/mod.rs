@@ -971,6 +971,12 @@ impl Shell {
 		if changes.client_options {
 			self.apply_client_options(window, cx);
 		}
+		if let Some(guild) = self.guild
+			&& changes.members.contains(guild)
+		{
+			self.composer
+				.update(cx, |composer, cx| composer.on_members(window, cx));
+		}
 		if changes.autocomplete {
 			self.composer
 				.update(cx, |composer, cx| composer.on_autocomplete(window, cx));

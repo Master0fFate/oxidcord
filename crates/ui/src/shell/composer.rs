@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -15,7 +16,7 @@ use media::SizeHint;
 use plugin_host::ViewContext;
 use plugin_host::api::model::{EmojiInfo, EmojiRef};
 use protocol::expressions::unicode::search_unicode;
-use protocol::{ChannelType, Snowflake};
+use protocol::{ChannelType, Permissions, Snowflake};
 use rest::UploadFile;
 use session::{Command, ReplyTarget};
 
@@ -37,6 +38,7 @@ use crate::theme::{Theme, rem, with_alpha};
 
 const DRAFT_DELAY: Duration = Duration::from_millis(500);
 const AUTOCOMPLETE_RESORT_WINDOW: Duration = Duration::from_millis(300);
+const MEMBER_SEARCH_DEBOUNCE: Duration = Duration::from_millis(350);
 const TYPING_INTERVAL: Duration = Duration::from_secs(5);
 const MAX_SUGGESTIONS: usize = 8;
 const MAX_CANDIDATES: usize = 200;
@@ -142,6 +144,9 @@ pub struct Composer {
 	emoji_generation: u64,
 	emoji_requested: Instant,
 	emoji_tokens: EmojiTokens,
+	member_search: Option<Task<()>>,
+	member_query: String,
+	awaiting_members: bool,
 	draft_task: Option<Task<()>>,
 	slowmode_task: Option<Task<()>>,
 	last_typing: Option<Instant>,
@@ -237,6 +242,9 @@ impl Composer {
 			emoji_generation: 0,
 			emoji_requested: Instant::now(),
 			emoji_tokens: EmojiTokens::default(),
+			member_search: None,
+			member_query: String::new(),
+			awaiting_members: false,
 			draft_task: None,
 			slowmode_task: None,
 			last_typing: None,
@@ -511,6 +519,9 @@ impl Composer {
 			Some(_) => true,
 			None => false,
 		};
+		if trigger == Some(Trigger::Mention) {
+			self.search_members(query, cx);
+		}
 		if trigger == Some(Trigger::Emoji)
 			&& let Some(item) = self.shortcode(query, cx)
 		{
@@ -545,6 +556,45 @@ impl Composer {
 			selected: 0,
 		});
 		cx.notify();
+	}
+
+	fn search_members(&mut self, query: &str, cx: &mut Context<Self>) {
+		let Some(guild) = self.guild else {
+			return;
+		};
+		if query.is_empty() || query == self.member_query {
+			return;
+		}
+		self.member_query = query.to_owned();
+		let incomplete = self.data.read(cx).state().guild(guild).is_some_and(|found| {
+			found
+				.member_count
+				.is_some_and(|total| total > found.members.len() as i64)
+		});
+		if !incomplete {
+			self.member_search = None;
+			return;
+		}
+		let query = query.to_owned();
+		self.member_search = Some(cx.spawn(async move |this, cx| {
+			cx.background_executor().timer(MEMBER_SEARCH_DEBOUNCE).await;
+			this.update(cx, |this, cx| {
+				this.member_search = None;
+				this.awaiting_members = true;
+				this.data.read(cx).send(Command::SearchMembers {
+					guild_id: guild,
+					query,
+				});
+			})
+			.ok();
+		}));
+	}
+
+	pub fn on_members(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+		if std::mem::take(&mut self.awaiting_members) {
+			let text = self.input.read(cx).value();
+			self.update_autocomplete(&text, window, cx);
+		}
 	}
 
 	fn plugin_emoji(&mut self, query: &str, cx: &mut Context<Self>) -> Vec<Suggestion> {
@@ -634,13 +684,18 @@ impl Composer {
 		let mut found: Vec<(u8, Suggestion)> = Vec::new();
 		match trigger {
 			Trigger::Mention => {
-				let mut seen: Vec<Snowflake> = Vec::new();
+				let mut seen: HashSet<Snowflake> = HashSet::new();
 				let mut candidates: Vec<Snowflake> = Vec::new();
 				if let Some(guild) = self.guild {
 					for row in state.member_rows(guild) {
 						if let state::MemberListRow::Member(member) = row {
 							candidates.push(member.user_id);
 						}
+					}
+					if !query.is_empty()
+						&& let Some(found) = state.guild(guild)
+					{
+						candidates.extend(found.members.keys().copied());
 					}
 				}
 				if let Some(channel) = self.channel {
@@ -659,10 +714,9 @@ impl Composer {
 					}
 				}
 				for id in candidates {
-					if seen.contains(&id) || Some(id) == state.current_user_id() {
+					if Some(id) == state.current_user_id() || !seen.insert(id) {
 						continue;
 					}
-					seen.push(id);
 					let display = state.display_name(self.guild, id);
 					let username = state.user(id).map(|user| user.username.clone());
 					let hit = rank(&display).or_else(|| username.as_deref().and_then(rank));
@@ -677,6 +731,48 @@ impl Composer {
 								emoji: None,
 							},
 						));
+					}
+				}
+				if let Some(guild) = self.guild.and_then(|id| state.guild(id)) {
+					let mention_all = self.channel.is_some_and(|channel| {
+						state
+							.my_permissions(channel)
+							.contains(Permissions::MENTION_EVERYONE)
+					});
+					for role in guild
+						.roles
+						.values()
+						.filter(|role| role.id != guild.id && (role.mentionable || mention_all))
+					{
+						if let Some(hit) = rank(&role.name) {
+							found.push((
+								hit,
+								Suggestion {
+									label: role.name.clone(),
+									detail: Some(cx.t("mention-role").to_string()),
+									insert: format!("<@&{}> ", role.id),
+									visual: Visual::Channel(IconKind::Shield),
+									emoji: None,
+								},
+							));
+						}
+					}
+					if mention_all {
+						for (keyword, detail) in [("everyone", "mention-everyone"), ("here", "mention-here")]
+						{
+							if let Some(hit) = rank(keyword) {
+								found.push((
+									hit,
+									Suggestion {
+										label: format!("@{keyword}"),
+										detail: Some(cx.t(detail).to_string()),
+										insert: format!("@{keyword} "),
+										visual: Visual::Glyph("@".to_owned()),
+										emoji: None,
+									},
+								));
+							}
+						}
 					}
 				}
 			}
