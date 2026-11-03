@@ -3,7 +3,8 @@ use std::sync::{Arc, LazyLock};
 
 use protocol::{
 	Emoji, EmojiCategory, Gif, GifFavorites, GifTrending, GuildStickersUpdate, Permissions, PremiumType,
-	Snowflake, Sticker, StickerPack, UnicodeEmoji, unicode_emoji_list,
+	Snowflake, SoundboardSound, SoundboardSoundDelete, Sticker, StickerPack, UnicodeEmoji,
+	unicode_emoji_list,
 };
 use serde::{Deserialize, Serialize};
 
@@ -131,6 +132,8 @@ pub(crate) struct Expressions {
 	pub(crate) gif_suggestions: QueryCache<Vec<String>>,
 	pub(crate) sticker_packs: Option<Vec<StickerPack>>,
 	pub(crate) guild_stickers: HashMap<Snowflake, Vec<Sticker>>,
+	pub(crate) default_sounds: Option<Vec<SoundboardSound>>,
+	pub(crate) guild_sounds: HashMap<Snowflake, Vec<SoundboardSound>>,
 	pub(crate) recent_emoji: Vec<EmojiRef>,
 	pub(crate) recent_gifs: Vec<Gif>,
 	pub(crate) recent_stickers: Vec<Sticker>,
@@ -216,6 +219,28 @@ impl State {
 			.guild_stickers
 			.get(&guild_id)
 			.map(Vec::as_slice)
+	}
+
+	pub fn default_sounds(&self) -> Option<&[SoundboardSound]> {
+		self.lazy.expressions.default_sounds.as_deref()
+	}
+
+	pub fn guild_sounds(&self, guild_id: Snowflake) -> Option<&[SoundboardSound]> {
+		self.lazy
+			.expressions
+			.guild_sounds
+			.get(&guild_id)
+			.map(Vec::as_slice)
+	}
+
+	pub fn find_sound(&self, sound_id: Snowflake) -> Option<&SoundboardSound> {
+		let expressions = &self.lazy.expressions;
+		expressions
+			.default_sounds
+			.iter()
+			.flatten()
+			.chain(expressions.guild_sounds.values().flatten())
+			.find(|sound| sound.sound_id == sound_id)
 	}
 
 	pub fn find_sticker(&self, sticker_id: Snowflake) -> Option<&Sticker> {
@@ -306,6 +331,46 @@ impl State {
 			self.has_nitro(),
 			self.my_permissions(channel_id),
 		)
+	}
+
+	pub(crate) fn guild_sounds_loaded(&mut self, guild_id: Snowflake, sounds: &[SoundboardSound]) -> Changes {
+		let stamped = sounds
+			.iter()
+			.cloned()
+			.map(|mut sound| {
+				sound.guild_id.get_or_insert(guild_id);
+				sound
+			})
+			.collect();
+		self.lazy.expressions.guild_sounds.insert(guild_id, stamped);
+		let mut changes = Changes::default();
+		changes.loaded.insert(guild_id);
+		changes
+	}
+
+	pub(crate) fn guild_sound_upserted(&mut self, sound: &SoundboardSound) -> Changes {
+		let mut changes = Changes::default();
+		let Some(guild_id) = sound.guild_id else {
+			return changes;
+		};
+		let Some(sounds) = self.lazy.expressions.guild_sounds.get_mut(&guild_id) else {
+			return changes;
+		};
+		match sounds.iter_mut().find(|known| known.sound_id == sound.sound_id) {
+			Some(known) => known.clone_from(sound),
+			None => sounds.push(sound.clone()),
+		}
+		changes.loaded.insert(guild_id);
+		changes
+	}
+
+	pub(crate) fn guild_sound_deleted(&mut self, delete: &SoundboardSoundDelete) -> Changes {
+		let mut changes = Changes::default();
+		if let Some(sounds) = self.lazy.expressions.guild_sounds.get_mut(&delete.guild_id) {
+			sounds.retain(|sound| sound.sound_id != delete.sound_id);
+			changes.loaded.insert(delete.guild_id);
+		}
+		changes
 	}
 
 	pub(crate) fn guild_stickers_updated(&mut self, update: &GuildStickersUpdate) -> Changes {

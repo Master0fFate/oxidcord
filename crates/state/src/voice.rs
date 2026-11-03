@@ -1,9 +1,11 @@
 use std::collections::{HashMap, HashSet};
+use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use protocol::{
-	Channel, ChannelInfo, LenientVec, Permissions, Snowflake, StageInstance, StreamDelete, StreamState,
-	VoiceChannelStartTimeUpdate, VoiceChannelStatusUpdate, VoiceState,
+	Channel, ChannelInfo, LenientVec, PartialEmoji, Permissions, Snowflake, SoundboardSound, StageInstance,
+	StreamDelete, StreamState, VoiceChannelEffect, VoiceChannelStartTimeUpdate, VoiceChannelStatusUpdate,
+	VoiceState,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -55,7 +57,30 @@ pub struct VoiceSession {
 	pub screen_share: Option<StreamInfo>,
 	pub watching: Option<String>,
 	pub remote_video: HashMap<Snowflake, VideoKind>,
+	pub effects: HashMap<Snowflake, VoiceEffect>,
 	pub connected_at: Option<DateTime<Utc>>,
+}
+
+pub const VOICE_EFFECT_LIFETIME: Duration = Duration::from_secs(3);
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct VoiceEffect {
+	pub emoji: Option<PartialEmoji>,
+	pub sent_at: Instant,
+}
+
+impl VoiceEffect {
+	pub fn is_live(&self) -> bool {
+		self.sent_at.elapsed() < VOICE_EFFECT_LIFETIME
+	}
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SoundBlock {
+	NotConnected,
+	NoPermission,
+	ExternalLocked,
+	Silenced,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -128,14 +153,37 @@ impl State {
 	}
 
 	pub fn server_muted(&self) -> bool {
-		let (Some(me), Some(session)) = (self.current_user_id(), self.voice()) else {
-			return false;
-		};
-		session
-			.guild_id
-			.and_then(|guild_id| self.guild(guild_id))
-			.and_then(|guild| guild.voice_states.get(&me))
+		self.own_voice_state()
 			.is_some_and(|voice| voice.mute || voice.deaf)
+	}
+
+	fn own_voice_state(&self) -> Option<&VoiceState> {
+		let (me, session) = (self.current_user_id()?, self.voice()?);
+		self.guild(session.guild_id?)?.voice_states.get(&me)
+	}
+
+	pub fn sound_block(&self, sound: &SoundboardSound) -> Option<SoundBlock> {
+		let Some(session) = self
+			.voice()
+			.filter(|voice| voice.status == VoiceStatus::Connected)
+		else {
+			return Some(SoundBlock::NotConnected);
+		};
+		let permissions = self.my_permissions(session.channel_id);
+		if !permissions.contains(Permissions::SPEAK | Permissions::USE_SOUNDBOARD) {
+			return Some(SoundBlock::NoPermission);
+		}
+		let external = sound
+			.guild_id
+			.is_some_and(|owner| Some(owner) != session.guild_id);
+		if external && !permissions.contains(Permissions::USE_EXTERNAL_SOUNDS) {
+			return Some(SoundBlock::ExternalLocked);
+		}
+		let silenced = session.self_deaf
+			|| self
+				.own_voice_state()
+				.is_some_and(|voice| voice.mute || voice.deaf || voice.suppress);
+		silenced.then_some(SoundBlock::Silenced)
 	}
 
 	pub fn calls(&self) -> impl Iterator<Item = &Call> {
@@ -172,6 +220,7 @@ impl State {
 					session.screen_share = None;
 					session.watching = None;
 					session.remote_video.clear();
+					session.effects.clear();
 				}
 				changed
 			}
@@ -190,6 +239,7 @@ impl State {
 					screen_share: None,
 					watching: None,
 					remote_video: HashMap::new(),
+					effects: HashMap::new(),
 					connected_at: (*status == VoiceStatus::Connected).then(Utc::now),
 				});
 				true
@@ -452,6 +502,23 @@ impl State {
 				session.remote_video.get(&user_id) == Some(&kind)
 					&& session.remote_video.remove(&user_id).is_some()
 			}
+		})
+	}
+
+	pub(crate) fn voice_effect_sent(&mut self, effect: &VoiceChannelEffect) -> Changes {
+		self.edit_voice(|session| {
+			if session.channel_id != effect.channel_id {
+				return false;
+			}
+			session.effects.retain(|_, shown| shown.is_live());
+			session.effects.insert(
+				effect.user_id,
+				VoiceEffect {
+					emoji: effect.emoji.clone(),
+					sent_at: Instant::now(),
+				},
+			);
+			true
 		})
 	}
 

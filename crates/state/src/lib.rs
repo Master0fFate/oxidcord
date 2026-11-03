@@ -56,5 +56,6 @@ pub use views::{
 	UserOverride,
 };
 pub use voice::{
-	Call, MicTest, StreamInfo, StreamSummary, VideoKind, VoiceLevels, VoiceSession, VoiceStats, VoiceStatus,
+	Call, MicTest, SoundBlock, StreamInfo, StreamSummary, VOICE_EFFECT_LIFETIME, VideoKind, VoiceEffect,
+	VoiceLevels, VoiceSession, VoiceStats, VoiceStatus,
 };

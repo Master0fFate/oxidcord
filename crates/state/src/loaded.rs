@@ -7,7 +7,8 @@ use protocol::lenient::{or_default, timestamp};
 use protocol::{
 	ApplicationCommand, ApplicationCommandType, AutoModRule, Channel, CommandChoice, CommandIndex, Gif,
 	GifFavorites, GifTrending, GuildBan, InteractionContext, JoinRequestStatus, LenientVec, Member,
-	MemberVerification, Message, Permissions, PinnedMessage, ScheduledEvent, Snowflake, Sticker, StickerPack,
+	MemberVerification, Message, Permissions, PinnedMessage, ScheduledEvent, Snowflake, SoundboardSound, Sticker,
+	StickerPack,
 	ThreadMember, User,
 };
 use serde::Deserialize;
@@ -127,6 +128,11 @@ pub enum Loaded {
 		terms: Vec<String>,
 	},
 	StickerPacks(Vec<StickerPack>),
+	DefaultSounds(Vec<SoundboardSound>),
+	GuildSounds {
+		guild_id: Snowflake,
+		sounds: Vec<SoundboardSound>,
+	},
 	GuildStickers {
 		guild_id: Snowflake,
 		stickers: Vec<Sticker>,
@@ -839,6 +845,11 @@ impl State {
 				self.lazy.expressions.sticker_packs = Some(packs.clone());
 				changes.loaded.insert(EXPRESSIONS_KEY);
 			}
+			Loaded::DefaultSounds(sounds) => {
+				self.lazy.expressions.default_sounds = Some(sounds.clone());
+				changes.loaded.insert(EXPRESSIONS_KEY);
+			}
+			Loaded::GuildSounds { guild_id, sounds } => return self.guild_sounds_loaded(*guild_id, sounds),
 			Loaded::GuildStickers { guild_id, stickers } => {
 				self.lazy
 					.expressions

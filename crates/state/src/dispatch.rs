@@ -178,6 +178,13 @@ impl State {
 				changes
 			}
 			DispatchEvent::GuildStickersUpdate(update) => self.guild_stickers_updated(update),
+			DispatchEvent::SoundboardSounds(update) => {
+				self.guild_sounds_loaded(update.guild_id, &update.soundboard_sounds)
+			}
+			DispatchEvent::GuildSoundboardSoundCreate(sound)
+			| DispatchEvent::GuildSoundboardSoundUpdate(sound) => self.guild_sound_upserted(sound),
+			DispatchEvent::GuildSoundboardSoundDelete(delete) => self.guild_sound_deleted(delete),
+			DispatchEvent::VoiceChannelEffectSend(effect) => self.voice_effect_sent(effect),
 			DispatchEvent::ScheduledEventCreate(event) | DispatchEvent::ScheduledEventUpdate(event) => {
 				self.scheduled_event_upserted(event)
 			}
@@ -652,6 +659,7 @@ impl State {
 			return changes;
 		};
 		self.lazy.member_verifications.remove(&guild.id);
+		self.lazy.expressions.guild_sounds.remove(&guild.id);
 		if self
 			.selected
 			.is_some_and(|selected| selected.guild_id == Some(guild.id))

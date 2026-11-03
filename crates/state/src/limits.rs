@@ -11,11 +11,14 @@ const EMOJI_SLOTS_BY_TIER: [usize; 4] = [50, 100, 150, 250];
 const STICKER_SLOTS_BY_TIER: [usize; 4] = [5, 15, 30, 60];
 const MORE_EMOJI_SLOTS: usize = 200;
 const MORE_STICKER_SLOTS: usize = 60;
+const SOUND_SLOTS_BY_TIER: [usize; 4] = [8, 24, 36, 48];
+const MORE_SOUND_SLOTS: usize = 96;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExpressionLimits {
 	pub emoji: usize,
 	pub stickers: usize,
+	pub sounds: usize,
 }
 
 impl State {
@@ -51,6 +54,11 @@ impl State {
 				MORE_STICKER_SLOTS.max(STICKER_SLOTS_BY_TIER[tier])
 			} else {
 				STICKER_SLOTS_BY_TIER[tier]
+			},
+			sounds: if featured("MORE_SOUNDBOARD") {
+				MORE_SOUND_SLOTS.max(SOUND_SLOTS_BY_TIER[tier])
+			} else {
+				SOUND_SLOTS_BY_TIER[tier]
 			},
 		}
 	}
