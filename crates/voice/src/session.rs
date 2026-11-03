@@ -285,7 +285,7 @@ impl Link {
 		loop {
 			let frame = self.read().await.map_err(exit_error)?;
 			if frame.op != op {
-				self.defer(frame);
+				self.defer(frame)?;
 				continue;
 			}
 			let Body::Json(data) = frame.body else {
@@ -296,18 +296,24 @@ impl Link {
 		}
 	}
 
-	fn defer(&mut self, frame: Frame) {
+	fn defer(&mut self, frame: Frame) -> Result<()> {
 		let replayable = matches!(
 			frame.op,
 			opcode::SPEAKING
+				| opcode::MEDIA_SINK_WANTS
 				| opcode::CLIENTS_CONNECT
 				| opcode::VIDEO
 				| opcode::CLIENT_DISCONNECT
 				| opcode::DAVE_PREPARE_TRANSITION..=opcode::DAVE_MLS_INVALID_COMMIT_WELCOME
 		);
-		if replayable && self.backlog.len() < MAX_BACKLOG_FRAMES {
-			self.backlog.push_back(frame);
+		if !replayable {
+			return Ok(());
 		}
+		if self.backlog.len() >= MAX_BACKLOG_FRAMES {
+			return Err(VoiceError::Handshake("voice frame backlog overflow"));
+		}
+		self.backlog.push_back(frame);
+		Ok(())
 	}
 
 	fn on_binary(&mut self, bytes: &Bytes) -> Option<Frame> {
@@ -555,7 +561,7 @@ async fn resume(credentials: &Credentials, last_seq: i64) -> Result<Link> {
 			if frame.op == opcode::RESUMED {
 				return Ok(link);
 			}
-			link.defer(frame);
+			link.defer(frame)?;
 		}
 	};
 	timeout(HANDSHAKE_TIMEOUT, attempt)
