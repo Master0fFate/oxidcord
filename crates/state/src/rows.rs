@@ -733,15 +733,19 @@ impl State {
 	pub fn role_members(&self, guild_id: Snowflake, role_id: Snowflake) -> Option<RoleMembers> {
 		let guild = self.guilds.get(&guild_id)?;
 		let role = guild.roles.get(&role_id)?;
-		let mut members: Vec<MemberRow> = guild
+		let mut keyed: Vec<(String, Snowflake)> = guild
 			.members
 			.iter()
-			.filter(|(_, member)| member.roles.contains(&role_id))
-			.map(|(user_id, _)| self.member_row(guild, *user_id))
+			.filter(|(_, member)| role_id == guild_id || member.roles.contains(&role_id))
+			.map(|(user_id, _)| (self.display_name(Some(guild_id), *user_id).to_lowercase(), *user_id))
 			.collect();
-		let known = members.len();
-		members.sort_by_cached_key(|row| row.display.to_lowercase());
-		members.truncate(ROLE_MEMBER_LIMIT);
+		let known = keyed.len();
+		keyed.sort_unstable();
+		keyed.truncate(ROLE_MEMBER_LIMIT);
+		let members = keyed
+			.into_iter()
+			.map(|(_, user_id)| self.member_row(guild, user_id))
+			.collect();
 		let total = self
 			.role_member_counts(guild_id)
 			.and_then(|counts| counts.get(&role_id).copied());
