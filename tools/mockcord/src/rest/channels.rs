@@ -317,9 +317,7 @@ pub async fn interaction(
 ) -> Result<StatusCode, ApiError> {
 	let channel = parse_id(&body["channel_id"]).unwrap_or_default();
 	require_channel(&shared.store.lock(), channel)?;
-	if super::apps::is_command(&body) {
-		super::apps::run_command(&shared, &body)?;
-	}
+	super::apps::interact(&shared, &body)?;
 	Ok(StatusCode::NO_CONTENT)
 }
 

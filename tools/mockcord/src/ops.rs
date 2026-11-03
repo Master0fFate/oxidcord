@@ -40,6 +40,7 @@ pub struct Draft {
 	pub descriptors: Vec<AttachmentDescriptor>,
 	pub files: Vec<UploadedFile>,
 	pub poll: Option<PollCreate>,
+	pub interaction_metadata: Value,
 	pub skip_echo: bool,
 }
 
@@ -69,6 +70,7 @@ impl Draft {
 			descriptors: create.attachments,
 			files,
 			poll: create.poll,
+			interaction_metadata: Value::Null,
 			skip_echo: false,
 		}
 	}
@@ -290,6 +292,7 @@ impl Shared {
 			nonce: draft.nonce.map(Nonce),
 			flags: draft.flags,
 			kind: draft.kind.unwrap_or_default(),
+			interaction_metadata: draft.interaction_metadata,
 			sticker_items: LenientVec::from(
 				draft
 					.sticker_ids
