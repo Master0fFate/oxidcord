@@ -2,10 +2,10 @@ use std::time::{Duration, Instant};
 
 use chrono::{SecondsFormat, Utc};
 use protocol::{
-	Attachment, AttachmentDescriptor, AttachmentFlags, ChannelType, CreateMessage, EditMessage, LenientVec,
-	Message, MessageFlags, MessageReference, MessageReferenceKind, MessageType, Nonce, Permissions, Poll,
-	PollAnswer, PollCreate, ReadState, ReadStateKind, RelationshipKind, Snowflake, StickerFormat,
-	StickerItem, User,
+	Attachment, AttachmentDescriptor, AttachmentFlags, ChannelType, CreateMessage, EditMessage,
+	InteractionMetadata, LenientVec, Message, MessageFlags, MessageReference, MessageReferenceKind,
+	MessageType, Nonce, Permissions, Poll, PollAnswer, PollCreate, ReadState, ReadStateKind,
+	RelationshipKind, Snowflake, StickerFormat, StickerItem, User,
 };
 use serde_json::{Value, json};
 
@@ -40,7 +40,7 @@ pub struct Draft {
 	pub descriptors: Vec<AttachmentDescriptor>,
 	pub files: Vec<UploadedFile>,
 	pub poll: Option<PollCreate>,
-	pub interaction_metadata: Value,
+	pub interaction_metadata: Option<InteractionMetadata>,
 	pub skip_echo: bool,
 }
 
@@ -70,7 +70,7 @@ impl Draft {
 			descriptors: create.attachments,
 			files,
 			poll: create.poll,
-			interaction_metadata: Value::Null,
+			interaction_metadata: None,
 			skip_echo: false,
 		}
 	}

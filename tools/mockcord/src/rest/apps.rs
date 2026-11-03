@@ -1,19 +1,28 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::Json;
 use axum::extract::{Path, State};
-use protocol::{MessageReference, MessageType, Snowflake, User};
+use protocol::{
+	ApplicationCommandType, EditMessage, InteractionMetadata, InteractionType, MessageFlags,
+	MessageReference, MessageType, Snowflake, User,
+};
 use serde_json::{Value, json};
 
 use crate::error::ApiError;
 use crate::fixtures::CURRENT_USER_ID;
+use crate::json::message_id;
 use crate::json::parse_id;
 use crate::ops::Draft;
 use crate::state::Shared;
 
 pub(super) const NOTES_APP_ID: u64 = 990_000_000_000_000_001;
 const APPLICATION_COMMAND: u64 = 2;
+const COMPONENT: u64 = 3;
 const AUTOCOMPLETE: u64 = 4;
+const MODAL_SUBMIT: u64 = 5;
+const TIMEOUT_REASON: u64 = 2;
+const DEFERRED_DELAY: Duration = Duration::from_secs(2);
 const CHAT_INPUT_COMMAND: u64 = 1;
 const MESSAGE_COMMAND: u64 = 3;
 const SUB_COMMAND_OPTION: u64 = 1;
@@ -177,7 +186,34 @@ fn note_reply(options: &Value) -> String {
 	}
 }
 
-fn run_chat_command(shared: &Shared, channel_id: u64, data: &Value) -> Result<(), ApiError> {
+enum Reply {
+	Success,
+	Failure,
+	Modal(Value),
+}
+
+fn invocation(shared: &Shared, id: u64, name: &str) -> InteractionMetadata {
+	InteractionMetadata {
+		id: Snowflake(id),
+		kind: InteractionType::ApplicationCommand,
+		name: Some(name.to_owned()),
+		command_type: Some(ApplicationCommandType::ChatInput),
+		user: shared
+			.fixtures
+			.users
+			.get(&CURRENT_USER_ID)
+			.cloned()
+			.unwrap_or_default(),
+		..InteractionMetadata::default()
+	}
+}
+
+fn run_chat_command(
+	shared: &Shared,
+	channel_id: u64,
+	interaction: u64,
+	data: &Value,
+) -> Result<Reply, ApiError> {
 	let name = data["name"].as_str().unwrap_or_default();
 	let options = &data["options"];
 	let reply = match name {
@@ -187,19 +223,15 @@ fn run_chat_command(shared: &Shared, channel_id: u64, data: &Value) -> Result<()
 		_ => return Err(ApiError::invalid_body("Unknown command")),
 	};
 	let author = app_bot(shared).ok_or_else(ApiError::unknown_message)?;
-	let interaction = shared.store.lock().next_snowflake();
 	let mut draft = Draft::text(reply);
 	draft.kind = Some(MessageType::ChatInputCommand);
-	draft.interaction_metadata = json!({
-		"id": interaction.to_string(),
-		"type": APPLICATION_COMMAND,
-		"name": name,
-		"user": { "id": CURRENT_USER_ID.to_string() },
-	});
-	shared.post_message(channel_id, &author, draft).map(drop)
+	draft.interaction_metadata = Some(invocation(shared, interaction, name));
+	shared
+		.post_message(channel_id, &author, draft)
+		.map(|_| Reply::Success)
 }
 
-fn run_message_command(shared: &Shared, channel_id: u64, data: &Value) -> Result<(), ApiError> {
+fn run_message_command(shared: &Shared, channel_id: u64, data: &Value) -> Result<Reply, ApiError> {
 	let target = parse_id(&data["target_id"]).unwrap_or_default();
 	let content = shared
 		.store
@@ -221,7 +253,174 @@ fn run_message_command(shared: &Shared, channel_id: u64, data: &Value) -> Result
 		guild_id: None,
 		fail_if_not_exists: Some(false),
 	});
-	shared.post_message(channel_id, &author, draft).map(drop)
+	shared
+		.post_message(channel_id, &author, draft)
+		.map(|_| Reply::Success)
+}
+
+fn upgrade_modal(shared: &Shared, body: &Value) -> Value {
+	let application = app_bot(shared).unwrap_or_default();
+	json!({
+		"channel_id": body["channel_id"],
+		"custom_id": "upgrade_form",
+		"title": "Upgrade",
+		"application": { "id": application.id.to_string(), "name": application.username },
+		"components": [
+			{
+				"type": 18,
+				"id": 1,
+				"label": "Version",
+				"description": "Which release to install",
+				"component": {
+					"type": 4,
+					"id": 2,
+					"custom_id": "version",
+					"style": 1,
+					"placeholder": "0.5.9",
+					"value": "0.5.9",
+					"min_length": 1,
+					"max_length": 20
+				}
+			},
+			{
+				"type": 18,
+				"id": 3,
+				"label": "Channel",
+				"component": {
+					"type": 21,
+					"id": 4,
+					"custom_id": "channel",
+					"options": [
+						{ "label": "Stable", "value": "stable", "default": true },
+						{ "label": "Beta", "value": "beta" },
+						{ "label": "Nightly", "value": "nightly" }
+					]
+				}
+			},
+			{
+				"type": 18,
+				"id": 5,
+				"label": "Theme",
+				"component": {
+					"type": 3,
+					"id": 6,
+					"custom_id": "theme",
+					"options": [
+						{ "label": "Dark", "value": "dark" },
+						{ "label": "Light", "value": "light" }
+					]
+				}
+			},
+			{
+				"type": 18,
+				"id": 7,
+				"label": "Notes",
+				"component": { "type": 4, "id": 8, "custom_id": "notes", "style": 2, "required": false, "max_length": 400 }
+			},
+			{
+				"type": 18,
+				"id": 9,
+				"label": "Restart now",
+				"component": { "type": 23, "id": 10, "custom_id": "restart", "default": true }
+			}
+		],
+	})
+}
+
+fn app_message(
+	shared: &Shared,
+	channel_id: u64,
+	interaction: u64,
+	name: &str,
+	flags: MessageFlags,
+	content: &str,
+) -> Result<Value, ApiError> {
+	let author = app_bot(shared).ok_or_else(ApiError::unknown_message)?;
+	let mut draft = Draft::text(content);
+	draft.kind = Some(MessageType::ChatInputCommand);
+	draft.flags = flags;
+	draft.interaction_metadata = Some(invocation(shared, interaction, name));
+	shared.post_message(channel_id, &author, draft)
+}
+
+fn defer_reply(shared: &Arc<Shared>, channel_id: u64, interaction: u64) -> Result<(), ApiError> {
+	let loading = app_message(
+		shared,
+		channel_id,
+		interaction,
+		"thanks",
+		MessageFlags::LOADING,
+		"",
+	)?;
+	let id = message_id(&loading);
+	let author = app_bot(shared).map_or(0, |bot| bot.id.get());
+	let shared = Arc::clone(shared);
+	tokio::spawn(async move {
+		tokio::time::sleep(DEFERRED_DELAY).await;
+		let resolved = EditMessage {
+			content: Some("Glad you like it".to_owned()),
+			flags: Some(MessageFlags::empty()),
+			..EditMessage::default()
+		};
+		let _ = shared.edit_as(channel_id, id, author, resolved);
+	});
+	Ok(())
+}
+
+fn use_component(shared: &Arc<Shared>, body: &Value, interaction: u64) -> Result<Reply, ApiError> {
+	let channel_id = parse_id(&body["channel_id"]).unwrap_or_default();
+	match body["data"]["custom_id"].as_str() {
+		Some("upgrade") => Ok(Reply::Modal(upgrade_modal(shared, body))),
+		Some("later") => app_message(
+			shared,
+			channel_id,
+			interaction,
+			"remind",
+			MessageFlags::EPHEMERAL,
+			"Reminder set for tomorrow",
+		)
+		.map(|_| Reply::Success),
+		Some("love") => defer_reply(shared, channel_id, interaction).map(|()| Reply::Success),
+		Some("fail") => Ok(Reply::Failure),
+		_ => Ok(Reply::Success),
+	}
+}
+
+fn modal_field<'a>(components: &'a Value, custom_id: &str) -> &'a Value {
+	components
+		.as_array()
+		.into_iter()
+		.flatten()
+		.map(|row| &row["component"])
+		.find(|field| field["custom_id"].as_str() == Some(custom_id))
+		.unwrap_or(&Value::Null)
+}
+
+fn submit_modal(shared: &Shared, body: &Value, interaction: u64) -> Result<Reply, ApiError> {
+	let channel_id = parse_id(&body["channel_id"]).unwrap_or_default();
+	let components = &body["data"]["components"];
+	let version = modal_field(components, "version")["value"]
+		.as_str()
+		.unwrap_or("?");
+	let channel = modal_field(components, "channel")["value"]
+		.as_str()
+		.unwrap_or("stable");
+	let restart = modal_field(components, "restart")["value"]
+		.as_bool()
+		.unwrap_or(false);
+	let content = format!(
+		"Upgrading to {version} on {channel}{}",
+		if restart { ", restarting after" } else { "" }
+	);
+	app_message(
+		shared,
+		channel_id,
+		interaction,
+		"upgrade",
+		MessageFlags::empty(),
+		&content,
+	)
+	.map(|_| Reply::Success)
 }
 
 fn complete(shared: &Shared, body: &Value) {
@@ -245,16 +444,53 @@ fn complete(shared: &Shared, body: &Value) {
 	}
 }
 
-pub(super) fn interact(shared: &Shared, body: &Value) -> Result<(), ApiError> {
+fn notify(shared: &Shared, body: &Value, name: &str, mut data: Value) {
+	data["nonce"] = body["nonce"].clone();
+	if let Some(session_id) = body["session_id"].as_str() {
+		shared.hub.dispatch_to(session_id, name, &data);
+	}
+}
+
+pub(super) fn interact(shared: &Arc<Shared>, body: &Value) -> Result<(), ApiError> {
 	let channel_id = parse_id(&body["channel_id"]).unwrap_or_default();
 	let data = &body["data"];
-	match (body["type"].as_u64(), data["type"].as_u64()) {
-		(Some(APPLICATION_COMMAND), Some(MESSAGE_COMMAND)) => run_message_command(shared, channel_id, data),
-		(Some(APPLICATION_COMMAND), Some(CHAT_INPUT_COMMAND)) => run_chat_command(shared, channel_id, data),
+	let interaction = shared.store.lock().next_snowflake();
+	let id = json!({ "id": interaction.to_string() });
+	let reply = match (body["type"].as_u64(), data["type"].as_u64()) {
 		(Some(AUTOCOMPLETE), _) => {
 			complete(shared, body);
-			Ok(())
+			return Ok(());
 		}
-		_ => Ok(()),
+		(Some(APPLICATION_COMMAND), Some(MESSAGE_COMMAND)) => {
+			notify(shared, body, "INTERACTION_CREATE", id.clone());
+			run_message_command(shared, channel_id, data)
+		}
+		(Some(APPLICATION_COMMAND), Some(CHAT_INPUT_COMMAND)) => {
+			notify(shared, body, "INTERACTION_CREATE", id.clone());
+			run_chat_command(shared, channel_id, interaction, data)
+		}
+		(Some(COMPONENT), _) => {
+			notify(shared, body, "INTERACTION_CREATE", id.clone());
+			use_component(shared, body, interaction)
+		}
+		(Some(MODAL_SUBMIT), _) => {
+			notify(shared, body, "INTERACTION_CREATE", id.clone());
+			submit_modal(shared, body, interaction)
+		}
+		_ => return Ok(()),
+	}?;
+	match reply {
+		Reply::Success => notify(shared, body, "INTERACTION_SUCCESS", id),
+		Reply::Failure => notify(
+			shared,
+			body,
+			"INTERACTION_FAILURE",
+			json!({ "id": interaction.to_string(), "reason_code": TIMEOUT_REASON }),
+		),
+		Reply::Modal(mut modal) => {
+			modal["id"] = id["id"].clone();
+			notify(shared, body, "INTERACTION_MODAL_CREATE", modal);
+		}
 	}
+	Ok(())
 }

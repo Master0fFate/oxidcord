@@ -796,6 +796,7 @@ impl<'a> Generator<'a, '_> {
 						{ "type": 2, "style": 1, "label": "Upgrade", "custom_id": "upgrade" },
 						{ "type": 2, "style": 2, "label": "Later", "custom_id": "later", "emoji": { "name": "🕒" } },
 						{ "type": 2, "style": 3, "label": "Love it", "custom_id": "love" },
+						{ "type": 2, "style": 2, "label": "Broken", "custom_id": "fail" },
 						{ "type": 2, "style": 4, "label": "Uninstall", "custom_id": "uninstall", "disabled": true },
 						{ "type": 2, "style": 5, "label": "Changelog", "url": "https://example.com/changelog" }
 					]
