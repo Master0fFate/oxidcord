@@ -57,6 +57,7 @@ const KINDS: [(&str, ChannelType); 6] = [
 ];
 const NAME_LIMIT: usize = 100;
 const TOPIC_LIMIT: usize = 1024;
+const GUIDELINES_LIMIT: usize = 4096;
 const MEMBER_MENU_LIMIT: usize = 30;
 
 const GENERAL: Permissions = Permissions::VIEW_CHANNEL
@@ -309,7 +310,11 @@ impl EditChannel {
 			.value()
 			.trim()
 			.chars()
-			.take(TOPIC_LIMIT)
+			.take(if self.forum.is_some() {
+				GUIDELINES_LIMIT
+			} else {
+				TOPIC_LIMIT
+			})
 			.collect();
 		let (old_name, old_topic, old_slowmode, old_nsfw) = &self.original;
 		self.data.read(cx).send(Command::EditChannel {
