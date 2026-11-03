@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
@@ -8,7 +9,7 @@ use parking_lot::{Mutex, RwLock};
 use tokio::runtime::Handle;
 use tokio::task::spawn_blocking;
 
-use crate::cache::{DEFAULT_MEMORY_LIMIT_BYTES, DiskCache, MemoryCache, SizeHint, memory_key};
+use crate::cache::{DEFAULT_MEMORY_LIMIT_BYTES, DiskCache, MemoryCache, SizeHint, TEMP_COUNTER, memory_key};
 use crate::decode::{Limits, decode};
 use crate::error::{MediaError, Result, redact_url};
 use crate::fetch::MediaFetcher;
@@ -242,8 +243,19 @@ fn write_png(decoded: &Decoded, path: &Path) -> Result<()> {
 	if let Some(parent) = path.parent() {
 		std::fs::create_dir_all(parent)?;
 	}
-	buffer.save_with_format(path, image::ImageFormat::Png)?;
-	Ok(())
+	let temp = path.with_extension(format!(
+		"{}-{}.tmp",
+		std::process::id(),
+		TEMP_COUNTER.fetch_add(1, Ordering::Relaxed)
+	));
+	let saved = buffer
+		.save_with_format(&temp, image::ImageFormat::Png)
+		.map_err(MediaError::from)
+		.and_then(|()| std::fs::rename(&temp, path).map_err(MediaError::from));
+	if saved.is_err() {
+		let _ = std::fs::remove_file(&temp);
+	}
+	saved
 }
 
 fn shrink_to_hint(decoded: Decoded, hint: SizeHint) -> Decoded {

@@ -20,7 +20,7 @@ pub const DEFAULT_MEMORY_LIMIT_BYTES: usize = 256 * 1024 * 1024;
 const SIGNATURE_PARAMS: [&str; 3] = ["ex", "is", "hm"];
 const SHARD_LEN: usize = 2;
 
-static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+pub(crate) static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SizeHint {
