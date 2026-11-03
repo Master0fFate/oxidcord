@@ -655,7 +655,14 @@ impl MemberList {
 			.into_any_element()
 	}
 
-	fn list_row(&self, index: usize, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+	fn list_row(
+		&self,
+		index: usize,
+		theme: &Theme,
+		bot_label: &SharedString,
+		developer: bool,
+		cx: &mut Context<Self>,
+	) -> AnyElement {
 		let found = self
 			.rows
 			.binary_search_by_key(&index, |(row_index, _)| *row_index)
@@ -663,10 +670,7 @@ impl MemberList {
 			.map(|position| &self.rows[position].1);
 		let element = match found {
 			Some(Row::Group { id, name, count }) => self.group_header(id, name, *count, theme, cx),
-			Some(Row::Member(member)) => {
-				let bot_label = cx.t("badge-app");
-				self.row(member, &bot_label, developer_mode(cx), theme, cx)
-			}
+			Some(Row::Member(member)) => self.row(member, bot_label, developer, theme, cx),
 			None => Self::placeholder_row(theme),
 		};
 		div().w_full().min_w_0().child(element).into_any_element()
@@ -675,7 +679,7 @@ impl MemberList {
 
 impl Render for MemberList {
 	fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-		let theme = Theme::current(cx);
+		let theme = Rc::new(Theme::current(cx));
 		let search = self.search_input(window, cx);
 		self.track_visible(&theme, cx);
 		let header = plugins::contextual(
@@ -694,10 +698,14 @@ impl Render for MemberList {
 			},
 			cx,
 		);
-		let row_theme = Rc::new(theme.clone());
+		let row_theme = Rc::clone(&theme);
+		let bot_label = cx.t("badge-app");
+		let developer = developer_mode(cx);
 		let rows = list(
 			self.scroll.clone(),
-			cx.processor(move |this, index: usize, _, cx| this.list_row(index, &row_theme, cx)),
+			cx.processor(move |this, index: usize, _, cx| {
+				this.list_row(index, &row_theme, &bot_label, developer, cx)
+			}),
 		)
 		.size_full()
 		.min_h_0()
