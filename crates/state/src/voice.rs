@@ -199,6 +199,23 @@ impl State {
 		self.calls.values()
 	}
 
+	pub fn ringing_recipients(&self, channel_id: Snowflake) -> Vec<Snowflake> {
+		let me = self.current_user_id();
+		self.call(channel_id).map_or_else(Vec::new, |call| {
+			call.ringing
+				.iter()
+				.copied()
+				.filter(|user_id| Some(*user_id) != me)
+				.collect()
+		})
+	}
+
+	pub fn call_has_guests(&self, channel_id: Snowflake) -> bool {
+		let me = self.current_user_id();
+		self.call(channel_id)
+			.is_some_and(|call| call.participants.iter().any(|user_id| Some(*user_id) != me))
+	}
+
 	pub fn incoming_calls(&self) -> impl Iterator<Item = &Call> {
 		let me = self.current_user_id();
 		self.calls

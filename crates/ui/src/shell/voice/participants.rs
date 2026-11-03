@@ -5,6 +5,14 @@ use state::{State, VideoKind};
 
 use crate::lookup::avatar_for;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Presence {
+	#[default]
+	Joined,
+	Ringing,
+	Absent,
+}
+
 #[derive(Clone, PartialEq)]
 pub struct Participant {
 	pub user: Snowflake,
@@ -20,6 +28,7 @@ pub struct Participant {
 	pub me: bool,
 	pub listener: bool,
 	pub hand_raised: Option<DateTime<Utc>>,
+	pub presence: Presence,
 }
 
 fn base(state: &State, guild: Option<Snowflake>, user: Snowflake, avatar_size: u32) -> Participant {
@@ -37,6 +46,7 @@ fn base(state: &State, guild: Option<Snowflake>, user: Snowflake, avatar_size: u
 		me: state.current_user_id() == Some(user),
 		listener: false,
 		hand_raised: None,
+		presence: Presence::Joined,
 	}
 }
 
@@ -62,6 +72,31 @@ fn from_voice_state(
 	participant.listener = voice.suppress;
 	participant.hand_raised = voice.request_to_speak_timestamp;
 	participant
+}
+
+fn absent_recipients(
+	state: &State,
+	channel: Snowflake,
+	joined: &[Participant],
+	avatar_size: u32,
+) -> Vec<Participant> {
+	let ringing = state.ringing_recipients(channel);
+	let recipients = state
+		.channel(channel)
+		.map_or(&[][..], |found| &found.recipient_ids);
+	recipients
+		.iter()
+		.filter(|user| !joined.iter().any(|row| row.user == **user))
+		.map(|user| {
+			let mut absent = base(state, None, *user, avatar_size);
+			absent.presence = if ringing.contains(user) {
+				Presence::Ringing
+			} else {
+				Presence::Absent
+			};
+			absent
+		})
+		.collect()
 }
 
 pub fn participants(
@@ -92,6 +127,9 @@ pub fn participants(
 		&& !rows.iter().any(|row| row.user == me)
 	{
 		rows.push(base(state, guild, me, avatar_size));
+	}
+	if guild.is_none() && session.is_some() {
+		rows.extend(absent_recipients(state, channel, &rows, avatar_size));
 	}
 	if let Some(session) = session {
 		for row in &mut rows {

@@ -672,6 +672,21 @@ pub async fn voice_dave_failure(State(shared): Mock) -> NoContent {
 	Ok(StatusCode::NO_CONTENT)
 }
 
+pub async fn voice_guest_join(State(shared): Mock) -> NoContent {
+	shared.guest_voice(true)?;
+	Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn voice_guest_leave(State(shared): Mock) -> NoContent {
+	shared.guest_voice(false)?;
+	Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn call_incoming(State(shared): Mock) -> NoContent {
+	shared.incoming_call()?;
+	Ok(StatusCode::NO_CONTENT)
+}
+
 pub async fn voice_close(State(shared): Mock, Path(code): Path<u16>) -> NoContent {
 	shared.voice_close(code);
 	Ok(StatusCode::NO_CONTENT)

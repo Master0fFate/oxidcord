@@ -321,11 +321,28 @@ pub async fn interaction(
 	Ok(StatusCode::NO_CONTENT)
 }
 
-pub async fn call_signal(
+fn call_recipients(body: Option<Json<Value>>) -> Option<Vec<u64>> {
+	let Json(body) = body?;
+	body["recipients"]
+		.as_array()
+		.map(|users| users.iter().filter_map(parse_id).collect())
+}
+
+pub async fn call_ring(
 	State(shared): State<Arc<Shared>>,
 	Path(id): Path<u64>,
+	body: Option<Json<Value>>,
 ) -> Result<StatusCode, ApiError> {
-	require_channel(&shared.store.lock(), id)?;
+	shared.ring_call(id, call_recipients(body))?;
+	Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn call_stop_ringing(
+	State(shared): State<Arc<Shared>>,
+	Path(id): Path<u64>,
+	body: Option<Json<Value>>,
+) -> Result<StatusCode, ApiError> {
+	shared.stop_ringing(id, call_recipients(body))?;
 	Ok(StatusCode::NO_CONTENT)
 }
 

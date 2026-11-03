@@ -381,6 +381,10 @@ pub enum Command {
 	StartCall {
 		channel_id: Snowflake,
 	},
+	RingRecipient {
+		channel_id: Snowflake,
+		user_id: Snowflake,
+	},
 	DeclineCall {
 		channel_id: Snowflake,
 	},

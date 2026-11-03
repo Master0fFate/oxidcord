@@ -52,6 +52,7 @@ pub(crate) struct VoiceLink {
 	connecting: bool,
 	pub(super) generation: u64,
 	pub(super) camera: bool,
+	ring_on_connect: bool,
 	self_mute: bool,
 	pub(super) self_deaf: bool,
 	server_muted: bool,
@@ -79,6 +80,7 @@ impl VoiceLink {
 			connecting: false,
 			generation: 0,
 			camera: false,
+			ring_on_connect: false,
 			self_mute: saved.self_mute,
 			self_deaf: saved.self_deaf,
 			server_muted: false,
@@ -391,17 +393,44 @@ impl Core {
 		);
 	}
 
-	pub(super) fn start_call(&self, channel_id: Snowflake) {
-		let rest = self.rest.clone();
-		let internal = self.internal.clone();
-		self.runtime.spawn(async move {
-			if let Err(error) = rest.ring_call(channel_id, None).await {
-				tracing::warn!(%error, "call was not rung");
+	pub(super) fn start_call(&mut self, channel_id: Snowflake) {
+		self.join_voice(None, channel_id);
+		self.voice.ring_on_connect = self.voice.connection.is_none()
+			&& self.voice.target
+				== Some(Target {
+					guild_id: None,
+					channel_id,
+				});
+	}
+
+	pub(super) fn ring_recipient(&self, channel_id: Snowflake, user_id: Snowflake) {
+		self.spawn_rest("ring call", move |rest| async move {
+			rest.ring_call(channel_id, Some(vec![user_id])).await
+		});
+	}
+
+	fn ring_started_call(&self, channel_id: Snowflake) {
+		if self.state.read().call_has_guests(channel_id) {
+			return;
+		}
+		self.spawn_rest("ring call", move |rest| async move {
+			rest.ring_call(channel_id, None).await
+		});
+	}
+
+	fn stop_unanswered_ringing(&self, channel_id: Snowflake) {
+		let recipients = {
+			let state = self.state.read();
+			if state.call_has_guests(channel_id) {
+				return;
 			}
-			let _ = internal.send(Internal::JoinVoice {
-				guild_id: None,
-				channel_id,
-			});
+			state.ringing_recipients(channel_id)
+		};
+		if recipients.is_empty() {
+			return;
+		}
+		self.spawn_rest("stop ringing", move |rest| async move {
+			rest.stop_ringing(channel_id, Some(recipients)).await
 		});
 	}
 
@@ -551,6 +580,11 @@ impl Core {
 			VoiceEvent::Connected { .. } => {
 				self.voice.rejoins = 0;
 				self.announce(VoiceStatus::Connected);
+				if std::mem::take(&mut self.voice.ring_on_connect)
+					&& let Some(target) = self.voice.target
+				{
+					self.ring_started_call(target.channel_id);
+				}
 			}
 			VoiceEvent::Speaking { user_id, speaking } => {
 				self.apply_local(LocalEvent::Speaking { user_id, speaking });
@@ -698,6 +732,10 @@ impl Core {
 		};
 		self.end_all_streams();
 		self.voice.camera = false;
+		self.voice.ring_on_connect = false;
+		if target.guild_id.is_none() {
+			self.stop_unanswered_ringing(target.channel_id);
+		}
 		self.drop_connection();
 		self.voice.session_id = None;
 		self.voice.server = None;

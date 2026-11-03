@@ -65,6 +65,9 @@ pub fn router(shared: Arc<Shared>) -> Router {
 		.route("/mock/voice/reassign", post(admin::voice_reassign))
 		.route("/mock/voice/server-mute", post(admin::voice_server_mute))
 		.route("/mock/voice/dave-failure", post(admin::voice_dave_failure))
+		.route("/mock/voice/guest-join", post(admin::voice_guest_join))
+		.route("/mock/voice/guest-leave", post(admin::voice_guest_leave))
+		.route("/mock/call/incoming", post(admin::call_incoming))
 		.route("/stage-instances", post(stage::create))
 		.route(
 			"/stage-instances/{id}",
@@ -254,7 +257,7 @@ pub fn router(shared: Arc<Shared>) -> Router {
 		.route("/channels/{id}/polls/{mid}/answers/@me", put(admin::vote))
 		.route("/channels/{id}/polls/{mid}/expire", post(admin::expire_poll))
 		.route("/channels/{id}/typing", post(channels::typing))
-		.route("/channels/{id}/call/ring", post(channels::call_signal))
+		.route("/channels/{id}/call/ring", post(channels::call_ring))
 		.route("/interactions", post(channels::interaction))
 		.route("/guilds/{id}/application-command-index", get(apps::guild_index))
 		.route(
@@ -271,7 +274,10 @@ pub fn router(shared: Arc<Shared>) -> Router {
 		.route("/applications/{id}/rpc", get(rpc::rpc_application))
 		.route("/applications/{id}/external-assets", post(rpc::external_assets))
 		.route("/oauth2/applications/{id}/assets", get(rpc::application_assets))
-		.route("/channels/{id}/call/stop-ringing", post(channels::call_signal))
+		.route(
+			"/channels/{id}/call/stop-ringing",
+			post(channels::call_stop_ringing),
+		)
 		.route("/channels/{id}/threads", post(channels::create_thread))
 		.route(
 			"/channels/{id}/threads/archived/public",

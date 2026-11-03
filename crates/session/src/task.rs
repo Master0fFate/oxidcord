@@ -178,10 +178,6 @@ pub(crate) enum Internal {
 		channel_id: Snowflake,
 		content: String,
 	},
-	JoinVoice {
-		guild_id: Option<Snowflake>,
-		channel_id: Snowflake,
-	},
 	VoiceJoinTimeout(u64),
 	VoiceSettled(u64),
 	VoiceConnected {
@@ -953,7 +949,6 @@ impl Core {
 					self.apply_local(LocalEvent::DraftChanged { channel_id, content });
 				}
 			}
-			Internal::JoinVoice { guild_id, channel_id } => self.join_voice(guild_id, channel_id),
 			Internal::VoiceJoinTimeout(generation) => self.on_voice_join_timeout(generation),
 			Internal::VoiceSettled(generation) => self.on_voice_settled(generation),
 			Internal::VoiceConnected { generation, result } => self.on_voice_connected(generation, result),
@@ -1280,6 +1275,7 @@ impl Core {
 			} => self.request_to_speak(guild_id, channel_id, request),
 			Command::SwitchAccount(user_id) => self.switch_account(user_id),
 			Command::StartCall { channel_id } => self.start_call(channel_id),
+			Command::RingRecipient { channel_id, user_id } => self.ring_recipient(channel_id, user_id),
 			Command::DeclineCall { channel_id } => self.decline_call(channel_id),
 			Command::PluginLoad(load) => self.on_plugin_load(load),
 			command @ (Command::StartReply { .. }

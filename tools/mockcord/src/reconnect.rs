@@ -5,7 +5,6 @@ use axum::extract::State;
 use protocol::EditMessage;
 use serde_json::{Value, json};
 
-use crate::fixtures::CURRENT_USER_ID;
 use crate::json::parse_id;
 use crate::ops::Draft;
 use crate::state::Shared;
@@ -14,21 +13,6 @@ const CLOSE_SESSION_TIMED_OUT: u16 = 4009;
 const AWAY_CHANNEL_INDEX: usize = 1;
 
 impl Shared {
-	fn ring_first_conversation(&self) {
-		let Some(channel_id) = self.store.lock().private_channel_ids.first().copied() else {
-			return;
-		};
-		self.hub.broadcast(
-			"CALL_CREATE",
-			&json!({
-				"channel_id": channel_id.to_string(),
-				"ringing": [CURRENT_USER_ID.to_string()],
-				"region": "mock",
-				"voice_states": [],
-			}),
-		);
-	}
-
 	fn post_while_away(&self) -> Option<u64> {
 		let guild = self.fixtures.guilds.first()?;
 		let channel_id = *guild
@@ -55,7 +39,7 @@ impl Shared {
 	}
 
 	pub fn drop_sessions(&self) -> Value {
-		self.ring_first_conversation();
+		let _ = self.incoming_call();
 		self.hub.expire_all(CLOSE_SESSION_TIMED_OUT);
 		json!({ "channel_id": self.post_while_away().map(|id| id.to_string()) })
 	}

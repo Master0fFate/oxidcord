@@ -129,6 +129,7 @@ pub struct Store {
 	pub stage_instances: HashMap<u64, StageInstance>,
 	pub seats: HashMap<u64, Seat>,
 	pub sounds: HashMap<u64, Vec<SoundboardSound>>,
+	pub calls: BTreeMap<u64, Vec<u64>>,
 	last_id: u64,
 }
 
@@ -245,6 +246,7 @@ impl Store {
 				.collect(),
 			seats: HashMap::new(),
 			sounds: crate::soundboard::seed_sounds(fixtures),
+			calls: BTreeMap::new(),
 			last_id,
 		}
 	}

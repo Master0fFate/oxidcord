@@ -65,11 +65,15 @@ pub fn state_icons(participant: &Participant, size: Rems, theme: &Theme) -> Vec<
 }
 
 pub fn live_badge(label: SharedString, theme: &Theme) -> impl IntoElement {
+	status_badge(label, theme.live_badge, theme)
+}
+
+pub fn status_badge(label: SharedString, background: Hsla, theme: &Theme) -> impl IntoElement {
 	div()
 		.flex_none()
 		.px(theme.space_4)
 		.rounded(theme.radius_sm)
-		.bg(theme.live_badge)
+		.bg(background)
 		.text_size(theme.font_tiny)
 		.line_height(theme.voice_icon_sm)
 		.font_weight(FontWeight::BOLD)

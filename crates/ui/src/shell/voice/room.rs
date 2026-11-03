@@ -17,7 +17,7 @@ use state::{VOICE_EFFECT_LIFETIME, VoiceSession, VoiceStatus};
 
 use super::actions;
 use super::live::{LiveStream, PREVIEW_HINT, live_streams, viewer_stack};
-use super::participants::{Participant, participants};
+use super::participants::{Participant, Presence, participants};
 use super::picker;
 use super::popout;
 use super::quality::Preset;
@@ -26,7 +26,7 @@ use super::stage::open_topic;
 use super::status;
 use super::video_sink::{follow_frames, video_image};
 use super::viewer::StreamViewer;
-use super::widgets::{ControlButton, live_badge, speaking_avatar, state_icons};
+use super::widgets::{ControlButton, live_badge, speaking_avatar, state_icons, status_badge};
 use crate::components::{ContextMenuBuilder, IconButton, StatusEmoji};
 use crate::data::{Data, DataEvent};
 use crate::i18n::{ArgValue, Translate as _};
@@ -43,6 +43,7 @@ const STAGE_SPEAKER_SHARE: f32 = 0.55;
 const AUDIENCE_ITEM_WIDTH: f32 = 88.;
 const REQUEST_LIST_MAX_HEIGHT: f32 = 168.;
 const EFFECT_SIZE: f32 = 3.;
+const ABSENT_DIM: f32 = 0.5;
 
 pub enum RoomEvent {
 	UserMenu { user: Snowflake, at: Point<Pixels> },
@@ -426,6 +427,10 @@ impl VoiceRoom {
 				.justify_center()
 				.child(speaking_avatar(person, avatar_size, theme)),
 		};
+		let content = content.when(person.presence != Presence::Joined, |content| {
+			content.opacity(ABSENT_DIM)
+		});
+		let ringing_label = cx.t("voice-ringing");
 		let tile = div()
 			.id(("voice-tile", user.get()))
 			.relative()
@@ -496,6 +501,31 @@ impl VoiceRoom {
 								.color(theme.interactive_active)
 								.into_any_element(),
 						}),
+				)
+			})
+			.when(person.presence == Presence::Ringing, |tile| {
+				tile.child(
+					div()
+						.absolute()
+						.left(theme.space_8)
+						.top(theme.space_8)
+						.child(status_badge(ringing_label.clone(), theme.button_secondary, theme)),
+				)
+			})
+			.when(person.presence == Presence::Absent, |tile| {
+				let channel = snapshot.channel;
+				tile.child(
+					div().absolute().right(theme.space_8).bottom(theme.space_8).child(
+						Button::new(("voice-ring", user.get()))
+							.outline()
+							.label(cx.t("voice-ring"))
+							.on_click(cx.listener(move |this, _, _, cx| {
+								this.data.read(cx).send(Command::RingRecipient {
+									channel_id: channel,
+									user_id: user,
+								});
+							})),
+					),
 				)
 			})
 			.when(focused, |tile| {

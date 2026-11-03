@@ -1,5 +1,6 @@
 mod admin;
 mod automod;
+mod calls;
 mod config;
 mod error;
 mod events;
