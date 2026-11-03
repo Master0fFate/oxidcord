@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use chrono::{DateTime, Utc};
 use protocol::{Channel, PermissionOverwriteKind, Permissions, Snowflake};
 
@@ -138,6 +140,18 @@ impl State {
 		};
 		self.my_permissions(channel_id)
 			.contains(Permissions::VIEW_CHANNEL | needed)
+	}
+
+	pub fn slowmode_interval(&self, channel_id: Snowflake) -> Option<Duration> {
+		let seconds = self
+			.channel(channel_id)
+			.and_then(|channel| channel.rate_limit_per_user)
+			.and_then(|seconds| u64::try_from(seconds).ok())
+			.filter(|seconds| *seconds > 0)?;
+		(!self
+			.my_permissions(channel_id)
+			.contains(Permissions::BYPASS_SLOWMODE))
+		.then(|| Duration::from_secs(seconds))
 	}
 
 	pub fn can_attach(&self, channel_id: Snowflake) -> bool {

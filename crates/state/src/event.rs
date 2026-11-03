@@ -48,6 +48,10 @@ pub enum LocalEvent {
 	PendingDiscarded {
 		nonce: Nonce,
 	},
+	SlowmodeStarted {
+		channel_id: Snowflake,
+		wait: Duration,
+	},
 	DraftChanged {
 		channel_id: Snowflake,
 		content: String,

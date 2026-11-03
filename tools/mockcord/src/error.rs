@@ -9,6 +9,7 @@ pub struct ApiError {
 	code: i64,
 	message: &'static str,
 	mfa: bool,
+	retry_after: Option<f64>,
 }
 
 pub type ApiResult<T = Json<Value>> = Result<T, ApiError>;
@@ -20,6 +21,18 @@ impl ApiError {
 			code,
 			message,
 			mfa: false,
+			retry_after: None,
+		}
+	}
+
+	pub const fn slowmode(retry_after: f64) -> Self {
+		Self {
+			retry_after: Some(retry_after),
+			..Self::new(
+				StatusCode::TOO_MANY_REQUESTS,
+				20016,
+				"This action cannot be performed due to slowmode rate limit.",
+			)
 		}
 	}
 
@@ -106,6 +119,10 @@ impl ApiError {
 impl IntoResponse for ApiError {
 	fn into_response(self) -> Response {
 		let mut body = json!({ "message": self.message, "code": self.code });
+		if let Some(retry_after) = self.retry_after {
+			body["retry_after"] = json!(retry_after);
+			body["global"] = json!(false);
+		}
 		if self.mfa {
 			body["mfa"] = json!({ "ticket": "mock-mfa-ticket", "methods": [] });
 		}

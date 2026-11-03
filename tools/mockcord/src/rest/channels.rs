@@ -178,6 +178,7 @@ pub async fn create_message(
 	request: Request,
 ) -> ApiResult {
 	let draft = read_draft(request).await?;
+	shared.enforce_slowmode(id)?;
 	shared
 		.post_message(id, &shared.fixtures.current_user, draft)
 		.map(Json)

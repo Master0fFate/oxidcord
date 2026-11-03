@@ -57,6 +57,7 @@ pub struct State {
 	pub(crate) global_settings: Option<UserGuildSettings>,
 	pub(crate) messages: HashMap<Snowflake, ChannelMessages>,
 	pub(crate) typing: HashMap<Snowflake, HashMap<Snowflake, Instant>>,
+	pub(crate) slowmode: HashMap<Snowflake, Instant>,
 	pub(crate) session: SessionInfo,
 	pub(crate) guild_folders: Vec<GuildFolder>,
 	pub(crate) guild_positions: Vec<Snowflake>,
@@ -312,6 +313,22 @@ impl State {
 			.collect()
 	}
 
+	pub fn slowmode_remaining(&self, channel_id: Snowflake) -> Option<Duration> {
+		self.slowmode
+			.get(&channel_id)
+			.map(|until| until.saturating_duration_since(Instant::now()))
+			.filter(|remaining| !remaining.is_zero())
+	}
+
+	pub(crate) fn start_slowmode(&mut self, channel_id: Snowflake, wait: Duration) -> Changes {
+		let now = Instant::now();
+		self.slowmode.retain(|_, until| *until > now);
+		self.slowmode.insert(channel_id, now + wait);
+		let mut changes = Changes::default();
+		changes.slowmode.insert(channel_id);
+		changes
+	}
+
 	pub(crate) fn channel_mut(&mut self, id: Snowflake) -> Option<&mut Channel> {
 		match self.channel_guilds.get(&id)? {
 			Some(guild_id) => self.guilds.get_mut(guild_id)?.channel_mut(id),
@@ -446,6 +463,9 @@ impl State {
 						changes.messages.insert(channel_id);
 					}
 				}
+			}
+			LocalEvent::SlowmodeStarted { channel_id, wait } => {
+				return self.start_slowmode(*channel_id, *wait);
 			}
 			LocalEvent::DraftChanged { channel_id, content } => {
 				if content.is_empty() {

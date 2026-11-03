@@ -42,6 +42,7 @@ fn failure_reason(what: &str, error: &RestError) -> String {
 		RestError::NotFound(_) => detail("not found"),
 		RestError::IndexNotReady { .. } => format!("{what}: still indexing, try again shortly"),
 		RestError::RateLimited { .. } => format!("{what}: rate limited, try again shortly"),
+		RestError::Slowmode { .. } => format!("{what}: slowmode is active"),
 		RestError::CaptchaRequired => format!("{what}: Discord asks for a captcha, do this on discord.com"),
 		RestError::Http(_, Some(api)) if !api.message.is_empty() => format!("{what}: {}", api.message),
 		RestError::Http(status, _) => format!("{what}: http {}", status.as_u16()),
@@ -158,11 +159,16 @@ impl Core {
 	}
 
 	pub(super) fn send_allowed(&mut self, channel_id: Snowflake) -> bool {
-		let allowed = self.may_send(channel_id);
-		if !allowed {
+		if !self.may_send(channel_id) {
 			self.reject("You can't send messages in this channel");
+			return false;
 		}
-		allowed
+		let cooldown = self.state.read().slowmode_remaining(channel_id);
+		if let Some(remaining) = cooldown {
+			self.reject(format!("Slowmode: {}s", remaining.as_secs() + 1));
+			return false;
+		}
+		true
 	}
 
 	pub(super) fn channel_guild_allows(

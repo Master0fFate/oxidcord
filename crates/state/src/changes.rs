@@ -83,6 +83,7 @@ pub struct Changes {
 	pub members: IdSet,
 	pub presence: IdSet,
 	pub typing: IdSet,
+	pub slowmode: IdSet,
 	pub voice: IdSet,
 	pub voice_session: bool,
 	pub calls: bool,
@@ -118,6 +119,7 @@ impl Changes {
 			members: IdSet::All,
 			presence: IdSet::All,
 			typing: IdSet::All,
+			slowmode: IdSet::All,
 			voice: IdSet::All,
 			voice_session: true,
 			calls: true,
@@ -160,6 +162,7 @@ impl Changes {
 			&& self.members.is_empty()
 			&& self.presence.is_empty()
 			&& self.typing.is_empty()
+			&& self.slowmode.is_empty()
 			&& self.voice.is_empty()
 			&& self.drafts.is_empty()
 			&& self.loaded.is_empty()
@@ -193,6 +196,7 @@ impl Changes {
 		self.members.merge(&other.members);
 		self.presence.merge(&other.presence);
 		self.typing.merge(&other.typing);
+		self.slowmode.merge(&other.slowmode);
 		self.voice.merge(&other.voice);
 		self.drafts.merge(&other.drafts);
 		self.loaded.merge(&other.loaded);

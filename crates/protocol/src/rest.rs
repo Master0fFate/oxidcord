@@ -108,6 +108,8 @@ pub struct MessagesQuery {
 	pub limit: Option<u8>,
 }
 
+pub const SLOWMODE_CODE: i64 = 20016;
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RateLimitBody {
@@ -115,6 +117,12 @@ pub struct RateLimitBody {
 	pub retry_after: f64,
 	pub global: bool,
 	pub code: Option<i64>,
+}
+
+impl RateLimitBody {
+	pub fn is_slowmode(&self) -> bool {
+		self.code == Some(SLOWMODE_CODE)
+	}
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]

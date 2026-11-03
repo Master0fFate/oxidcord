@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use chrono::{SecondsFormat, Utc};
 use protocol::{
 	Attachment, AttachmentDescriptor, ChannelType, CreateMessage, EditMessage, LenientVec, Message,
@@ -161,6 +163,35 @@ impl Shared {
 			&& channel.permission_overwrites.iter().any(|overwrite| {
 				overwrite.deny.contains(Permissions::ADD_REACTIONS) && me.roles.contains(&overwrite.id)
 			})
+	}
+
+	pub fn enforce_slowmode(&self, channel_id: u64) -> Result<(), ApiError> {
+		let mut store = self.store.lock();
+		let Some((guild_id, seconds)) = store.channels.get(&channel_id).and_then(|channel| {
+			let seconds = channel.rate_limit_per_user.filter(|seconds| *seconds > 0)?;
+			Some((channel.guild_id?.0, seconds))
+		}) else {
+			return Ok(());
+		};
+		let Some(guild) = self.fixtures.guild(guild_id) else {
+			return Ok(());
+		};
+		if guild
+			.permissions_for(guild.current_member())
+			.contains(Permissions::BYPASS_SLOWMODE)
+		{
+			return Ok(());
+		}
+		let interval = Duration::from_secs(seconds.unsigned_abs());
+		let now = Instant::now();
+		if let Some(last) = store.slowmode.get(&channel_id) {
+			let elapsed = now.saturating_duration_since(*last);
+			if elapsed < interval {
+				return Err(ApiError::slowmode((interval - elapsed).as_secs_f64()));
+			}
+		}
+		store.slowmode.insert(channel_id, now);
+		Ok(())
 	}
 
 	pub fn post_message(&self, channel_id: u64, author: &User, draft: Draft) -> Result<Value, ApiError> {

@@ -21,6 +21,8 @@ const MUTED_COLOR: i64 = 0x607D8B;
 const THREAD_MESSAGE_CAP: usize = 40;
 const FORUM_POST_MESSAGE_CAP: usize = 15;
 const FIXED_NON_TEXT_CHANNELS: usize = 5;
+const SLOWMODE_SECONDS: i64 = 10;
+const SLOWMODE_CHANNEL_INDEX: usize = 1;
 const LARGE_GUILD_STRIDE: usize = 3;
 
 pub struct GuildFixture {
@@ -337,7 +339,11 @@ fn build_channels(builder: &mut Builder, guild_id: u64, roles: &RoleIds) -> Chan
 			Some(text_category),
 		);
 		channel.topic = Some(format!("talk about {name} here"));
-		channel.rate_limit_per_user = Some(0);
+		channel.rate_limit_per_user = Some(if index == SLOWMODE_CHANNEL_INDEX {
+			SLOWMODE_SECONDS
+		} else {
+			0
+		});
 		let mut overwrites = vec![muted_overwrite(roles.muted)];
 		if private {
 			overwrites.push(PermissionOverwrite {

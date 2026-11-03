@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use bytes::{Bytes, BytesMut};
 use futures_util::StreamExt;
 use parking_lot::RwLock;
-use protocol::rest::{ApiError, RateLimitBody};
+use protocol::rest::{ApiError, RateLimitBody, SLOWMODE_CODE};
 use protocol::{DecodeError, Token};
 use reqwest::header::{
 	ACCEPT, ACCEPT_ENCODING, ACCEPT_LANGUAGE, AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue, ORIGIN,
@@ -38,6 +38,7 @@ struct Throttle {
 	retry_after: Duration,
 	global: bool,
 	structured: bool,
+	slowmode: bool,
 }
 
 #[derive(Clone)]
@@ -183,6 +184,9 @@ fn classify(status: StatusCode, body: &[u8]) -> RestError {
 		return RestError::MfaRequired;
 	}
 	let api = value.and_then(|value| serde_json::from_value::<ApiError>(value).ok());
+	if api.as_ref().is_some_and(|api| api.code == SLOWMODE_CODE) {
+		return RestError::Slowmode { retry_after: None };
+	}
 	match status {
 		StatusCode::UNAUTHORIZED => RestError::Unauthorized(api),
 		StatusCode::FORBIDDEN => RestError::Forbidden(api),
@@ -316,6 +320,7 @@ impl RestClient {
 			|| headers.contains_key("x-ratelimit-bucket");
 		let global =
 			!structured || header_global(headers) || parsed.as_ref().is_some_and(|parsed| parsed.global);
+		let slowmode = parsed.as_ref().is_some_and(RateLimitBody::is_slowmode);
 		let retry_after = parsed
 			.filter(|parsed| parsed.retry_after > 0.0)
 			.and_then(|parsed| clamp_wait(parsed.retry_after))
@@ -330,6 +335,7 @@ impl RestClient {
 			retry_after,
 			global,
 			structured,
+			slowmode,
 		}
 	}
 
@@ -360,6 +366,11 @@ impl RestClient {
 			if status == StatusCode::TOO_MANY_REQUESTS {
 				let throttle = self.throttle(&route, &headers, &body);
 				let retry_after = throttle.retry_after;
+				if throttle.slowmode {
+					return Err(RestError::Slowmode {
+						retry_after: Some(retry_after),
+					});
+				}
 				if !retryable || !throttle.structured || retries >= MAX_RETRIES || retry_after > MAX_AUTO_WAIT
 				{
 					return Err(RestError::RateLimited { retry_after });

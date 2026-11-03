@@ -64,6 +64,7 @@ pub struct Store {
 	pub guild_bios: HashMap<(u64, u64), String>,
 	pub audit: HashMap<u64, Vec<Value>>,
 	pub joined_threads: BTreeSet<u64>,
+	pub slowmode: HashMap<u64, Instant>,
 	pub created_guilds: HashMap<u64, Value>,
 	pub frecency: ProtoFrecencySettings,
 	pub proto_status: Vec<u8>,
@@ -147,6 +148,7 @@ impl Store {
 				.and_then(|guild| guild.thread_ids.first().copied())
 				.into_iter()
 				.collect(),
+			slowmode: HashMap::new(),
 			proto_status: seed_status(),
 			proto_privacy: privacy_with_friend_sources(
 				&[],

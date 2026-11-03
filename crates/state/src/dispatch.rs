@@ -280,6 +280,9 @@ impl State {
 			.is_some_and(|selected| selected.channel_id == channel_id);
 		if Some(message.author.id) == self.current_user_id() {
 			self.set_read_state(channel_id, message.id, 0);
+			if let Some(interval) = self.slowmode_interval(channel_id) {
+				changes.merge(self.start_slowmode(channel_id, interval));
+			}
 		} else if !is_selected && (guild_id.is_none() || self.mentions_me(message, guild_id)) {
 			self.bump_mentions(channel_id);
 		}

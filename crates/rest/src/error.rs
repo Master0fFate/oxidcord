@@ -13,6 +13,8 @@ pub enum RestError {
 	Http(StatusCode, Option<ApiError>),
 	#[error("rate limited, retry in {retry_after:?}")]
 	RateLimited { retry_after: Duration },
+	#[error("slowmode is active")]
+	Slowmode { retry_after: Option<Duration> },
 	#[error("captcha required")]
 	CaptchaRequired,
 	#[error("network error: {0}")]
