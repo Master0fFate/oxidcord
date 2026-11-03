@@ -878,7 +878,6 @@ pub fn build(builder: &mut Builder, index: usize) -> GuildFixture {
 		.unwrap_or_default();
 	let emojis = build_emojis(builder, &owner);
 	let layout = build_channels(builder, guild_id, &role_ids);
-	let scheduled_events = build_scheduled_events(builder, guild_id, &layout, owner.id);
 	let anchor = builder.anchor;
 
 	let first_text = layout.text[0];
@@ -1090,6 +1089,7 @@ pub fn build(builder: &mut Builder, index: usize) -> GuildFixture {
 		nsfw_level: Some(NsfwLevel::Default),
 		..GuildProperties::default()
 	};
+	let scheduled_events = build_scheduled_events(builder, guild_id, &layout, owner.id);
 	GuildFixture {
 		id: guild_id,
 		properties,
