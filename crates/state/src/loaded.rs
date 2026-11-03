@@ -564,7 +564,7 @@ impl State {
 				}
 			}
 			Loaded::Note { user_id, note } => {
-				self.set_note(*user_id, note);
+				self.lazy.notes.entry(*user_id).or_insert_with(|| note.clone());
 				changes.loaded.insert(*user_id);
 			}
 			Loaded::InviteCreated { channel_id, raw } => {
@@ -897,15 +897,15 @@ impl State {
 	}
 
 	pub fn note(&self, user_id: Snowflake) -> Option<&str> {
-		self.lazy.notes.get(&user_id).map(String::as_str)
+		self.lazy
+			.notes
+			.get(&user_id)
+			.map(String::as_str)
+			.filter(|note| !note.is_empty())
 	}
 
 	pub(crate) fn set_note(&mut self, user_id: Snowflake, note: &str) {
-		if note.is_empty() {
-			self.lazy.notes.remove(&user_id);
-		} else {
-			self.lazy.notes.insert(user_id, note.to_owned());
-		}
+		self.lazy.notes.insert(user_id, note.to_owned());
 	}
 
 	pub fn application_icon(&self, application_id: Snowflake) -> Option<Option<&str>> {
