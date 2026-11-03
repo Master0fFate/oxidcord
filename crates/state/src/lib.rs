@@ -31,8 +31,8 @@ pub use guild::{ENHANCED_ROLE_COLORS, GuildState, ROLE_ICONS};
 pub use limits::{ExpressionLimits, PREMIUM_UPLOAD_BYTES};
 pub use loaded::{
 	AppCommand, AuditChange, AuditEntry, AuditLog, AuthSession, BanEntry, COMMAND_CHOICES_KEY,
-	ConnectedAccount, GuildProfile, INBOX_KEY, InviteInfo, InvitePreview, Loaded, Pin, ProfileBadge,
-	USER_COMMANDS, UserProfile, VoiceRegion, audit_action_label,
+	CONNECTIONS_KEY, ConnectedAccount, GuildProfile, INBOX_KEY, InviteInfo, InvitePreview, Loaded, Pin,
+	ProfileBadge, USER_COMMANDS, UserProfile, VoiceRegion, audit_action_label,
 };
 pub use member_list::{MemberList, MemberSlot};
 pub use messages::{ChannelMessages, MESSAGE_CAP, PendingFile, PendingMessage, apply_update};

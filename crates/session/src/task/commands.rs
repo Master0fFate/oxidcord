@@ -944,14 +944,15 @@ impl Core {
 			Command::LoadConnections => self.load_connections(),
 			Command::UpdateConnection { kind, id, changes } => {
 				self.spawn_load("update connection", move |rest| async move {
-					rest.modify_connection(&kind, &id, changes).await?;
-					Ok(Loaded::Connections(rest.connections().await?.into_vec()))
+					Ok(Loaded::ConnectionUpdated(
+						rest.modify_connection(&kind, &id, changes).await?,
+					))
 				})
 			}
 			Command::RemoveConnection { kind, id } => {
 				self.spawn_load("remove connection", move |rest| async move {
 					rest.delete_connection(&kind, &id).await?;
-					Ok(Loaded::Connections(rest.connections().await?.into_vec()))
+					Ok(Loaded::ConnectionRemoved { kind, id })
 				})
 			}
 			Command::LogoutSessions(id_hashes) => self.spawn_load("log out devices", |rest| async move {

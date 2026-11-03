@@ -21,6 +21,7 @@ use crate::state::{State, intern_user};
 pub const INBOX_KEY: Snowflake = Snowflake(1);
 const VOICE_REGIONS_KEY: Snowflake = Snowflake(2);
 pub const COMMAND_CHOICES_KEY: Snowflake = Snowflake(3);
+pub const CONNECTIONS_KEY: Snowflake = Snowflake(4);
 
 #[derive(Debug, Clone)]
 pub enum Loaded {
@@ -154,6 +155,11 @@ pub enum Loaded {
 	SettingsProto(String),
 	AuthSessions(Value),
 	Connections(Vec<Connection>),
+	ConnectionUpdated(Connection),
+	ConnectionRemoved {
+		kind: String,
+		id: String,
+	},
 	VoiceRegions(Value),
 	User(Box<User>),
 }
@@ -748,7 +754,28 @@ impl State {
 						})
 						.collect(),
 				);
-				changes.loaded.insert(self.current_user_id().unwrap_or_default());
+				changes.loaded.insert(CONNECTIONS_KEY);
+			}
+			Loaded::ConnectionUpdated(updated) => {
+				if let Some(connection) = self
+					.lazy
+					.connections
+					.iter_mut()
+					.flatten()
+					.find(|known| known.kind == updated.kind && known.id == updated.id)
+				{
+					*connection = Connection {
+						access_token: None,
+						..updated.clone()
+					};
+					changes.loaded.insert(CONNECTIONS_KEY);
+				}
+			}
+			Loaded::ConnectionRemoved { kind, id } => {
+				if let Some(connections) = &mut self.lazy.connections {
+					connections.retain(|known| known.kind != *kind || known.id != *id);
+					changes.loaded.insert(CONNECTIONS_KEY);
+				}
 			}
 			Loaded::VoiceRegions(raw) => {
 				let regions = LenientVec::<RawVoiceRegion>::deserialize(raw).unwrap_or_default();

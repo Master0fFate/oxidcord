@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use gpui::{
 	AnyElement, Context, Entity, IntoElement, ParentElement as _, Render, SharedString, Styled as _,
 	Subscription, Window, div,
@@ -8,6 +10,7 @@ use gpui_component::switch::Switch;
 use protocol::Connection;
 use serde_json::json;
 use session::Command;
+use state::CONNECTIONS_KEY;
 
 use super::super::providers;
 use super::my_account::open_web_app;
@@ -30,7 +33,7 @@ impl ConnectionsPage {
 	pub fn new(data: Entity<Data>, cx: &mut Context<Self>) -> Self {
 		let subscription = cx.subscribe(&data, |this, _, event: &DataEvent, cx| {
 			if let DataEvent::Changed(changes) = event
-				&& !changes.loaded.is_empty()
+				&& changes.loaded.contains(CONNECTIONS_KEY)
 			{
 				this.connections = this.load_connections(cx);
 				this.removing = None;
@@ -55,22 +58,21 @@ impl ConnectionsPage {
 		self.data.read(cx).send(Command::LoadConnections);
 	}
 
-	fn update(&self, connection: &Connection, changes: serde_json::Value, cx: &Context<Self>) {
+	fn update(&self, key: &(String, String), changes: serde_json::Value, cx: &Context<Self>) {
 		self.data.read(cx).send(Command::UpdateConnection {
-			kind: connection.kind.clone(),
-			id: connection.id.clone(),
+			kind: key.0.clone(),
+			id: key.1.clone(),
 			changes,
 		});
 	}
 
-	fn remove(&mut self, connection: &Connection, cx: &mut Context<Self>) {
-		let target = (connection.kind.clone(), connection.id.clone());
-		if self.removing.as_ref() == Some(&target) {
-			let (kind, id) = target;
+	fn remove(&mut self, key: &(String, String), cx: &mut Context<Self>) {
+		if self.removing.as_ref() == Some(key) {
+			let (kind, id) = key.clone();
 			self.data.read(cx).send(Command::RemoveConnection { kind, id });
 			self.removing = None;
 		} else {
-			self.removing = Some(target);
+			self.removing = Some(key.clone());
 		}
 		cx.notify();
 	}
@@ -91,7 +93,8 @@ impl ConnectionsPage {
 			.removing
 			.as_ref()
 			.is_some_and(|(kind, id)| *kind == connection.kind && *id == connection.id);
-		let target = connection.clone();
+		let key = Rc::new((connection.kind.clone(), connection.id.clone()));
+		let target = key.clone();
 		let remove = Button::new(("connection-remove", index))
 			.small()
 			.danger()
@@ -102,14 +105,14 @@ impl ConnectionsPage {
 			}))
 			.on_click(cx.listener(move |this, _, _, cx| this.remove(&target, cx)));
 		let visible = connection.visibility == VISIBLE_TO_EVERYONE;
-		let target = connection.clone();
+		let target = key.clone();
 		let visibility = Switch::new(("connection-visible", index))
 			.checked(visible)
 			.on_change(cx.listener(move |this, checked: &bool, _, cx| {
 				let visibility = i64::from(*checked);
 				this.update(&target, json!({ "visibility": visibility }), cx);
 			}));
-		let target = connection.clone();
+		let target = key;
 		let activity = providers::shows_activity(&connection.kind).then(|| {
 			row(
 				cx.t("connections-status"),
