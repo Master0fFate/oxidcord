@@ -23,6 +23,16 @@ pub fn row(
 	control: impl IntoElement,
 	theme: &Theme,
 ) -> AnyElement {
+	row_with_lead(None, title, note, control, theme)
+}
+
+pub fn row_with_lead(
+	lead: Option<AnyElement>,
+	title: SharedString,
+	note: Option<SharedString>,
+	control: impl IntoElement,
+	theme: &Theme,
+) -> AnyElement {
 	div()
 		.flex()
 		.items_center()
@@ -31,6 +41,7 @@ pub fn row(
 		.py(theme.space_12)
 		.border_b_1()
 		.border_color(theme.divider)
+		.children(lead)
 		.child(
 			div()
 				.flex()

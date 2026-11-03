@@ -17,6 +17,39 @@ macro_rules! icon {
 	};
 }
 
+macro_rules! brand {
+	($name:literal) => {
+		(
+			concat!("oxidcord/brands/", $name, ".svg"),
+			include_bytes!(concat!("../assets/brands/", $name, ".svg")).as_slice(),
+		)
+	};
+}
+
+const BRANDS: &[(&str, &[u8])] = &[
+	brand!("bluesky"),
+	brand!("bungie"),
+	brand!("crunchyroll"),
+	brand!("ebay"),
+	brand!("epicgames"),
+	brand!("facebook"),
+	brand!("github"),
+	brand!("instagram"),
+	brand!("mastodon"),
+	brand!("paypal"),
+	brand!("playstation"),
+	brand!("reddit"),
+	brand!("roblox"),
+	brand!("samsung"),
+	brand!("soundcloud"),
+	brand!("spotify"),
+	brand!("steam"),
+	brand!("tiktok"),
+	brand!("twitch"),
+	brand!("x"),
+	brand!("youtube"),
+];
+
 const ICONS: &[(&str, &[u8])] = &[
 	icon!("activity"),
 	icon!("apps"),
@@ -87,7 +120,7 @@ impl Assets {
 
 impl AssetSource for Assets {
 	fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
-		let Some((_, bundled)) = ICONS.iter().find(|(name, _)| *name == path) else {
+		let Some((_, bundled)) = ICONS.iter().chain(BRANDS).find(|(name, _)| *name == path) else {
 			return AllAssets.load(path);
 		};
 		Ok(Some(match self.user_icon(path) {
@@ -101,6 +134,7 @@ impl AssetSource for Assets {
 		names.extend(
 			ICONS
 				.iter()
+				.chain(BRANDS)
 				.filter(|(name, _)| name.starts_with(path))
 				.map(|(name, _)| SharedString::new_static(name)),
 		);

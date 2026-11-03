@@ -451,11 +451,7 @@ fn connection_row(index: usize, account: &ConnectedAccount, open: &OpenLink, the
 		.flex()
 		.items_center()
 		.gap(theme.space_8)
-		.child(
-			Icon::new(IconKind::Connections)
-				.size(theme.glyph_sm)
-				.color(theme.interactive_muted),
-		)
+		.child(parts::provider_icon(&account.kind, theme))
 		.child(
 			div()
 				.flex_none()

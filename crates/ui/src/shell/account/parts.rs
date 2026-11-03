@@ -3,7 +3,7 @@ use std::rc::Rc;
 use gpui::{
 	AnyElement, App, Entity, FontWeight, Hsla, InteractiveElement as _, IntoElement, ObjectFit,
 	ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _, StyledImage as _, Window,
-	div, img, prelude::FluentBuilder as _,
+	div, img, prelude::FluentBuilder as _, svg,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::menu::DropdownMenu as _;
@@ -13,6 +13,7 @@ use protocol::Snowflake;
 use session::Command;
 
 use super::profile_data::{Badge, ProfileData, Relation, RoleChip};
+use super::providers;
 use super::relation::{manage_items, primary_action};
 use crate::components::{ContextMenuBuilder, tooltip};
 use crate::data::Data;
@@ -27,6 +28,30 @@ pub type CloseFn = Rc<dyn Fn(&mut Window, &mut App)>;
 
 const BADGE_PIXELS: u32 = 64;
 const BANNER_PIXELS: u32 = 600;
+
+pub fn provider_icon(kind: &str, theme: &Theme) -> AnyElement {
+	match providers::icon(kind) {
+		Some(path) => svg()
+			.path(path)
+			.flex_none()
+			.size(theme.glyph_md)
+			.text_color(theme.interactive_normal)
+			.into_any_element(),
+		None => div()
+			.flex()
+			.flex_none()
+			.items_center()
+			.justify_center()
+			.size(theme.glyph_md)
+			.rounded(theme.radius_sm)
+			.bg(theme.button_secondary)
+			.text_size(theme.font_tiny)
+			.font_weight(FontWeight::SEMIBOLD)
+			.text_color(theme.text_muted)
+			.child(providers::initial(kind).to_owned())
+			.into_any_element(),
+	}
+}
 
 pub fn section_label(label: SharedString, theme: &Theme) -> AnyElement {
 	div()

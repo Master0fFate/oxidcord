@@ -12,9 +12,9 @@ use serde_json::json;
 use session::Command;
 use state::CONNECTIONS_KEY;
 
-use super::super::providers;
+use super::super::{parts, providers};
 use super::my_account::open_web_app;
-use super::widgets::row;
+use super::widgets::{row, row_with_lead};
 use crate::data::{Data, DataEvent, streamer_mode};
 use crate::i18n::Translate as _;
 use crate::theme::Theme;
@@ -129,7 +129,8 @@ impl ConnectionsPage {
 			.flex()
 			.flex_col()
 			.pb(theme.space_16)
-			.child(row(
+			.child(row_with_lead(
+				Some(parts::provider_icon(&connection.kind, theme)),
 				SharedString::from(providers::label(&connection.kind).to_owned()),
 				Some(name),
 				remove,

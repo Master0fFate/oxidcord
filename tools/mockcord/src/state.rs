@@ -49,6 +49,7 @@ fn seed_connections() -> Vec<Value> {
 		("github", "7021", "oxid-dev", true, 1, false),
 		("spotify", "31ab9", "oxid.listens", true, 1, true),
 		("twitch", "58213", "oxid_live", false, 0, false),
+		("xbox", "90417", "OxidPlayer", false, 1, false),
 	]
 	.into_iter()
 	.map(|(kind, id, name, verified, visibility, show_activity)| {
