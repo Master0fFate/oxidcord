@@ -3,7 +3,9 @@ use std::sync::Arc;
 use gpui::{App, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::button::ButtonVariant;
-use protocol::{ApplicationCommand, ApplicationCommandType, ChannelType, Permissions, PrivacyChange, Snowflake};
+use protocol::{
+	ApplicationCommand, ApplicationCommandType, ChannelType, Permissions, PrivacyChange, Snowflake,
+};
 use session::Command;
 use state::AppCommand;
 

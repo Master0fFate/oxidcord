@@ -7,9 +7,8 @@ use protocol::lenient::{or_default, timestamp, timestamp_or_seconds};
 use protocol::{
 	ApplicationCommand, ApplicationCommandType, AutoModRule, Channel, ChannelType, CommandApplication,
 	CommandChoice, CommandIndex, Connection, Gif, GifFavorites, GifTrending, Guild, GuildBan,
-	InteractionContext,
-	JoinRequestStatus, LenientVec, Member, MemberVerification, Message, Permissions, PinnedMessage,
-	ScheduledEvent, Snowflake, SoundboardSound, Sticker, StickerPack, ThreadMember, User,
+	InteractionContext, JoinRequestStatus, LenientVec, Member, MemberVerification, Message, Permissions,
+	PinnedMessage, ScheduledEvent, Snowflake, SoundboardSound, Sticker, StickerPack, ThreadMember, User,
 };
 use serde::Deserialize;
 use serde_json::Value;
