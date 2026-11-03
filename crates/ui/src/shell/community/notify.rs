@@ -8,6 +8,7 @@ use gpui::{
 };
 use plugin_host::api::model::NotificationSettings;
 use protocol::{NotificationLevel, Snowflake};
+use serde_json::json;
 use session::Command;
 
 use super::data_handle;
@@ -226,6 +227,8 @@ pub struct GuildNotifications {
 	suppress_roles: bool,
 	mobile_push: bool,
 	hide_muted: bool,
+	mute_events: bool,
+	events_were_muted: bool,
 }
 
 impl EventEmitter<Close> for GuildNotifications {}
@@ -239,6 +242,9 @@ pub fn open_guild_modal(window: &mut Window, cx: &mut App, guild: Snowflake) {
 			state.guild_settings(Some(guild)).cloned(),
 		)
 	};
+	let events_were_muted = settings
+		.as_ref()
+		.is_some_and(|settings| settings.mute_scheduled_events);
 	let view = cx.new(|_| GuildNotifications {
 		data,
 		guild,
@@ -254,6 +260,8 @@ pub fn open_guild_modal(window: &mut Window, cx: &mut App, guild: Snowflake) {
 		hide_muted: settings
 			.as_ref()
 			.is_some_and(|settings| settings.hide_muted_channels),
+		mute_events: events_were_muted,
+		events_were_muted,
 	});
 	let title = cx.t("notify-guild-title");
 	let width = cx.global::<Theme>().modal_width_sm;
@@ -273,6 +281,12 @@ impl GuildNotifications {
 				..level_only(self.level)
 			},
 		});
+		if self.mute_events != self.events_were_muted {
+			self.data.read(cx).send(Command::UpdateGuildSettingsRaw {
+				guild_id: Some(self.guild),
+				changes: json!({ "mute_scheduled_events": self.mute_events }),
+			});
+		}
 		cx.emit(Close);
 	}
 
@@ -348,6 +362,7 @@ impl Render for GuildNotifications {
 		let roles = self.toggle(cx, |this, value| this.suppress_roles = value);
 		let push = self.toggle(cx, |this, value| this.mobile_push = value);
 		let hide_muted = self.toggle(cx, |this, value| this.hide_muted = value);
+		let mute_events = self.toggle(cx, |this, value| this.mute_events = value);
 		div()
 			.flex()
 			.flex_col()
@@ -385,6 +400,14 @@ impl Render for GuildNotifications {
 				self.hide_muted,
 				&theme,
 				hide_muted,
+			))
+			.child(switch_row(
+				"notify-mute-events",
+				cx.t("notify-mute-events"),
+				None,
+				self.mute_events,
+				&theme,
+				mute_events,
 			))
 			.child(dialog_footer(
 				cx.t("action-cancel"),

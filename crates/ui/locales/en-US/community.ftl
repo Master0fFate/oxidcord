@@ -131,6 +131,7 @@ notify-suppress-everyone = Suppress @everyone and @here
 notify-suppress-roles = Suppress All Role @mentions
 notify-mobile-push = Mobile Push Notifications
 notify-hide-muted = Hide Muted Channels
+notify-mute-events = Mute New Events
 
 channel-edit-title = Edit #{ $name }
 channel-tab-overview = Overview
