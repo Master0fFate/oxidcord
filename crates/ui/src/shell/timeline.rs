@@ -784,6 +784,14 @@ impl Timeline {
 			RowAction::Delete(message) => self.confirm_delete(message, window, cx),
 			RowAction::Retry(nonce) => self.data.read(cx).send(Command::RetryPending { nonce }),
 			RowAction::Discard(nonce) => self.data.read(cx).send(Command::DiscardPending { nonce }),
+			RowAction::SuppressEmbeds(message) => self.confirm_suppress(message, window, cx),
+			RowAction::RemoveEditAttachment { message, attachment } => {
+				if let Some(editing) = self.editing.as_mut().filter(|editing| editing.message == message) {
+					editing.removed.insert(attachment);
+					self.remeasure(message, cx);
+					cx.notify();
+				}
+			}
 			RowAction::OpenEmoji { message_id, at } => cx.emit(TimelineEvent::OpenEmoji { message_id, at }),
 			RowAction::OpenProfile { user, at } => cx.emit(TimelineEvent::OpenProfile { user, at }),
 			RowAction::JumpTo(message) => self.jump_to(message, cx),
@@ -1003,11 +1011,13 @@ impl Timeline {
 					return;
 				};
 				let text = input.read(cx).value().trim().to_owned();
-				if !text.is_empty() {
+				let keep = this.kept_attachments(channel, message_id, cx);
+				if !text.is_empty() || keep.as_ref().is_some_and(|keep| !keep.is_empty()) {
 					this.data.read(cx).send(Command::EditMessage {
 						channel_id: channel,
 						message_id,
 						content: text,
+						keep,
 					});
 				} else if this.is_text_only(message_id, cx) {
 					this.confirm_delete(message_id, window, cx);
@@ -1020,6 +1030,7 @@ impl Timeline {
 			message: message_id,
 			input,
 			tokens: EmojiTokens::default(),
+			removed: HashSet::new(),
 		});
 		self.remeasure(message_id, cx);
 		cx.notify();
@@ -1053,6 +1064,52 @@ impl Timeline {
 				.cancel_text(cx.t("action-cancel"))
 				.on_ok(move |_, _, cx| {
 					data.read(cx).send(Command::DeleteMessage {
+						channel_id: channel,
+						message_id,
+					});
+					true
+				})
+		});
+	}
+
+	fn kept_attachments(
+		&self,
+		channel: Snowflake,
+		message_id: Snowflake,
+		cx: &Context<Self>,
+	) -> Option<Vec<Snowflake>> {
+		let removed = &self.editing.as_ref()?.removed;
+		if removed.is_empty() {
+			return None;
+		}
+		let data = self.data.read(cx);
+		let state = data.state();
+		let message = state.messages(channel)?.by_id.get(&message_id)?;
+		let kept = message
+			.attachments
+			.iter()
+			.map(|attachment| attachment.id)
+			.filter(|id| !removed.contains(id))
+			.collect();
+		Some(kept)
+	}
+
+	fn confirm_suppress(&mut self, message_id: Snowflake, window: &mut Window, cx: &mut Context<Self>) {
+		let Some(channel) = self.channel else {
+			return;
+		};
+		let data = self.data.clone();
+		window.open_alert_dialog(cx, move |alert, _, cx| {
+			let data = data.clone();
+			alert
+				.title(cx.t("suppress-title"))
+				.description(cx.t("suppress-body"))
+				.confirm()
+				.ok_text(cx.t("suppress-confirm"))
+				.ok_variant(ButtonVariant::Danger)
+				.cancel_text(cx.t("action-cancel"))
+				.on_ok(move |_, _, cx| {
+					data.read(cx).send(Command::SuppressEmbeds {
 						channel_id: channel,
 						message_id,
 					});

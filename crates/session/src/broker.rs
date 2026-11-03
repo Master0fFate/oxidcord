@@ -1099,6 +1099,7 @@ impl HostBroker for SessionBroker {
 			channel_id: Snowflake(message.channel_id),
 			message_id: Snowflake(message.id),
 			content,
+			keep: None,
 		})
 	}
 

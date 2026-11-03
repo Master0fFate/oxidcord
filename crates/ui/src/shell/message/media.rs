@@ -810,6 +810,47 @@ pub fn embeds(items: &[Embed], env: &BodyEnv, previews: bool, cx: &App) -> Vec<A
 		.collect()
 }
 
+pub fn removable(embeds: Vec<AnyElement>, env: &BodyEnv, cx: &App) -> AnyElement {
+	let theme = env.theme;
+	let message = env.message_id;
+	let dispatch = env.dispatch.clone();
+	let group = SharedString::from(format!("embeds-{message}"));
+	div()
+		.relative()
+		.self_start()
+		.flex()
+		.flex_col()
+		.group(group.clone())
+		.children(embeds)
+		.child(
+			div()
+				.id(("embeds-remove", message))
+				.absolute()
+				.top(theme.space_8)
+				.right(theme.space_8)
+				.size(rem(GIF_STAR))
+				.rounded_full()
+				.bg(with_alpha(theme.background_floating, 0.85))
+				.flex()
+				.items_center()
+				.justify_center()
+				.cursor_pointer()
+				.invisible()
+				.group_hover(group, |style| style.visible())
+				.tooltip(tooltip(cx.t("embeds-remove")))
+				.on_mouse_down(MouseButton::Left, move |_, window, cx| {
+					cx.stop_propagation();
+					dispatch(RowAction::SuppressEmbeds(Snowflake(message)), window, cx);
+				})
+				.child(
+					Icon::new(IconKind::Close)
+						.size(rem(14.))
+						.color(theme.interactive_muted),
+				),
+		)
+		.into_any_element()
+}
+
 fn clickable_embed(index: usize, card: AnyElement, env: &BodyEnv, cx: &App) -> AnyElement {
 	let Some(at) = env.message_at().filter(|_| watching_messages(cx)) else {
 		return card;

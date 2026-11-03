@@ -132,6 +132,11 @@ pub enum Command {
 		channel_id: Snowflake,
 		message_id: Snowflake,
 		content: String,
+		keep: Option<Vec<Snowflake>>,
+	},
+	SuppressEmbeds {
+		channel_id: Snowflake,
+		message_id: Snowflake,
 	},
 	DeleteMessage {
 		channel_id: Snowflake,

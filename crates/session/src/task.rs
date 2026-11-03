@@ -14,8 +14,8 @@ use plugin_host::api::model::DmSection;
 use plugin_host::{FullSendDecision, Invalidation};
 use protocol::gateway::IdentifyProperties;
 use protocol::{
-	Channel, ChannelType, DISCORD_EPOCH_MS, DispatchEvent, EditMessage, Message, MessageAck, MessagesQuery,
-	Nonce, ProtoCustomStatus, Snowflake, Token, User, VoiceState,
+	AttachmentDescriptor, Channel, ChannelType, DISCORD_EPOCH_MS, DispatchEvent, EditMessage, Message,
+	MessageAck, MessageFlags, MessagesQuery, Nonce, ProtoCustomStatus, Snowflake, Token, User, VoiceState,
 };
 use rest::api::SearchQuery;
 use rest::{RestClient, RestError};
@@ -1025,13 +1025,41 @@ impl Core {
 				channel_id,
 				message_id,
 				content,
+				keep,
 			} => self.spawn_action("edit message", move |rest| async move {
 				let body = EditMessage {
 					content: Some(content),
+					attachments: keep.map(|ids| {
+						ids.into_iter()
+							.map(|id| AttachmentDescriptor {
+								id,
+								..AttachmentDescriptor::default()
+							})
+							.collect()
+					}),
 					..EditMessage::default()
 				};
 				rest.edit_message(channel_id, message_id, body).await.map(drop)
 			}),
+			Command::SuppressEmbeds {
+				channel_id,
+				message_id,
+			} => {
+				let flags = self
+					.state
+					.read()
+					.messages(channel_id)
+					.and_then(|cache| cache.by_id.get(&message_id))
+					.map_or_else(MessageFlags::empty, |message| message.flags)
+					| MessageFlags::SUPPRESS_EMBEDS;
+				self.spawn_action("suppress embeds", move |rest| async move {
+					let body = EditMessage {
+						flags: Some(flags),
+						..EditMessage::default()
+					};
+					rest.edit_message(channel_id, message_id, body).await.map(drop)
+				});
+			}
 			Command::DeleteMessage {
 				channel_id,
 				message_id,

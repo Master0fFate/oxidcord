@@ -390,7 +390,8 @@ impl Shared {
 		let message = store
 			.message_mut(channel_id, id)
 			.ok_or_else(ApiError::unknown_message)?;
-		if author_id(message) != author {
+		let moderating = edit.content.is_none() && edit.attachments.is_none() && edit.flags.is_some();
+		if author_id(message) != author && !moderating {
 			return Err(ApiError::not_author());
 		}
 		if let Some(content) = edit.content {
@@ -405,7 +406,9 @@ impl Shared {
 					.is_some_and(|attachment_id| keep.iter().any(|kept| kept.id.0 == attachment_id))
 			});
 		}
-		message["edited_timestamp"] = Value::String(now_iso());
+		if !moderating {
+			message["edited_timestamp"] = Value::String(now_iso());
+		}
 		let value = message.clone();
 		let gateway = self.gateway_message(&store, &value);
 		drop(store);

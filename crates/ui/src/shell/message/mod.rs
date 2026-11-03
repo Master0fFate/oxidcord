@@ -29,7 +29,7 @@ use lru::LruCache;
 use markdown::Document;
 use plugin_host::ViewContext;
 use plugin_host::api::model::ClickTarget;
-use protocol::{Gif, Message, MessageType, Nonce, Snowflake, UserFlags};
+use protocol::{Attachment, Gif, Message, MessageType, Nonce, Snowflake, UserFlags};
 use state::{ClientOptions, MessageRow, MessageView, RenderedMessage};
 
 use self::body::{BodyEnv, render_body};
@@ -207,6 +207,11 @@ pub enum RowAction {
 	Delete(Snowflake),
 	Retry(Nonce),
 	Discard(Nonce),
+	SuppressEmbeds(Snowflake),
+	RemoveEditAttachment {
+		message: Snowflake,
+		attachment: Snowflake,
+	},
 	OpenEmoji {
 		message_id: Snowflake,
 		at: Point<Pixels>,
@@ -273,6 +278,7 @@ pub struct Editing {
 	pub message: Snowflake,
 	pub input: Entity<TextareaState>,
 	pub tokens: EmojiTokens,
+	pub removed: HashSet<Snowflake>,
 }
 
 pub struct RowEnv<'a> {
@@ -1296,7 +1302,7 @@ fn content_column(
 	.patch(effects)
 	.in_channel(message.channel_id.get());
 	if let Some(editing) = env.editing.filter(|editing| editing.message == message.id) {
-		out.push(editor(editing, env, cx));
+		out.push(editor(editing, &message.attachments, env, cx));
 	} else if message.is_forward() {
 		out.push(forward_block(view, env, cx));
 	} else if !message.content.is_empty() && !link_only(message, env.prefs) {
@@ -1343,12 +1349,15 @@ fn content_column(
 		));
 	}
 	if !message.flags.contains(protocol::MessageFlags::SUPPRESS_EMBEDS) {
-		out.extend(media::embeds(
-			&media_message.embeds,
-			&body_env,
-			env.prefs.link_previews,
-			cx,
-		));
+		let embeds = media::embeds(&media_message.embeds, &body_env, env.prefs.link_previews, cx);
+		let removable = !embeds.is_empty()
+			&& !view.failed
+			&& (Some(message.author.id) == env.me || env.access.manage_messages);
+		if removable {
+			out.push(media::removable(embeds, &body_env, cx));
+		} else {
+			out.extend(embeds);
+		}
 		if env.prefs.link_previews {
 			out.extend(components::render_embeds(
 				message,
@@ -1473,12 +1482,18 @@ fn thread_chip(message: &Message, env: &RowEnv, cx: &App) -> Option<AnyElement> 
 	)
 }
 
-fn editor(editing: &Editing, env: &RowEnv, cx: &App) -> AnyElement {
+fn editor(editing: &Editing, attachments: &[Attachment], env: &RowEnv, cx: &App) -> AnyElement {
 	let theme = env.theme;
 	div()
 		.flex()
 		.flex_col()
 		.gap(theme.space_4)
+		.children(
+			attachments
+				.iter()
+				.filter(|attachment| !editing.removed.contains(&attachment.id))
+				.map(|attachment| editable_attachment(editing.message, attachment, env, cx)),
+		)
 		.child(
 			div()
 				.rounded(theme.radius_md)
@@ -1499,6 +1514,48 @@ fn editor(editing: &Editing, env: &RowEnv, cx: &App) -> AnyElement {
 				.text_size(theme.font_tiny)
 				.text_color(theme.text_muted)
 				.child(cx.t("message-edit-hint")),
+		)
+		.into_any_element()
+}
+
+fn editable_attachment(message: Snowflake, attachment: &Attachment, env: &RowEnv, cx: &App) -> AnyElement {
+	let theme = env.theme;
+	let dispatch = env.dispatch.clone();
+	let id = attachment.id;
+	div()
+		.flex()
+		.items_center()
+		.gap(theme.space_8)
+		.px(theme.space_12)
+		.py(theme.space_4)
+		.rounded(theme.radius_md)
+		.bg(theme.background_secondary)
+		.child(
+			Icon::new(IconKind::File)
+				.size(rem(20.))
+				.color(theme.interactive_normal),
+		)
+		.child(
+			div()
+				.flex_1()
+				.min_w_0()
+				.truncate()
+				.text_size(theme.font_sm)
+				.child(attachment.filename.clone()),
+		)
+		.child(
+			IconButton::new(("edit-attachment-remove", id.get()), IconKind::Close)
+				.tooltip(cx.t("attachment-remove"))
+				.on_click(move |_, window, cx| {
+					dispatch(
+						RowAction::RemoveEditAttachment {
+							message,
+							attachment: id,
+						},
+						window,
+						cx,
+					)
+				}),
 		)
 		.into_any_element()
 }

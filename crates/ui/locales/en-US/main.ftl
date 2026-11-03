@@ -292,6 +292,10 @@ message-preview-poll = Poll: { $question }
 message-preview-sticker = Sticker
 
 delete-title = Delete Message
+suppress-title = Remove Embeds
+suppress-body = This hides every link preview on the message.
+suppress-confirm = Remove
+embeds-remove = Remove embeds
 delete-body = Are you sure you want to delete this message? This cannot be undone.
 
 composer-replying = Replying to { $name }
