@@ -124,6 +124,14 @@ pub struct MessageView {
 	pub mentions_me: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UnreadSince {
+	pub count: usize,
+	pub more: bool,
+	pub jump_to: Snowflake,
+	pub since: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone)]
 pub enum MessageRow {
 	Message(MessageView),

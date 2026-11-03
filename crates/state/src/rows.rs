@@ -17,10 +17,11 @@ use crate::permissions::compute_permissions;
 use crate::state::State;
 use crate::views::{
 	ChannelRow, ChannelTreeNode, DmRow, GuildSummary, JoinBlock, MemberListRow, MemberRow, MessageRow,
-	MessageView, PendingUpload, RequestRow,
+	MessageView, PendingUpload, RequestRow, UnreadSince,
 };
 
 const GROUPING_WINDOW: TimeDelta = TimeDelta::minutes(7);
+const UNREAD_COUNT_CAP: usize = 50;
 
 struct RowContext<'a> {
 	settings: Option<&'a UserGuildSettings>,
@@ -462,6 +463,10 @@ impl State {
 	}
 
 	pub fn channel_rows(&self, channel_id: Snowflake) -> Vec<MessageRow> {
+		self.channel_rows_after(channel_id, None)
+	}
+
+	pub fn channel_rows_after(&self, channel_id: Snowflake, anchor: Option<Snowflake>) -> Vec<MessageRow> {
 		let Some(cache) = self.messages.get(&channel_id) else {
 			return vec![MessageRow::Loading];
 		};
@@ -469,10 +474,11 @@ impl State {
 			.channel_guild(channel_id)
 			.and_then(|guild_id| self.guilds.get(&guild_id));
 		let me = self.current_user_id();
-		let last_read = self
-			.read_states
-			.get(&channel_id)
-			.and_then(|state| state.last_message_id);
+		let last_read = anchor.or_else(|| {
+			self.read_states
+				.get(&channel_id)
+				.and_then(|state| state.last_message_id)
+		});
 		let mut rows = Vec::with_capacity(cache.ordered.len() + cache.pending.len() + 4);
 		rows.push(if cache.reached_start {
 			MessageRow::HistoryStart
@@ -536,6 +542,55 @@ impl State {
 		rows
 	}
 
+	pub fn unread_since(&self, channel_id: Snowflake, anchor: Snowflake) -> Option<UnreadSince> {
+		let cache = self.messages.get(&channel_id)?;
+		let me = self.current_user_id();
+		let start = cache.ordered.partition_point(|message| message.id <= anchor);
+		let mut unread = cache.ordered[start..]
+			.iter()
+			.filter(|message| Some(message.author.id) != me && !cache.is_hidden(message.id));
+		let first = unread.next()?;
+		let gap = start == 0 && !cache.reached_start;
+		let count = 1 + unread.take(UNREAD_COUNT_CAP).count();
+		Some(UnreadSince {
+			count: count.min(UNREAD_COUNT_CAP),
+			more: gap || count > UNREAD_COUNT_CAP,
+			jump_to: if gap { anchor } else { first.id },
+			since: if gap { anchor.timestamp() } else { sent_at(first) },
+		})
+	}
+
+	fn starter_message(&self, message: &Message) -> Option<Arc<Message>> {
+		if message.kind != MessageType::ThreadStarterMessage {
+			return None;
+		}
+		let reference = message.message_reference.as_ref()?;
+		let source = match &message.referenced_message {
+			Some(source) => source.as_ref().clone(),
+			None => self
+				.messages
+				.get(&reference.channel_id?)?
+				.by_id
+				.get(&reference.message_id?)?
+				.as_ref()
+				.clone(),
+		};
+		Some(Arc::new(Message {
+			id: message.id,
+			channel_id: message.channel_id,
+			guild_id: message.guild_id,
+			kind: message.kind,
+			message_reference: message.message_reference.clone(),
+			referenced_message: None,
+			pinned: false,
+			reactions: Default::default(),
+			components: Default::default(),
+			poll: None,
+			thread: None,
+			..source
+		}))
+	}
+
 	fn message_view(
 		&self,
 		guild: Option<&GuildState>,
@@ -544,6 +599,8 @@ impl State {
 		grouped_with_previous: bool,
 		pending: Option<&PendingMessage>,
 	) -> MessageView {
+		let starter = self.starter_message(message);
+		let message = starter.as_ref().unwrap_or(message);
 		let author = &message.author;
 		let member = guild
 			.and_then(|guild| guild.members.get(&author.id))

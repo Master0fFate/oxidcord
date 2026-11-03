@@ -49,7 +49,7 @@ pub use state::{
 pub use threads::ForumPost;
 pub use views::{
 	ChannelRow, ChannelTreeNode, DmRow, GuildSummary, JoinBlock, MemberListRow, MemberRow, MessageRow,
-	MessageView, PendingUpload, RelationshipRow, RenderedMessage, RequestRow, UserOverride,
+	MessageView, PendingUpload, RelationshipRow, RenderedMessage, RequestRow, UnreadSince, UserOverride,
 };
 pub use voice::{
 	Call, MicTest, StreamInfo, StreamSummary, VideoKind, VoiceLevels, VoiceSession, VoiceStats, VoiceStatus,

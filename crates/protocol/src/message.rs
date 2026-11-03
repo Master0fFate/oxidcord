@@ -9,7 +9,7 @@ use serde_json::Value;
 use crate::channel::{Channel, ChannelType};
 use crate::component::Component;
 use crate::emoji::{PartialEmoji, StickerItem};
-use crate::lenient::{LenientVec, flags_serde, int_enum, str_enum, timestamp};
+use crate::lenient::{LenientVec, flags_serde, int_enum, or_default, str_enum, timestamp};
 use crate::member::Member;
 use crate::snowflake::Snowflake;
 use crate::user::User;
@@ -29,6 +29,10 @@ int_enum! {
 		PremiumGuildSubscriptionTier2 = 10,
 		PremiumGuildSubscriptionTier3 = 11,
 		ChannelFollowAdd = 12,
+		GuildDiscoveryDisqualified = 14,
+		GuildDiscoveryRequalified = 15,
+		GuildDiscoveryGracePeriodInitialWarning = 16,
+		GuildDiscoveryGracePeriodFinalWarning = 17,
 		ThreadCreated = 18,
 		Reply = 19,
 		ChatInputCommand = 20,
@@ -36,6 +40,18 @@ int_enum! {
 		GuildInviteReminder = 22,
 		ContextMenuCommand = 23,
 		AutoModerationAction = 24,
+		RoleSubscriptionPurchase = 25,
+		InteractionPremiumUpsell = 26,
+		StageStart = 27,
+		StageEnd = 28,
+		StageSpeaker = 29,
+		StageTopic = 31,
+		GuildApplicationPremiumSubscription = 32,
+		GuildIncidentAlertModeEnabled = 36,
+		GuildIncidentAlertModeDisabled = 37,
+		GuildIncidentReportRaid = 38,
+		GuildIncidentReportFalseAlarm = 39,
+		PurchaseNotification = 44,
 		PollResult = 46,
 	}
 }
@@ -62,6 +78,7 @@ str_enum! {
 		Article = "article",
 		Link = "link",
 		PollResult = "poll_result",
+		AutoModerationMessage = "auto_moderation_message",
 		Components = "components",
 	}
 }
@@ -376,6 +393,17 @@ pub struct MessageSnapshot {
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
+pub struct RoleSubscriptionData {
+	#[serde(deserialize_with = "or_default")]
+	pub tier_name: String,
+	#[serde(deserialize_with = "or_default")]
+	pub total_months_subscribed: i64,
+	#[serde(deserialize_with = "or_default")]
+	pub is_renewal: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Message {
 	pub id: Snowflake,
 	pub channel_id: Snowflake,
@@ -414,6 +442,8 @@ pub struct Message {
 	pub position: Option<i64>,
 	pub poll: Option<Poll>,
 	pub call: Option<CallInfo>,
+	#[serde(deserialize_with = "or_default")]
+	pub role_subscription_data: Option<RoleSubscriptionData>,
 }
 
 impl Message {
