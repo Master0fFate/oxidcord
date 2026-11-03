@@ -41,7 +41,7 @@ Every enum that Discord may extend has an `Unknown(i64)` or `Unknown(String)` va
 
 ## Cache
 
-Each account has its own encrypted database, `cache/account-<user id>.db`, holding the READY snapshot, read state, drafts, recent expressions and the last 200 messages of every channel the user opened. The shared `oxidcord.db` keeps only plugin storage and grants. The session attaches an account's database on start from the accounts index and again on READY, writes through one queue, and wipes it on sign-out. Channel, thread and guild removal drop their rows, and a database over `storage.cache_limit_mb` is compacted on open.
+Each account has its own encrypted database, `cache/account-<user id>.db`, holding the READY snapshot, read state, drafts, recent expressions and the last 200 messages of every channel the user opened. The shared `oxidcord.db` keeps only plugin storage and grants. The session attaches the database of the account the launch token belongs to on start and again on READY (opened in the background while writes are held), writes through one queue, and wipes it on sign-out. Channel, thread and guild removal drop their rows, and a database over `storage.cache_limit_mb` loses its least recently written channels and is compacted on open.
 
 A section of `settings.json` that fails to decode falls back to its default on its own; the original file is copied to `settings.json.bad` first.
 
