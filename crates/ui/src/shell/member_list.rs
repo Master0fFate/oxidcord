@@ -80,6 +80,13 @@ impl Windows {
 	}
 }
 
+fn selected_channel(state: &State, guild: Snowflake) -> Option<Snowflake> {
+	state
+		.selected()
+		.filter(|selected| selected.guild_id == Some(guild))
+		.map(|selected| selected.channel_id)
+}
+
 pub struct MemberList {
 	data: Entity<Data>,
 	guild: Option<Snowflake>,
@@ -179,7 +186,14 @@ impl MemberList {
 		if reset {
 			self.list_id = list_id.to_owned();
 		}
+		let selected = selected_channel(&state, guild);
 		drop(state);
+		let channel_changed = self
+			.subscribed
+			.is_some_and(|windows| Some(windows.channel) != selected);
+		if channel_changed {
+			self.subscribed = None;
+		}
 		if reset {
 			self.scroll.reset(total);
 		} else if total > self.total {
@@ -194,6 +208,8 @@ impl MemberList {
 			self.rows = rows;
 			self.total = total;
 			cx.notify();
+		} else if channel_changed {
+			cx.notify();
 		}
 	}
 
@@ -201,13 +217,7 @@ impl MemberList {
 		let Some(guild) = self.guild.filter(|_| self.query.is_empty()) else {
 			return;
 		};
-		let selected = self
-			.data
-			.read(cx)
-			.state()
-			.selected()
-			.filter(|selected| selected.guild_id == Some(guild));
-		let Some(channel) = selected.map(|selected| selected.channel_id) else {
+		let Some(channel) = selected_channel(&self.data.read(cx).state(), guild) else {
 			return;
 		};
 		let top = self.scroll.logical_scroll_top().item_ix as u32;
@@ -241,6 +251,9 @@ impl MemberList {
 		let Some(guild) = self.guild else {
 			return;
 		};
+		if selected_channel(&self.data.read(cx).state(), guild) != Some(wanted.channel) {
+			return;
+		}
 		self.subscribed = Some(wanted);
 		self.data.read(cx).send(Command::MemberListRange {
 			guild_id: guild,
