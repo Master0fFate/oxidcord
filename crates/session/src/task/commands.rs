@@ -370,11 +370,12 @@ impl Core {
 				channel_id,
 				message_id,
 				to_channel_id,
+				comment,
 				silent,
 			} => {
 				let guild_id = self.state.read().channel_guild(channel_id);
+				let flags = silent.then_some(MessageFlags::SUPPRESS_NOTIFICATIONS);
 				let body = CreateMessage {
-					flags: silent.then_some(MessageFlags::SUPPRESS_NOTIFICATIONS),
 					message_reference: Some(MessageReference {
 						kind: Some(MessageReferenceKind::Forward),
 						message_id: Some(message_id),
@@ -382,10 +383,20 @@ impl Core {
 						guild_id,
 						fail_if_not_exists: None,
 					}),
+					flags,
 					..CreateMessage::default()
 				};
 				self.spawn_action("forward message", move |rest| async move {
-					rest.create_message(to_channel_id, body).await.map(drop)
+					rest.create_message(to_channel_id, body).await?;
+					if let Some(content) = comment {
+						let body = CreateMessage {
+							content: Some(content),
+							flags,
+							..CreateMessage::default()
+						};
+						rest.create_message(to_channel_id, body).await?;
+					}
+					Ok(())
 				});
 			}
 			Command::VotePoll {

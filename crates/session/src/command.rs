@@ -705,6 +705,7 @@ pub enum Command {
 		channel_id: Snowflake,
 		message_id: Snowflake,
 		to_channel_id: Snowflake,
+		comment: Option<String>,
 		silent: bool,
 	},
 	VotePoll {

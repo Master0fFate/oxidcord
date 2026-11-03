@@ -37,8 +37,9 @@ pub struct ForwardPicker {
 	preview: SharedString,
 	destinations: Vec<Destination>,
 	input: Entity<InputState>,
-	query: String,
+	comment: Entity<InputState>,
 	silent: bool,
+	query: String,
 	_subscription: Subscription,
 }
 
@@ -52,17 +53,28 @@ pub fn open(window: &mut Window, cx: &mut App, data: Entity<Data>, source: Snowf
 	modal::open(window, cx, title, width, &view, Some(focus));
 }
 
+fn can_receive(kind: ChannelType) -> bool {
+	matches!(
+		kind,
+		ChannelType::GuildText
+			| ChannelType::GuildAnnouncement
+			| ChannelType::GuildVoice
+			| ChannelType::GuildStageVoice
+			| ChannelType::PublicThread
+			| ChannelType::PrivateThread
+			| ChannelType::AnnouncementThread
+	)
+}
+
 fn destinations(state: &state::State) -> Vec<Destination> {
 	let mut found = Vec::new();
 	for summary in state.guild_summaries() {
 		for node in state.guild_channel_tree(summary.id) {
-			for channel in node.children.iter().filter(|channel| {
-				!channel.locked
-					&& matches!(
-						channel.kind,
-						ChannelType::GuildText | ChannelType::GuildAnnouncement
-					)
-			}) {
+			for channel in node
+				.children
+				.iter()
+				.filter(|channel| !channel.locked && can_receive(channel.kind) && state.can_send(channel.id))
+			{
 				found.push(Destination {
 					channel: channel.id,
 					name: channel.name.clone().into(),
@@ -114,6 +126,8 @@ impl ForwardPicker {
 		};
 		let placeholder = cx.t("forward-placeholder");
 		let input = cx.new(|cx| InputState::new(window, cx).placeholder(placeholder));
+		let comment_placeholder = cx.t("forward-comment");
+		let comment = cx.new(|cx| InputState::new(window, cx).placeholder(comment_placeholder));
 		let subscription =
 			cx.subscribe_in(
 				&input,
@@ -138,8 +152,9 @@ impl ForwardPicker {
 			preview: text.into(),
 			destinations,
 			input,
-			query: String::new(),
+			comment,
 			silent: false,
+			query: String::new(),
 			_subscription: subscription,
 		}
 	}
@@ -163,10 +178,12 @@ impl ForwardPicker {
 	}
 
 	fn forward(&mut self, to_channel_id: Snowflake, cx: &mut Context<Self>) {
+		let comment = self.comment.read(cx).value().trim().to_owned();
 		self.data.read(cx).send(Command::ForwardMessage {
 			channel_id: self.source,
 			message_id: self.message,
 			to_channel_id,
+			comment: Some(comment).filter(|comment| !comment.is_empty()),
 			silent: self.silent,
 		});
 		cx.emit(Close);
@@ -273,5 +290,6 @@ impl Render for ForwardPicker {
 					.overflow_y_scrollbar()
 					.id("forward-list"),
 			)
+			.child(Input::new(&self.comment))
 	}
 }
