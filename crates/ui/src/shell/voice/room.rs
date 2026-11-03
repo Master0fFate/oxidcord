@@ -62,6 +62,7 @@ pub struct VoiceRoom {
 	viewer: Option<Entity<StreamViewer>>,
 	camera_pending: bool,
 	soundboard: Option<soundboard::Board>,
+	soundboard_requested: Option<(Snowflake, String)>,
 	effect_picker: Entity<EmojiPicker>,
 	effect_picker_open: bool,
 	effect_seen: Option<Instant>,
@@ -207,7 +208,7 @@ impl VoiceRoom {
 					|| !changes.loaded.is_empty())
 			{
 				this.refresh_soundboard(cx);
-				if changes.guild_list {
+				if changes.selection {
 					this.reload_soundboard(cx);
 				}
 			}
@@ -245,6 +246,7 @@ impl VoiceRoom {
 			viewer: None,
 			camera_pending: false,
 			soundboard: None,
+			soundboard_requested: None,
 			effect_picker,
 			effect_picker_open: false,
 			effect_seen: None,
@@ -331,9 +333,7 @@ impl VoiceRoom {
 		if self.soundboard.take().is_none() {
 			self.effect_picker_open = false;
 			self.soundboard = Some(self.build_soundboard(guild, cx));
-			self.data
-				.read(cx)
-				.send(Command::LoadSoundboard { guild_id: guild });
+			self.request_soundboard(guild, cx);
 		}
 		cx.notify();
 	}
@@ -342,13 +342,28 @@ impl VoiceRoom {
 		soundboard::Board::new(&self.data.read(cx).state(), guild, cx)
 	}
 
-	fn reload_soundboard(&self, cx: &Context<Self>) {
+	fn request_soundboard(&mut self, guild: Snowflake, cx: &Context<Self>) {
 		let data = self.data.read(cx);
-		let state = data.state();
-		if let Some(guild) = state.selected().and_then(|selected| selected.guild_id)
-			&& state.guild_sounds(guild).is_none()
-		{
-			data.send(Command::LoadSoundboard { guild_id: guild });
+		data.send(Command::LoadSoundboard { guild_id: guild });
+		self.soundboard_requested = Some((guild, data.state().session().session_id.clone()));
+	}
+
+	fn reload_soundboard(&mut self, cx: &Context<Self>) {
+		let guild = {
+			let state = self.data.read(cx).state();
+			let guild = state.selected().and_then(|selected| selected.guild_id);
+			guild.filter(|guild| {
+				state.guild_sounds(*guild).is_none()
+					&& self
+						.soundboard_requested
+						.as_ref()
+						.is_none_or(|(requested, session)| {
+							requested != guild || *session != state.session().session_id
+						})
+			})
+		};
+		if let Some(guild) = guild {
+			self.request_soundboard(guild, cx);
 		}
 	}
 
