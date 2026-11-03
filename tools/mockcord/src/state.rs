@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
@@ -257,6 +257,7 @@ pub struct Shared {
 	pub voice_signals: broadcast::Sender<Signal>,
 	pub voice_join: Mutex<Option<VoiceJoin>>,
 	pub voice_stale: AtomicBool,
+	pub stream_previews: Mutex<HashSet<String>>,
 	pub send_fault: Mutex<Option<SendFault>>,
 	pub slow_uploads: AtomicBool,
 	windows: Mutex<HashMap<String, Window>>,
@@ -282,6 +283,7 @@ impl Shared {
 			voice_signals,
 			voice_join: Mutex::new(None),
 			voice_stale: AtomicBool::new(false),
+			stream_previews: Mutex::new(HashSet::new()),
 			send_fault: Mutex::new(None),
 			slow_uploads: AtomicBool::new(false),
 			windows: Mutex::new(HashMap::new()),

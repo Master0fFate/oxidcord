@@ -7786,6 +7786,7 @@ dependencies = [
  "chrono",
  "ed25519-dalek 3.0.0",
  "hex",
+ "image",
  "oxidcord-activity",
  "oxidcord-gateway",
  "oxidcord-markdown",

@@ -214,6 +214,7 @@ impl Core {
 			Command::SetStreamVolume(volume) => self.set_stream_volume(volume),
 			Command::WatchStream { stream_key } => self.watch_stream(stream_key),
 			Command::StopWatchingStream { stream_key } => self.stop_watching_stream(&stream_key),
+			Command::LoadStreamPreview { stream_key } => self.load_stream_preview(stream_key),
 			command @ (Command::CreateThread { .. }
 			| Command::JoinThread { .. }
 			| Command::AddThreadMember { .. }

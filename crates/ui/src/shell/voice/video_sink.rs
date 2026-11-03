@@ -8,11 +8,12 @@ use gpui::{Global, RenderImage};
 use image::{Frame, RgbaImage};
 use parking_lot::{Condvar, Mutex, RwLock};
 use protocol::Snowflake;
-use session::{CameraSource, PixelFormat, ScreenSource, ScreenTarget, VideoFrame, VideoSink, VideoStream};
+use session::{CameraSource, ScreenSource, ScreenTarget, VideoFrame, VideoSink, VideoStream};
 use smallvec::smallvec;
 use state::VideoKind;
 use tokio::sync::Notify;
 use voice::video::capture::VideoSource;
+use voice::video::scaled_bgra;
 
 pub type StreamKey = (Snowflake, VideoKind);
 
@@ -26,7 +27,6 @@ const PREVIEW_CAMERA_WIDTH: u32 = 640;
 const PREVIEW_CAMERA_HEIGHT: u32 = 360;
 const THUMBNAIL_FPS: u32 = 4;
 const THUMBNAIL_ATTEMPTS: usize = 3;
-const BGRA_BYTES: usize = 4;
 
 #[derive(Clone)]
 pub enum PreviewSource {
@@ -267,65 +267,9 @@ impl Drop for VideoTextures {
 	}
 }
 
-fn bgra_scaled(frame: &VideoFrame, max_side: u32) -> Option<RgbaImage> {
-	if frame.width == 0 || frame.height == 0 || frame.data.len() < frame.expected_len() {
-		return None;
-	}
-	let width = frame.width as usize;
-	let height = frame.height as usize;
-	let step = frame.width.max(frame.height).div_ceil(max_side).max(1) as usize;
-	let (out_width, out_height) = (width / step, height / step);
-	if out_width == 0 || out_height == 0 {
-		return None;
-	}
-	let mut out = vec![0u8; out_width * out_height * BGRA_BYTES];
-	match frame.format {
-		PixelFormat::Bgra => {
-			for (row, line) in out.chunks_exact_mut(out_width * BGRA_BYTES).enumerate() {
-				let source = &frame.data[row * step * width * BGRA_BYTES..];
-				for (column, pixel) in line.as_chunks_mut::<BGRA_BYTES>().0.iter_mut().enumerate() {
-					let offset = column * step * BGRA_BYTES;
-					pixel.copy_from_slice(&source[offset..offset + BGRA_BYTES]);
-					pixel[3] = u8::MAX;
-				}
-			}
-		}
-		PixelFormat::Nv12 => {
-			let (luma, chroma) = frame.data.split_at(width * height);
-			let last_chroma_row = (height / 2).saturating_sub(1);
-			let last_chroma_column = width.saturating_sub(2);
-			for (row, line) in out.chunks_exact_mut(out_width * BGRA_BYTES).enumerate() {
-				let luma_line = &luma[row * step * width..];
-				let chroma_line = &chroma[((row * step) / 2).min(last_chroma_row) * width..];
-				for (column, pixel) in line.as_chunks_mut::<BGRA_BYTES>().0.iter_mut().enumerate() {
-					let x = column * step;
-					let pair = (x & !1).min(last_chroma_column);
-					let (blue, green, red) =
-						yuv_to_bgr(luma_line[x], chroma_line[pair], chroma_line[pair + 1]);
-					pixel.copy_from_slice(&[blue, green, red, u8::MAX]);
-				}
-			}
-		}
-	}
-	RgbaImage::from_raw(out_width as u32, out_height as u32, out)
-}
-
-fn yuv_to_bgr(luma: u8, u: u8, v: u8) -> (u8, u8, u8) {
-	let c = i32::from(luma) - 16;
-	let d = i32::from(u) - 128;
-	let e = i32::from(v) - 128;
-	let red = (298 * c + 409 * e + 128) >> 8;
-	let green = (298 * c - 100 * d - 208 * e + 128) >> 8;
-	let blue = (298 * c + 516 * d + 128) >> 8;
-	(
-		blue.clamp(0, 255) as u8,
-		green.clamp(0, 255) as u8,
-		red.clamp(0, 255) as u8,
-	)
-}
-
 fn render_image(frame: &VideoFrame, max_side: u32) -> Option<Arc<RenderImage>> {
-	let image = bgra_scaled(frame, max_side)?;
+	let scaled = scaled_bgra(frame, max_side)?;
+	let image = RgbaImage::from_raw(scaled.width, scaled.height, scaled.data)?;
 	Some(Arc::new(RenderImage::new(smallvec![Frame::new(image)])))
 }
 

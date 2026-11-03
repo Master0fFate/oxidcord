@@ -2,6 +2,7 @@ mod actions;
 mod call;
 mod hotkeys;
 mod keybinds;
+mod live;
 mod panel;
 mod participants;
 mod picker;

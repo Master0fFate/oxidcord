@@ -122,6 +122,10 @@ pub enum LocalEvent {
 	CameraChanged(bool),
 	ScreenShareChanged(Option<StreamInfo>),
 	Watching(Option<String>),
+	StreamPreview {
+		stream_key: String,
+		url: String,
+	},
 	RemoteVideo {
 		user_id: Snowflake,
 		kind: VideoKind,

@@ -1,10 +1,12 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 use parking_lot::Mutex;
 use protocol::gateway::IdentifyProperties;
 use protocol::{Snowflake, Token};
 use tokio::sync::{mpsc, watch};
+use tokio::time::timeout;
 
 #[cfg(windows)]
 use crate::audio::SystemScope;
@@ -18,9 +20,10 @@ use crate::shared::{Control, InputMode, Shared, VideoControl, VoiceStats};
 use crate::transform::{FrameTransform, Layered, Passthrough};
 use crate::video::capture::{CameraSource, ScreenSource, ScreenTarget, VideoSource};
 use crate::video::send::SenderHandle;
-use crate::video::{VideoError, VideoKind, VideoQuality, VideoSink};
+use crate::video::{VideoError, VideoFrame, VideoKind, VideoQuality, VideoSink};
 
 const MAX_VOLUME: f32 = 2.0;
+const PREVIEW_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Debug)]
 pub struct VoiceParams {
@@ -294,6 +297,16 @@ impl VoiceConnection {
 		let _ = self
 			.control
 			.send(Control::Video(VideoControl::Announce { kind, quality }));
+	}
+
+	pub async fn capture_preview(&self) -> Option<VideoFrame> {
+		let video = &self.shared.video;
+		video.sender.lock().as_ref()?;
+		video.preview_wanted.store(true, Ordering::Release);
+		timeout(PREVIEW_TIMEOUT, video.preview_ready.notified())
+			.await
+			.ok()?;
+		video.preview.lock().take()
 	}
 
 	pub fn active_video(&self) -> Option<VideoKind> {

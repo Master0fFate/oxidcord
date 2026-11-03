@@ -1,6 +1,6 @@
 use std::sync::atomic::Ordering;
 
-use protocol::ChannelType;
+use protocol::{ChannelType, Snowflake, VoiceState};
 use serde_json::{Value, json};
 
 use crate::error::ApiError;
@@ -13,6 +13,8 @@ const OTHER_DEVICE_SESSION: &str = "mock-other-device";
 const CLOSE_DISCONNECTED: u16 = 4014;
 const CLOSE_SESSION_INVALID: u16 = 4006;
 const CLOSE_SESSION_TIMEOUT: u16 = 4009;
+const PREVIEW_DATA_PREFIX: &str = "data:image/jpeg;base64,";
+const PREVIEW_CDN: &str = "https://cdn.discordapp.com/stream-previews";
 
 #[derive(Clone, PartialEq)]
 pub struct VoiceJoin {
@@ -136,6 +138,52 @@ impl Shared {
 		let event = self.voice_state_event(&join.session, join.guild_id, Some(join.channel_id));
 		self.hub.broadcast("VOICE_STATE_UPDATE", &event);
 		Ok(())
+	}
+
+	pub fn stream_occupant(&self, guild_id: Option<u64>, channel_id: u64) -> Option<VoiceState> {
+		self.fixtures
+			.guild(guild_id?)?
+			.voice_states
+			.iter()
+			.find(|state| {
+				state.channel_id.map(Snowflake::get) == Some(channel_id) && state.user_id.0 != CURRENT_USER_ID
+			})
+			.cloned()
+	}
+
+	pub fn start_stream(&self) -> Result<(), ApiError> {
+		let join = self.current_voice()?;
+		let mut streamer = self
+			.stream_occupant(join.guild_id, join.channel_id)
+			.ok_or(ApiError::invalid_body("Nobody in the channel to stream"))?;
+		let key = format!(
+			"guild:{}:{}:{}",
+			join.guild_id.unwrap_or_default(),
+			join.channel_id,
+			streamer.user_id
+		);
+		streamer.self_stream = Some(true);
+		self.stream_previews.lock().insert(key.clone());
+		self.hub.broadcast("VOICE_STATE_UPDATE", &to_json(&streamer));
+		self.hub
+			.broadcast("STREAM_CREATE", &stream_create_event(&key, join.channel_id, &[]));
+		Ok(())
+	}
+
+	pub fn store_stream_preview(&self, key: &str, body: &Value) -> Result<(), ApiError> {
+		let thumbnail = body["thumbnail"].as_str().unwrap_or_default();
+		if !thumbnail.starts_with(PREVIEW_DATA_PREFIX) {
+			return Err(ApiError::invalid_body("Preview must be a jpeg data uri"));
+		}
+		self.stream_previews.lock().insert(key.to_owned());
+		Ok(())
+	}
+
+	pub fn stream_preview(&self, key: &str) -> Result<Value, ApiError> {
+		if !self.stream_previews.lock().contains(key) {
+			return Err(ApiError::not_found());
+		}
+		Ok(json!({ "url": format!("{PREVIEW_CDN}/{}.png", key.replace(':', "-")) }))
 	}
 
 	pub fn voice_close(&self, code: u16) {

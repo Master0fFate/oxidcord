@@ -355,6 +355,13 @@ impl Connection {
 	fn stream_create(&self, session: &str, data: &Value) {
 		if let Some((key, guild_id, channel_id)) = Self::stream_key(data) {
 			self.announce_stream(session, &key, guild_id, channel_id, &[]);
+			if let Some(viewer) = self.shared.stream_occupant(guild_id, channel_id) {
+				self.shared.hub.dispatch_to(
+					session,
+					"STREAM_UPDATE",
+					&stream_create_event(&key, channel_id, &[viewer.user_id.0]),
+				);
+			}
 		}
 	}
 

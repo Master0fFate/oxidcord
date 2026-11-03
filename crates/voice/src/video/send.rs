@@ -8,7 +8,7 @@ use tracing::{debug, warn};
 use super::capture::VideoSource;
 use super::encode::{EncoderConfig, H264Encoder};
 use super::hub::OutgoingFrame;
-use super::{VideoError, VideoKind, convert, rtp};
+use super::{VideoError, VideoFrame, VideoKind, convert, rtp};
 use crate::event::VoiceEvent;
 use crate::shared::Shared;
 
@@ -118,6 +118,7 @@ impl Pipeline {
 
 	fn step(&mut self) -> Result<(), VideoError> {
 		let frame = self.source.next_frame()?;
+		self.hand_over_preview(&frame);
 		let quality = self.shared.video.quality();
 		let revision = self.shared.video.quality_revision.load(Ordering::Acquire);
 		if revision != self.revision {
@@ -169,6 +170,14 @@ impl Pipeline {
 		}
 		self.publish_bitrate(now);
 		Ok(())
+	}
+
+	fn hand_over_preview(&self, frame: &VideoFrame) {
+		let video = &self.shared.video;
+		if video.preview_wanted.swap(false, Ordering::AcqRel) {
+			*video.preview.lock() = Some(frame.clone());
+			video.preview_ready.notify_one();
+		}
 	}
 
 	fn encoder_for(&mut self, config: EncoderConfig) -> Result<&mut H264Encoder, VideoError> {

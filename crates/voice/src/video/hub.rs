@@ -7,7 +7,7 @@ use parking_lot::Mutex;
 use tokio::sync::Notify;
 
 use super::send::SenderHandle;
-use super::{VideoKind, VideoQuality, VideoSink, VideoStream};
+use super::{VideoFrame, VideoKind, VideoQuality, VideoSink, VideoStream};
 
 const MAX_QUEUED_FRAMES: usize = 8;
 
@@ -27,6 +27,9 @@ pub(crate) struct VideoHub {
 	pub starting: AtomicBool,
 	active_screen: AtomicBool,
 	pub keyframe_wanted: AtomicBool,
+	pub preview_wanted: AtomicBool,
+	pub preview: Mutex<Option<VideoFrame>>,
+	pub preview_ready: Notify,
 	pub wanted: AtomicBool,
 	pub keyframe_interval_ms: AtomicU32,
 	pub bitrate: AtomicU32,
@@ -49,6 +52,9 @@ impl VideoHub {
 			starting: AtomicBool::new(false),
 			active_screen: AtomicBool::new(false),
 			keyframe_wanted: AtomicBool::new(false),
+			preview_wanted: AtomicBool::new(false),
+			preview: Mutex::new(None),
+			preview_ready: Notify::new(),
 			wanted: AtomicBool::new(true),
 			keyframe_interval_ms: AtomicU32::new(0),
 			bitrate: AtomicU32::new(0),

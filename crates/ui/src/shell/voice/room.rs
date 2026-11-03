@@ -13,9 +13,10 @@ use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::menu::DropdownMenu as _;
 use protocol::{ChannelType, Permissions, Snowflake};
 use session::Command;
-use state::{State, VideoKind, VoiceStatus};
+use state::{VideoKind, VoiceStatus};
 
 use super::actions;
+use super::live::{LiveStream, PREVIEW_HINT, live_streams, viewer_stack};
 use super::participants::{Participant, participants};
 use super::picker;
 use super::quality::Preset;
@@ -27,6 +28,7 @@ use crate::components::{ContextMenuBuilder, IconButton};
 use crate::data::{Data, DataEvent};
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
+use crate::images::Images;
 use crate::shell::SettingsBackend;
 use crate::shell::composer::{Composer, accept_files};
 use crate::theme::{Theme, rem};
@@ -79,7 +81,7 @@ struct Snapshot {
 	topic: Option<SharedString>,
 	moderator: bool,
 	can_speak: bool,
-	streams: HashMap<Snowflake, String>,
+	streams: HashMap<Snowflake, LiveStream>,
 	can_chat: bool,
 	voice_status: Option<SharedString>,
 	can_edit_status: bool,
@@ -129,19 +131,11 @@ fn snapshot(data: &Data, status_cache: &mut Option<SharedString>) -> Option<Snap
 			.contains(Permissions::MANAGE_CHANNELS | Permissions::MUTE_MEMBERS | Permissions::MOVE_MEMBERS),
 		can_speak: permissions.contains(Permissions::MUTE_MEMBERS),
 		participants,
-		streams: stream_keys(&state, channel),
+		streams: live_streams(&state, selected.guild_id, channel),
 		can_chat: permissions.contains(Permissions::VIEW_CHANNEL | Permissions::READ_MESSAGE_HISTORY),
 		voice_status: status_cache.clone(),
 		can_edit_status: kind == Some(ChannelType::GuildVoice) && state.can_set_voice_status(channel),
 	})
-}
-
-fn stream_keys(state: &State, channel: Snowflake) -> HashMap<Snowflake, String> {
-	state
-		.streams()
-		.filter(|stream| stream.channel_id == channel)
-		.map(|stream| (stream.user_id, stream.stream_key.clone()))
-		.collect()
 }
 
 fn grid_layout(count: usize, width: Pixels, height: Pixels, gap: Pixels, rem_size: Pixels) -> (Rems, Rems) {
@@ -185,6 +179,9 @@ impl VoiceRoom {
 					|| changes.selection)
 			{
 				this.on_voice_change(cx);
+				if changes.streams || changes.selection {
+					this.request_previews(cx);
+				}
 			}
 		});
 		let local = cx.observe(&data, |_, _, cx| cx.notify());
@@ -254,6 +251,25 @@ impl VoiceRoom {
 		cx.notify();
 	}
 
+	fn request_previews(&self, cx: &Context<Self>) {
+		let data = self.data.read(cx);
+		let state = data.state();
+		let Some(channel) = state.selected().map(|selected| selected.channel_id) else {
+			return;
+		};
+		if !state.my_permissions(channel).contains(Permissions::CONNECT) {
+			return;
+		}
+		let me = state.current_user_id();
+		for stream in state.streams().filter(|stream| {
+			stream.channel_id == channel && stream.preview_url.is_none() && Some(stream.user_id) != me
+		}) {
+			data.send(Command::LoadStreamPreview {
+				stream_key: stream.stream_key.clone(),
+			});
+		}
+	}
+
 	fn toggle_focus(&mut self, user: Snowflake, cx: &mut Context<Self>) {
 		self.focused = if self.focused == Some(user) {
 			None
@@ -300,24 +316,33 @@ impl VoiceRoom {
 		} else {
 			theme.voice_tile_avatar
 		};
-		let stream_key = snapshot
-			.streams
-			.get(&user)
+		let live_stream = snapshot.streams.get(&user);
+		let stream_key = live_stream
+			.map(|stream| &stream.key)
 			.filter(|key| !person.me && snapshot.watching.as_ref() != Some(*key))
 			.cloned();
 		let watched_key = snapshot
 			.watching
 			.clone()
-			.filter(|key| !person.me && snapshot.streams.get(&user) == Some(key));
+			.filter(|key| !person.me && live_stream.is_some_and(|stream| &stream.key == key));
 		let live_own = person.me && snapshot.screen_on;
 		let icons = state_icons(person, theme.voice_badge_icon, theme);
 		let live_label = cx.t("voice-live");
-		let content = match &image {
-			Some(image) => div()
+		let viewers = live_stream.and_then(|stream| viewer_stack(stream, theme));
+		let preview = live_stream
+			.and_then(|stream| stream.preview.as_ref())
+			.filter(|_| image.is_none())
+			.and_then(|url| cx.global::<Images>().get_still(url, PREVIEW_HINT));
+		let content = match (&image, preview) {
+			(Some(image), _) => div()
 				.size_full()
 				.bg(theme.background_floating)
 				.child(img(image.clone()).size_full().object_fit(ObjectFit::Contain)),
-			None => div()
+			(None, Some(preview)) => div()
+				.size_full()
+				.bg(theme.background_floating)
+				.child(img(preview).size_full().object_fit(ObjectFit::Cover)),
+			(None, None) => div()
 				.size_full()
 				.flex()
 				.items_center()
@@ -364,13 +389,19 @@ impl VoiceRoom {
 					.child(div().truncate().child(person.name.clone()))
 					.children(icons),
 			)
-			.when(person.live, |tile| {
+			.when(person.live || viewers.is_some(), |tile| {
 				tile.child(
 					div()
 						.absolute()
 						.left(theme.space_8)
 						.top(theme.space_8)
-						.child(live_badge(live_label.clone(), theme)),
+						.flex()
+						.items_center()
+						.gap(theme.space_4)
+						.when(person.live, |row| {
+							row.child(live_badge(live_label.clone(), theme))
+						})
+						.children(viewers),
 				)
 			})
 			.when(focused, |tile| {

@@ -481,6 +481,9 @@ pub enum Command {
 	StopWatchingStream {
 		stream_key: String,
 	},
+	LoadStreamPreview {
+		stream_key: String,
+	},
 	CreateThread {
 		channel_id: Snowflake,
 		message_id: Option<Snowflake>,

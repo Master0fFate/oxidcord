@@ -650,6 +650,9 @@ impl State {
 			LocalEvent::CameraChanged(on) => return self.camera_changed(*on),
 			LocalEvent::ScreenShareChanged(info) => return self.screen_share_changed(info.clone()),
 			LocalEvent::Watching(stream_key) => return self.watching_changed(stream_key.clone()),
+			LocalEvent::StreamPreview { stream_key, url } => {
+				return self.stream_preview_changed(stream_key, url);
+			}
 			LocalEvent::RemoteVideo {
 				user_id,
 				kind,

@@ -16,6 +16,7 @@ use std::time::Duration;
 
 use protocol::Snowflake;
 
+pub use convert::{ScaledBgra, scaled_bgra};
 pub use error::VideoError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

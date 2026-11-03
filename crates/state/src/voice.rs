@@ -78,6 +78,7 @@ pub struct StreamSummary {
 	pub channel_id: Snowflake,
 	pub paused: bool,
 	pub viewers: Vec<Snowflake>,
+	pub preview_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -349,6 +350,10 @@ impl State {
 		let Some((guild_id, channel_id, owner_id)) = parse_stream_key(&stream.stream_key) else {
 			return Changes::default();
 		};
+		let preview_url = self
+			.streams
+			.get(&stream.stream_key)
+			.and_then(|known| known.preview_url.clone());
 		self.streams.insert(
 			stream.stream_key.clone(),
 			StreamSummary {
@@ -358,6 +363,7 @@ impl State {
 				channel_id,
 				paused: stream.paused,
 				viewers: stream.viewer_ids.clone(),
+				preview_url,
 			},
 		);
 		let mut voice_changed = false;
@@ -372,6 +378,17 @@ impl State {
 			session.screen_share = Some(info);
 		}
 		stream_changes(voice_changed)
+	}
+
+	pub(crate) fn stream_preview_changed(&mut self, stream_key: &str, url: &str) -> Changes {
+		let Some(stream) = self.streams.get_mut(stream_key) else {
+			return Changes::default();
+		};
+		if stream.preview_url.as_deref() == Some(url) {
+			return Changes::default();
+		}
+		stream.preview_url = Some(url.to_owned());
+		stream_changes(false)
 	}
 
 	pub(crate) fn stream_deleted(&mut self, delete: &StreamDelete) -> Changes {

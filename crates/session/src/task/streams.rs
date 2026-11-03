@@ -1,18 +1,28 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use image::codecs::jpeg::JpegEncoder;
+use image::{ExtendedColorType, ImageEncoder as _};
 use protocol::{Snowflake, StreamDelete, StreamServerUpdate, StreamState, Token};
+use rest::RestClient;
+use rest::api::image_data_uri;
 use state::{LocalEvent, StreamInfo};
 use tokio::time::sleep;
-use voice::video::VideoQuality;
 use voice::video::capture::ScreenTarget;
-use voice::{AudioRoute, ShareAudio, VoiceConnection, VoiceError, VoiceEvent, VoiceOptions, VoiceParams};
+use voice::video::{VideoFrame, VideoQuality, scaled_bgra};
+use voice::{
+	AudioRoute, ShareAudio, VoiceConnection, VoiceError, VoiceEvent, VoiceOptions, VoiceParams,
+};
 
 use super::{Core, Internal};
 use crate::config::VoiceIo;
 
 const STREAM_TIMEOUT: Duration = Duration::from_secs(15);
 const FULL_VOLUME: f32 = 1.0;
+const PREVIEW_INTERVAL: Duration = Duration::from_secs(300);
+const PREVIEW_SIDE: u32 = 512;
+const PREVIEW_JPEG_QUALITY: u8 = 70;
+const PREVIEW_MIME: &str = "image/jpeg";
 
 #[derive(Debug, Clone)]
 enum Role {
@@ -53,6 +63,7 @@ struct StreamSession {
 	connection: Option<Arc<VoiceConnection>>,
 	connecting: bool,
 	pump: Option<tokio::task::JoinHandle<()>>,
+	uploads: Option<tokio::task::JoinHandle<()>>,
 }
 
 pub(crate) struct StreamLink {
@@ -70,6 +81,39 @@ impl Default for StreamLink {
 			share: None,
 			watch: None,
 		}
+	}
+}
+
+fn encode_preview(frame: &VideoFrame) -> Option<String> {
+	let scaled = scaled_bgra(frame, PREVIEW_SIDE)?;
+	let rgb: Vec<u8> = scaled
+		.data
+		.as_chunks::<4>()
+		.0
+		.iter()
+		.flat_map(|&[blue, green, red, _]| [red, green, blue])
+		.collect();
+	let mut jpeg = Vec::new();
+	JpegEncoder::new_with_quality(&mut jpeg, PREVIEW_JPEG_QUALITY)
+		.write_image(&rgb, scaled.width, scaled.height, ExtendedColorType::Rgb8)
+		.ok()?;
+	Some(image_data_uri(PREVIEW_MIME, &jpeg))
+}
+
+async fn upload_preview(rest: &RestClient, connection: &VoiceConnection, stream_key: &str) {
+	let Some(frame) = connection.capture_preview().await else {
+		return;
+	};
+	let Some(thumbnail) = tokio::task::spawn_blocking(move || encode_preview(&frame))
+		.await
+		.ok()
+		.flatten()
+	else {
+		return;
+	};
+	if let Err(error) = rest.upload_stream_preview(stream_key, &thumbnail).await {
+		tracing::warn!(%error, "stream preview was not uploaded");
+	}
 	}
 }
 
@@ -160,6 +204,7 @@ impl Core {
 			connection: None,
 			connecting: false,
 			pump: None,
+			uploads: None,
 		});
 		self.arm_stream_timeout(generation);
 	}
@@ -190,6 +235,7 @@ impl Core {
 			connection: None,
 			connecting: false,
 			pump: None,
+			uploads: None,
 		});
 		self.arm_stream_timeout(generation);
 	}
@@ -368,9 +414,28 @@ impl Core {
 
 	pub(super) fn on_stream_video(&mut self, generation: u64, result: Result<ShareAudio, String>) {
 		match result {
+			Err(error) => {
+				self.fail_stream(generation, &format!("Screen share failed: {error}"));
+				return;
+			}
 			Ok(ShareAudio::Unavailable) => self.reject("Sharing without audio"),
 			Ok(_) => {}
-			Err(error) => self.fail_stream(generation, &format!("Screen share failed: {error}")),
+		}
+		let Some(session) = self.streams.session_mut(generation) else {
+			return;
+		};
+		let (Some(key), Some(connection)) = (session.key.clone(), session.connection.clone()) else {
+			return;
+		};
+		let rest = self.rest.clone();
+		let uploads = self.runtime.spawn(async move {
+			loop {
+				upload_preview(&rest, &connection, &key).await;
+				sleep(PREVIEW_INTERVAL).await;
+			}
+		});
+		if let Some(session) = self.streams.session_mut(generation) {
+			session.uploads = Some(uploads);
 		}
 	}
 
@@ -379,6 +444,20 @@ impl Core {
 		if let Some(connection) = self.streams.watched_connection() {
 			connection.set_output_volume(volume);
 		}
+	}
+
+	pub(super) fn load_stream_preview(&self, stream_key: String) {
+		let rest = self.rest.clone();
+		let internal = self.internal.clone();
+		self.runtime.spawn(async move {
+			match rest.stream_preview(&stream_key).await {
+				Ok(Some(url)) => {
+					let _ = internal.send(Internal::StreamPreview { stream_key, url });
+				}
+				Ok(None) => {}
+				Err(error) => tracing::warn!(%error, "stream preview was not loaded"),
+			}
+		});
 	}
 
 	pub(super) fn on_stream_event(&mut self, generation: u64, event: VoiceEvent) {
@@ -483,8 +562,8 @@ impl Core {
 	}
 
 	fn end_stream_session(&mut self, session: StreamSession, notify_gateway: bool) {
-		if let Some(pump) = session.pump {
-			pump.abort();
+		for task in [session.pump, session.uploads].into_iter().flatten() {
+			task.abort();
 		}
 		if let Some(connection) = session.connection {
 			if matches!(session.role, Role::Share { .. }) {

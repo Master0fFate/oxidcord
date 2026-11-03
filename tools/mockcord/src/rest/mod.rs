@@ -6,6 +6,7 @@ mod expressions;
 mod guilds;
 mod rpc;
 mod stage;
+mod streams;
 mod users;
 
 pub use expressions::guild_stickers_snapshot;
@@ -53,6 +54,11 @@ pub fn router(shared: Arc<Shared>) -> Router {
 		)
 		.route("/guilds", post(admin::create_guild))
 		.route("/mock/voice/elsewhere", post(admin::voice_elsewhere))
+		.route("/mock/stream/start", post(streams::start))
+		.route(
+			"/streams/{key}/preview",
+			get(streams::preview).post(streams::upload_preview),
+		)
 		.route("/mock/voice/move", post(admin::voice_move))
 		.route("/mock/voice/reassign", post(admin::voice_reassign))
 		.route("/mock/voice/server-mute", post(admin::voice_server_mute))

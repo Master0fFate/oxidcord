@@ -50,6 +50,8 @@ pub fn route_key(method: &Method, path: &str) -> RouteKey {
 			key.push_str("{emoji}");
 		} else if previous == "invites" {
 			key.push_str("{code}");
+		} else if previous == "streams" {
+			key.push_str("{key}");
 		} else if is_id(segment) {
 			key.push_str("{id}");
 		} else {
