@@ -351,9 +351,6 @@ impl ProfilesPage {
 					banner_png: self.banner.take().map(|picked| picked.png),
 					pronouns: changed(&pronouns, &self.applied.pronouns),
 				});
-				self.applied.name = name;
-				self.applied.bio = bio;
-				self.applied.pronouns = pronouns;
 			}
 			Tab::Server => {
 				if let Some(guild_id) = self.guild {
@@ -370,8 +367,6 @@ impl ProfilesPage {
 							bio: bio_change,
 						});
 					}
-					self.applied.nick = nick;
-					self.applied.server_bio = bio;
 				}
 			}
 		}

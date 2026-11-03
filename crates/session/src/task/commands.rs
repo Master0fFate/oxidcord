@@ -63,6 +63,19 @@ fn png(bytes: &[u8]) -> Value {
 	Value::String(image_data_uri(PNG, bytes))
 }
 
+async fn confirmed_profile(
+	rest: &RestClient,
+	user_id: Snowflake,
+	guild_id: Option<Snowflake>,
+) -> rest::Result<Loaded> {
+	let raw = rest.user_profile(user_id, guild_id).await?;
+	Ok(Loaded::Profile {
+		user_id,
+		guild_id,
+		raw,
+	})
+}
+
 fn private_overwrites(guild_id: Snowflake, creator: Option<Snowflake>) -> Value {
 	let mut overwrites = vec![json!({
 		"id": guild_id,
@@ -521,12 +534,7 @@ impl Core {
 			}
 			Command::LoadProfile { user_id, guild_id } => {
 				self.spawn_load("profile", move |rest| async move {
-					let raw = rest.user_profile(user_id, guild_id).await?;
-					Ok(Loaded::Profile {
-						user_id,
-						guild_id,
-						raw,
-					})
+					confirmed_profile(&rest, user_id, guild_id).await
 				});
 				if self.state.read().current_user_id() != Some(user_id) {
 					self.spawn_load("note", move |rest| async move {
@@ -1023,14 +1031,17 @@ impl Core {
 					("pronouns", some(pronouns)),
 					("banner", banner_png.as_deref().map(png)),
 				]);
-				self.spawn_action("edit profile", move |rest| async move {
+				let Some(user_id) = self.state.read().current_user_id() else {
+					return;
+				};
+				self.spawn_load("edit profile", move |rest| async move {
 					if account.as_object().is_some_and(|fields| !fields.is_empty()) {
 						rest.patch_current_user(account).await?;
 					}
 					if profile.as_object().is_some_and(|fields| !fields.is_empty()) {
 						rest.patch_current_profile(profile).await?;
 					}
-					Ok(())
+					confirmed_profile(&rest, user_id, None).await
 				});
 			}
 			Command::SetGuildProfile {
@@ -1044,8 +1055,12 @@ impl Core {
 					("avatar", avatar_png.as_deref().map(png)),
 					("bio", some(bio)),
 				]);
-				self.spawn_action("server profile", move |rest| async move {
-					rest.modify_current_member(guild_id, body).await.map(drop)
+				let Some(user_id) = self.state.read().current_user_id() else {
+					return;
+				};
+				self.spawn_load("server profile", move |rest| async move {
+					rest.modify_current_member(guild_id, body).await?;
+					confirmed_profile(&rest, user_id, Some(guild_id)).await
 				});
 			}
 			_ => {}

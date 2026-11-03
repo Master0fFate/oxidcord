@@ -185,7 +185,7 @@ pub struct ConnectedAccount {
 	pub verified: bool,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct GuildProfile {
 	pub guild_id: Snowflake,
 	pub bio: Option<String>,
@@ -712,7 +712,7 @@ impl State {
 				guild_id,
 				raw,
 			} => {
-				if let Some(profile) = self.parse_profile(raw) {
+				if let Some(profile) = self.parse_profile(raw, *guild_id) {
 					self.store_profile_member(*user_id, *guild_id, &profile, &mut changes);
 					self.lazy.profiles.insert(*user_id, profile);
 					changes.loaded.insert(*user_id);
@@ -968,7 +968,7 @@ impl State {
 		changes
 	}
 
-	fn parse_profile(&mut self, raw: &Value) -> Option<UserProfile> {
+	fn parse_profile(&mut self, raw: &Value, guild_id: Option<Snowflake>) -> Option<UserProfile> {
 		let parsed = RawProfile::deserialize(raw).ok()?;
 		let user = User::deserialize(&parsed.user).ok()?;
 		intern_user(&mut self.users, &user);
@@ -989,16 +989,20 @@ impl State {
 				id: effect.id,
 				expires_at: effect.expires_at,
 			});
-		let guild_profile = parsed.guild_member_profile.and_then(|meta| {
-			Some(GuildProfile {
-				guild_id: meta.guild_id?,
+		let guild_profile = match parsed.guild_member_profile {
+			Some(meta) => meta.guild_id.or(guild_id).map(|guild_id| GuildProfile {
+				guild_id,
 				bio: meta.bio.filter(|bio| !bio.is_empty()),
 				banner: meta.banner,
 				accent_color: meta.accent_color,
 				theme_colors: meta.theme_colors,
 				pronouns: meta.pronouns.filter(|pronouns| !pronouns.is_empty()),
-			})
-		});
+			}),
+			None => guild_id.map(|guild_id| GuildProfile {
+				guild_id,
+				..GuildProfile::default()
+			}),
+		};
 		Some(UserProfile {
 			guild_profile,
 			bio: meta
