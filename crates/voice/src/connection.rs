@@ -5,7 +5,7 @@ use std::time::Duration;
 use parking_lot::Mutex;
 use protocol::gateway::IdentifyProperties;
 use protocol::{Snowflake, Token};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio::time::timeout;
 
 #[cfg(windows)]
@@ -328,11 +328,15 @@ impl VoiceConnection {
 	pub async fn capture_preview(&self) -> Option<VideoFrame> {
 		let video = &self.shared.video;
 		video.sender.lock().as_ref()?;
-		video.preview_wanted.store(true, Ordering::Release);
-		timeout(PREVIEW_TIMEOUT, video.preview_ready.notified())
-			.await
-			.ok()?;
-		video.preview.lock().take()
+		let (sender, receiver) = oneshot::channel();
+		*video.preview.lock() = Some(sender);
+		match timeout(PREVIEW_TIMEOUT, receiver).await {
+			Ok(Ok(frame)) => Some(frame),
+			_ => {
+				video.preview.lock().take();
+				None
+			}
+		}
 	}
 
 	pub fn active_video(&self) -> Option<VideoKind> {

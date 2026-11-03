@@ -174,9 +174,8 @@ impl Pipeline {
 
 	fn hand_over_preview(&self, frame: &VideoFrame) {
 		let video = &self.shared.video;
-		if video.preview_wanted.swap(false, Ordering::AcqRel) {
-			*video.preview.lock() = Some(frame.clone());
-			video.preview_ready.notify_one();
+		if let Some(sender) = video.preview.lock().take() {
+			let _ = sender.send(frame.clone());
 		}
 	}
 
