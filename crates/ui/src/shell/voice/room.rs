@@ -34,6 +34,7 @@ use crate::icons::{Icon, IconKind};
 use crate::images::Images;
 use crate::shell::SettingsBackend;
 use crate::shell::composer::{Composer, accept_files};
+use crate::shell::emoji_picker::{EmojiChoice, EmojiPicker, EmojiPickerEvent};
 use crate::theme::{Theme, rem};
 
 const TILE_ASPECT: f32 = 9. / 16.;
@@ -61,6 +62,8 @@ pub struct VoiceRoom {
 	viewer: Option<Entity<StreamViewer>>,
 	camera_pending: bool,
 	soundboard_open: bool,
+	effect_picker: Entity<EmojiPicker>,
+	effect_picker_open: bool,
 	effect_seen: Option<Instant>,
 	stage: Rc<Cell<Size<Pixels>>>,
 	last_render: Cell<Instant>,
@@ -205,6 +208,11 @@ impl VoiceRoom {
 			}
 		});
 		let local = cx.observe(&data, |_, _, cx| cx.notify());
+		let effect_picker = cx.new(|cx| EmojiPicker::new(window, cx));
+		let picked = cx.subscribe(&effect_picker, |this, _, event: &EmojiPickerEvent, cx| {
+			let EmojiPickerEvent::Pick(choice) = event;
+			this.send_effect(choice, cx);
+		});
 		let frames = follow_frames(cx, |room, cx| {
 			if room.last_render.get().elapsed() < IDLE_REDRAW {
 				cx.notify();
@@ -220,11 +228,13 @@ impl VoiceRoom {
 			viewer: None,
 			camera_pending: false,
 			soundboard_open: false,
+			effect_picker,
+			effect_picker_open: false,
 			effect_seen: None,
 			stage: Rc::new(Cell::new(size(px(0.), px(0.)))),
 			last_render: Cell::new(Instant::now()),
 			status_cache: None,
-			_subscriptions: vec![changes, local],
+			_subscriptions: vec![changes, local, picked],
 			_frames: frames,
 		}
 	}
@@ -276,9 +286,34 @@ impl VoiceRoom {
 		.detach();
 	}
 
+	fn toggle_effect_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+		self.effect_picker_open = !self.effect_picker_open;
+		if self.effect_picker_open {
+			self.soundboard_open = false;
+			self.effect_picker
+				.update(cx, |picker, cx| picker.open(Vec::new(), window, cx));
+		}
+		cx.notify();
+	}
+
+	fn send_effect(&mut self, choice: &EmojiChoice, cx: &mut Context<Self>) {
+		self.effect_picker_open = false;
+		let channel = self.data.read(cx).state().voice().map(|voice| voice.channel_id);
+		if let Some(channel_id) = channel {
+			let emoji = choice.partial();
+			self.data.read(cx).send(Command::SendVoiceEffect {
+				channel_id,
+				emoji_id: emoji.id,
+				emoji_name: emoji.name,
+			});
+		}
+		cx.notify();
+	}
+
 	fn toggle_soundboard(&mut self, guild: Snowflake, cx: &mut Context<Self>) {
 		self.soundboard_open = !self.soundboard_open;
 		if self.soundboard_open {
+			self.effect_picker_open = false;
 			self.data
 				.read(cx)
 				.send(Command::LoadSoundboard { guild_id: guild });
@@ -1140,6 +1175,13 @@ impl VoiceRoom {
 						.highlight(self.soundboard_open)
 						.on_click(cx.listener(move |this, _, _, cx| this.toggle_soundboard(guild_id, cx))),
 					)
+					.child(
+						ControlButton::new("voice-bar-effect", IconKind::Smile, cx.t("voice-effect"))
+							.highlight(self.effect_picker_open)
+							.on_click(
+								cx.listener(|this, _, window, cx| this.toggle_effect_picker(window, cx)),
+							),
+					)
 				},
 			)
 			.child(
@@ -1347,6 +1389,21 @@ impl Render for VoiceRoom {
 										&theme,
 										cx,
 									))
+								},
+							)
+							.when(
+								connected && self.effect_picker_open && !snapshot.stage_channel,
+								|stage| {
+									stage.child(
+										div()
+											.absolute()
+											.left_0()
+											.right_0()
+											.bottom(theme.space_8)
+											.flex()
+											.justify_center()
+											.child(div().occlude().child(self.effect_picker.clone())),
+									)
 								},
 							)
 							.when(snapshot.can_chat, |stage| {

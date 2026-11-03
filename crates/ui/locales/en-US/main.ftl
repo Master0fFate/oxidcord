@@ -381,6 +381,7 @@ voice-join = Join Voice
 voice-join-stage = Join Stage
 voice-chat-show = Show Chat
 voice-soundboard = Soundboard
+voice-effect = Emoji effect
 soundboard-default = Default
 soundboard-empty = No sounds yet.
 voice-chat-hide = Hide Chat
