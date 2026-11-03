@@ -12,7 +12,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::changes::Changes;
-use crate::expressions::{EXPRESSIONS_KEY, EmojiRef, Expressions};
+use crate::expressions::{EXPRESSIONS_KEY, EmojiRef, Expressions, stamped_stickers};
 use crate::state::{State, intern_user};
 
 pub const INBOX_KEY: Snowflake = Snowflake(1);
@@ -706,7 +706,7 @@ impl State {
 				self.lazy
 					.expressions
 					.guild_stickers
-					.insert(*guild_id, stickers.clone());
+					.insert(*guild_id, stamped_stickers(*guild_id, stickers));
 				changes.loaded.insert(*guild_id);
 			}
 			Loaded::RecentEmoji(emoji) => {

@@ -136,6 +136,17 @@ pub(crate) struct Expressions {
 	pub(crate) recent_stickers: Vec<Sticker>,
 }
 
+pub(crate) fn stamped_stickers(guild_id: Snowflake, stickers: &[Sticker]) -> Vec<Sticker> {
+	stickers
+		.iter()
+		.cloned()
+		.map(|mut sticker| {
+			sticker.guild_id.get_or_insert(guild_id);
+			sticker
+		})
+		.collect()
+}
+
 fn emoji_usable(
 	owner: Snowflake,
 	animated: bool,
@@ -298,10 +309,10 @@ impl State {
 	}
 
 	pub(crate) fn guild_stickers_updated(&mut self, update: &GuildStickersUpdate) -> Changes {
-		self.lazy
-			.expressions
-			.guild_stickers
-			.insert(update.guild_id, update.stickers.to_vec());
+		self.lazy.expressions.guild_stickers.insert(
+			update.guild_id,
+			stamped_stickers(update.guild_id, &update.stickers),
+		);
 		let mut changes = Changes::default();
 		changes.loaded.insert(update.guild_id);
 		changes

@@ -3,6 +3,7 @@ use protocol::{
 };
 
 use crate::changes::Changes;
+use crate::expressions::stamped_stickers;
 use crate::guild::{GuildState, stripped_member};
 use crate::state::{State, intern_user};
 
@@ -129,11 +130,13 @@ impl State {
 	pub(crate) fn ingest_guild(&mut self, guild: &Guild) {
 		let id = guild.id;
 		let mut state = GuildState::from_guild(guild);
-		if !guild.stickers.is_empty() {
+		if guild.stickers.is_empty() {
+			self.lazy.expressions.guild_stickers.remove(&id);
+		} else {
 			self.lazy
 				.expressions
 				.guild_stickers
-				.insert(id, guild.stickers.to_vec());
+				.insert(id, stamped_stickers(id, &guild.stickers));
 		}
 		for channel in guild.channels.iter().chain(guild.threads.iter()) {
 			let mut stored = channel.clone();
