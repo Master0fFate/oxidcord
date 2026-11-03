@@ -521,9 +521,13 @@ impl Shell {
 		subscriptions.push(cx.subscribe_in(
 			&member_list,
 			window,
-			|this, _, event: &MemberListEvent, _, cx| {
-				let MemberListEvent::OpenProfile { user, at } = event;
-				this.open_profile(*user, *at, Anchor::TopRight, cx);
+			|this, _, event: &MemberListEvent, window, cx| match event {
+				MemberListEvent::OpenProfile { user, at } => {
+					this.open_profile(*user, *at, Anchor::TopRight, cx);
+				}
+				MemberListEvent::Mention { user } => this.composer.update(cx, |composer, cx| {
+					composer.insert(&format!("<@{}> ", user.get()), window, cx)
+				}),
 			},
 		));
 

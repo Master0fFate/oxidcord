@@ -170,6 +170,7 @@ menu-copy-text = Copy Text
 menu-copy-user-id = Copy User ID
 menu-profile = Profile
 menu-message = Message
+menu-mention = Mention
 menu-add-friend = Add Friend
 menu-pin = Pin Message
 menu-mark-unread = Mark Unread

@@ -38,6 +38,7 @@ const PLACEHOLDER_NAME_WIDTH: f32 = 96.;
 
 pub enum MemberListEvent {
 	OpenProfile { user: Snowflake, at: Point<Pixels> },
+	Mention { user: Snowflake },
 }
 
 #[derive(PartialEq)]
@@ -406,8 +407,14 @@ impl MemberList {
 		let menu = if own {
 			menu
 		} else {
+			let mention = cx.weak_entity();
 			let menu = menu.item(cx.t("menu-message"), Some(IconKind::Chat), move |_, cx| {
 				data.read(cx).send(Command::OpenDm { user_id: id });
+			});
+			let menu = menu.item(cx.t("menu-mention"), Some(IconKind::AtSign), move |_, cx| {
+				mention
+					.update(cx, |_, cx| cx.emit(MemberListEvent::Mention { user: id }))
+					.ok();
 			});
 			let menu = if member.bot && facts.relation != Relation::Blocked {
 				menu
