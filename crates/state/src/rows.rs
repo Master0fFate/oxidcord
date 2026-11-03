@@ -491,27 +491,36 @@ impl State {
 			.iter()
 			.map(|pending| (&pending.message, Some(pending)));
 		let mut previous: Option<(&Message, NaiveDate)> = None;
+		let mut separated_day: Option<NaiveDate> = None;
 		let mut marker_placed = false;
-		let mut blocked_run: Option<(usize, bool)> = None;
+		let mut blocked_run: Option<bool> = None;
 		let mut run_between = false;
 		for (message, pending) in confirmed.chain(pending) {
 			if pending.is_none() && cache.is_hidden(message.id) {
 				continue;
 			}
 			if pending.is_none() && self.is_blocked(message.author.id) {
-				let (index, revealed) = *blocked_run.get_or_insert_with(|| {
-					let revealed = self.revealed_blocked.contains(&message.id);
+				let revealed = *blocked_run.get_or_insert_with(|| {
+					let (mut count, mut last, mut revealed) = (0, message.id, false);
+					for member in self.blocked_run(cache, message.id) {
+						count += 1;
+						last = member.id;
+						revealed |= self.revealed_blocked.contains(&member.id);
+					}
+					let day = local_day(message);
+					if separated_day != Some(day) {
+						rows.push(MessageRow::DaySeparator(day));
+						separated_day = Some(day);
+					}
 					rows.push(MessageRow::BlockedRun {
 						first: message.id,
-						count: 0,
+						last,
+						count,
 						revealed,
 					});
 					run_between = true;
-					(rows.len() - 1, revealed)
+					revealed
 				});
-				if let MessageRow::BlockedRun { count, .. } = &mut rows[index] {
-					*count += 1;
-				}
 				if !revealed {
 					continue;
 				}
@@ -519,8 +528,9 @@ impl State {
 				blocked_run = None;
 			}
 			let day = local_day(message);
-			if previous.is_none_or(|(_, previous_day)| previous_day != day) {
+			if separated_day != Some(day) {
 				rows.push(MessageRow::DaySeparator(day));
+				separated_day = Some(day);
 			}
 			let is_unread = pending.is_none()
 				&& last_read.is_some_and(|read| message.id > read)
@@ -540,6 +550,18 @@ impl State {
 			previous = Some((message.as_ref(), day));
 		}
 		rows
+	}
+
+	pub(crate) fn blocked_run<'a>(
+		&'a self,
+		cache: &'a ChannelMessages,
+		first: Snowflake,
+	) -> impl Iterator<Item = &'a Arc<Message>> {
+		let start = cache.ordered.partition_point(|message| message.id < first);
+		cache.ordered[start..]
+			.iter()
+			.filter(|message| !cache.is_hidden(message.id))
+			.take_while(|message| self.is_blocked(message.author.id))
 	}
 
 	pub fn unread_since(&self, channel_id: Snowflake, anchor: Snowflake) -> Option<UnreadSince> {

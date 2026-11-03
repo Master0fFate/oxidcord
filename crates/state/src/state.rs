@@ -352,6 +352,18 @@ impl State {
 		changes
 	}
 
+	pub(crate) fn drop_messages(&mut self, channel_id: Snowflake) -> bool {
+		let Some(cache) = self.messages.remove(&channel_id) else {
+			return false;
+		};
+		if !self.revealed_blocked.is_empty() {
+			for message in &cache.ordered {
+				self.revealed_blocked.remove(&message.id);
+			}
+		}
+		true
+	}
+
 	pub(crate) fn channel_mut(&mut self, id: Snowflake) -> Option<&mut Channel> {
 		match self.channel_guilds.get(&id)? {
 			Some(guild_id) => self.guilds.get_mut(guild_id)?.channel_mut(id),
@@ -549,7 +561,20 @@ impl State {
 				}
 			}
 			LocalEvent::BlockedRunToggled { channel_id, first } => {
-				if !self.revealed_blocked.remove(first) {
+				let members: Vec<Snowflake> = self
+					.messages
+					.get(channel_id)
+					.map(|cache| {
+						self.blocked_run(cache, *first)
+							.map(|message| message.id)
+							.collect()
+					})
+					.unwrap_or_default();
+				if members.iter().any(|id| self.revealed_blocked.contains(id)) {
+					for id in &members {
+						self.revealed_blocked.remove(id);
+					}
+				} else {
 					self.revealed_blocked.insert(*first);
 				}
 				changes.messages.insert(*channel_id);

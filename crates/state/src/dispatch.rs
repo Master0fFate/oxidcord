@@ -469,7 +469,7 @@ impl State {
 			}
 			None => {}
 		}
-		if self.messages.remove(&channel_id).is_some() {
+		if self.drop_messages(channel_id) {
 			changes.messages.insert(channel_id);
 		}
 		self.typing.remove(&channel_id);
@@ -622,7 +622,7 @@ impl State {
 		}
 		for id in state.channels.keys().chain(state.threads.keys()) {
 			self.channel_guilds.remove(id);
-			self.messages.remove(id);
+			self.drop_messages(*id);
 			self.typing.remove(id);
 			self.read_states.remove(id);
 		}

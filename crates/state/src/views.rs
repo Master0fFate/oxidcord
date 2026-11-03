@@ -139,6 +139,7 @@ pub enum MessageRow {
 	UnreadMarker,
 	BlockedRun {
 		first: Snowflake,
+		last: Snowflake,
 		count: usize,
 		revealed: bool,
 	},

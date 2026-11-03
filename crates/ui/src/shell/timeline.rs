@@ -116,15 +116,17 @@ fn same_row(a: &MessageRow, b: &MessageRow) -> bool {
 		(
 			MessageRow::BlockedRun {
 				first: x,
+				last: x_last,
 				count: x_count,
 				revealed: x_revealed,
 			},
 			MessageRow::BlockedRun {
 				first: y,
+				last: y_last,
 				count: y_count,
 				revealed: y_revealed,
 			},
-		) => x == y && x_count == y_count && x_revealed == y_revealed,
+		) => x == y && x_last == y_last && x_count == y_count && x_revealed == y_revealed,
 		(MessageRow::UnreadMarker, MessageRow::UnreadMarker)
 		| (MessageRow::HistoryStart, MessageRow::HistoryStart)
 		| (MessageRow::Loading, MessageRow::Loading) => true,
@@ -380,6 +382,7 @@ impl Timeline {
 	fn first_message(&self) -> Option<Snowflake> {
 		self.rows.iter().find_map(|row| match row {
 			MessageRow::Message(view) if !view.pending => Some(view.message.id),
+			MessageRow::BlockedRun { first, .. } => Some(*first),
 			_ => None,
 		})
 	}
@@ -436,6 +439,7 @@ impl Timeline {
 		let top = scroll.logical_scroll_top();
 		match self.rows.get(top.item_ix) {
 			Some(MessageRow::Message(view)) => Some((view.message.id, top.offset_in_item)),
+			Some(MessageRow::BlockedRun { first, .. }) => Some((*first, top.offset_in_item)),
 			_ => None,
 		}
 	}
@@ -536,11 +540,7 @@ impl Timeline {
 	}
 
 	fn scroll_to(&mut self, message_id: Snowflake, cx: &mut Context<Self>) -> bool {
-		let index = self.rows.iter().position(|row| match row {
-			MessageRow::Message(view) => view.message.id == message_id,
-			_ => false,
-		});
-		let Some(index) = index else {
+		let Some(index) = self.row_index(message_id) else {
 			return false;
 		};
 		let head = self.group_head(index);
@@ -904,6 +904,7 @@ impl Timeline {
 	fn row_index(&self, message_id: Snowflake) -> Option<usize> {
 		self.rows.iter().position(|row| match row {
 			MessageRow::Message(view) => view.message.id == message_id,
+			MessageRow::BlockedRun { first, last, .. } => (*first..=*last).contains(&message_id),
 			_ => false,
 		})
 	}

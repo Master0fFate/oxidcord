@@ -361,6 +361,7 @@ pub fn render_row(row: &MessageRow, env: &RowEnv, cx: &App) -> AnyElement {
 			first,
 			count,
 			revealed,
+			..
 		} => blocked_run(*first, *count, *revealed, env, cx),
 		MessageRow::Message(view) if renders_as_message(&view.message) => {
 			if env.compact {
