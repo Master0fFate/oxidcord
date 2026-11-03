@@ -69,6 +69,8 @@ pub fn stripped_member(member: &Member) -> Member {
 		permissions: member.permissions,
 		communication_disabled_until: member.communication_disabled_until,
 		avatar_decoration_data: member.avatar_decoration_data.clone(),
+		collectibles: member.collectibles.clone(),
+		display_name_styles: member.display_name_styles.clone(),
 		guild_id: member.guild_id,
 	}
 }

@@ -191,16 +191,34 @@ pub fn activity_asset_url(application_id: Option<u64>, asset: &str, size: u32) -
 	})
 }
 
-pub fn avatar_decoration_url(asset: &str, size: u32) -> String {
-	let passthrough = if is_animated(asset) {
-		"&passthrough=true"
-	} else {
-		""
-	};
-	format!(
-		"{CDN}/avatar-decoration-presets/{asset}.png?size={}{passthrough}",
-		clamp_size(size)
-	)
+fn is_asset_path(path: &str) -> bool {
+	!path.is_empty()
+		&& !path.contains("..")
+		&& path
+			.bytes()
+			.all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'/'))
+}
+
+pub fn avatar_decoration_url(asset: &str, size: u32) -> Option<String> {
+	is_asset_path(asset).then(|| {
+		format!(
+			"{CDN}/avatar-decoration-presets/{asset}.png?size={}",
+			clamp_size(size)
+		)
+	})
+}
+
+pub fn guild_tag_badge_url(guild_id: u64, badge: &str, size: u32) -> Option<String> {
+	is_asset_path(badge).then(|| {
+		format!(
+			"{CDN}/guild-tag-badges/{guild_id}/{badge}.png?size={}",
+			clamp_size(size)
+		)
+	})
+}
+
+pub fn nameplate_url(asset: &str) -> Option<String> {
+	is_asset_path(asset).then(|| format!("{CDN}/assets/collectibles/{asset}static.png"))
 }
 
 pub fn attachment_proxy(url: &str, width: u32, height: u32, format: ProxyFormat) -> String {

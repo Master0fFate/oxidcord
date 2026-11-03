@@ -1,10 +1,10 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::lenient::timestamp;
+use crate::lenient::{or_default, timestamp};
 use crate::permissions::Permissions;
 use crate::snowflake::Snowflake;
-use crate::user::{AvatarDecorationData, User};
+use crate::user::{AvatarDecorationData, Collectibles, DisplayNameStyles, User};
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -27,6 +27,10 @@ pub struct Member {
 	#[serde(deserialize_with = "timestamp")]
 	pub communication_disabled_until: Option<DateTime<Utc>>,
 	pub avatar_decoration_data: Option<AvatarDecorationData>,
+	#[serde(deserialize_with = "or_default")]
+	pub collectibles: Option<Collectibles>,
+	#[serde(deserialize_with = "or_default")]
+	pub display_name_styles: Option<DisplayNameStyles>,
 	pub guild_id: Option<Snowflake>,
 }
 

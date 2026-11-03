@@ -1,7 +1,7 @@
 use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
 
-use crate::lenient::{flags_serde, int_enum, or_default};
+use crate::lenient::{flags_serde, int_enum, or_default, str_enum};
 use crate::snowflake::Snowflake;
 
 bitflags! {
@@ -34,6 +34,66 @@ int_enum! {
 		Nitro = 2,
 		NitroBasic = 3,
 	}
+}
+
+str_enum! {
+	pub enum NameplatePalette {
+		None = "none",
+		Crimson = "crimson",
+		Berry = "berry",
+		Sky = "sky",
+		Teal = "teal",
+		Forest = "forest",
+		BubbleGum = "bubble_gum",
+		Violet = "violet",
+		Cobalt = "cobalt",
+		Clover = "clover",
+		Lemon = "lemon",
+		White = "white",
+	}
+}
+
+int_enum! {
+	pub enum DisplayNameEffect {
+		Solid = 1,
+		Gradient = 2,
+		Neon = 3,
+		Toon = 4,
+		Pop = 5,
+		Glow = 6,
+		Prism = 7,
+		Gummy = 8,
+	}
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Nameplate {
+	#[serde(deserialize_with = "or_default")]
+	pub asset: String,
+	pub sku_id: Option<Snowflake>,
+	#[serde(deserialize_with = "or_default")]
+	pub label: Option<String>,
+	pub palette: NameplatePalette,
+	#[serde(deserialize_with = "or_default")]
+	pub expires_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Collectibles {
+	#[serde(deserialize_with = "or_default")]
+	pub nameplate: Option<Nameplate>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DisplayNameStyles {
+	#[serde(deserialize_with = "or_default")]
+	pub font_id: Option<i64>,
+	pub effect_id: DisplayNameEffect,
+	#[serde(deserialize_with = "or_default")]
+	pub colors: Vec<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -83,6 +143,10 @@ pub struct User {
 	pub primary_guild: Option<PrimaryGuild>,
 	#[serde(deserialize_with = "or_default")]
 	pub clan: Option<PrimaryGuild>,
+	#[serde(deserialize_with = "or_default")]
+	pub collectibles: Option<Collectibles>,
+	#[serde(deserialize_with = "or_default")]
+	pub display_name_styles: Option<DisplayNameStyles>,
 	#[serde(deserialize_with = "or_default")]
 	pub email: Option<String>,
 	#[serde(deserialize_with = "or_default")]

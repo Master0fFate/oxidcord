@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
-use protocol::lenient::timestamp;
+use protocol::lenient::{or_default, timestamp};
 use protocol::{
 	ApplicationCommand, ApplicationCommandType, AutoModRule, Channel, CommandIndex, Gif, GifFavorites,
 	GifTrending, InteractionContext, LenientVec, Member, Message, Permissions, PinnedMessage, Snowflake,
@@ -135,6 +135,7 @@ pub struct GuildProfile {
 	pub bio: Option<String>,
 	pub banner: Option<String>,
 	pub accent_color: Option<i64>,
+	pub theme_colors: Option<[u32; 2]>,
 	pub pronouns: Option<String>,
 }
 
@@ -144,7 +145,10 @@ pub struct UserProfile {
 	pub bio: Option<String>,
 	pub banner: Option<String>,
 	pub accent_color: Option<i64>,
+	pub theme_colors: Option<[u32; 2]>,
 	pub pronouns: Option<String>,
+	pub legacy_username: Option<String>,
+	pub private: bool,
 	pub guild_profile: Option<GuildProfile>,
 	pub badges: Vec<ProfileBadge>,
 	pub mutual_guilds: Vec<Snowflake>,
@@ -320,6 +324,8 @@ struct RawMeta {
 	bio: Option<String>,
 	banner: Option<String>,
 	accent_color: Option<i64>,
+	#[serde(deserialize_with = "or_default")]
+	theme_colors: Option<[u32; 2]>,
 	pronouns: Option<String>,
 }
 
@@ -337,6 +343,10 @@ struct RawProfile {
 	guild_member: Option<Member>,
 	#[serde(deserialize_with = "timestamp")]
 	premium_since: Option<DateTime<Utc>>,
+	#[serde(deserialize_with = "or_default")]
+	legacy_username: Option<String>,
+	#[serde(deserialize_with = "or_default")]
+	private: bool,
 }
 
 #[derive(Deserialize, Default)]
@@ -767,6 +777,7 @@ impl State {
 				bio: meta.bio.filter(|bio| !bio.is_empty()),
 				banner: meta.banner,
 				accent_color: meta.accent_color,
+				theme_colors: meta.theme_colors,
 				pronouns: meta.pronouns.filter(|pronouns| !pronouns.is_empty()),
 			})
 		});
@@ -778,7 +789,10 @@ impl State {
 				.filter(|bio| !bio.is_empty()),
 			banner: meta.banner.or_else(|| user.banner.clone()),
 			accent_color: meta.accent_color.or(user.accent_color),
+			theme_colors: meta.theme_colors,
 			pronouns: meta.pronouns.filter(|pronouns| !pronouns.is_empty()),
+			legacy_username: parsed.legacy_username.filter(|name| !name.is_empty()),
+			private: parsed.private,
 			badges: parsed
 				.badges
 				.unwrap_or_default()

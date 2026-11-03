@@ -1,4 +1,5 @@
 mod changes;
+mod cosmetics;
 mod dispatch;
 mod event;
 mod expressions;
@@ -20,6 +21,7 @@ mod views;
 mod voice;
 
 pub use changes::{Changes, IdSet};
+pub use cosmetics::Cosmetics;
 pub use event::{Event, LoadDirection, LocalEvent};
 pub use expressions::{
 	CatalogEmoji, EXPRESSIONS_KEY, EmojiCatalog, EmojiRef, GuildEmojis, RECENT_CAP, UnicodeSection,
