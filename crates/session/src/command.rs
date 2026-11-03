@@ -1007,6 +1007,31 @@ pub enum Command {
 		guild_id: Snowflake,
 		sticker_id: Snowflake,
 	},
+	LoadSoundboard {
+		guild_id: Snowflake,
+	},
+	LoadGuildSounds {
+		guild_id: Snowflake,
+	},
+	SendSound {
+		channel_id: Snowflake,
+		sound_id: Snowflake,
+	},
+	CreateSound {
+		guild_id: Snowflake,
+		name: String,
+		file: Vec<u8>,
+	},
+	EditSound {
+		guild_id: Snowflake,
+		sound_id: Snowflake,
+		name: Option<String>,
+		volume: Option<f32>,
+	},
+	DeleteSound {
+		guild_id: Snowflake,
+		sound_id: Snowflake,
+	},
 	EditEmoji {
 		guild_id: Snowflake,
 		id: Snowflake,

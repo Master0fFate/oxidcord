@@ -5,7 +5,7 @@ use std::time::Duration;
 use chrono::Utc;
 use gateway::SendError;
 use parking_lot::Mutex;
-use protocol::{Snowflake, Token, VoiceServerUpdate, VoiceState};
+use protocol::{Snowflake, Token, VoiceChannelEffect, VoiceServerUpdate, VoiceState};
 use serde_json::json;
 use state::{JoinBlock, LocalEvent, VoiceStatus};
 use store::VoiceSettings;
@@ -26,6 +26,7 @@ const LEVEL_FLOOR: f32 = 0.005;
 const FULL_VOLUME_PERCENT: f32 = 100.0;
 const AUTO_VAD_THRESHOLD_DB: f32 = -50.0;
 const CONNECTED_ELSEWHERE: &str = "Connected on another device";
+const MAX_CACHED_SOUNDS: usize = 32;
 
 pub(crate) type SharedVoice = Arc<Mutex<Option<Arc<VoiceConnection>>>>;
 
@@ -56,6 +57,7 @@ pub(crate) struct VoiceLink {
 	server_muted: bool,
 	transmitting: bool,
 	user_volumes: HashMap<Snowflake, f32>,
+	sounds: HashMap<Snowflake, voice::Sound>,
 	pub(super) camera_device: Option<String>,
 	pub(super) camera_quality: VideoQuality,
 	closed_with: Option<u16>,
@@ -80,6 +82,7 @@ impl VoiceLink {
 			server_muted: false,
 			transmitting: false,
 			user_volumes: HashMap::new(),
+			sounds: HashMap::new(),
 			camera_device: None,
 			camera_quality: VideoQuality::default(),
 			closed_with: None,
@@ -261,6 +264,62 @@ impl Core {
 			settings.sensitivity_db =
 				threshold_db.round().clamp(f32::from(i8::MIN), f32::from(i8::MAX)) as i8;
 		});
+	}
+
+	pub(super) fn voice_effect(&mut self, effect: &VoiceChannelEffect) {
+		let Some(sound_id) = effect.sound_id else {
+			return;
+		};
+		let volume = effect.sound_volume.unwrap_or(1.0);
+		if self.voice.target.map(|target| target.channel_id) != Some(effect.channel_id) {
+			return;
+		}
+		match (&self.voice.connection, self.voice.sounds.get(&sound_id)) {
+			(Some(connection), Some(sound)) => connection.play_sound(sound, volume),
+			(Some(_), None) => self.fetch_sound(sound_id, volume),
+			(None, _) => {}
+		}
+	}
+
+	fn fetch_sound(&self, sound_id: Snowflake, volume: f32) {
+		let Some(fetcher) = self.media.clone() else {
+			return;
+		};
+		let url = match &self.mock_origin {
+			Some(origin) => format!("{origin}soundboard-sounds/{sound_id}"),
+			None => media::cdn::soundboard_url(sound_id.get()),
+		};
+		let internal = self.internal.clone();
+		self.runtime.spawn(async move {
+			let bytes = match fetcher.fetch(&url).await {
+				Ok(bytes) => bytes,
+				Err(error) => {
+					tracing::warn!(%error, "soundboard sound was not downloaded");
+					return;
+				}
+			};
+			match tokio::task::spawn_blocking(move || voice::decode_sound(bytes.to_vec())).await {
+				Ok(Ok(sound)) => {
+					let _ = internal.send(Internal::SoundReady {
+						sound_id,
+						sound,
+						volume,
+					});
+				}
+				Ok(Err(error)) => tracing::warn!(%error, "soundboard sound was not decoded"),
+				Err(error) => tracing::warn!(%error, "soundboard decoding stopped"),
+			}
+		});
+	}
+
+	pub(super) fn sound_ready(&mut self, sound_id: Snowflake, sound: voice::Sound, volume: f32) {
+		if self.voice.sounds.len() >= MAX_CACHED_SOUNDS {
+			self.voice.sounds.clear();
+		}
+		if let Some(connection) = &self.voice.connection {
+			connection.play_sound(&sound, volume);
+		}
+		self.voice.sounds.insert(sound_id, sound);
 	}
 
 	pub(super) fn request_to_speak(&mut self, guild_id: Snowflake, channel_id: Snowflake, request: bool) {

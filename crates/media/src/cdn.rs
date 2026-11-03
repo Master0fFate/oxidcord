@@ -151,6 +151,10 @@ pub fn sticker_url(id: u64, format: StickerFormat) -> Option<String> {
 	}
 }
 
+pub fn soundboard_url(id: u64) -> String {
+	format!("{CDN}/soundboard-sounds/{id}")
+}
+
 pub fn banner_url(owner_id: u64, hash: &str, size: u32) -> String {
 	format!(
 		"{CDN}/banners/{owner_id}/{hash}.{}?size={}",

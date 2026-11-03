@@ -231,6 +231,11 @@ pub(crate) enum Internal {
 		level: f32,
 		remaining_secs: u32,
 	},
+	SoundReady {
+		sound_id: Snowflake,
+		sound: voice::Sound,
+		volume: f32,
+	},
 	MicTestFinished {
 		generation: u64,
 		result: Result<(), String>,
@@ -268,6 +273,7 @@ pub(crate) struct CoreParts {
 	pub(crate) marks: Arc<ClientMarks>,
 	pub(crate) media: Option<media::MediaFetcher>,
 	pub(crate) save_media: Option<media::MediaFetcher>,
+	pub(crate) mock_origin: Option<url::Url>,
 	pub(crate) sink: Arc<dyn BrokerSink>,
 	pub(crate) activity: ActivityHandle,
 	pub(crate) identity: IdentifyProperties,
@@ -318,6 +324,7 @@ pub(crate) struct Core {
 	marks: Arc<ClientMarks>,
 	media: Option<media::MediaFetcher>,
 	save_media: Option<media::MediaFetcher>,
+	mock_origin: Option<url::Url>,
 	sink: Arc<dyn BrokerSink>,
 	plugin_options: BTreeMap<String, ClientOptions>,
 	plugin_dm_sections: BTreeMap<String, Vec<DmSection>>,
@@ -413,6 +420,7 @@ impl Core {
 			marks: parts.marks,
 			media: parts.media,
 			save_media: parts.save_media,
+			mock_origin: parts.mock_origin,
 			sink: parts.sink,
 			plugin_options: BTreeMap::new(),
 			plugin_dm_sections: BTreeMap::new(),
@@ -750,6 +758,7 @@ impl Core {
 				}
 			}
 			DispatchEvent::VoiceServerUpdate(update) => self.voice_server_update(update),
+			DispatchEvent::VoiceChannelEffectSend(effect) => self.voice_effect(&effect),
 			DispatchEvent::ChannelUpdate(channel) => self.voice_channel_updated(channel.id),
 			DispatchEvent::StreamCreate(stream) => self.stream_created(&stream),
 			DispatchEvent::StreamServerUpdate(update) => self.stream_server_updated(update),
@@ -967,6 +976,11 @@ impl Core {
 				remaining_secs,
 			} => self.on_mic_test_level(generation, level, remaining_secs),
 			Internal::MicTestFinished { generation, result } => self.on_mic_test_finished(generation, result),
+			Internal::SoundReady {
+				sound_id,
+				sound,
+				volume,
+			} => self.sound_ready(sound_id, sound, volume),
 			Internal::AccountSwitch(user_id) => self.apply_local(LocalEvent::AccountSwitchRequested(user_id)),
 			Internal::Invalidate { plugin, target } => self.on_invalidate(&plugin, target),
 			Internal::Command(command) => {

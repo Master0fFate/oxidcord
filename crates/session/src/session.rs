@@ -55,6 +55,14 @@ fn install_crypto_provider() {
 	let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 }
 
+fn mock_origin(rest_base: &Url) -> Option<Url> {
+	(rest_base.host_str() == Some("127.0.0.1")).then(|| {
+		let mut origin = rest_base.clone();
+		origin.set_path("/");
+		origin
+	})
+}
+
 fn media_fetcher(identify: &IdentifyProperties, rest_base: &Url, max_bytes: usize) -> Option<MediaFetcher> {
 	let mut builder = MediaFetcher::builder()
 		.user_agent(identify.user_agent())
@@ -142,6 +150,7 @@ impl Session {
 		let loads = Arc::new(PluginLoads::default());
 		let media = media_fetcher(&config.identify, &config.rest_base, PLUGIN_MEDIA_MAX_BYTES);
 		let save_media = media_fetcher(&config.identify, &config.rest_base, SAVE_MEDIA_MAX_BYTES);
+		let mock_origin = mock_origin(&config.rest_base);
 		let rest_base = config.rest_base.clone();
 		let user_agent = config.identify.user_agent().to_owned();
 		let identity = config.identify.clone();
@@ -223,6 +232,7 @@ impl Session {
 			marks,
 			media,
 			save_media,
+			mock_origin,
 			sink: plugins.sink,
 			activity: activity.clone(),
 			identity,

@@ -277,6 +277,12 @@ impl Core {
 			| Command::CreateSticker { .. }
 			| Command::EditSticker { .. }
 			| Command::DeleteSticker { .. }
+			| Command::LoadSoundboard { .. }
+			| Command::LoadGuildSounds { .. }
+			| Command::SendSound { .. }
+			| Command::CreateSound { .. }
+			| Command::EditSound { .. }
+			| Command::DeleteSound { .. }
 			| Command::EditEmoji { .. }) => self.on_expression_command(command),
 			command @ (Command::AddFriend { .. }
 			| Command::AcceptFriend { .. }

@@ -1,8 +1,13 @@
-use protocol::{CreateMessage, Gif, GifTrending, Permissions, Snowflake, Sticker, unicode_emoji_list};
+use protocol::{
+	CreateMessage, Gif, GifTrending, Permissions, SOUND_MAX_BYTES, SOUND_MAX_SECONDS, Snowflake, Sticker,
+	unicode_emoji_list,
+};
 use rest::UploadFile;
+use rest::api::image_data_uri;
 use serde::Serialize;
-use state::{EmojiRef, Loaded, RECENT_CAP};
+use state::{EmojiRef, Loaded, RECENT_CAP, SoundBlock};
 
+use super::actions::rest_failure;
 use super::commands::image_mime;
 use super::outgoing::Outgoing;
 use super::{Command, Core, Internal};
@@ -71,6 +76,38 @@ pub(super) fn reaction_emoji(emoji: &str) -> EmojiRef {
 		id: None,
 		animated: false,
 	})
+}
+
+enum SoundRefusal {
+	Invalid(&'static str),
+	Rest(rest::RestError),
+}
+
+async fn upload_sound(
+	rest: &rest::RestClient,
+	guild_id: Snowflake,
+	name: &str,
+	file: Vec<u8>,
+) -> Result<(), SoundRefusal> {
+	if file.len() > SOUND_MAX_BYTES {
+		return Err(SoundRefusal::Invalid("Sounds can be at most 512 KB"));
+	}
+	let probe = file.clone();
+	let decoded = tokio::task::spawn_blocking(move || voice::decode_sound(probe)).await;
+	match decoded {
+		Ok(Ok(sound)) if sound.duration().as_secs_f32() <= SOUND_MAX_SECONDS => {}
+		Ok(Ok(_)) => return Err(SoundRefusal::Invalid("Sounds can be at most 5.2 seconds")),
+		_ => return Err(SoundRefusal::Invalid("That audio file can't be used")),
+	}
+	let mime = if file.starts_with(b"OggS") {
+		"audio/ogg"
+	} else {
+		"audio/mpeg"
+	};
+	rest.create_guild_sound(guild_id, name, &image_data_uri(mime, &file), 1.0)
+		.await
+		.map(drop)
+		.map_err(SoundRefusal::Rest)
 }
 
 impl Core {
@@ -201,6 +238,36 @@ impl Core {
 					});
 				}
 			}
+			Command::LoadSoundboard { guild_id } => self.load_soundboard(guild_id),
+			Command::LoadGuildSounds { guild_id } => {
+				self.spawn_load("server sounds", move |rest| async move {
+					let sounds = rest.guild_sounds(guild_id).await?.items.into_vec();
+					Ok(Loaded::GuildSounds { guild_id, sounds })
+				})
+			}
+			Command::SendSound { channel_id, sound_id } => self.send_sound(channel_id, sound_id),
+			Command::CreateSound { guild_id, name, file } => self.create_sound(guild_id, name, file),
+			Command::EditSound {
+				guild_id,
+				sound_id,
+				name,
+				volume,
+			} => {
+				if self.may_manage_expressions(guild_id) {
+					self.spawn_action("edit sound", move |rest| async move {
+						rest.edit_guild_sound(guild_id, sound_id, name.as_deref(), volume)
+							.await
+							.map(drop)
+					});
+				}
+			}
+			Command::DeleteSound { guild_id, sound_id } => {
+				if self.may_manage_expressions(guild_id) {
+					self.spawn_action("delete sound", move |rest| async move {
+						rest.delete_guild_sound(guild_id, sound_id).await
+					});
+				}
+			}
 			Command::LoadStickerPacks => self.spawn_load("sticker packs", move |rest| async move {
 				let packs = rest.sticker_packs().await?;
 				Ok(Loaded::StickerPacks(packs.sticker_packs.into_vec()))
@@ -213,6 +280,77 @@ impl Core {
 			}
 			_ => {}
 		}
+	}
+
+	fn load_soundboard(&mut self, guild_id: Snowflake) {
+		let (needs_defaults, unloaded) = {
+			let state = self.state.read();
+			let wanted: Vec<Snowflake> = if state.has_nitro() {
+				state.guilds().map(|guild| guild.id).collect()
+			} else {
+				vec![guild_id]
+			};
+			let unloaded: Vec<Snowflake> = wanted
+				.into_iter()
+				.filter(|id| state.guild_sounds(*id).is_none())
+				.collect();
+			(state.default_sounds().is_none(), unloaded)
+		};
+		if needs_defaults {
+			self.spawn_load("default sounds", move |rest| async move {
+				Ok(Loaded::DefaultSounds(rest.default_sounds().await?.into_vec()))
+			});
+		}
+		if !unloaded.is_empty()
+			&& let Err(error) = self.gateway.request_soundboard_sounds(unloaded)
+		{
+			tracing::warn!(%error, "soundboard request was not sent");
+		}
+	}
+
+	fn send_sound(&mut self, channel_id: Snowflake, sound_id: Snowflake) {
+		let (sound, block) = {
+			let state = self.state.read();
+			let sound = state.find_sound(sound_id).filter(|sound| sound.usable()).cloned();
+			let block = sound.as_ref().and_then(|sound| state.sound_block(sound));
+			(sound, block)
+		};
+		let Some(sound) = sound else {
+			self.reject("That sound is unavailable");
+			return;
+		};
+		if let Some(block) = block {
+			self.reject(match block {
+				SoundBlock::NotConnected => "Join the voice channel first",
+				SoundBlock::NoPermission => "You need the Use Soundboard permission",
+				SoundBlock::ExternalLocked => "You need the Use External Sounds permission",
+				SoundBlock::Silenced => "You can't play sounds while muted or deafened",
+			});
+			return;
+		}
+		self.spawn_action("send sound", move |rest| async move {
+			rest.send_sound(channel_id, sound_id, sound.guild_id).await
+		});
+	}
+
+	fn create_sound(&mut self, guild_id: Snowflake, name: String, file: Vec<u8>) {
+		if !self.guild_allows(
+			guild_id,
+			Permissions::CREATE_GUILD_EXPRESSIONS | Permissions::MANAGE_GUILD_EXPRESSIONS,
+			"Create Expressions",
+		) {
+			return;
+		}
+		let rest = self.rest.clone();
+		let internal = self.internal.clone();
+		self.runtime.spawn(async move {
+			let message = match upload_sound(&rest, guild_id, &name, file).await {
+				Ok(()) => return,
+				Err(SoundRefusal::Rest(error)) => rest_failure("create sound", &error),
+				Err(SoundRefusal::Invalid(reason)) => Internal::Rejected(reason.to_owned()),
+			};
+			let _ = internal.send(message);
+		});
 	}
 
 	fn may_manage_expressions(&mut self, guild_id: Snowflake) -> bool {
