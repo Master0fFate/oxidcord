@@ -31,6 +31,7 @@ pub struct Draft {
 	pub kind: Option<MessageType>,
 	pub content: String,
 	pub nonce: Option<String>,
+	pub enforce_nonce: bool,
 	pub tts: bool,
 	pub reference: Option<MessageReference>,
 	pub flags: MessageFlags,
@@ -55,6 +56,7 @@ impl Draft {
 			kind: None,
 			content: create.content.unwrap_or_default(),
 			nonce: create.nonce,
+			enforce_nonce: create.enforce_nonce.unwrap_or(false),
 			tts: create.tts.unwrap_or(false),
 			reference: create.message_reference,
 			flags: create.flags.unwrap_or_default(),
@@ -219,6 +221,18 @@ impl Shared {
 		if author.id.0 == CURRENT_USER_ID && Self::blocked_conversation(&store, channel_id) {
 			return Err(ApiError::cannot_message_user());
 		}
+		let dedup_key = draft
+			.nonce
+			.clone()
+			.filter(|_| draft.enforce_nonce && author.id.0 == CURRENT_USER_ID)
+			.map(|nonce| (channel_id, nonce));
+		if let Some(existing) = dedup_key
+			.as_ref()
+			.and_then(|key| store.nonces.get(key))
+			.and_then(|id| store.message(channel_id, *id))
+		{
+			return Ok(existing.clone());
+		}
 		let id = draft.id.unwrap_or_else(|| store.next_snowflake());
 		let (user_ids, mention_roles) = scan_mentions(&draft.content);
 		let mentions: Vec<User> = user_ids
@@ -304,6 +318,9 @@ impl Shared {
 			.entry(channel_id)
 			.or_default()
 			.insert(id, value.clone());
+		if let Some(key) = dedup_key {
+			store.nonces.insert(key, id);
+		}
 		store.refresh_last_message(channel_id);
 		let from_me = author.id.0 == CURRENT_USER_ID;
 		let pings_me =

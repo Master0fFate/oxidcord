@@ -74,6 +74,7 @@ pub struct Store {
 	pub proto_status: Vec<u8>,
 	pub proto_privacy: Vec<u8>,
 	pub uploads: HashMap<String, u64>,
+	pub nonces: HashMap<(u64, String), u64>,
 	last_id: u64,
 }
 
@@ -166,6 +167,7 @@ impl Store {
 				..ProtoFrecencySettings::default()
 			},
 			uploads: HashMap::new(),
+			nonces: HashMap::new(),
 			last_id,
 		}
 	}
