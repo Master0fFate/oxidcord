@@ -5,7 +5,7 @@ use protocol::{
 	ApplicationCommand, CreateMessage, DispatchEvent, MessageAck, MessageFlags, MessageReference,
 	MessageReferenceKind, Permissions, ProtoCustomStatus, Snowflake, StatusKind, ThreadMember,
 };
-use rest::UploadFile;
+use rest::{RestError, UploadFile};
 use rest::api::image_data_uri;
 use serde_json::{Value, json};
 use state::{Loaded, LocalEvent, USER_COMMANDS, guild_folders_settings};
@@ -373,6 +373,9 @@ impl Core {
 				comment,
 				silent,
 			} => {
+				if !self.send_allowed(to_channel_id) {
+					return;
+				}
 				let guild_id = self.state.read().channel_guild(channel_id);
 				let flags = silent.then_some(MessageFlags::SUPPRESS_NOTIFICATIONS);
 				let body = CreateMessage {
@@ -386,17 +389,28 @@ impl Core {
 					flags,
 					..CreateMessage::default()
 				};
+				let internal = self.internal.clone();
 				self.spawn_action("forward message", move |rest| async move {
-					rest.create_message(to_channel_id, body).await?;
-					if let Some(content) = comment {
-						let body = CreateMessage {
-							content: Some(content),
-							flags,
-							..CreateMessage::default()
-						};
+					let sent = async {
 						rest.create_message(to_channel_id, body).await?;
+						if let Some(content) = comment {
+							let body = CreateMessage {
+								content: Some(content),
+								flags,
+								..CreateMessage::default()
+							};
+							rest.create_message(to_channel_id, body).await?;
+						}
+						Ok(())
 					}
-					Ok(())
+					.await;
+					if let Err(RestError::Slowmode { retry_after }) = &sent {
+						let _ = internal.send(Internal::SlowmodeHit {
+							channel_id: to_channel_id,
+							retry_after: *retry_after,
+						});
+					}
+					sent
 				});
 			}
 			Command::VotePoll {
