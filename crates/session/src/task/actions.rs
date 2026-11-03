@@ -117,6 +117,21 @@ impl Core {
 		allowed
 	}
 
+	pub(super) fn event_permissions(&self, guild_id: Snowflake, event_id: Snowflake) -> Permissions {
+		let state = self.state.read();
+		let own = state.current_user_id().is_some_and(|me| {
+			state
+				.scheduled_events(guild_id)
+				.iter()
+				.any(|event| event.id == event_id && event.creator_id == Some(me))
+		});
+		if own {
+			Permissions::MANAGE_EVENTS | Permissions::CREATE_EVENTS
+		} else {
+			Permissions::MANAGE_EVENTS
+		}
+	}
+
 	pub(super) fn channel_allows(&mut self, channel_id: Snowflake, needed: Permissions, what: &str) -> bool {
 		let allowed = {
 			let state = self.state.read();

@@ -3,7 +3,8 @@ use chrono::{DateTime, Utc};
 use protocol::rest::{ComponentInteraction, ComponentInteractionData};
 use protocol::{
 	ApplicationCommand, ChannelType, CreateMessage, DispatchEvent, MessageAck, MessageFlags,
-	MessageReference, MessageReferenceKind, Permissions, ProtoCustomStatus, Snowflake, StatusKind,
+	MessageReference, MessageReferenceKind, Permissions, ProtoCustomStatus, SCHEDULED_EVENT_GUILD_ONLY,
+	Snowflake, StatusKind,
 	ThreadMember,
 };
 use rest::api::ArchivedScope;
@@ -1183,6 +1184,86 @@ impl Core {
 						Ok(Loaded::GuildInvites { guild_id, raw })
 					});
 				}
+			}
+			Command::LoadScheduledEvents { guild_id } => {
+				self.spawn_load("events", move |rest| async move {
+					let events = rest.scheduled_events(guild_id).await?.into_vec();
+					let interested = rest
+						.scheduled_event_rsvps(guild_id)
+						.await
+						.map_err(|error| tracing::warn!(%error, "event interest was not loaded"))
+						.ok()
+						.map(|rsvps| {
+							rsvps
+								.iter()
+								.filter(|rsvp| rsvp.is_interested())
+								.map(|rsvp| rsvp.guild_scheduled_event_id)
+								.collect()
+						});
+					Ok(Loaded::ScheduledEvents {
+						guild_id,
+						events,
+						interested,
+					})
+				});
+			}
+			Command::CreateScheduledEvent {
+				guild_id,
+				name,
+				description,
+				kind,
+				channel_id,
+				location,
+				starts_at,
+				ends_at,
+			} => {
+				if self.guild_allows(
+					guild_id,
+					Permissions::CREATE_EVENTS | Permissions::MANAGE_EVENTS,
+					"Create Events",
+				) {
+					let body = object([
+						("name", Some(name.into())),
+						("description", some(description)),
+						("privacy_level", Some(SCHEDULED_EVENT_GUILD_ONLY.into())),
+						("entity_type", Some(i64::from(kind).into())),
+						("channel_id", channel_id.map(|id| json!(id))),
+						(
+							"entity_metadata",
+							location.map(|location| json!({ "location": location })),
+						),
+						("scheduled_start_time", Some(timestamp(starts_at).into())),
+						("scheduled_end_time", some(ends_at.map(timestamp))),
+					]);
+					self.spawn_action("create event", move |rest| async move {
+						rest.create_scheduled_event(guild_id, body).await.map(drop)
+					});
+				}
+			}
+			Command::SetScheduledEventStatus {
+				guild_id,
+				event_id,
+				status,
+			} => {
+				let needed = self.event_permissions(guild_id, event_id);
+				if self.guild_allows(guild_id, needed, "Manage Events") {
+					let body = json!({ "status": i64::from(status) });
+					self.spawn_action("update event", move |rest| async move {
+						rest.modify_scheduled_event(guild_id, event_id, body)
+							.await
+							.map(drop)
+					});
+				}
+			}
+			Command::SetScheduledEventInterest {
+				guild_id,
+				event_id,
+				interested,
+			} => {
+				self.spawn_action("event interest", move |rest| async move {
+					rest.set_scheduled_event_interest(guild_id, event_id, interested)
+						.await
+				});
 			}
 			command => self.on_moderation_command(command),
 		}

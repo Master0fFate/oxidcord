@@ -10,7 +10,8 @@ use plugin_host::api::{HostError, User as PluginUser};
 use plugin_host::{Navigation, Permission, PickedPath, ViewContext};
 use protocol::{
 	ApplicationCommand, AutoModRule, ChannelType, ComponentType, Gif, MessageFlags, Nonce, NotificationLevel,
-	PermissionOverwriteKind, Permissions, PollCreate, Snowflake, StatusKind,
+	PermissionOverwriteKind, Permissions, PollCreate, ScheduledEventKind, ScheduledEventStatus, Snowflake,
+	StatusKind,
 };
 use rest::UploadFile;
 use rest::api::SearchQuery;
@@ -593,6 +594,29 @@ pub enum Command {
 	RevokeInvite {
 		guild_id: Snowflake,
 		code: String,
+	},
+	LoadScheduledEvents {
+		guild_id: Snowflake,
+	},
+	CreateScheduledEvent {
+		guild_id: Snowflake,
+		name: String,
+		description: Option<String>,
+		kind: ScheduledEventKind,
+		channel_id: Option<Snowflake>,
+		location: Option<String>,
+		starts_at: DateTime<Utc>,
+		ends_at: Option<DateTime<Utc>>,
+	},
+	SetScheduledEventStatus {
+		guild_id: Snowflake,
+		event_id: Snowflake,
+		status: ScheduledEventStatus,
+	},
+	SetScheduledEventInterest {
+		guild_id: Snowflake,
+		event_id: Snowflake,
+		interested: bool,
 	},
 	KickMember {
 		guild_id: Snowflake,

@@ -105,11 +105,20 @@ pub struct ScheduledEvent {
 	pub recurrence_rule: Option<Value>,
 }
 
+pub const SCHEDULED_EVENT_GUILD_ONLY: i64 = 2;
+const SCHEDULED_EVENT_INTERESTED: i64 = 1;
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ScheduledEventRsvp {
 	pub guild_scheduled_event_id: Snowflake,
 	pub response: i64,
+}
+
+impl ScheduledEventRsvp {
+	pub fn is_interested(&self) -> bool {
+		self.response == SCHEDULED_EVENT_INTERESTED
+	}
 }
 
 impl ScheduledEvent {
