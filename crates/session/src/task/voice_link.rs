@@ -6,7 +6,7 @@ use chrono::Utc;
 use gateway::SendError;
 use parking_lot::Mutex;
 use protocol::{Snowflake, Token, VoiceServerUpdate, VoiceState};
-use state::{LocalEvent, VoiceStatus};
+use state::{JoinBlock, LocalEvent, VoiceStatus};
 use store::VoiceSettings;
 use tokio::task::JoinHandle;
 use tokio::time::{MissedTickBehavior, interval, sleep};
@@ -129,6 +129,14 @@ impl Core {
 	pub(super) fn join_voice(&mut self, guild_id: Option<Snowflake>, channel_id: Snowflake) {
 		let target = Target { guild_id, channel_id };
 		if self.voice.target == Some(target) {
+			return;
+		}
+		let block = self.state.read().voice_join_block(channel_id);
+		if let Some(block) = block {
+			self.reject(match block {
+				JoinBlock::NoPermission => "You need the Connect permission",
+				JoinBlock::Full => "This voice channel is full",
+			});
 			return;
 		}
 		self.drop_connection();

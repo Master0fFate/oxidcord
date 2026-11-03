@@ -16,7 +16,8 @@ use crate::messages::{ChannelMessages, PendingMessage};
 use crate::permissions::compute_permissions;
 use crate::state::State;
 use crate::views::{
-	ChannelRow, ChannelTreeNode, DmRow, GuildSummary, MemberListRow, MemberRow, MessageRow, MessageView,
+	ChannelRow, ChannelTreeNode, DmRow, GuildSummary, JoinBlock, MemberListRow, MemberRow, MessageRow,
+	MessageView,
 };
 
 const GROUPING_WINDOW: TimeDelta = TimeDelta::minutes(7);
@@ -82,6 +83,36 @@ fn channel_sort_key(channel: &Channel) -> (bool, i64, Snowflake) {
 
 fn count_of(value: i64) -> u32 {
 	u32::try_from(value).unwrap_or(0)
+}
+
+fn voice_members(guild: &GuildState, channel: &Channel) -> Vec<Snowflake> {
+	if !is_voice(channel.kind) {
+		return Vec::new();
+	}
+	let mut members: Vec<Snowflake> = guild
+		.voice_states
+		.values()
+		.filter(|voice| voice.channel_id == Some(channel.id))
+		.map(|voice| voice.user_id)
+		.collect();
+	members.sort_unstable();
+	members
+}
+
+fn join_block(
+	permissions: Permissions,
+	user_limit: u32,
+	occupants: &[Snowflake],
+	me: Option<Snowflake>,
+) -> Option<JoinBlock> {
+	if !permissions.contains(Permissions::CONNECT) {
+		return Some(JoinBlock::NoPermission);
+	}
+	let full = user_limit > 0
+		&& occupants.len() >= user_limit as usize
+		&& !permissions.contains(Permissions::MOVE_MEMBERS)
+		&& !me.is_some_and(|me| occupants.contains(&me));
+	full.then_some(JoinBlock::Full)
 }
 
 fn activity_text(presence: &Presence) -> Option<String> {
@@ -306,21 +337,16 @@ impl State {
 	}
 
 	fn channel_row(&self, guild: &GuildState, channel: &Channel, context: &RowContext) -> ChannelRow {
-		let viewable = context.me.is_none_or(|me| {
-			compute_permissions(guild, Some(channel), me, context.now).contains(Permissions::VIEW_CHANNEL)
+		let permissions = context.me.map_or(Permissions::all(), |me| {
+			compute_permissions(guild, Some(channel), me, context.now)
 		});
+		let viewable = permissions.contains(Permissions::VIEW_CHANNEL);
 		let status = self.channel_status(channel, context.settings, viewable, context.now);
-		let mut voice_members: Vec<Snowflake> = if is_voice(channel.kind) {
-			guild
-				.voice_states
-				.values()
-				.filter(|voice| voice.channel_id == Some(channel.id))
-				.map(|voice| voice.user_id)
-				.collect()
-		} else {
-			Vec::new()
-		};
-		voice_members.sort_unstable();
+		let voice_members = voice_members(guild, channel);
+		let user_limit = count_of(channel.user_limit.unwrap_or(0));
+		let join_block = is_voice(channel.kind)
+			.then(|| join_block(permissions, user_limit, &voice_members, context.me))
+			.flatten();
 		ChannelRow {
 			id: channel.id,
 			kind: channel.kind,
@@ -332,8 +358,21 @@ impl State {
 			muted: status.muted,
 			locked: !viewable,
 			member: channel.member.is_some(),
+			user_limit,
+			join_block,
 			voice_members,
 		}
+	}
+
+	pub fn voice_join_block(&self, channel_id: Snowflake) -> Option<JoinBlock> {
+		let guild = self.guilds.get(&self.channel_guild(channel_id)?)?;
+		let channel = guild.channel(channel_id)?;
+		join_block(
+			self.my_permissions(channel_id),
+			count_of(channel.user_limit.unwrap_or(0)),
+			&voice_members(guild, channel),
+			self.current_user_id(),
+		)
 	}
 
 	pub fn dm_rows(&self) -> Vec<DmRow> {

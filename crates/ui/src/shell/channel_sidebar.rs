@@ -8,7 +8,7 @@ use gpui_component::menu::{ContextMenuExt as _, DropdownMenu as _};
 use gpui_component::scroll::ScrollableElement as _;
 use protocol::{ChannelType, Permissions, Snowflake};
 use session::Command;
-use state::{ChannelRow, ChannelTreeNode, PluginBadge};
+use state::{ChannelRow, ChannelTreeNode, JoinBlock, PluginBadge};
 
 use crate::components::{IconButton, MentionBadge, SectionHeader};
 use crate::data::Data;
@@ -50,6 +50,9 @@ struct ChannelItem {
 	muted: bool,
 	mentions: u32,
 	voice: Vec<Participant>,
+	user_limit: u32,
+	occupants: u32,
+	join_block: Option<JoinBlock>,
 	badges: Vec<PluginBadge>,
 }
 
@@ -291,21 +294,24 @@ impl ChannelSidebar {
 					.color(rest)
 					.group_hover(group.clone(), hover),
 			)
-			.when(channel.locked, |glyph| {
-				glyph.child(
-					div()
-						.absolute()
-						.right(rem(-3.))
-						.bottom(rem(-3.))
-						.flex()
-						.items_center()
-						.justify_center()
-						.size(rem(11.))
-						.rounded_full()
-						.bg(theme.background_tertiary)
-						.child(Icon::new(IconKind::Lock).size(rem(9.)).color(rest)),
-				)
-			});
+			.when(
+				channel.locked || channel.join_block == Some(JoinBlock::NoPermission),
+				|glyph| {
+					glyph.child(
+						div()
+							.absolute()
+							.right(rem(-3.))
+							.bottom(rem(-3.))
+							.flex()
+							.items_center()
+							.justify_center()
+							.size(rem(11.))
+							.rounded_full()
+							.bg(theme.background_tertiary)
+							.child(Icon::new(IconKind::Lock).size(rem(9.)).color(rest)),
+					)
+				},
+			);
 		let live_label = cx.t("voice-live");
 		let participants: Vec<AnyElement> = channel
 			.voice
@@ -428,6 +434,14 @@ impl ChannelSidebar {
 					})
 					.child(channel.name.clone()),
 			)
+			.when(channel.user_limit > 0, |row| {
+				row.child(
+					div()
+						.flex_none()
+						.text_size(theme.font_tiny)
+						.child(format!("{}/{}", channel.occupants, channel.user_limit)),
+				)
+			})
 			.children(chat_button)
 			.children(plugins::channel_badges(id, &channel.badges, theme, cx))
 			.when(channel.mentions > 0, |row| {
@@ -503,6 +517,9 @@ fn channel_item(row: &ChannelRow, guild: Snowflake, state: &state::State) -> Cha
 		unread: row.unread,
 		muted: row.muted,
 		mentions: row.mentions,
+		user_limit: row.user_limit,
+		occupants: u32::try_from(row.voice_members.len()).unwrap_or(u32::MAX),
+		join_block: row.join_block,
 		voice: if voice_channel {
 			participants(state, Some(guild), row.id, AVATAR_PIXELS)
 		} else {

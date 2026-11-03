@@ -17,6 +17,12 @@ pub struct GuildSummary {
 	pub folder: Option<usize>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JoinBlock {
+	NoPermission,
+	Full,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChannelRow {
 	pub id: Snowflake,
@@ -29,6 +35,8 @@ pub struct ChannelRow {
 	pub muted: bool,
 	pub locked: bool,
 	pub member: bool,
+	pub user_limit: u32,
+	pub join_block: Option<JoinBlock>,
 	pub voice_members: Vec<Snowflake>,
 }
 
