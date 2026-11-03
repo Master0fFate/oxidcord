@@ -48,7 +48,7 @@ impl SystemScope {
 		}
 		let mut process = 0;
 		unsafe { GetWindowThreadProcessId(HWND(target.id as isize as *mut _), Some(&mut process)) };
-		if process == 0 {
+		if process == 0 || process == own {
 			Self::Except(own)
 		} else {
 			Self::Only(process)
@@ -184,6 +184,7 @@ fn capture(scope: SystemScope, rings: &Arc<Rings>, stop: &Event, ready: &mpsc::S
 	while unsafe { WaitForMultipleObjects(&handles, false, INFINITE) } == WAIT_OBJECT_0 {
 		if let Err(error) = drain(&reader, rings) {
 			tracing::warn!(%error, "process audio capture stopped");
+			rings.stop_system();
 			break;
 		}
 	}
