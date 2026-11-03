@@ -18,11 +18,21 @@ pub struct MemberList {
 	pub slots: Vec<MemberSlot>,
 	pub member_count: i64,
 	pub online_count: i64,
+	switching: bool,
 }
 
 impl MemberList {
+	pub fn expect_switch(&mut self) {
+		self.switching = true;
+	}
+
+	pub fn accepts(&self, id: &str) -> bool {
+		self.switching || self.id.is_empty() || self.id == id
+	}
+
 	pub fn reset(&mut self, id: &str) {
 		self.id = id.to_owned();
+		self.switching = false;
 		self.slots.clear();
 		self.groups.clear();
 	}

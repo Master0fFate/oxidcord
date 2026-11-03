@@ -558,10 +558,16 @@ impl State {
 				changes.drafts.insert(*channel_id);
 			}
 			LocalEvent::ChannelSelected { guild_id, channel_id } => {
-				self.selected = Some(Selection {
+				let selection = Selection {
 					guild_id: *guild_id,
 					channel_id: *channel_id,
-				});
+				};
+				if self.selected != Some(selection)
+					&& let Some(guild) = guild_id.and_then(|id| self.guilds.get_mut(&id))
+				{
+					guild.member_list.expect_switch();
+				}
+				self.selected = Some(selection);
 				changes.selection = true;
 			}
 			LocalEvent::SelectionCleared => {

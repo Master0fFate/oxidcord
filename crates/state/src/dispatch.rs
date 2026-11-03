@@ -832,6 +832,9 @@ impl State {
 		let Some(guild) = self.guilds.get_mut(&guild_id) else {
 			return changes;
 		};
+		if !guild.member_list.accepts(&update.id) {
+			return changes;
+		}
 		if guild.member_list.id != update.id {
 			guild.member_list.reset(&update.id);
 		}
