@@ -1,6 +1,7 @@
 use std::ops::Range;
 use std::path::PathBuf;
 
+use activity::SecretKind;
 use chrono::{DateTime, Utc};
 use plugin_host::api::model::{
 	ChannelClick, ClientOption, ContextDetail, DmSection, EmojiInfo, EmojiRef, LinkVerdict, MessageClick,
@@ -290,6 +291,18 @@ pub enum Command {
 	},
 	OpenDm {
 		user_id: Snowflake,
+	},
+	JoinActivity {
+		user_id: Snowflake,
+		session_id: String,
+		application_id: Snowflake,
+		kind: SecretKind,
+		invite: Option<(Snowflake, Snowflake)>,
+	},
+	AskToJoin {
+		user_id: Snowflake,
+		application_id: Snowflake,
+		party_id: String,
 	},
 	Search {
 		guild_id: Option<Snowflake>,

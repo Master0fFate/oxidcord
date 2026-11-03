@@ -1,4 +1,5 @@
 use chrono::Utc;
+use protocol::Activity;
 use serde_json::{Map, Value, json};
 
 use crate::apps::{Apps, RpcApp};
@@ -185,6 +186,22 @@ fn secrets(raw: &Value) -> Result<Option<Value>, String> {
 	Ok((!secrets.is_empty()).then_some(Value::Object(secrets)))
 }
 
+fn flags(secrets: Option<&Value>, raw: &Value) -> Option<u64> {
+	let secret = |key: &str| secrets.is_some_and(|secrets| secrets.get(key).is_some());
+	let flags = [
+		(
+			raw.get("instance").and_then(Value::as_bool) == Some(true),
+			Activity::FLAG_INSTANCE,
+		),
+		(secret("join"), Activity::FLAG_JOIN),
+		(secret("spectate"), Activity::FLAG_SPECTATE),
+	]
+	.into_iter()
+	.filter(|(set, _)| *set)
+	.fold(0, |flags, (_, flag)| flags | flag);
+	(flags != 0).then_some(flags)
+}
+
 struct Buttons {
 	labels: Vec<String>,
 	urls: Vec<String>,
@@ -269,7 +286,9 @@ pub(crate) async fn build(app: &RpcApp, apps: &Apps, raw: &Value) -> Result<Valu
 	if secrets.is_some() && buttons.is_some() {
 		return Err(fail(&["buttons"], "cannot be used together with secrets"));
 	}
+	let flags = flags(secrets.as_ref(), raw);
 	put(&mut activity, "secrets", secrets);
+	put(&mut activity, "flags", flags);
 	if let Some(Buttons { labels, urls }) = buttons {
 		activity.insert("buttons".to_owned(), json!(labels));
 		activity.insert("metadata".to_owned(), json!({ "button_urls": urls }));

@@ -7,7 +7,7 @@ use interprocess::local_socket::traits::tokio::Stream as _;
 use mockcord::{RPC_APP_ID, RPC_APP_NAME, RPC_ASSET_ID, RPC_ASSET_NAME};
 use protocol::Snowflake;
 use serde_json::{Value, json};
-use session::{RpcEndpoints, ipc_socket_name};
+use session::{Command, RpcEndpoints, SecretKind, ipc_socket_name};
 use state::State;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::{Instant, sleep, timeout};
@@ -29,6 +29,7 @@ const PROBE_DETAILS: &str = "headless rich presence";
 const PROBE_STATE: &str = "probing";
 const BUTTON_LABEL: &str = "Open";
 const BUTTON_URL: &str = "https://example.com/rpc";
+const JOIN_SESSION: &str = "headless-session";
 const BAD_CLIENT_ID: &str = "1";
 const BAD_ORIGIN: &str = "https://evil.example";
 const ENDPOINT_POLL: Duration = Duration::from_millis(50);
@@ -244,6 +245,34 @@ impl Harness {
 				|message| message.contains("\"state\" length must be at least 2 characters long")
 			),
 			"validation message does not match Discord: {rejected}"
+		);
+
+		write_frame(
+			&mut stream,
+			OP_FRAME,
+			&json!({ "cmd": "SUBSCRIBE", "evt": "ACTIVITY_JOIN", "nonce": "sub-1" }),
+		)
+		.await?;
+		let (_, subscribed) = read_frame(&mut stream).await?;
+		ensure!(
+			subscribed["data"]["evt"] == "ACTIVITY_JOIN",
+			"SUBSCRIBE was not acknowledged: {subscribed}"
+		);
+		self.session.send(Command::JoinActivity {
+			user_id: me,
+			session_id: JOIN_SESSION.to_owned(),
+			application_id: Snowflake(RPC_APP_ID),
+			kind: SecretKind::Join,
+			invite: None,
+		});
+		let (_, joined) = read_frame(&mut stream).await?;
+		ensure!(
+			joined["cmd"] == "DISPATCH"
+				&& joined["evt"] == "ACTIVITY_JOIN"
+				&& joined["data"]["secret"]
+					.as_str()
+					.is_some_and(|secret| secret.ends_with(JOIN_SESSION)),
+			"ACTIVITY_JOIN was not dispatched with the secret: {joined}"
 		);
 
 		drop(stream);

@@ -5,5 +5,7 @@ mod processes;
 mod rpc;
 mod spotify;
 
-pub use engine::{ActivityHandle, ActivityRules, Engine, EngineConfig, RpcEndpoints};
+pub use engine::{
+	ActivityHandle, ActivityRequest, ActivityRules, Engine, EngineConfig, RpcEndpoints, SecretKind,
+};
 pub use rpc::ipc_socket_name;

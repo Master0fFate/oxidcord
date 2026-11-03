@@ -1,9 +1,15 @@
 use protocol::{Connection, Guild, LenientVec, Message, Relationship, Snowflake, User};
+use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::client::RestClient;
 use crate::error::{RestError, Result};
 use crate::request::{Request, encode_component};
+
+#[derive(Deserialize)]
+struct ActivitySecret {
+	secret: String,
+}
 
 impl RestClient {
 	pub async fn connections(&self) -> Result<LenientVec<Connection>> {
@@ -52,6 +58,28 @@ impl RestClient {
 
 	pub async fn application_rpc(&self, id: Snowflake) -> Result<Value> {
 		self.send(Request::get(format!("/applications/{id}/rpc"))).await
+	}
+
+	pub async fn activity_secret(
+		&self,
+		user_id: Snowflake,
+		session_id: &str,
+		application_id: Snowflake,
+		kind: i64,
+		invite: Option<(Snowflake, Snowflake)>,
+	) -> Result<String> {
+		let mut request = Request::get(format!(
+			"/users/{user_id}/sessions/{}/activities/{application_id}/{kind}",
+			encode_component(session_id)
+		));
+		if let Some((channel_id, message_id)) = invite {
+			request = request.query(&[
+				("channel_id", channel_id.to_string()),
+				("message_id", message_id.to_string()),
+			]);
+		}
+		let secret: ActivitySecret = self.send(request).await?;
+		Ok(secret.secret)
 	}
 
 	pub async fn mentions(&self, limit: u8) -> Result<LenientVec<Message>> {

@@ -82,9 +82,18 @@ fn spawn_activity(
 	internal: mpsc::UnboundedSender<Internal>,
 ) -> ActivityHandle {
 	let (output, mut activities) = mpsc::unbounded_channel();
+	let (requests, mut asked) = mpsc::unbounded_channel();
+	let activity_internal = internal.clone();
 	handle.spawn(async move {
 		while let Some(list) = activities.recv().await {
-			if internal.send(Internal::Activities(list)).is_err() {
+			if activity_internal.send(Internal::Activities(list)).is_err() {
+				break;
+			}
+		}
+	});
+	handle.spawn(async move {
+		while let Some(request) = asked.recv().await {
+			if internal.send(Internal::ActivityRequest(request)).is_err() {
 				break;
 			}
 		}
@@ -96,6 +105,7 @@ fn spawn_activity(
 		cache_dir: store.paths.cache_dir().to_path_buf(),
 		runtime: handle.clone(),
 		output,
+		requests,
 	})
 }
 

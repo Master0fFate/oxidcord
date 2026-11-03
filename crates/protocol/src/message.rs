@@ -293,7 +293,15 @@ pub struct ChannelMention {
 pub struct MessageActivity {
 	#[serde(rename = "type")]
 	pub kind: Option<i64>,
+	#[serde(skip_serializing_if = "Option::is_none")]
 	pub party_id: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub session_id: Option<String>,
+}
+
+impl MessageActivity {
+	pub const JOIN: i64 = 1;
+	pub const JOIN_REQUEST: i64 = 5;
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]

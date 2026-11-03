@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
+use protocol::Snowflake;
 use serde_json::{Value, json};
+use tokio::sync::mpsc;
 
 use super::RpcShared;
 use super::activity;
 use crate::apps::RpcApp;
-use crate::engine::Input;
+use crate::engine::{ActivityRequest, Input};
 
 const RPC_VERSION: i64 = 1;
 const CDN_HOST: &str = "cdn.discordapp.com";
@@ -15,7 +17,7 @@ const ERROR_INVALID_PAYLOAD: i64 = 4000;
 const ERROR_INVALID_COMMAND: i64 = 4002;
 const ERROR_SERVICE_UNAVAILABLE: i64 = 1001;
 
-const KNOWN_COMMANDS: [&str; 22] = [
+const KNOWN_COMMANDS: [&str; 19] = [
 	"AUTHORIZE",
 	"AUTHENTICATE",
 	"GET_GUILD",
@@ -30,9 +32,6 @@ const KNOWN_COMMANDS: [&str; 22] = [
 	"SELECT_TEXT_CHANNEL",
 	"GET_VOICE_SETTINGS",
 	"SET_VOICE_SETTINGS",
-	"SEND_ACTIVITY_JOIN_INVITE",
-	"CLOSE_ACTIVITY_JOIN_REQUEST",
-	"CLOSE_ACTIVITY_REQUEST",
 	"ACTIVITY_INVITE_USER",
 	"ACCEPT_ACTIVITY_INVITE",
 	"INVITE_BROWSER",
@@ -81,6 +80,9 @@ pub(crate) struct Link {
 	transport: Transport,
 	app: Option<Arc<RpcApp>>,
 	has_activity: bool,
+	party_id: Option<String>,
+	events: mpsc::UnboundedReceiver<Value>,
+	sender: Option<mpsc::UnboundedSender<Value>>,
 }
 
 fn error(cmd: &Value, nonce: &Value, code: i64, message: impl Into<String>) -> Value {
@@ -99,13 +101,21 @@ fn reply(cmd: &Value, nonce: &Value, data: Value) -> Value {
 impl Link {
 	pub fn new(shared: Arc<RpcShared>, transport: Transport) -> Self {
 		let id = shared.next_link();
+		let (sender, events) = mpsc::unbounded_channel();
 		Self {
 			shared,
 			id,
 			transport,
 			app: None,
 			has_activity: false,
+			party_id: None,
+			events,
+			sender: Some(sender),
 		}
+	}
+
+	pub async fn next_event(&mut self) -> Option<Value> {
+		self.events.recv().await
 	}
 
 	pub async fn handshake(
@@ -132,6 +142,9 @@ impl Link {
 			return Err(Close::INVALID_ORIGIN);
 		}
 		tracing::debug!(client_id, app = %app.name, transport = ?self.transport, "rpc client connected");
+		if let Some(sender) = self.sender.take() {
+			self.shared.register(self.id, app.id.get(), sender);
+		}
 		self.app = Some(app);
 		Ok(json!({
 			"cmd": "DISPATCH",
@@ -164,7 +177,14 @@ impl Link {
 		match name {
 			"SET_ACTIVITY" => self.set_activity(&cmd, &nonce, &args).await,
 			"SUBSCRIBE" | "UNSUBSCRIBE" => match payload.get("evt").and_then(Value::as_str) {
-				Some(event) => reply(&cmd, &nonce, json!({ "evt": event })),
+				Some(event) => {
+					if name == "SUBSCRIBE" {
+						self.shared.subscribe(self.id, event);
+					} else {
+						self.shared.unsubscribe(self.id, event);
+					}
+					reply(&cmd, &nonce, json!({ "evt": event }))
+				}
 				None => error(
 					&cmd,
 					&nonce,
@@ -172,6 +192,8 @@ impl Link {
 					r#"child "evt" fails because ["evt" is required]"#,
 				),
 			},
+			"SEND_ACTIVITY_JOIN_INVITE" => self.join_invite(&cmd, &nonce, &args),
+			"CLOSE_ACTIVITY_REQUEST" | "CLOSE_ACTIVITY_JOIN_REQUEST" => reply(&cmd, &nonce, Value::Null),
 			known if KNOWN_COMMANDS.contains(&known) => {
 				error(&cmd, &nonce, ERROR_SERVICE_UNAVAILABLE, "Service unavailable")
 			}
@@ -205,8 +227,40 @@ impl Link {
 		}
 	}
 
+	fn join_invite(&self, cmd: &Value, nonce: &Value, args: &Value) -> Value {
+		let Some(app) = &self.app else {
+			return error(cmd, nonce, ERROR_INVALID_PAYLOAD, "Not connected");
+		};
+		let Some(user_id) = args
+			.get("user_id")
+			.and_then(Value::as_str)
+			.and_then(|id| id.parse().ok())
+			.map(Snowflake)
+		else {
+			return error(
+				cmd,
+				nonce,
+				ERROR_INVALID_PAYLOAD,
+				r#"child "user_id" fails because ["user_id" must be a string]"#,
+			);
+		};
+		let Some(party_id) = self.party_id.clone() else {
+			return error(cmd, nonce, ERROR_INVALID_PAYLOAD, "No party to invite to");
+		};
+		let _ = self.shared.requests.send(ActivityRequest::JoinInvite {
+			application_id: app.id,
+			user_id,
+			party_id,
+		});
+		reply(cmd, nonce, Value::Null)
+	}
+
 	fn publish(&mut self, activity: Option<Value>) {
 		self.has_activity = activity.is_some();
+		self.party_id = activity
+			.as_ref()
+			.and_then(|activity| activity["party"]["id"].as_str())
+			.map(str::to_owned);
 		let _ = self.shared.inputs.send(Input::Rpc {
 			link: self.id,
 			activity,
@@ -216,6 +270,7 @@ impl Link {
 
 impl Drop for Link {
 	fn drop(&mut self) {
+		self.shared.forget(self.id);
 		if self.has_activity {
 			let _ = self.shared.inputs.send(Input::Rpc {
 				link: self.id,

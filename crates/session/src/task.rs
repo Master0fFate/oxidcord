@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant as StdInstant};
 
-use activity::ActivityHandle;
+use activity::{ActivityHandle, ActivityRequest};
 use chrono::Utc;
 use gateway::{AUTHENTICATION_FAILED, GatewayError, GatewayEvent, GatewayHandle};
 use parking_lot::Mutex;
@@ -44,6 +44,7 @@ mod accounts;
 mod actions;
 mod commands;
 mod expressions;
+mod join;
 mod mic_test;
 mod outgoing;
 mod plugin_actions;
@@ -238,6 +239,7 @@ pub(crate) enum Internal {
 	Command(Box<Command>),
 	Intent(UiIntent),
 	Activities(Vec<Value>),
+	ActivityRequest(ActivityRequest),
 }
 
 pub(crate) struct CoreParts {
@@ -699,6 +701,7 @@ impl Core {
 		self.forward_client_events(&event, probe);
 		match event {
 			DispatchEvent::MessageCreate(message) => {
+				self.deliver_join_request(&message);
 				if let Some(nonce) = &message.nonce {
 					self.sending.remove(nonce);
 				}
@@ -870,6 +873,7 @@ impl Core {
 				self.activities = activities;
 				self.publish_presence();
 			}
+			Internal::ActivityRequest(request) => self.on_activity_request(request),
 			Internal::PluginApplied { loaded, answer } => self.on_plugin_applied(loaded, answer),
 			Internal::Rejected(reason) => self.reject(reason),
 			Internal::CacheOpened { user_id, db } => self.on_cache_opened(user_id, db),
@@ -1182,6 +1186,18 @@ impl Core {
 				});
 			}
 			Command::OpenDm { user_id } => self.open_dm(user_id),
+			Command::JoinActivity {
+				user_id,
+				session_id,
+				application_id,
+				kind,
+				invite,
+			} => self.join_activity(user_id, session_id, application_id, kind, invite),
+			Command::AskToJoin {
+				user_id,
+				application_id,
+				party_id,
+			} => self.ask_to_join(user_id, application_id, party_id),
 			Command::Search {
 				guild_id,
 				channel_id,

@@ -6,6 +6,7 @@ use interprocess::local_socket::traits::Stream as _;
 use interprocess::local_socket::traits::tokio::Listener as _;
 use interprocess::local_socket::{ListenerOptions, Name, Stream, tokio as async_socket};
 use serde_json::Value;
+use tokio::io::AsyncWrite;
 use tokio::sync::watch;
 use tokio::time::sleep;
 
@@ -92,10 +93,10 @@ pub(crate) async fn accept_loop(
 	}
 }
 
-async fn run(shared: Arc<RpcShared>, mut stream: async_socket::Stream, mut enabled: watch::Receiver<bool>) {
+async fn run(shared: Arc<RpcShared>, stream: async_socket::Stream, mut enabled: watch::Receiver<bool>) {
 	let mut link = Link::new(shared.clone(), Transport::Ipc);
 	let outcome = tokio::select! {
-		outcome = session(&mut link, &mut stream) => outcome,
+		outcome = session(&mut link, stream) => outcome,
 		_ = enabled.changed() => Ok(()),
 	};
 	if let Err(error) = outcome {
@@ -104,41 +105,52 @@ async fn run(shared: Arc<RpcShared>, mut stream: async_socket::Stream, mut enabl
 	shared.release();
 }
 
-async fn close(stream: &mut async_socket::Stream, close: Close) -> io::Result<()> {
+async fn close<W: AsyncWrite + Unpin>(stream: &mut W, close: Close) -> io::Result<()> {
 	frame::write(stream, frame::CLOSE, close.payload().to_string().as_bytes()).await
 }
 
-async fn session(link: &mut Link, stream: &mut async_socket::Stream) -> io::Result<()> {
-	let Some((opcode, payload)) = frame::read(stream).await? else {
+async fn session(link: &mut Link, stream: async_socket::Stream) -> io::Result<()> {
+	let (reader, mut stream) = tokio::io::split(stream);
+	let mut frames = frame::Reader::new(reader);
+	let Some((opcode, payload)) = frames.next().await? else {
 		return Ok(());
 	};
 	if opcode != frame::HANDSHAKE {
-		return close(stream, Close::INVALID_CLIENT_ID).await;
+		return close(&mut stream, Close::INVALID_CLIENT_ID).await;
 	}
 	let Ok(handshake) = serde_json::from_slice::<Value>(&payload) else {
-		return close(stream, Close::INVALID_ENCODING).await;
+		return close(&mut stream, Close::INVALID_ENCODING).await;
 	};
 	let version = handshake.get("v").and_then(Value::as_i64);
 	let client_id = handshake.get("client_id").and_then(Value::as_str);
 	let ready = match link.handshake(version, client_id, None).await {
 		Ok(ready) => ready,
-		Err(reason) => return close(stream, reason).await,
+		Err(reason) => return close(&mut stream, reason).await,
 	};
-	frame::write(stream, frame::FRAME, ready.to_string().as_bytes()).await?;
-	while let Some((opcode, payload)) = frame::read(stream).await? {
-		match opcode {
-			frame::FRAME => {
-				let response = match serde_json::from_slice::<Value>(&payload) {
-					Ok(command) => link.command(&command).await,
-					Err(_) => return close(stream, Close::INVALID_ENCODING).await,
+	frame::write(&mut stream, frame::FRAME, ready.to_string().as_bytes()).await?;
+	loop {
+		tokio::select! {
+			received = frames.next() => {
+				let Some((opcode, payload)) = received? else {
+					return Ok(());
 				};
-				frame::write(stream, frame::FRAME, response.to_string().as_bytes()).await?;
+				match opcode {
+					frame::FRAME => {
+						let response = match serde_json::from_slice::<Value>(&payload) {
+							Ok(command) => link.command(&command).await,
+							Err(_) => return close(&mut stream, Close::INVALID_ENCODING).await,
+						};
+						frame::write(&mut stream, frame::FRAME, response.to_string().as_bytes()).await?;
+					}
+					frame::PING => frame::write(&mut stream, frame::PONG, &payload).await?,
+					frame::PONG => {}
+					frame::CLOSE => return Ok(()),
+					_ => return close(&mut stream, Close::INVALID_ENCODING).await,
+				}
 			}
-			frame::PING => frame::write(stream, frame::PONG, &payload).await?,
-			frame::PONG => {}
-			frame::CLOSE => return Ok(()),
-			_ => return close(stream, Close::INVALID_ENCODING).await,
+			Some(event) = link.next_event() => {
+				frame::write(&mut stream, frame::FRAME, event.to_string().as_bytes()).await?;
+			}
 		}
 	}
-	Ok(())
 }

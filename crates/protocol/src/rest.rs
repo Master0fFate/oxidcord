@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use crate::component::ComponentType;
 use crate::lenient::LenientVec;
-use crate::message::{MessageFlags, MessageReference, PollAnswer, PollLayout, PollMedia};
+use crate::message::{MessageActivity, MessageFlags, MessageReference, PollAnswer, PollLayout, PollMedia};
 use crate::snowflake::Snowflake;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -118,6 +118,10 @@ pub struct CreateMessage {
 	pub attachments: Vec<AttachmentDescriptor>,
 	#[serde(skip_serializing_if = "Option::is_none")]
 	pub poll: Option<PollCreate>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub activity: Option<MessageActivity>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub application_id: Option<Snowflake>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -14,7 +14,7 @@ mod session;
 mod task;
 mod views;
 
-pub use activity::{RpcEndpoints, ipc_socket_name};
+pub use activity::{RpcEndpoints, SecretKind, ipc_socket_name};
 pub use broker::{BrokerSink, NoopSink};
 pub use command::{
 	Command, ComponentUse, ForumEdit, ForumTagEdit, GuildEdit, LoadResult, MEMBER_LIST_WINDOW, PluginLoad,

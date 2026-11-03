@@ -4,39 +4,109 @@ mod ipc;
 mod link;
 mod ws;
 
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use protocol::User;
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 
 use crate::apps::Apps;
-use crate::engine::{Input, RpcEndpoints};
+use crate::engine::{ActivityRequest, Input, RpcEndpoints};
 
 pub use ipc::socket_name as ipc_socket_name;
 
 pub(crate) const MAX_LINKS: usize = 64;
 
+struct Subscriber {
+	application_id: u64,
+	events: HashSet<String>,
+	sender: mpsc::UnboundedSender<Value>,
+}
+
 pub(crate) struct RpcShared {
 	pub apps: Apps,
 	pub inputs: mpsc::UnboundedSender<Input>,
+	pub requests: mpsc::UnboundedSender<ActivityRequest>,
 	user: RwLock<Option<User>>,
+	subscribers: Mutex<HashMap<u64, Subscriber>>,
 	next_link: AtomicU64,
 	live: AtomicUsize,
 }
 
+pub(crate) fn user_json(user: &User) -> Value {
+	json!({
+		"id": user.id,
+		"username": user.username,
+		"discriminator": user.discriminator.as_deref().unwrap_or("0"),
+		"global_name": user.global_name,
+		"avatar": user.avatar,
+		"avatar_decoration_data": user.avatar_decoration_data,
+		"bot": user.bot.unwrap_or(false),
+		"flags": user.public_flags.bits(),
+		"premium_type": user.premium_type.map_or(0, i64::from),
+	})
+}
+
 impl RpcShared {
-	pub fn new(apps: Apps, inputs: mpsc::UnboundedSender<Input>) -> Self {
+	pub fn new(
+		apps: Apps,
+		inputs: mpsc::UnboundedSender<Input>,
+		requests: mpsc::UnboundedSender<ActivityRequest>,
+	) -> Self {
 		Self {
 			apps,
 			inputs,
+			requests,
 			user: RwLock::new(None),
+			subscribers: Mutex::new(HashMap::new()),
 			next_link: AtomicU64::new(1),
 			live: AtomicUsize::new(0),
 		}
+	}
+
+	pub fn register(&self, link: u64, application_id: u64, sender: mpsc::UnboundedSender<Value>) {
+		self.subscribers.lock().insert(
+			link,
+			Subscriber {
+				application_id,
+				events: HashSet::new(),
+				sender,
+			},
+		);
+	}
+
+	pub fn forget(&self, link: u64) {
+		self.subscribers.lock().remove(&link);
+	}
+
+	pub fn subscribe(&self, link: u64, event: &str) {
+		if let Some(subscriber) = self.subscribers.lock().get_mut(&link) {
+			subscriber.events.insert(event.to_owned());
+		}
+	}
+
+	pub fn unsubscribe(&self, link: u64, event: &str) {
+		if let Some(subscriber) = self.subscribers.lock().get_mut(&link) {
+			subscriber.events.remove(event);
+		}
+	}
+
+	pub fn dispatch(&self, application_id: u64, event: &str, data: &Value) -> bool {
+		let payload = json!({ "cmd": "DISPATCH", "data": data, "evt": event, "nonce": Value::Null });
+		let mut delivered = false;
+		for subscriber in self.subscribers.lock().values() {
+			if subscriber.application_id == application_id
+				&& subscriber.events.contains(event)
+				&& subscriber.sender.send(payload.clone()).is_ok()
+			{
+				delivered = true;
+			}
+		}
+		delivered
 	}
 
 	pub fn set_user(&self, user: Option<User>) {
@@ -44,20 +114,7 @@ impl RpcShared {
 	}
 
 	pub fn user_json(&self) -> Value {
-		match self.user.read().as_ref() {
-			Some(user) => json!({
-				"id": user.id,
-				"username": user.username,
-				"discriminator": user.discriminator.as_deref().unwrap_or("0"),
-				"global_name": user.global_name,
-				"avatar": user.avatar,
-				"avatar_decoration_data": user.avatar_decoration_data,
-				"bot": user.bot.unwrap_or(false),
-				"flags": user.public_flags.bits(),
-				"premium_type": user.premium_type.map_or(0, i64::from),
-			}),
-			None => Value::Null,
-		}
+		self.user.read().as_ref().map_or(Value::Null, user_json)
 	}
 
 	pub fn next_link(&self) -> u64 {

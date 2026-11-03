@@ -91,7 +91,22 @@ pub struct Activity {
 	pub secrets: Option<ActivitySecrets>,
 	pub instance: Option<bool>,
 	pub flags: Option<u64>,
+	pub session_id: Option<String>,
 	pub buttons: Vec<Value>,
+}
+
+impl Activity {
+	pub const FLAG_INSTANCE: u64 = 1 << 0;
+	pub const FLAG_JOIN: u64 = 1 << 1;
+	pub const FLAG_SPECTATE: u64 = 1 << 2;
+
+	pub fn has_flag(&self, flag: u64) -> bool {
+		self.flags.is_some_and(|flags| flags & flag != 0)
+	}
+
+	pub fn party_id(&self) -> Option<&str> {
+		self.party.as_ref()?.id.as_deref().filter(|id| !id.is_empty())
+	}
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]

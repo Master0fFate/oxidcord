@@ -2,16 +2,16 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use protocol::{Connection, User};
+use protocol::{Connection, Snowflake, User};
 use rest::RestClient;
-use serde_json::Value;
+use serde_json::{Value, json};
 use tokio::runtime::Handle;
 use tokio::sync::{mpsc, watch};
 use url::Url;
 
 use crate::apps::Apps;
 use crate::games::{self, GamesConfig};
-use crate::rpc::{self, RpcShared};
+use crate::rpc::{self, RpcShared, user_json};
 use crate::spotify::{self, SpotifyAccount};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,6 +39,37 @@ pub struct RpcEndpoints {
 	pub port: Option<u16>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ActivityRequest {
+	JoinInvite {
+		application_id: Snowflake,
+		user_id: Snowflake,
+		party_id: String,
+	},
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SecretKind {
+	Join,
+	Spectate,
+}
+
+impl SecretKind {
+	pub fn action_type(self) -> i64 {
+		match self {
+			Self::Join => 1,
+			Self::Spectate => 2,
+		}
+	}
+
+	fn event(self) -> &'static str {
+		match self {
+			Self::Join => "ACTIVITY_JOIN",
+			Self::Spectate => "ACTIVITY_SPECTATE",
+		}
+	}
+}
+
 pub struct EngineConfig {
 	pub rest: RestClient,
 	pub rest_base: Url,
@@ -46,6 +77,7 @@ pub struct EngineConfig {
 	pub cache_dir: PathBuf,
 	pub runtime: Handle,
 	pub output: mpsc::UnboundedSender<Vec<Value>>,
+	pub requests: mpsc::UnboundedSender<ActivityRequest>,
 }
 
 pub(crate) enum Input {
@@ -62,6 +94,7 @@ pub(crate) enum Input {
 pub struct ActivityHandle {
 	inputs: mpsc::UnboundedSender<Input>,
 	endpoints: watch::Receiver<RpcEndpoints>,
+	shared: Arc<RpcShared>,
 }
 
 impl ActivityHandle {
@@ -80,6 +113,19 @@ impl ActivityHandle {
 	pub fn endpoints(&self) -> RpcEndpoints {
 		*self.endpoints.borrow()
 	}
+
+	pub fn deliver_secret(&self, application_id: Snowflake, kind: SecretKind, secret: &str) -> bool {
+		self.shared
+			.dispatch(application_id.get(), kind.event(), &json!({ "secret": secret }))
+	}
+
+	pub fn deliver_join_request(&self, application_id: Snowflake, user: &User) -> bool {
+		self.shared.dispatch(
+			application_id.get(),
+			"ACTIVITY_JOIN_REQUEST",
+			&json!({ "user": user_json(user) }),
+		)
+	}
 }
 
 pub struct Engine;
@@ -95,7 +141,11 @@ impl Engine {
 			.user_agent(config.user_agent.as_str())
 			.build()
 			.ok();
-		let shared = Arc::new(RpcShared::new(Apps::new(config.rest.clone()), inputs.clone()));
+		let shared = Arc::new(RpcShared::new(
+			Apps::new(config.rest.clone()),
+			inputs.clone(),
+			config.requests,
+		));
 		config
 			.runtime
 			.spawn(rpc::serve(shared.clone(), rpc_enabled_receiver, endpoints_sender));
@@ -121,7 +171,7 @@ impl Engine {
 			runtime: config.runtime.clone(),
 			inputs: inputs.clone(),
 			output: config.output,
-			shared,
+			shared: shared.clone(),
 			rpc_enabled,
 			games_enabled,
 			spotify_account,
@@ -134,7 +184,11 @@ impl Engine {
 			published: Vec::new(),
 		};
 		config.runtime.spawn(state.run(input_receiver));
-		ActivityHandle { inputs, endpoints }
+		ActivityHandle {
+			inputs,
+			endpoints,
+			shared,
+		}
 	}
 }
 

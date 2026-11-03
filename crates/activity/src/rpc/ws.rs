@@ -150,17 +150,25 @@ async fn session(link: &mut Link, socket: &mut WebSocketStream<TcpStream>, openi
 	if socket.send(Message::text(ready.to_string())).await.is_err() {
 		return;
 	}
-	while let Some(Ok(message)) = socket.next().await {
-		let text = match message {
-			Message::Text(text) => text,
-			Message::Close(_) => return,
-			_ => continue,
+	loop {
+		let outgoing = tokio::select! {
+			received = socket.next() => {
+				let Some(Ok(message)) = received else {
+					return;
+				};
+				let text = match message {
+					Message::Text(text) => text,
+					Message::Close(_) => return,
+					_ => continue,
+				};
+				let Ok(command) = serde_json::from_str::<Value>(&text) else {
+					return reject(socket, Close::INVALID_ENCODING).await;
+				};
+				link.command(&command).await
+			}
+			Some(event) = link.next_event() => event,
 		};
-		let Ok(command) = serde_json::from_str::<Value>(&text) else {
-			return reject(socket, Close::INVALID_ENCODING).await;
-		};
-		let response = link.command(&command).await;
-		if socket.send(Message::text(response.to_string())).await.is_err() {
+		if socket.send(Message::text(outgoing.to_string())).await.is_err() {
 			return;
 		}
 	}
