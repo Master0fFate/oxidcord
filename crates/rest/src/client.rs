@@ -38,7 +38,7 @@ const CAPTCHA_MARKER: &[u8] = b"\"captcha_key\"";
 struct Throttle {
 	retry_after: Duration,
 	global: bool,
-	structured: bool,
+	timed: bool,
 	slowmode: bool,
 }
 
@@ -378,10 +378,11 @@ impl RestClient {
 		let global =
 			!structured || header_global(headers) || parsed.as_ref().is_some_and(|parsed| parsed.global);
 		let slowmode = parsed.as_ref().is_some_and(RateLimitBody::is_slowmode);
+		let header_wait = header_retry_after(headers);
 		let retry_after = parsed
 			.filter(|parsed| parsed.retry_after > 0.0)
 			.and_then(|parsed| clamp_wait(parsed.retry_after))
-			.or_else(|| header_retry_after(headers))
+			.or(header_wait)
 			.unwrap_or(if structured {
 				FALLBACK_RETRY_AFTER
 			} else {
@@ -393,7 +394,7 @@ impl RestClient {
 		Throttle {
 			retry_after,
 			global,
-			structured,
+			timed: structured || header_wait.is_some(),
 			slowmode,
 		}
 	}
@@ -430,8 +431,7 @@ impl RestClient {
 						retry_after: Some(retry_after),
 					});
 				}
-				if !retryable || !throttle.structured || retries >= MAX_RETRIES || retry_after > MAX_AUTO_WAIT
-				{
+				if !retryable || !throttle.timed || retries >= MAX_RETRIES || retry_after > MAX_AUTO_WAIT {
 					return Err(RestError::RateLimited { retry_after });
 				}
 				retries += 1;
