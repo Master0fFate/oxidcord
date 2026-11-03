@@ -237,7 +237,7 @@ impl State {
 		let external = sound
 			.guild_id
 			.is_some_and(|owner| Some(owner) != session.guild_id);
-		if external && !permissions.contains(Permissions::USE_EXTERNAL_SOUNDS) {
+		if external && (!self.has_nitro() || !permissions.contains(Permissions::USE_EXTERNAL_SOUNDS)) {
 			return Some(SoundBlock::ExternalLocked);
 		}
 		let silenced = session.self_deaf
