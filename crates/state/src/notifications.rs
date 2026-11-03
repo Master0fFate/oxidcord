@@ -6,7 +6,7 @@ use protocol::{
 	ReadState, Snowflake, StatusKind, ThreadMember, UserGuildSettings,
 };
 
-use crate::guild::{GuildState, is_thread};
+use crate::guild::GuildState;
 use crate::permissions::compute_permissions;
 use crate::state::State;
 
@@ -101,17 +101,6 @@ fn override_level(settings: Option<&UserGuildSettings>, channel_id: Snowflake) -
 		.find(|entry| entry.channel_id == channel_id)?
 		.message_notifications
 		.filter(|level| *level != NotificationLevel::Inherit)
-}
-
-fn viewable_by(guild: &GuildState, channel: &Channel, me: Snowflake, now: DateTime<Utc>) -> bool {
-	let scope = if is_thread(channel.kind) {
-		channel
-			.parent_id
-			.and_then(|parent_id| guild.channels.get(&parent_id))
-	} else {
-		Some(channel)
-	};
-	compute_permissions(guild, scope, me, now).contains(Permissions::VIEW_CHANNEL)
 }
 
 fn mention_count(read_state: Option<&ReadState>) -> u32 {
@@ -324,7 +313,8 @@ impl State {
 			if channel.kind == ChannelType::GuildCategory {
 				continue;
 			}
-			let viewable = viewable_by(guild, channel, me, now);
+			let viewable =
+				compute_permissions(guild, Some(channel), me, now).contains(Permissions::VIEW_CHANNEL);
 			let channel_status = self.channel_status(channel, settings, viewable, now);
 			status.unread |= channel_status.unread;
 			status.mentions += channel_status.mentions;
@@ -425,7 +415,9 @@ impl State {
 		for guild in guilds {
 			let settings = self.guild_settings.get(&guild.id);
 			for channel in guild.tracked_channels() {
-				let viewable = me.is_some_and(|me| viewable_by(guild, channel, me, now));
+				let viewable = me.is_some_and(|me| {
+					compute_permissions(guild, Some(channel), me, now).contains(Permissions::VIEW_CHANNEL)
+				});
 				found.push(self.unread_entry(channel, settings, viewable, now));
 			}
 		}
@@ -448,14 +440,15 @@ impl State {
 		let now = Utc::now();
 		guild
 			.tracked_channels()
-			.filter(|channel| viewable_by(guild, channel, me, now))
+			.filter(|channel| {
+				compute_permissions(guild, Some(channel), me, now).contains(Permissions::VIEW_CHANNEL)
+			})
 			.filter_map(|channel| {
-				let last = channel.last_message_id?;
-				let read = self
-					.read_states
-					.get(&channel.id)
-					.is_some_and(|read_state| read_state.last_message_id >= Some(last));
-				(!read).then_some((channel.id, last))
+				let status = self.channel_status(channel, None, true, now);
+				if !status.unread && status.mentions == 0 {
+					return None;
+				}
+				Some((channel.id, channel.last_message_id?))
 			})
 			.collect()
 	}
