@@ -1,4 +1,4 @@
-use protocol::{Snowflake, User};
+use protocol::{ChannelFlags, Snowflake, User};
 use state::State;
 
 pub struct Lookup<'a> {
@@ -18,7 +18,11 @@ impl Lookup<'_> {
 	}
 
 	pub fn channel(&self, id: u64) -> Option<String> {
-		self.state.channel(Snowflake(id))?.name.clone()
+		let channel = self.state.channel(Snowflake(id))?;
+		if channel.flags.contains(ChannelFlags::CHANNEL_OBFUSCATED) {
+			return None;
+		}
+		channel.name.clone()
 	}
 }
 
