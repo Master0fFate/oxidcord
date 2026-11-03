@@ -10,7 +10,7 @@ use gpui_component::scroll::ScrollableElement as _;
 use protocol::Snowflake;
 use state::{DmSectionView, PluginBadge, UserOverride};
 
-use super::account::{manage_items, primary_items, relation_facts};
+use super::account::{RelationFacts, manage_items, primary_items, relation_facts};
 use super::community::developer_mode;
 use super::community::notify::{Scope, mark_read_item, mute_items};
 use super::plugins::{self, MenuTarget, PluginMenu as _};
@@ -48,6 +48,7 @@ struct DmItem {
 	mentions: u32,
 	muted: bool,
 	over: Option<UserOverride>,
+	facts: RelationFacts,
 	badges: Vec<PluginBadge>,
 }
 
@@ -121,6 +122,9 @@ impl DmSidebar {
 					mentions: row.mentions,
 					muted: row.muted,
 					over,
+					facts: single
+						.map(|user| relation_facts(&state, user))
+						.unwrap_or_default(),
 					badges: state
 						.channel_decorations(row.channel_id)
 						.iter()
@@ -389,9 +393,8 @@ impl DmSidebar {
 		});
 		let menu = match dm.user {
 			Some(user) => {
-				let facts = relation_facts(&self.data.read(cx).state(), user);
-				let menu = primary_items(menu, user, facts.relation, cx);
-				manage_items(menu, user, &dm.name, &facts, cx)
+				let menu = primary_items(menu, user, dm.facts.relation, cx);
+				manage_items(menu, user, &dm.name, &dm.facts, cx)
 			}
 			None => menu,
 		};
