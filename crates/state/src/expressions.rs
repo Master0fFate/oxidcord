@@ -233,6 +233,15 @@ impl State {
 			.map(Vec::as_slice)
 	}
 
+	pub fn may_change_sound(&self, guild_id: Snowflake, sound: &SoundboardSound) -> bool {
+		let Some(me) = self.current_user_id() else {
+			return false;
+		};
+		let permissions = self.guild_permissions(guild_id, me);
+		permissions.contains(Permissions::MANAGE_GUILD_EXPRESSIONS)
+			|| (permissions.contains(Permissions::CREATE_GUILD_EXPRESSIONS) && sound.creator_id() == Some(me))
+	}
+
 	pub fn find_sound(&self, sound_id: Snowflake) -> Option<&SoundboardSound> {
 		let expressions = &self.lazy.expressions;
 		expressions

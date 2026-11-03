@@ -253,7 +253,7 @@ impl Core {
 				name,
 				volume,
 			} => {
-				if self.may_manage_expressions(guild_id) {
+				if self.may_change_sound(guild_id, sound_id) {
 					self.spawn_action("edit sound", move |rest| async move {
 						rest.edit_guild_sound(guild_id, sound_id, name.as_deref(), volume)
 							.await
@@ -262,7 +262,7 @@ impl Core {
 				}
 			}
 			Command::DeleteSound { guild_id, sound_id } => {
-				if self.may_manage_expressions(guild_id) {
+				if self.may_change_sound(guild_id, sound_id) {
 					self.spawn_action("delete sound", move |rest| async move {
 						rest.delete_guild_sound(guild_id, sound_id).await
 					});
@@ -351,6 +351,20 @@ impl Core {
 			};
 			let _ = internal.send(message);
 		});
+	}
+
+	fn may_change_sound(&mut self, guild_id: Snowflake, sound_id: Snowflake) -> bool {
+		let allowed = {
+			let state = self.state.read();
+			state
+				.guild_sounds(guild_id)
+				.and_then(|sounds| sounds.iter().find(|sound| sound.sound_id == sound_id))
+				.is_some_and(|sound| state.may_change_sound(guild_id, sound))
+		};
+		if !allowed {
+			self.reject("You need the Manage Expressions permission");
+		}
+		allowed
 	}
 
 	fn may_manage_expressions(&mut self, guild_id: Snowflake) -> bool {

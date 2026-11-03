@@ -26,6 +26,7 @@ pub struct SoundboardSound {
 	pub guild_id: Option<Snowflake>,
 	pub available: Option<bool>,
 	pub user: Option<User>,
+	pub user_id: Option<Snowflake>,
 }
 
 impl Default for SoundboardSound {
@@ -39,6 +40,7 @@ impl Default for SoundboardSound {
 			guild_id: None,
 			available: None,
 			user: None,
+			user_id: None,
 		}
 	}
 }
@@ -46,6 +48,10 @@ impl Default for SoundboardSound {
 impl SoundboardSound {
 	pub fn usable(&self) -> bool {
 		self.available != Some(false)
+	}
+
+	pub fn creator_id(&self) -> Option<Snowflake> {
+		self.user.as_ref().map(|user| user.id).or(self.user_id)
 	}
 }
 
@@ -76,6 +82,8 @@ pub struct VoiceChannelEffect {
 	pub guild_id: Option<Snowflake>,
 	pub user_id: Snowflake,
 	pub emoji: Option<PartialEmoji>,
+	pub animation_type: Option<i64>,
+	pub animation_id: Option<i64>,
 	pub sound_id: Option<Snowflake>,
 	pub sound_volume: Option<f32>,
 }

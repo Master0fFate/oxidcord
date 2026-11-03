@@ -134,6 +134,7 @@ impl Shared {
 			guild_id: Some(Snowflake(guild_id)),
 			available: Some(true),
 			user: Some(user),
+			user_id: None,
 		};
 		store
 			.sounds

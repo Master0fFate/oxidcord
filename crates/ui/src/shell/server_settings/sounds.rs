@@ -71,6 +71,7 @@ impl SoundsPage {
 		let name = sound.name.clone();
 		let editing = sound.clone();
 		let percent = (sound.volume * 100.).round() as u32;
+		let changeable = self.data.read(cx).state().may_change_sound(self.guild, sound);
 		div()
 			.flex()
 			.flex_col()
@@ -103,27 +104,29 @@ impl SoundsPage {
 					.text_color(theme.text_muted)
 					.child(format!("{percent}%")),
 			)
-			.child(
-				div()
-					.flex()
-					.items_center()
-					.gap(theme.space_4)
-					.child(
-						IconButton::new(("sound-edit", id.get()), IconKind::Edit)
-							.tooltip(cx.t("sounds-edit"))
-							.on_click(cx.listener(move |this, _, window, cx| {
-								sound_edit::open(window, cx, this.data.clone(), this.guild, editing.clone())
-							})),
-					)
-					.child(
-						IconButton::new(("sound-delete", id.get()), IconKind::Trash)
-							.color(theme.danger)
-							.tooltip(cx.t("sounds-delete"))
-							.on_click(cx.listener(move |this, _, window, cx| {
-								this.confirm_delete(id, name.clone(), window, cx)
-							})),
-					),
-			)
+			.when(changeable, |card| {
+				card.child(
+					div()
+						.flex()
+						.items_center()
+						.gap(theme.space_4)
+						.child(
+							IconButton::new(("sound-edit", id.get()), IconKind::Edit)
+								.tooltip(cx.t("sounds-edit"))
+								.on_click(cx.listener(move |this, _, window, cx| {
+									sound_edit::open(window, cx, this.data.clone(), this.guild, editing.clone())
+								})),
+						)
+						.child(
+							IconButton::new(("sound-delete", id.get()), IconKind::Trash)
+								.color(theme.danger)
+								.tooltip(cx.t("sounds-delete"))
+								.on_click(cx.listener(move |this, _, window, cx| {
+									this.confirm_delete(id, name.clone(), window, cx)
+								})),
+						),
+				)
+			})
 			.into_any_element()
 	}
 }
