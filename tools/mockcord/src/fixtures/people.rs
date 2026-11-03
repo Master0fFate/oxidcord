@@ -84,7 +84,11 @@ fn pool_user(rng: &mut StdRng, ids: &mut EntityIds, index: usize) -> User {
 		global_name: Some(global_name),
 		avatar: rng.random_bool(0.7).then(|| corpus::hex_hash(rng)),
 		bot: Some(is_bot),
-		public_flags: UserFlags::empty(),
+		public_flags: if index == 16 {
+			UserFlags::VERIFIED_BOT
+		} else {
+			UserFlags::empty()
+		},
 		..User::default()
 	}
 }

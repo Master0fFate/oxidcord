@@ -775,7 +775,8 @@ pub fn build(builder: &mut Builder, index: usize) -> GuildFixture {
 		variant += 1;
 	}
 	for thread in chat_threads.iter().chain(forum_posts.iter()) {
-		let cap = if thread.parent_id.map(Snowflake::get) == Some(layout.forum) {
+		let forum_post = thread.parent_id.map(Snowflake::get) == Some(layout.forum);
+		let cap = if forum_post {
 			FORUM_POST_MESSAGE_CAP
 		} else {
 			THREAD_MESSAGE_CAP
@@ -794,7 +795,18 @@ pub fn build(builder: &mut Builder, index: usize) -> GuildFixture {
 			channels: &[],
 			threads: &[],
 		};
-		generated.push((thread.id.0, messages::generate(&mut builder.rng, &spec)));
+		let mut thread_messages = messages::generate(&mut builder.rng, &spec);
+		let parent = generated
+			.iter()
+			.find(|(id, _)| Some(*id) == thread.parent_id.map(Snowflake::get))
+			.map(|(_, parent_messages)| parent_messages);
+		if let Some((id, starter)) = parent
+			.filter(|_| !forum_post)
+			.and_then(|parent| messages::thread_starter(thread, parent, &thread_messages))
+		{
+			thread_messages.insert(id, starter);
+		}
+		generated.push((thread.id.0, thread_messages));
 		variant += 1;
 	}
 	for (channel_id, mut channel_messages) in generated {

@@ -5,7 +5,7 @@ use protocol::{
 	Attachment, Channel, Embed, EmbedAuthor, EmbedField, EmbedFooter, EmbedKind, EmbedMedia, EmbedProvider,
 	Emoji, LenientVec, Message, MessageFlags, MessageReference, MessageReferenceKind, MessageType,
 	PartialEmoji, Poll, PollAnswer, PollAnswerCount, PollLayout, PollMedia, PollResults, Reaction,
-	ReactionCountDetails, Role, Snowflake, StickerFormat, StickerItem, User,
+	ReactionCountDetails, Role, RoleSubscriptionData, Snowflake, StickerFormat, StickerItem, User,
 };
 use rand::Rng;
 use rand::rngs::StdRng;
@@ -25,6 +25,27 @@ const RECENT_WINDOW_MS: i64 = 3_600_000;
 const STICKER_ID: u64 = 749_054_660_769_218_631;
 const ANIMATED_FLAG: u64 = 1 << 5;
 const VOICE_WAVEFORM: &str = "AAoUHiw4RlJeanV/iJCWm56foJ+dmpWPh312a19UST4zKB0TCQIACRQgLDhEUFxndHuEjJKXm56foJ+dmpWOhn10aV5TSD0yJxwSCAA=";
+const WEBHOOK_ID: u64 = 900_000_000_000_000_001;
+const SYSTEM_USER_ID: u64 = 900_000_000_000_000_002;
+const NOTICE_TYPES: [MessageType; 17] = [
+	MessageType::ChannelFollowAdd,
+	MessageType::GuildInviteReminder,
+	MessageType::GuildDiscoveryDisqualified,
+	MessageType::GuildDiscoveryRequalified,
+	MessageType::GuildDiscoveryGracePeriodInitialWarning,
+	MessageType::GuildDiscoveryGracePeriodFinalWarning,
+	MessageType::RoleSubscriptionPurchase,
+	MessageType::StageStart,
+	MessageType::StageEnd,
+	MessageType::StageSpeaker,
+	MessageType::StageTopic,
+	MessageType::GuildApplicationPremiumSubscription,
+	MessageType::PurchaseNotification,
+	MessageType::GuildIncidentAlertModeEnabled,
+	MessageType::GuildIncidentAlertModeDisabled,
+	MessageType::GuildIncidentReportRaid,
+	MessageType::GuildIncidentReportFalseAlarm,
+];
 const MALFORMED_ATTACHMENT: &str = r#"{"id":{"unexpected":true},"filename":["broken"],"size":"huge"}"#;
 
 pub struct ChannelSpec<'a> {
@@ -83,6 +104,14 @@ enum Special {
 	Unknown,
 	Malformed,
 	Components,
+	RichSource,
+	ReplyRich,
+	ReplyForward,
+	Timestamps,
+	Webhook,
+	SystemAuthor,
+	AutoMod,
+	Notice(MessageType),
 	ThreadCreated(usize),
 }
 
@@ -98,6 +127,8 @@ pub fn generate(rng: &mut StdRng, spec: &ChannelSpec) -> BTreeMap<u64, Value> {
 		previous_author: None,
 		last_reply: None,
 		last_pinned: None,
+		last_rich: None,
+		last_forward: None,
 	};
 	let mut previous_time = i64::MIN / 2;
 	for (index, time) in times.into_iter().enumerate() {
@@ -186,7 +217,17 @@ fn special_list(spec: &ChannelSpec) -> Vec<Special> {
 		Components,
 		MentionMe,
 		SilentMention,
+		RichSource,
+		ReplyRich,
+		ReplyForward,
+		Timestamps,
+		Webhook,
+		SystemAuthor,
 	];
+	if spec.guild_id.is_some() && spec.variant == 0 {
+		list.push(AutoMod);
+		list.extend(NOTICE_TYPES.map(Notice));
+	}
 	if spec.emojis.is_empty() {
 		list.retain(|special| *special != CustomEmoji);
 	}
@@ -226,6 +267,8 @@ struct Generator<'a, 'r> {
 	previous_author: Option<&'a User>,
 	last_reply: Option<u64>,
 	last_pinned: Option<u64>,
+	last_rich: Option<u64>,
+	last_forward: Option<u64>,
 }
 
 impl<'a> Generator<'a, '_> {
@@ -661,6 +704,39 @@ impl<'a> Generator<'a, '_> {
 				message.attachments = LenientVec::from(vec![self.image_attachment(message.id.0, 0)]);
 			}
 			Special::Components => self.components(message, author),
+			Special::RichSource => self.rich_source(message, author),
+			Special::ReplyRich => match self.last_rich {
+				Some(target) => self.reply_to(message, target),
+				None => self.reply(message),
+			},
+			Special::ReplyForward => match self.last_forward {
+				Some(target) => self.reply_to(message, target),
+				None => self.reply(message),
+			},
+			Special::Timestamps => self.timestamps(message),
+			Special::Webhook => {
+				message.author = User {
+					id: Snowflake(WEBHOOK_ID),
+					username: "deploy-hook".to_owned(),
+					discriminator: Some("0000".to_owned()),
+					bot: Some(true),
+					..User::default()
+				};
+				message.webhook_id = Some(Snowflake(WEBHOOK_ID));
+				message.content = "deploy finished in 3m 12s".to_owned();
+			}
+			Special::SystemAuthor => {
+				message.author = User {
+					id: Snowflake(SYSTEM_USER_ID),
+					username: "system".to_owned(),
+					discriminator: Some("0".to_owned()),
+					system: Some(true),
+					..User::default()
+				};
+				message.content = "Welcome! Read the rules before you post.".to_owned();
+			}
+			Special::AutoMod => self.auto_mod(message),
+			Special::Notice(kind) => notice(message, kind),
 			Special::ThreadCreated(index) => {
 				let thread = &spec.threads[index];
 				message.kind = MessageType::ThreadCreated;
@@ -756,18 +832,88 @@ impl<'a> Generator<'a, '_> {
 	}
 
 	fn reply(&mut self, message: &mut Message) {
-		message.content = pick(self.rng, corpus::SHORT_REPLIES).to_string();
 		let target = match self.last_reply {
 			Some(previous) if self.rng.random_bool(0.5) => Some(previous),
 			_ => self.previous,
 		};
-		let Some(target) = target else {
-			return;
-		};
+		match target {
+			Some(target) => self.reply_to(message, target),
+			None => message.content = pick(self.rng, corpus::SHORT_REPLIES).to_string(),
+		}
+	}
+
+	fn reply_to(&mut self, message: &mut Message, target: u64) {
+		message.content = pick(self.rng, corpus::SHORT_REPLIES).to_string();
 		message.kind = MessageType::Reply;
 		message.message_reference = Some(self.reference(MessageReferenceKind::Default, target));
 		message.referenced_message = self.stored(target).map(Box::new);
 		self.last_reply = Some(message.id.0);
+	}
+
+	fn rich_source(&mut self, message: &mut Message, author: &User) {
+		let spec = self.spec;
+		let other = self.other_author(author);
+		let soon = message.timestamp.unwrap_or_default() + Duration::minutes(45);
+		let mut content = format!("<@{}> the build is blocked", other.id);
+		if let Some((channel_id, _)) = spec.channels.first() {
+			content.push_str(&format!(" in <#{channel_id}>"));
+		}
+		if let Some(role) = spec.roles.get(2) {
+			content.push_str(&format!(" until <@&{}> signs off", role.id));
+			message.mention_roles = vec![role.id];
+		}
+		content.push_str(&format!(", retry <t:{}:R>", soon.timestamp()));
+		message.mentions = LenientVec::from(vec![other.clone()]);
+		message.content = content;
+		self.last_rich = Some(message.id.0);
+	}
+
+	fn timestamps(&self, message: &mut Message) {
+		let spec = self.spec;
+		let at = spec.anchor.timestamp();
+		let styles = ["t", "T", "d", "D", "f", "F", "s", "S"]
+			.iter()
+			.map(|style| format!("<t:{at}:{style}>"))
+			.collect::<Vec<_>>()
+			.join(" ");
+		let guild = spec
+			.guild_id
+			.map_or_else(|| "@me".to_owned(), |id| id.to_string());
+		let channel = spec.channels.first().map_or(spec.channel_id, |(id, _)| *id);
+		let mut content = format!(
+			"{styles} <t:{}:R>\nplay <@$1402418491272986635> or run </roll:816437322781949972>\nhttps://discord.com/channels/{guild}/{channel}",
+			at + 300
+		);
+		if let Some(previous) = self.previous {
+			content.push_str(&format!(
+				"\nhttps://discord.com/channels/{guild}/{}/{previous}",
+				spec.channel_id
+			));
+		}
+		message.content = content;
+	}
+
+	fn auto_mod(&self, message: &mut Message) {
+		let channel = self
+			.spec
+			.channels
+			.first()
+			.map_or(self.spec.channel_id, |(id, _)| *id);
+		message.kind = MessageType::AutoModerationAction;
+		message.embeds = LenientVec::from(vec![Embed {
+			kind: Some(EmbedKind::AutoModerationMessage),
+			description: Some("can i say alien \u{1f97a}".to_owned()),
+			fields: LenientVec::from(vec![
+				field("rule_name", "No aliens"),
+				field("channel_id", &channel.to_string()),
+				field("decision_id", &message.id.0.to_string()),
+				field("keyword", "alien"),
+				field("keyword_matched_content", "alien"),
+				field("flagged_message_id", &message.id.0.to_string()),
+				field("decision_outcome", "blocked"),
+			]),
+			..Embed::default()
+		}]);
 	}
 
 	fn pin_notice(&mut self, message: &mut Message) {
@@ -787,6 +933,7 @@ impl<'a> Generator<'a, '_> {
 		message.message_reference = Some(self.reference(MessageReferenceKind::Forward, source.id.0));
 		message.flags = MessageFlags::HAS_SNAPSHOT;
 		message.message_snapshots = LenientVec::from(vec![snapshot_of(source)]);
+		self.last_forward = Some(message.id.0);
 	}
 
 	fn reference(&self, kind: MessageReferenceKind, message_id: u64) -> MessageReference {
@@ -1006,4 +1153,62 @@ fn super_reaction(name: &str, normal: i64, burst: i64) -> Reaction {
 
 fn id_of(emoji: &Emoji) -> u64 {
 	emoji.id.map(Snowflake::get).unwrap_or_default()
+}
+
+fn field(name: &str, value: &str) -> EmbedField {
+	EmbedField {
+		name: name.to_owned(),
+		value: value.to_owned(),
+		inline: false,
+	}
+}
+
+fn notice(message: &mut Message, kind: MessageType) {
+	message.kind = kind;
+	message.content = match kind {
+		MessageType::ChannelFollowAdd => "announcements",
+		MessageType::StageStart | MessageType::StageEnd => "Community AMA",
+		MessageType::StageTopic => "Roadmap Q&A",
+		_ => "",
+	}
+	.to_owned();
+	if kind == MessageType::RoleSubscriptionPurchase {
+		message.role_subscription_data = Some(RoleSubscriptionData {
+			tier_name: "Supporter".to_owned(),
+			total_months_subscribed: 3,
+			is_renewal: false,
+		});
+	}
+}
+
+pub fn thread_starter(
+	thread: &Channel,
+	parent: &BTreeMap<u64, Value>,
+	replies: &BTreeMap<u64, Value>,
+) -> Option<(u64, Value)> {
+	let first = *replies.keys().next()?;
+	let source = parent
+		.values()
+		.find(|message| {
+			message["type"] == 0 && message["content"].as_str().is_some_and(|text| !text.is_empty())
+		})
+		.and_then(|message| serde_json::from_value::<Message>(message.clone()).ok())?;
+	let id = first - 1;
+	let starter = Message {
+		id: Snowflake(id),
+		channel_id: thread.id,
+		author: source.author.clone(),
+		timestamp: Some(Snowflake(id).timestamp()),
+		kind: MessageType::ThreadStarterMessage,
+		message_reference: Some(MessageReference {
+			kind: None,
+			message_id: Some(source.id),
+			channel_id: Some(source.channel_id),
+			guild_id: thread.guild_id,
+			fail_if_not_exists: None,
+		}),
+		referenced_message: Some(Box::new(source)),
+		..Message::default()
+	};
+	Some((id, to_json(&starter)))
 }

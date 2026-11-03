@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 
 use crate::error::ApiError;
 use crate::fixtures::CURRENT_USER_ID;
-use crate::json::to_json;
+use crate::json::{author_id, to_json};
 use crate::ops::Draft;
 use crate::state::Shared;
 
@@ -112,6 +112,7 @@ impl Shared {
 			self.post_message(parent_id, me, notice)?;
 		}
 		if let Some(message_id) = from_message {
+			self.post_starter(parent_id, message_id, thread_id)?;
 			self.mark_has_thread(parent_id, message_id, thread_id);
 		}
 
@@ -132,6 +133,26 @@ impl Shared {
 			"flags": 0,
 		});
 		Ok(thread_json)
+	}
+
+	fn post_starter(&self, parent_id: u64, message_id: u64, thread_id: u64) -> Result<(), ApiError> {
+		let author = self
+			.store
+			.lock()
+			.message(parent_id, message_id)
+			.and_then(|message| self.fixtures.users.get(&author_id(message)))
+			.unwrap_or(&self.fixtures.current_user)
+			.clone();
+		let starter = Draft {
+			kind: Some(MessageType::ThreadStarterMessage),
+			reference: Some(MessageReference {
+				channel_id: Some(Snowflake(parent_id)),
+				message_id: Some(Snowflake(message_id)),
+				..MessageReference::default()
+			}),
+			..Draft::default()
+		};
+		self.post_message(thread_id, &author, starter).map(drop)
 	}
 
 	fn mark_has_thread(&self, channel_id: u64, message_id: u64, thread_id: u64) {

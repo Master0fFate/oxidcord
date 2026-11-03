@@ -210,6 +210,7 @@ impl Shared {
 			&& draft.sticker_ids.is_empty()
 			&& draft.poll.is_none()
 			&& !forwarding
+			&& draft.kind.is_none()
 		{
 			return Err(ApiError::empty_message());
 		}
