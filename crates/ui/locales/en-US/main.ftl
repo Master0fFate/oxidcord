@@ -971,6 +971,7 @@ slash-range = { $name } is out of range
 slash-length = { $name } has the wrong length
 component-select-placeholder = Make a selection
 component-spoiler = Spoiler
+component-sensitive = Sensitive
 interaction-modal-submit = Submit
 interaction-modal-unsupported = This field needs a file upload, which isn't supported here
 message-copy-link = Copy Message Link

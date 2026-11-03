@@ -26,6 +26,7 @@ const GROUPING_WINDOW_MS: i64 = 300_000;
 const RECENT_WINDOW_MS: i64 = 3_600_000;
 const STICKER_ID: u64 = 749_054_660_769_218_631;
 const ANIMATED_FLAG: u64 = 1 << 5;
+const GALLERY_SCANS: [u64; 3] = [0, 1, 2];
 const VOICE_WAVEFORM: &str = "AAoUHiw4RlJeanV/iJCWm56foJ+dmpWPh312a19UST4zKB0TCQIACRQgLDhEUFxndHuEjJKXm56foJ+dmpWOhn10aV5TSD0yJxwSCAA=";
 const WEBHOOK_ID: u64 = 900_000_000_000_000_001;
 const SYSTEM_USER_ID: u64 = 900_000_000_000_000_002;
@@ -478,7 +479,10 @@ impl<'a> Generator<'a, '_> {
 				message.embeds = LenientVec::from(vec![self.rich_embed(timestamp)]);
 			}
 			Special::EmbedImage => {
-				let image = self.media("https://media.discordapp.net/external/pic/photo.png", 1024, 768);
+				let image = EmbedMedia {
+					flags: Some(AttachmentFlags::CONTAINS_EXPLICIT_CONTENT.bits()),
+					..self.media("https://media.discordapp.net/external/pic/photo.png", 1024, 768)
+				};
 				message.content = "https://media.discordapp.net/external/pic/photo.png".to_owned();
 				message.embeds = LenientVec::from(vec![Embed {
 					kind: Some(EmbedKind::Image),
@@ -772,6 +776,11 @@ impl<'a> Generator<'a, '_> {
 				"attachment_id": attachment.id,
 			})
 		};
+		let scanned = |index: usize, attachment: &Attachment| {
+			let mut value = media(attachment);
+			value["content_scan_metadata"] = json!({ "flags": GALLERY_SCANS[index] });
+			value
+		};
 		let components = json!([{
 			"type": 17,
 			"accent_color": 0x5865f2,
@@ -787,7 +796,7 @@ impl<'a> Generator<'a, '_> {
 					"accessory": { "type": 11, "media": media(&images[0]) }
 				},
 				{ "type": 14, "divider": true, "spacing": 1 },
-				{ "type": 12, "items": images.iter().enumerate().map(|(index, image)| json!({ "media": media(image), "description": (index == 0).then_some("The release banner") })).collect::<Vec<_>>() },
+				{ "type": 12, "items": images.iter().enumerate().map(|(index, image)| json!({ "media": scanned(index, image), "description": (index == 0).then_some("The release banner") })).collect::<Vec<_>>() },
 				{ "type": 13, "file": media(&notes), "name": notes.filename, "size": notes.size },
 				{ "type": 14, "divider": false, "spacing": 2 },
 				{

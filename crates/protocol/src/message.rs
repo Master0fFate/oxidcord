@@ -203,6 +203,12 @@ pub struct EmbedMedia {
 	pub flags: Option<u64>,
 }
 
+impl EmbedMedia {
+	pub fn sensitivity(&self) -> AttachmentFlags {
+		AttachmentFlags::from_bits_truncate(self.flags.unwrap_or_default()) & AttachmentFlags::SENSITIVE
+	}
+}
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct EmbedProvider {

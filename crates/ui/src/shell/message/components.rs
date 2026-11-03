@@ -11,8 +11,8 @@ use gpui_component::button::Button;
 use gpui_component::menu::DropdownMenu as _;
 use markdown::parse;
 use protocol::{
-	Attachment, ButtonStyle, Component, ComponentType, Embed, EmbedKind, GalleryItem, Message, PartialEmoji,
-	SelectOption, SeparatorSpacing, Snowflake, UnfurledMedia,
+	Attachment, ButtonStyle, Component, ComponentType, Embed, EmbedKind, GalleryItem, MediaRedaction,
+	Message, PartialEmoji, SelectOption, SeparatorSpacing, Snowflake, UnfurledMedia,
 };
 use session::ComponentUse;
 
@@ -149,7 +149,7 @@ impl Builder<'_> {
 		let theme = self.theme;
 		let accent = component.accent_color.map(role_color);
 		let body = if let Some(index) = self.concealed(component.spoiler) {
-			self.spoiler_cover(index, rem(120.))
+			self.spoiler_cover(index, rem(120.), "component-spoiler")
 		} else {
 			div()
 				.flex()
@@ -387,7 +387,33 @@ impl Builder<'_> {
 		(!self.env.is_revealed(index)).then_some(index)
 	}
 
-	fn spoiler_cover(&self, index: usize, height: gpui::Rems) -> AnyElement {
+	fn veil(&self, media: &UnfurledMedia, spoiler: bool) -> Option<Veil> {
+		match self.env.redaction(media.sensitivity()) {
+			MediaRedaction::Block => Some(Veil::Blocked),
+			MediaRedaction::Blur => self
+				.concealed(true)
+				.map(|index| Veil::Hidden(index, "component-sensitive")),
+			_ => self
+				.concealed(spoiler)
+				.map(|index| Veil::Hidden(index, "component-spoiler")),
+		}
+	}
+
+	fn veiled_media(&self, veil: Veil, width: f32, height: f32) -> AnyElement {
+		match veil {
+			Veil::Blocked => media::blocked(self.id(), self.env, self.cx),
+			Veil::Hidden(index, label) => div()
+				.flex()
+				.w(rem(width))
+				.h(rem(height))
+				.rounded(self.theme.radius_md)
+				.overflow_hidden()
+				.child(self.spoiler_cover(index, rem(height), label))
+				.into_any_element(),
+		}
+	}
+
+	fn spoiler_cover(&self, index: usize, height: gpui::Rems, label: &str) -> AnyElement {
 		let theme = self.theme;
 		let message_id = self.env.message_id;
 		let dispatch = self.env.dispatch.clone();
@@ -410,7 +436,7 @@ impl Builder<'_> {
 					.text_size(theme.font_tiny)
 					.font_weight(FontWeight::BOLD)
 					.text_color(theme.header_primary)
-					.child(self.cx.t("component-spoiler").to_uppercase()),
+					.child(self.cx.t(label).to_uppercase()),
 			)
 			.into_any_element()
 	}
@@ -423,15 +449,8 @@ impl Builder<'_> {
 			spoiler,
 			description,
 		} = look;
-		if let Some(index) = self.concealed(spoiler) {
-			return div()
-				.flex()
-				.w(rem(width))
-				.h(rem(height))
-				.rounded(theme.radius_md)
-				.overflow_hidden()
-				.child(self.spoiler_cover(index, rem(height)))
-				.into_any_element();
+		if let Some(veil) = self.veil(media, spoiler) {
+			return self.veiled_media(veil, width, height);
 		}
 		let source = media.proxy_url.as_deref().unwrap_or(&media.url);
 		let animated = media
@@ -527,6 +546,9 @@ impl Builder<'_> {
 	}
 
 	fn video_tile(&self, media: &UnfurledMedia, side: f32) -> AnyElement {
+		if let Some(veil) = self.veil(media, false) {
+			return self.veiled_media(veil, side, side);
+		}
 		let theme = self.theme;
 		let poster = ::media::cdn::video_poster(&media.url, (side * 2.) as u32, (side * 2.) as u32);
 		let url = media.url.clone();
@@ -577,7 +599,7 @@ impl Builder<'_> {
 				.max_w_full()
 				.rounded(self.theme.radius_md)
 				.overflow_hidden()
-				.child(self.spoiler_cover(index, rem(64.)))
+				.child(self.spoiler_cover(index, rem(64.), "component-spoiler"))
 				.into_any_element();
 		}
 		self.attachment(file, component.name.as_deref(), component.size)
@@ -684,6 +706,11 @@ fn button_colors(style: ButtonStyle, theme: &Theme) -> (Hsla, Hsla, Hsla) {
 			theme.header_primary,
 		),
 	}
+}
+
+enum Veil {
+	Blocked,
+	Hidden(usize, &'static str),
 }
 
 struct Look<'a> {

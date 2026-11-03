@@ -59,6 +59,7 @@ const EMBED_ITEM: u64 = 1 << 62;
 const GIF_STAR: f32 = 26.;
 const SPOILER_ITEM: usize = 1 << 40;
 const SENSITIVE_ITEM: usize = 1 << 41;
+const EMBED_COVER: usize = 1 << 39;
 const SPOILER_PREFIX: &str = "SPOILER_";
 const STACKED_MAX_HEIGHT: f32 = 720.;
 const BLUR_DIVISOR: f32 = 24.;
@@ -193,17 +194,43 @@ fn cover_of(attachment: &Attachment, index: usize, env: &BodyEnv) -> Option<Cove
 	if (env.in_spoiler_channel() || is_spoiler(attachment)) && !env.is_revealed(Cover::Spoiler.item(index)) {
 		return Some(Cover::Spoiler);
 	}
-	match env.redaction(attachment.flags) {
+	sensitive_cover(attachment.flags, index, env)
+}
+
+fn sensitive_cover(flags: AttachmentFlags, index: usize, env: &BodyEnv) -> Option<Cover> {
+	match env.redaction(flags) {
 		MediaRedaction::Block => Some(Cover::Blocked),
 		MediaRedaction::Blur if !env.is_revealed(Cover::Sensitive.item(index)) => Some(Cover::Sensitive),
 		_ => None,
 	}
 }
 
-fn blocked(attachment: &Attachment, env: &BodyEnv, cx: &App) -> AnyElement {
+fn embed_flags(media: &[Option<&EmbedMedia>]) -> AttachmentFlags {
+	media
+		.iter()
+		.flatten()
+		.fold(AttachmentFlags::empty(), |all, media| all | media.sensitivity())
+}
+
+fn shielded(
+	content: AnyElement,
+	media: &[Option<&EmbedMedia>],
+	slot: usize,
+	env: &BodyEnv,
+	cx: &App,
+) -> AnyElement {
+	let index = EMBED_COVER | slot;
+	match sensitive_cover(embed_flags(media), index, env) {
+		Some(Cover::Blocked) => blocked(("embed-blocked", slot).into(), env, cx),
+		Some(cover) => veiled(content, index, cover, env, cx),
+		None => content,
+	}
+}
+
+pub(super) fn blocked(id: ElementId, env: &BodyEnv, cx: &App) -> AnyElement {
 	let theme = env.theme;
 	div()
-		.id(("attachment-blocked", attachment.id.get()))
+		.id(id)
 		.mt(theme.space_4)
 		.flex()
 		.items_center()
@@ -362,7 +389,9 @@ pub fn attachments(items: &[Attachment], env: &BodyEnv, inline: bool, cx: &App) 
 				start: positions[index],
 			};
 			let content = match (inline, kind) {
-				_ if cover == Some(Cover::Blocked) => blocked(attachment, env, cx),
+				_ if cover == Some(Cover::Blocked) => {
+					blocked(("attachment-blocked", attachment.id.get()).into(), env, cx)
+				}
 				(true, _) if is_image(attachment) => {
 					image_attachment(attachment, look, gallery, cover.is_none(), env, cx)
 				}
@@ -900,29 +929,28 @@ fn bare_media(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<An
 	let pointed = point_media(&target, None);
 	let gallery = Gallery::single(target);
 	let dispatch = env.dispatch.clone();
-	Some(
-		div()
-			.id(("embed-media", index))
-			.on_mouse_down(MouseButton::Right, pointed)
-			.mt(env.theme.space_4)
-			.w(rem(width))
-			.h(rem(height))
-			.max_w_full()
-			.rounded(env.theme.radius_md)
-			.overflow_hidden()
-			.cursor_pointer()
-			.on_click(move |_, window, cx| dispatch(RowAction::OpenImage(gallery.clone()), window, cx))
-			.child(picture(
-				&proxied_media(&url, animated, width, height),
-				media.placeholder.as_deref(),
-				width,
-				height,
-				ObjectFit::Cover,
-				env.theme,
-				cx,
-			))
-			.into_any_element(),
-	)
+	let card = div()
+		.id(("embed-media", index))
+		.on_mouse_down(MouseButton::Right, pointed)
+		.mt(env.theme.space_4)
+		.w(rem(width))
+		.h(rem(height))
+		.max_w_full()
+		.rounded(env.theme.radius_md)
+		.overflow_hidden()
+		.cursor_pointer()
+		.on_click(move |_, window, cx| dispatch(RowAction::OpenImage(gallery.clone()), window, cx))
+		.child(picture(
+			&proxied_media(&url, animated, width, height),
+			media.placeholder.as_deref(),
+			width,
+			height,
+			ObjectFit::Cover,
+			env.theme,
+			cx,
+		))
+		.into_any_element();
+	Some(shielded(card, &[Some(media)], index * 4, env, cx))
 }
 
 fn gifv(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<AnyElement> {
@@ -966,10 +994,8 @@ fn gifv(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<AnyEleme
 		env,
 		cx,
 	);
-	Some(with_link_menu(
-		&link,
-		favorite_star(favorite, gif, width, index, env, cx),
-	))
+	let card = with_link_menu(&link, favorite_star(favorite, gif, width, index, env, cx));
+	Some(shielded(card, &[Some(video), thumbnail], index * 4 + 1, env, cx))
 }
 
 fn favorite_star(
@@ -1074,7 +1100,8 @@ fn embedded_video(
 		env,
 		cx,
 	);
-	Some(with_link_menu(&link, player))
+	let card = with_link_menu(&link, player);
+	Some(shielded(card, &[Some(video), thumbnail], index * 4 + 1, env, cx))
 }
 
 fn link_text(
@@ -1260,8 +1287,11 @@ fn embed_card(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<An
 		.thumbnail
 		.as_ref()
 		.filter(|_| embed.image.is_none() && embed.video.is_none() && widget_player.is_none())
+		.filter(|media| {
+			sensitive_cover(media.sensitivity(), EMBED_COVER | (index * 4 + 3), env) != Some(Cover::Blocked)
+		})
 		.and_then(|media| {
-			Some(picture(
+			let image = picture(
 				&proxied_media(media_url(media)?, embed_animated(media), THUMBNAIL, THUMBNAIL),
 				media.placeholder.as_deref(),
 				THUMBNAIL,
@@ -1269,7 +1299,8 @@ fn embed_card(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<An
 				ObjectFit::Cover,
 				theme,
 				cx,
-			))
+			);
+			Some(shielded(image, &[Some(media)], index * 4 + 3, env, cx))
 		});
 	Some(
 		div()
@@ -1457,7 +1488,7 @@ fn large_media(
 	let gallery = Gallery::single(image_target);
 	let link_target = target_url.clone().map(|url| point_link(&url));
 	let dispatch = env.dispatch.clone();
-	div()
+	let frame = div()
 		.id(("embed-large", index))
 		.map(|frame| match (playable, link_target) {
 			(true, Some(link)) => frame.on_mouse_down(MouseButton::Right, link),
@@ -1512,7 +1543,14 @@ fn large_media(
 					),
 			)
 		})
-		.into_any_element()
+		.into_any_element();
+	shielded(
+		frame,
+		&[Some(media), embed.video.as_ref()],
+		index * 4 + 2,
+		env,
+		cx,
+	)
 }
 
 pub fn emoji_key(emoji: &PartialEmoji) -> String {

@@ -2,7 +2,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::emoji::PartialEmoji;
 use crate::lenient::{LenientVec, int_enum};
+use crate::message::AttachmentFlags;
 use crate::snowflake::Snowflake;
+
+const SCAN_EXPLICIT: u64 = 1 << 0;
+const SCAN_GORE: u64 = 1 << 1;
+const SCAN_SELF_HARM: u64 = 1 << 2;
 
 int_enum! {
 	pub enum ComponentType {
@@ -76,6 +81,31 @@ pub struct UnfurledMedia {
 	pub width: Option<i64>,
 	pub content_type: Option<String>,
 	pub attachment_id: Option<Snowflake>,
+	pub content_scan_metadata: Option<ContentScan>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ContentScan {
+	pub flags: Option<u64>,
+}
+
+impl UnfurledMedia {
+	pub fn sensitivity(&self) -> AttachmentFlags {
+		let scanned = self
+			.content_scan_metadata
+			.as_ref()
+			.and_then(|scan| scan.flags)
+			.unwrap_or_default();
+		[
+			(SCAN_EXPLICIT, AttachmentFlags::CONTAINS_EXPLICIT_CONTENT),
+			(SCAN_GORE, AttachmentFlags::CONTAINS_GORE_CONTENT),
+			(SCAN_SELF_HARM, AttachmentFlags::CONTAINS_SELF_HARM_CONTENT),
+		]
+		.into_iter()
+		.filter(|(bit, _)| scanned & bit != 0)
+		.fold(AttachmentFlags::empty(), |all, (_, flag)| all | flag)
+	}
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
