@@ -878,7 +878,6 @@ impl Shared {
 		Some(json!({ "guild_id": guild_id.to_string(), "channels": channels }))
 	}
 
-
 	pub fn reorder_channels(&self, guild_id: u64, body: &Value) -> Result<(), ApiError> {
 		let mut store = self.store.lock();
 		self.live_guild(&store, guild_id)?;

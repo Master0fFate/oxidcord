@@ -340,6 +340,7 @@ impl EditChannel {
 			nsfw: None,
 			slowmode: None,
 			parent_id: None,
+			voice: VoiceChannelEdit::default(),
 			forum,
 		});
 		cx.emit(Close);
