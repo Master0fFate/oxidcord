@@ -14,7 +14,7 @@ use protocol::rest::ModalAnswer;
 use protocol::{
 	ApplicationCommand, AutoModRule, ChannelPosition, ChannelType, ComponentType,
 	DefaultMessageNotifications, DefaultReaction, ExplicitContentFilter, ForumLayout, ForumSortOrder, Gif,
-	InteractionOption, MediaRedaction, MediaScope, MemberVerification, MessageFlags, Nonce,
+	InteractionOption, MediaCategory, MediaRedaction, MediaScope, MemberVerification, MessageFlags, Nonce,
 	NotificationLevel, PermissionOverwriteKind, Permissions, PollCreate, PrivacyChange, Role, RoleColors,
 	ScheduledEventKind, ScheduledEventStatus, Snowflake, StatusKind, SystemChannelFlags, VerificationLevel,
 	VideoQualityMode,
@@ -928,7 +928,8 @@ pub enum Command {
 	},
 	SetShowCurrentGame(bool),
 	SetPrivacy(PrivacyChange),
-	SetExplicitMedia {
+	SetSensitiveMedia {
+		category: MediaCategory,
 		scope: MediaScope,
 		redaction: MediaRedaction,
 	},

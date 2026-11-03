@@ -5,7 +5,7 @@ use gpui::{
 	Styled as _, Subscription, Window, div,
 };
 use gpui_component::switch::Switch;
-use protocol::{MediaRedaction, MediaScope, PrivacyChange, Snowflake};
+use protocol::{MediaCategory, MediaRedaction, MediaScope, PrivacyChange, Snowflake};
 use session::Command;
 
 use super::widgets::{heading, row};
@@ -18,6 +18,11 @@ const REDACTIONS: [(MediaRedaction, &str); 3] = [
 	(MediaRedaction::Show, "privacy-media-show"),
 	(MediaRedaction::Blur, "privacy-media-blur"),
 	(MediaRedaction::Block, "privacy-media-block"),
+];
+const MEDIA_CATEGORIES: [(MediaCategory, &str); 3] = [
+	(MediaCategory::Explicit, "privacy-media-explicit"),
+	(MediaCategory::Gore, "privacy-media-gore"),
+	(MediaCategory::SelfHarm, "privacy-media-self-harm"),
 ];
 const MEDIA_SCOPES: [(MediaScope, &str); 3] = [
 	(MediaScope::Guild, "privacy-media-guilds"),
@@ -120,6 +125,7 @@ impl PrivacyPage {
 
 	fn media_row(
 		&self,
+		category: MediaCategory,
 		scope: MediaScope,
 		label: &'static str,
 		current: MediaRedaction,
@@ -133,7 +139,8 @@ impl PrivacyPage {
 			.unwrap_or_default();
 		let data = self.data.clone();
 		let pick: PickHandler = Rc::new(move |index, _, cx| {
-			data.read(cx).send(Command::SetExplicitMedia {
+			data.read(cx).send(Command::SetSensitiveMedia {
+				category,
 				scope,
 				redaction: REDACTIONS[index].0,
 			});
@@ -141,9 +148,35 @@ impl PrivacyPage {
 		row(
 			cx.t(label),
 			None,
-			select(label, labels[selected].clone(), &labels, selected, pick),
+			select(
+				format!("{label}-{category:?}"),
+				labels[selected].clone(),
+				&labels,
+				selected,
+				pick,
+			),
 			theme,
 		)
+	}
+
+	fn media_section(
+		&self,
+		category: MediaCategory,
+		title: &'static str,
+		theme: &Theme,
+		cx: &mut Context<Self>,
+	) -> AnyElement {
+		let redactions = self.data.read(cx).state().media_redactions(category);
+		let rows: Vec<AnyElement> = MEDIA_SCOPES
+			.iter()
+			.map(|(scope, label)| self.media_row(category, *scope, label, redactions.at(*scope), theme, cx))
+			.collect();
+		div()
+			.flex()
+			.flex_col()
+			.child(heading(cx.t(title), theme))
+			.children(rows)
+			.into_any_element()
 	}
 
 	fn visibility_row(&self, current: u32, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
@@ -194,7 +227,7 @@ fn labeled(label: SharedString, switch: Switch, theme: &Theme) -> AnyElement {
 impl Render for PrivacyPage {
 	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
-		let (dms_restricted, requests_restricted, visibility, explicit) = {
+		let (dms_restricted, requests_restricted, visibility) = {
 			let data = self.data.read(cx);
 			let state = data.state();
 			let privacy = state.privacy();
@@ -202,7 +235,6 @@ impl Render for PrivacyPage {
 				privacy.default_guilds_restricted,
 				privacy.default_request_restricted,
 				privacy.profile_visibility,
-				state.explicit_media(),
 			)
 		};
 		let guild_rows: Vec<AnyElement> = self
@@ -211,9 +243,9 @@ impl Render for PrivacyPage {
 			.enumerate()
 			.map(|(index, guild)| self.guild_row(index, guild, &theme, cx))
 			.collect();
-		let media_rows: Vec<AnyElement> = MEDIA_SCOPES
+		let media_sections: Vec<AnyElement> = MEDIA_CATEGORIES
 			.iter()
-			.map(|(scope, label)| self.media_row(*scope, label, explicit.at(*scope), &theme, cx))
+			.map(|(category, title)| self.media_section(*category, title, &theme, cx))
 			.collect();
 		div()
 			.flex()
@@ -255,13 +287,7 @@ impl Render for PrivacyPage {
 						&theme,
 					)),
 			)
-			.child(
-				div()
-					.flex()
-					.flex_col()
-					.child(heading(cx.t("privacy-media"), &theme))
-					.children(media_rows),
-			)
+			.children(media_sections)
 			.child(
 				div()
 					.flex()

@@ -2,11 +2,11 @@ use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
 use protocol::{
-	AttachmentFlags, FRIEND_SOURCES_ALL, MediaRedaction, MediaRedactions, MediaScope, PrivacyChange,
-	ProtoCustomStatus, ProtoGuildFolder, ProtoGuildFolders, ProtoPrivacy, ProtoSettings, RelationshipKind,
-	SensitiveMedia, Snowflake, UserGuildSettings, decode_privacy, decode_settings, decode_status,
-	encode_settings, merge_fields, merge_sensitive_media, privacy_with, status_with_custom,
-	status_with_show_current_game, status_with_value, text_and_images_with_explicit,
+	AttachmentFlags, FRIEND_SOURCES_ALL, MediaCategory, MediaRedaction, MediaRedactions, MediaScope,
+	PrivacyChange, ProtoCustomStatus, ProtoGuildFolder, ProtoGuildFolders, ProtoPrivacy, ProtoSettings,
+	RelationshipKind, SensitiveMedia, Snowflake, UserGuildSettings, decode_privacy, decode_settings,
+	decode_status, encode_settings, merge_fields, merge_sensitive_media, privacy_with, status_with_custom,
+	status_with_show_current_game, status_with_value, text_and_images_with_redaction,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -112,8 +112,8 @@ impl State {
 		&self.privacy
 	}
 
-	pub fn explicit_media(&self) -> MediaRedactions {
-		self.sensitive_media.explicit
+	pub fn media_redactions(&self, category: MediaCategory) -> MediaRedactions {
+		self.sensitive_media.of(category)
 	}
 
 	pub fn custom_status_patch(&mut self, custom: Option<&ProtoCustomStatus>) -> String {
@@ -141,14 +141,15 @@ impl State {
 		(patch, undo)
 	}
 
-	pub fn explicit_media_patch(
+	pub fn media_patch(
 		&mut self,
+		category: MediaCategory,
 		scope: MediaScope,
 		redaction: MediaRedaction,
 	) -> (String, LocalEvent) {
 		let before = self.proto_text_and_images.clone();
 		self.proto_text_and_images =
-			text_and_images_with_explicit(&self.proto_text_and_images, scope, redaction);
+			text_and_images_with_redaction(&self.proto_text_and_images, category, scope, redaction);
 		let undo = LocalEvent::RestoreSensitiveMedia {
 			before,
 			applied: self.proto_text_and_images.clone(),

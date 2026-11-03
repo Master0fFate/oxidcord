@@ -112,6 +112,23 @@ impl MediaRedaction {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediaCategory {
+	Explicit,
+	Gore,
+	SelfHarm,
+}
+
+impl MediaCategory {
+	fn field(self) -> u32 {
+		match self {
+			Self::Explicit => TEXT_EXPLICIT_CONTENT,
+			Self::Gore => TEXT_GORE_CONTENT,
+			Self::SelfHarm => TEXT_SELF_HARM_CONTENT,
+		}
+	}
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaScope {
 	Guild,
 	FriendDm,
@@ -145,6 +162,16 @@ pub struct SensitiveMedia {
 	pub explicit: MediaRedactions,
 	pub gore: MediaRedactions,
 	pub self_harm: MediaRedactions,
+}
+
+impl SensitiveMedia {
+	pub fn of(&self, category: MediaCategory) -> MediaRedactions {
+		match category {
+			MediaCategory::Explicit => self.explicit,
+			MediaCategory::Gore => self.gore,
+			MediaCategory::SelfHarm => self.self_harm,
+		}
+	}
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -758,14 +785,15 @@ pub fn privacy_with(privacy: &[u8], change: PrivacyChange) -> Vec<u8> {
 	}
 }
 
-pub fn text_and_images_with_explicit(
+pub fn text_and_images_with_redaction(
 	text_and_images: &[u8],
+	category: MediaCategory,
 	scope: MediaScope,
 	redaction: MediaRedaction,
 ) -> Vec<u8> {
 	let current = Fields::new(text_and_images)
 		.filter_map(|(number, wire)| match (number, wire) {
-			(TEXT_EXPLICIT_CONTENT, Wire::Bytes(inner)) => Some(inner),
+			(number, Wire::Bytes(inner)) if number == category.field() => Some(inner),
 			_ => None,
 		})
 		.last();
@@ -779,7 +807,7 @@ pub fn text_and_images_with_explicit(
 	}
 	with_field(
 		text_and_images,
-		TEXT_EXPLICIT_CONTENT,
+		category.field(),
 		Some(&encode_redactions(&redactions)),
 	)
 }

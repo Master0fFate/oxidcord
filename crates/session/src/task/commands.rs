@@ -346,7 +346,7 @@ impl Core {
 			| Command::MarkUnread { .. }
 			| Command::SetShowCurrentGame(_)
 			| Command::SetPrivacy(_)
-			| Command::SetExplicitMedia { .. }
+			| Command::SetSensitiveMedia { .. }
 			| Command::SetGuildLayout(_)
 			| Command::CreateGuild { .. }
 			| Command::LoadSessions
@@ -1000,8 +1000,12 @@ impl Core {
 				self.apply_local(LocalEvent::SettingsEdited);
 				self.patch_settings_proto(patch, "privacy", Some(undo));
 			}
-			Command::SetExplicitMedia { scope, redaction } => {
-				let (patch, undo) = self.state.write().explicit_media_patch(scope, redaction);
+			Command::SetSensitiveMedia {
+				category,
+				scope,
+				redaction,
+			} => {
+				let (patch, undo) = self.state.write().media_patch(category, scope, redaction);
 				self.apply_local(LocalEvent::SettingsEdited);
 				self.patch_settings_proto(patch, "sensitive media", Some(undo));
 			}
