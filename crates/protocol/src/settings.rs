@@ -117,8 +117,12 @@ pub struct RelationshipUpdate {
 	pub nickname: Option<Option<String>>,
 	#[serde(deserialize_with = "timestamp")]
 	pub since: Option<DateTime<Utc>>,
+	#[serde(deserialize_with = "or_default")]
 	pub user_ignored: Option<bool>,
+	#[serde(deserialize_with = "or_default")]
 	pub stranger_request: Option<bool>,
+	#[serde(deserialize_with = "or_default")]
+	pub is_spam_request: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]

@@ -254,6 +254,9 @@ impl State {
 		if let Some(stranger) = update.stranger_request {
 			stored.stranger_request = stranger;
 		}
+		if let Some(spam) = update.is_spam_request {
+			stored.is_spam_request = spam;
+		}
 		if stored.kind == protocol::RelationshipKind::None && !stored.user_ignored {
 			self.relationships.shift_remove(&update.id);
 		}
