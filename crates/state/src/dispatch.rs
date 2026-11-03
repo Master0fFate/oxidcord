@@ -1,10 +1,10 @@
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use protocol::{
 	Channel, ChannelLastMessage, ChannelPinsUpdate, ChannelRecipientChange, DispatchEvent,
 	GuildMemberListUpdate, GuildMembersChunk, GuildRoleChange, Member, MemberListGroup, Message, MessageAck,
-	MessagePollVote, MessageUpdate, PassiveUpdate, Presence, RelationshipKind, Snowflake, ThreadDelete,
+	MessagePollVote, MessageType, MessageUpdate, PassiveUpdate, Presence, RelationshipKind, Snowflake, ThreadDelete,
 	ThreadListSync, TypingStart, UnavailableGuild, UserGuildSettings, VoiceState,
 };
 use serde::Deserialize;
@@ -309,8 +309,15 @@ impl State {
 			.is_some_and(|selected| selected.channel_id == channel_id);
 		if Some(message.author.id) == self.current_user_id() {
 			self.set_read_state(channel_id, message.id, 0);
-			if let Some(interval) = self.slowmode_interval(channel_id) {
-				changes.merge(self.start_slowmode(channel_id, interval));
+			if matches!(message.kind, MessageType::Default | MessageType::Reply)
+				&& let Some(interval) = self.slowmode_interval(channel_id)
+			{
+				let age = message.timestamp.map_or(Duration::ZERO, |sent| {
+					(chrono::Utc::now() - sent).to_std().unwrap_or_default()
+				});
+				if let Some(wait) = interval.checked_sub(age).filter(|wait| !wait.is_zero()) {
+					changes.merge(self.start_slowmode(channel_id, wait));
+				}
 			}
 		} else if !is_selected
 			&& !self.is_silenced(message)
