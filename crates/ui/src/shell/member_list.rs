@@ -1,9 +1,11 @@
+use std::rc::Rc;
 use std::time::Duration;
 
 use gpui::{
 	AnyElement, AppContext as _, Context, Entity, EventEmitter, FontWeight, Hsla, InteractiveElement as _,
-	IntoElement, ParentElement as _, Pixels, Point, Render, SharedString, StatefulInteractiveElement as _,
-	Styled as _, Subscription, Task, Window, div, prelude::FluentBuilder as _,
+	IntoElement, ListAlignment, ListState, ParentElement as _, Pixels, Point, Render, SharedString,
+	StatefulInteractiveElement as _, Styled as _, Subscription, Task, Window, div, list,
+	prelude::FluentBuilder as _, px,
 };
 use gpui_component::Sizable as _;
 use gpui_component::input::{Input, InputEvent, InputState};
@@ -11,7 +13,7 @@ use gpui_component::menu::ContextMenuExt as _;
 use gpui_component::scroll::ScrollableElement as _;
 use plugin_host::ViewContext;
 use protocol::Snowflake;
-use session::Command;
+use session::{Command, MEMBER_LIST_WINDOW};
 use state::{MemberListRow, State, UserOverride};
 
 use super::account::{Relation, manage_items, primary_items, relation_facts};
@@ -30,6 +32,9 @@ const SEARCH_LIMIT: usize = 100;
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(350);
 const SEARCH_GROUP: &str = "search";
 const SEARCH_HEIGHT: f32 = 30.;
+const RANGE_DEBOUNCE: Duration = Duration::from_millis(150);
+const ROW_OVERDRAW: f32 = 200.;
+const PLACEHOLDER_NAME_WIDTH: f32 = 96.;
 
 pub enum MemberListEvent {
 	OpenProfile { user: Snowflake, at: Point<Pixels> },
@@ -54,10 +59,37 @@ enum Row {
 	Member(Box<MemberItem>),
 }
 
+#[derive(Clone, Copy, PartialEq)]
+struct Windows {
+	channel: Snowflake,
+	first: u32,
+	last: u32,
+}
+
+impl Windows {
+	fn top(channel: Snowflake) -> Self {
+		Self {
+			channel,
+			first: 0,
+			last: 0,
+		}
+	}
+
+	fn rows(self) -> std::ops::Range<u32> {
+		self.first * MEMBER_LIST_WINDOW..(self.last + 1) * MEMBER_LIST_WINDOW
+	}
+}
+
 pub struct MemberList {
 	data: Entity<Data>,
 	guild: Option<Snowflake>,
-	rows: Vec<Row>,
+	rows: Vec<(usize, Row)>,
+	total: usize,
+	list_id: String,
+	scroll: ListState,
+	subscribed: Option<Windows>,
+	queued: Option<Windows>,
+	range_task: Option<Task<()>>,
 	query: String,
 	input: Option<Entity<InputState>>,
 	clear_input: bool,
@@ -73,6 +105,12 @@ impl MemberList {
 			data,
 			guild: None,
 			rows: Vec::new(),
+			total: 0,
+			list_id: String::new(),
+			scroll: ListState::new(0, ListAlignment::Top, px(ROW_OVERDRAW)),
+			subscribed: None,
+			queued: None,
+			range_task: None,
 			query: String::new(),
 			input: None,
 			clear_input: false,
@@ -87,6 +125,9 @@ impl MemberList {
 			self.clear_input = true;
 			self.remote_search = None;
 		}
+		if self.guild != guild {
+			self.list_id.clear();
+		}
 		self.guild = guild;
 		self.refresh(cx);
 	}
@@ -97,31 +138,115 @@ impl MemberList {
 		};
 		let data = self.data.read(cx);
 		let state = data.state();
-		let rows = if self.query.is_empty() {
-			state
-				.member_rows(guild)
+		let searching = !self.query.is_empty();
+		let (rows, total) = if searching {
+			let rows: Vec<(usize, Row)> = search_rows(&state, guild, &self.query)
 				.into_iter()
-				.map(|row| match row {
-					MemberListRow::Group { id, name, count } => Row::Group { id, name, count },
-					MemberListRow::Member(member) => Row::Member(Box::new(member_item(
-						&state,
-						(guild, member.user_id),
-						member.display,
-						member.color,
-						member.badge,
-						Status::from(&member.status),
-						member.activity,
-					))),
-				})
-				.collect()
+				.enumerate()
+				.collect();
+			let total = rows.len();
+			(rows, total)
 		} else {
-			search_rows(&state, guild, &self.query)
+			let rows = state
+				.member_rows_at(guild)
+				.into_iter()
+				.map(|(index, row)| {
+					let row = match row {
+						MemberListRow::Group { id, name, count } => Row::Group { id, name, count },
+						MemberListRow::Member(member) => Row::Member(Box::new(member_item(
+							&state,
+							(guild, member.user_id),
+							member.display,
+							member.color,
+							member.badge,
+							Status::from(&member.status),
+							member.activity,
+						))),
+					};
+					(index, row)
+				})
+				.collect();
+			(rows, state.member_row_count(guild))
 		};
+		let list_id = if searching {
+			SEARCH_GROUP
+		} else {
+			state
+				.guild(guild)
+				.map_or("", |found| found.member_list.id.as_str())
+		};
+		let reset = self.list_id != list_id;
+		if reset {
+			self.list_id = list_id.to_owned();
+		}
 		drop(state);
-		if rows != self.rows {
+		if reset {
+			self.scroll.reset(total);
+		} else if total > self.total {
+			self.scroll.splice(self.total..self.total, total - self.total);
+		} else if total < self.total {
+			self.scroll.splice(total..self.total, 0);
+		}
+		if !reset && !same_shape(&rows, &self.rows) {
+			self.scroll.remeasure();
+		}
+		if reset || total != self.total || rows != self.rows {
 			self.rows = rows;
+			self.total = total;
 			cx.notify();
 		}
+	}
+
+	fn track_visible(&mut self, theme: &Theme, cx: &mut Context<Self>) {
+		let Some(guild) = self.guild.filter(|_| self.query.is_empty()) else {
+			return;
+		};
+		let selected = self
+			.data
+			.read(cx)
+			.state()
+			.selected()
+			.filter(|selected| selected.guild_id == Some(guild));
+		let Some(channel) = selected.map(|selected| selected.channel_id) else {
+			return;
+		};
+		let top = self.scroll.logical_scroll_top().item_ix as u32;
+		let height = self.scroll.viewport_bounds().size.height;
+		let visible = (height / theme.pixels(theme.member_row_height)).ceil() as u32 + 1;
+		let wanted = Windows {
+			channel,
+			first: top / MEMBER_LIST_WINDOW,
+			last: (top + visible) / MEMBER_LIST_WINDOW,
+		};
+		let subscribed = self
+			.subscribed
+			.filter(|windows| windows.channel == channel)
+			.unwrap_or(Windows::top(channel));
+		self.subscribed = Some(subscribed);
+		if wanted == subscribed {
+			self.queued = None;
+			self.range_task = None;
+		} else if self.queued != Some(wanted) {
+			self.queued = Some(wanted);
+			self.range_task = Some(cx.spawn(async move |this, cx| {
+				cx.background_executor().timer(RANGE_DEBOUNCE).await;
+				this.update(cx, |this, cx| this.request_range(wanted, cx)).ok();
+			}));
+		}
+	}
+
+	fn request_range(&mut self, wanted: Windows, cx: &mut Context<Self>) {
+		self.queued = None;
+		self.range_task = None;
+		let Some(guild) = self.guild else {
+			return;
+		};
+		self.subscribed = Some(wanted);
+		self.data.read(cx).send(Command::MemberListRange {
+			guild_id: guild,
+			channel_id: wanted.channel,
+			visible: wanted.rows(),
+		});
 	}
 
 	fn on_search(&mut self, text: String, cx: &mut Context<Self>) {
@@ -412,6 +537,17 @@ fn member_item(
 	}
 }
 
+fn same_shape(left: &[(usize, Row)], right: &[(usize, Row)]) -> bool {
+	left.len() == right.len()
+		&& left
+			.iter()
+			.zip(right)
+			.all(|((left_index, left_row), (right_index, right_row))| {
+				left_index == right_index
+					&& matches!(left_row, Row::Group { .. }) == matches!(right_row, Row::Group { .. })
+			})
+}
+
 fn search_rows(state: &State, guild: Snowflake, query: &str) -> Vec<Row> {
 	let Some(found) = state.guild(guild) else {
 		return Vec::new();
@@ -451,41 +587,84 @@ fn search_rows(state: &State, guild: Snowflake, query: &str) -> Vec<Row> {
 	rows
 }
 
+impl MemberList {
+	fn group_header(
+		&self,
+		id: &str,
+		name: &str,
+		count: u32,
+		theme: &Theme,
+		cx: &mut Context<Self>,
+	) -> AnyElement {
+		let count = ArgValue::from(count as usize);
+		let title = match id {
+			SEARCH_GROUP => cx.t_args("members-search-results", &[("count", count)]),
+			"online" => cx.t_args("members-online", &[("count", count)]),
+			"offline" => cx.t_args("members-offline", &[("count", count)]),
+			_ => cx.t_args(
+				"members-role",
+				&[("role", ArgValue::from(name.to_owned())), ("count", count)],
+			),
+		};
+		div()
+			.px(theme.space_16)
+			.pt(theme.space_24)
+			.pb(theme.space_4)
+			.text_size(theme.font_tiny)
+			.font_weight(FontWeight::BOLD)
+			.text_color(theme.header_secondary)
+			.child(title.to_uppercase())
+			.into_any_element()
+	}
+
+	fn placeholder_row(theme: &Theme) -> AnyElement {
+		div()
+			.flex()
+			.items_center()
+			.gap(theme.space_12)
+			.h(theme.member_row_height)
+			.mx(theme.space_8)
+			.px(theme.space_8)
+			.child(
+				div()
+					.flex_none()
+					.size(rem(32.))
+					.rounded_full()
+					.bg(theme.background_tertiary),
+			)
+			.child(
+				div()
+					.w(rem(PLACEHOLDER_NAME_WIDTH))
+					.h(rem(10.))
+					.rounded(theme.radius_sm)
+					.bg(theme.background_tertiary),
+			)
+			.into_any_element()
+	}
+
+	fn list_row(&self, index: usize, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+		let found = self
+			.rows
+			.binary_search_by_key(&index, |(row_index, _)| *row_index)
+			.ok()
+			.map(|position| &self.rows[position].1);
+		let element = match found {
+			Some(Row::Group { id, name, count }) => self.group_header(id, name, *count, theme, cx),
+			Some(Row::Member(member)) => {
+				let bot_label = cx.t("badge-bot");
+				self.row(member, &bot_label, developer_mode(cx), theme, cx)
+			}
+			None => Self::placeholder_row(theme),
+		};
+		div().w_full().min_w_0().child(element).into_any_element()
+	}
+}
+
 impl Render for MemberList {
 	fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
 		let search = self.search_input(window, cx);
-		let developer = developer_mode(cx);
-		let bot_label = cx.t("badge-bot");
-		let mut sections: Vec<AnyElement> = Vec::new();
-		for row in &self.rows {
-			match row {
-				Row::Group { id, name, count } => {
-					let count = ArgValue::from(*count as usize);
-					let title = match id.as_str() {
-						SEARCH_GROUP => cx.t_args("members-search-results", &[("count", count)]),
-						"online" => cx.t_args("members-online", &[("count", count)]),
-						"offline" => cx.t_args("members-offline", &[("count", count)]),
-						_ => cx.t_args(
-							"members-role",
-							&[("role", ArgValue::from(name.clone())), ("count", count)],
-						),
-					};
-					sections.push(
-						div()
-							.px(theme.space_16)
-							.pt(theme.space_24)
-							.pb(theme.space_4)
-							.text_size(theme.font_tiny)
-							.font_weight(FontWeight::BOLD)
-							.text_color(theme.header_secondary)
-							.child(title.to_uppercase())
-							.into_any_element(),
-					);
-				}
-				Row::Member(member) => sections.push(self.row(member, &bot_label, developer, &theme, cx)),
-			}
-		}
+		self.track_visible(&theme, cx);
 		let header = plugins::contextual(
 			"member-list-header",
 			ViewContext {
@@ -502,6 +681,14 @@ impl Render for MemberList {
 			},
 			cx,
 		);
+		let row_theme = Rc::new(theme.clone());
+		let rows = list(
+			self.scroll.clone(),
+			cx.processor(move |this, index: usize, _, cx| this.list_row(index, &row_theme, cx)),
+		)
+		.size_full()
+		.min_h_0()
+		.pb(theme.space_16);
 		div()
 			.flex()
 			.flex_col()
@@ -537,15 +724,14 @@ impl Render for MemberList {
 				)
 			})
 			.child(
-				div()
-					.flex()
-					.flex_col()
-					.pb(theme.space_16)
-					.children(sections)
-					.overflow_y_scrollbar()
-					.id("member-list")
-					.flex_1()
-					.min_h_0(),
+				div().id("member-list").flex_1().min_h_0().child(
+					div()
+						.size_full()
+						.min_h_0()
+						.min_w_0()
+						.child(rows)
+						.vertical_scrollbar(&self.scroll),
+				),
 			)
 	}
 }

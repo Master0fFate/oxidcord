@@ -52,6 +52,13 @@ pub fn generate(rng: &mut StdRng, ids: &mut EntityIds, size: usize) -> People {
 	}
 }
 
+pub fn grow_pool(builder: &mut Builder, size: usize) {
+	for index in builder.people.pool.len()..size {
+		let user = pool_user(&mut builder.rng, &mut builder.ids, index);
+		builder.people.pool.push(user);
+	}
+}
+
 fn pool_user(rng: &mut StdRng, ids: &mut EntityIds, index: usize) -> User {
 	let adjective = *corpus::pick(rng, corpus::ADJECTIVES);
 	let noun = *corpus::pick(rng, corpus::NOUNS);

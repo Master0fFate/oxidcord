@@ -99,6 +99,16 @@ impl MemberList {
 		}
 	}
 
+	pub fn row_count(&self) -> usize {
+		let grouped: i64 = self
+			.groups
+			.iter()
+			.filter(|group| group.count > 0)
+			.map(|group| group.count + 1)
+			.sum();
+		(grouped.max(0) as usize).max(self.slots.len())
+	}
+
 	pub fn group_count(&self, id: &str) -> Option<i64> {
 		self.groups
 			.iter()

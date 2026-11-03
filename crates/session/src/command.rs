@@ -1,3 +1,4 @@
+use std::ops::Range;
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
@@ -17,6 +18,8 @@ use serde_json::Value;
 use tokio::sync::oneshot;
 use voice::video::VideoQuality;
 use voice::video::capture::ScreenTarget;
+
+pub const MEMBER_LIST_WINDOW: u32 = 100;
 
 #[derive(Debug, Clone)]
 pub struct ComponentUse {
@@ -159,6 +162,11 @@ pub enum Command {
 	ActivitySettingsChanged,
 	SubscribeGuild {
 		guild_id: Snowflake,
+	},
+	MemberListRange {
+		guild_id: Snowflake,
+		channel_id: Snowflake,
+		visible: Range<u32>,
 	},
 	SearchMembers {
 		guild_id: Snowflake,

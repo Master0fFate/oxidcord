@@ -474,22 +474,39 @@ impl State {
 	}
 
 	pub fn member_rows(&self, guild_id: Snowflake) -> Vec<MemberListRow> {
+		self.member_rows_at(guild_id)
+			.into_iter()
+			.map(|(_, row)| row)
+			.collect()
+	}
+
+	pub fn member_rows_at(&self, guild_id: Snowflake) -> Vec<(usize, MemberListRow)> {
 		let Some(guild) = self.guilds.get(&guild_id) else {
 			return Vec::new();
 		};
 		let list = &guild.member_list;
 		list.slots
 			.iter()
-			.filter_map(|slot| match slot {
-				MemberSlot::Empty => None,
-				MemberSlot::Group { id, count } => Some(MemberListRow::Group {
-					id: id.clone(),
-					name: group_name(guild, id),
-					count: count_of(list.group_count(id).unwrap_or(*count)),
-				}),
-				MemberSlot::Member(user_id) => Some(MemberListRow::Member(self.member_row(guild, *user_id))),
+			.enumerate()
+			.filter_map(|(index, slot)| {
+				let row = match slot {
+					MemberSlot::Empty => return None,
+					MemberSlot::Group { id, count } => MemberListRow::Group {
+						id: id.clone(),
+						name: group_name(guild, id),
+						count: count_of(list.group_count(id).unwrap_or(*count)),
+					},
+					MemberSlot::Member(user_id) => MemberListRow::Member(self.member_row(guild, *user_id)),
+				};
+				Some((index, row))
 			})
 			.collect()
+	}
+
+	pub fn member_row_count(&self, guild_id: Snowflake) -> usize {
+		self.guilds
+			.get(&guild_id)
+			.map_or(0, |guild| guild.member_list.row_count())
 	}
 
 	pub fn member_row(&self, guild: &GuildState, user_id: Snowflake) -> MemberRow {

@@ -12,6 +12,7 @@ use rand::Rng;
 use rand::rngs::StdRng;
 
 use super::messages::{self, ChannelSpec};
+use super::people;
 use super::{Builder, CURRENT_USER_ID, corpus};
 
 const ADMIN_COLOR: i64 = 0xE74C3C;
@@ -24,6 +25,7 @@ const FIXED_NON_TEXT_CHANNELS: usize = 5;
 const SLOWMODE_SECONDS: i64 = 10;
 const SLOWMODE_CHANNEL_INDEX: usize = 1;
 const LARGE_GUILD_STRIDE: usize = 3;
+const LARGE_GUILD_MEMBERS: usize = 650;
 
 pub struct GuildFixture {
 	pub id: u64,
@@ -485,8 +487,17 @@ fn thread_channel(
 	}
 }
 
+fn is_large(index: usize) -> bool {
+	index % LARGE_GUILD_STRIDE == 1
+}
+
 fn build_members(builder: &mut Builder, index: usize, guild_id: u64, roles: &RoleIds) -> Vec<Member> {
-	let count = builder.config.members_per_guild.max(1);
+	let count = if is_large(index) {
+		builder.config.members_per_guild.max(LARGE_GUILD_MEMBERS)
+	} else {
+		builder.config.members_per_guild.max(1)
+	};
+	people::grow_pool(builder, count);
 	let pool_len = builder.people.pool.len();
 	let start = index * (count / 2 + 1) % pool_len;
 	let anchor = builder.anchor;
@@ -803,6 +814,6 @@ pub fn build(builder: &mut Builder, index: usize) -> GuildFixture {
 		presences,
 		voice_states,
 		joined_at: anchor - Duration::days(400),
-		large: index % LARGE_GUILD_STRIDE == 1,
+		large: is_large(index),
 	}
 }

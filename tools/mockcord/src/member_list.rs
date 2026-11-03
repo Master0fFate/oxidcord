@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use protocol::{Member, Presence, StatusKind};
+use protocol::{Channel, Member, Permissions, Presence, StatusKind};
 use serde_json::{Map, Value, json};
 
 use crate::fixtures::GuildFixture;
@@ -8,6 +8,9 @@ use crate::json::{parse_id, to_json};
 use crate::state::Shared;
 
 type Range = (usize, usize);
+
+const EVERYONE_LIST: &str = "everyone";
+const RESTRICTED_LIST: &str = "restricted";
 
 fn display_name(member: &Member) -> String {
 	member
@@ -59,7 +62,21 @@ struct MemberList {
 	offline: usize,
 }
 
-fn build_member_list(shared: &Shared, guild: &GuildFixture) -> MemberList {
+fn is_restricted(guild: &GuildFixture, channel: &Channel) -> bool {
+	channel
+		.permission_overwrites
+		.iter()
+		.any(|overwrite| overwrite.id.0 == guild.id && overwrite.deny.contains(Permissions::VIEW_CHANNEL))
+}
+
+fn can_view(channel: &Channel, member: &Member) -> bool {
+	channel.permission_overwrites.iter().any(|overwrite| {
+		overwrite.allow.contains(Permissions::VIEW_CHANNEL) && member.roles.contains(&overwrite.id)
+	})
+}
+
+fn build_member_list(shared: &Shared, guild: &GuildFixture, channel: &Channel) -> MemberList {
+	let restricted = is_restricted(guild, channel);
 	let store = shared.store.lock();
 	let presences = store.presences.get(&guild.id);
 	let mut online: Vec<(&Member, &Presence)> = Vec::new();
@@ -68,6 +85,7 @@ fn build_member_list(shared: &Shared, guild: &GuildFixture) -> MemberList {
 		.members
 		.iter()
 		.filter(|member| !store.is_removed(guild.id, member_user_id(member)))
+		.filter(|member| !restricted || can_view(channel, member))
 	{
 		match presences
 			.and_then(|by_user| by_user.get(&member_user_id(member)))
@@ -95,12 +113,13 @@ fn build_member_list(shared: &Shared, guild: &GuildFixture) -> MemberList {
 	}
 }
 
-fn update_for(shared: &Shared, guild_id: u64, ranges: &[Range]) -> Option<Value> {
+fn update_for(shared: &Shared, guild_id: u64, channel_id: u64, ranges: &[Range]) -> Option<Value> {
 	if ranges.is_empty() {
 		return None;
 	}
 	let guild = shared.fixtures.guild(guild_id)?;
-	let list = build_member_list(shared, guild);
+	let channel = shared.fixtures.channels.get(&channel_id)?;
+	let list = build_member_list(shared, guild, channel);
 	let ops: Vec<Value> = ranges
 		.iter()
 		.map(|&(start, end)| {
@@ -111,7 +130,7 @@ fn update_for(shared: &Shared, guild_id: u64, ranges: &[Range]) -> Option<Value>
 		.collect();
 	Some(json!({
 		"guild_id": guild_id.to_string(),
-		"id": "everyone",
+		"id": if is_restricted(guild, channel) { RESTRICTED_LIST } else { EVERYONE_LIST },
 		"member_count": list.online + list.offline,
 		"online_count": list.online,
 		"groups": [
@@ -122,13 +141,10 @@ fn update_for(shared: &Shared, guild_id: u64, ranges: &[Range]) -> Option<Value>
 	}))
 }
 
-fn ranges_of(channels: &Value) -> Vec<Range> {
-	let Some(channels) = channels.as_object() else {
-		return Vec::new();
-	};
-	let unique: BTreeSet<Range> = channels
-		.values()
-		.filter_map(Value::as_array)
+fn ranges_of(ranges: &Value) -> Vec<Range> {
+	let unique: BTreeSet<Range> = ranges
+		.as_array()
+		.into_iter()
 		.flatten()
 		.filter_map(|range| {
 			let bounds = range.as_array()?;
@@ -139,6 +155,18 @@ fn ranges_of(channels: &Value) -> Vec<Range> {
 		})
 		.collect();
 	unique.into_iter().collect()
+}
+
+fn channel_updates(shared: &Shared, guild_id: u64, channels: &Value) -> Vec<Value> {
+	let empty = Map::new();
+	channels
+		.as_object()
+		.unwrap_or(&empty)
+		.iter()
+		.filter_map(|(channel_key, ranges)| {
+			update_for(shared, guild_id, channel_key.parse().ok()?, &ranges_of(ranges))
+		})
+		.collect()
 }
 
 pub fn bulk_guild_ids(data: &Value) -> impl Iterator<Item = u64> + '_ {
@@ -156,17 +184,20 @@ pub fn bulk_updates(shared: &Shared, data: &Value) -> Vec<Value> {
 		.unwrap_or(&empty)
 		.iter()
 		.filter_map(|(guild_key, subscription)| {
-			let guild_id = guild_key.parse().ok()?;
-			update_for(shared, guild_id, &ranges_of(&subscription["channels"]))
+			Some(channel_updates(
+				shared,
+				guild_key.parse().ok()?,
+				&subscription["channels"],
+			))
 		})
+		.flatten()
 		.collect()
 }
 
 pub fn legacy_updates(shared: &Shared, data: &Value) -> Vec<Value> {
 	parse_id(&data["guild_id"])
-		.and_then(|guild_id| update_for(shared, guild_id, &ranges_of(&data["channels"])))
-		.into_iter()
-		.collect()
+		.map(|guild_id| channel_updates(shared, guild_id, &data["channels"]))
+		.unwrap_or_default()
 }
 
 pub fn members_chunks(shared: &Shared, data: &Value) -> Vec<Value> {

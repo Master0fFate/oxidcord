@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::future::Future;
+use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant as StdInstant};
@@ -30,7 +31,7 @@ use tokio::sync::mpsc;
 use tokio::time::{Instant, sleep_until};
 
 use crate::broker::{BrokerSink, VoiceCache};
-use crate::command::Command;
+use crate::command::{Command, MEMBER_LIST_WINDOW};
 use crate::config::VoiceIo;
 use crate::loads::PluginLoads;
 use crate::marks::ClientMarks;
@@ -75,7 +76,7 @@ const TYPING_EXPIRY_SLACK: Duration = Duration::from_millis(100);
 const MEMBER_SEARCH_LIMIT: u32 = 100;
 const SEARCH_INDEX_RETRIES: u32 = 2;
 const SEARCH_INDEX_MAX_WAIT: Duration = Duration::from_secs(10);
-const MEMBER_LIST_RANGE: [u32; 2] = [0, 99];
+const MEMBER_LIST_WINDOWS_KEPT: u32 = 2;
 const DAY_MILLIS: i64 = 86_400_000;
 const NONCE_SEQUENCE_BITS: u32 = 22;
 const INITIAL_EPOCH: u64 = 1;
@@ -266,6 +267,8 @@ pub(crate) struct Core {
 	typing_sent: HashMap<Snowflake, StdInstant>,
 	loading: HashSet<(Snowflake, Page)>,
 	selected_guild: Option<Snowflake>,
+	member_channel: Option<Snowflake>,
+	member_ranges: Vec<[u32; 2]>,
 	command_scopes: HashSet<Snowflake>,
 	typing_expiry: Option<Instant>,
 	nonce_sequence: u64,
@@ -317,6 +320,18 @@ fn page_query(
 	}
 }
 
+fn member_window(index: u32) -> [u32; 2] {
+	[index * MEMBER_LIST_WINDOW, (index + 1) * MEMBER_LIST_WINDOW - 1]
+}
+
+fn member_ranges(visible: Range<u32>) -> Vec<[u32; 2]> {
+	let first = visible.start / MEMBER_LIST_WINDOW;
+	let last = visible.end.saturating_sub(1).max(visible.start) / MEMBER_LIST_WINDOW;
+	let mut ranges = vec![member_window(0)];
+	ranges.extend((first.max(1)..=last.min(first + MEMBER_LIST_WINDOWS_KEPT - 1)).map(member_window));
+	ranges
+}
+
 fn ack_day() -> i64 {
 	(Utc::now().timestamp_millis() - DISCORD_EPOCH_MS) / DAY_MILLIS
 }
@@ -345,6 +360,8 @@ impl Core {
 			typing_sent: HashMap::new(),
 			loading: HashSet::new(),
 			selected_guild: None,
+			member_channel: None,
+			member_ranges: member_ranges(0..0),
 			command_scopes: HashSet::new(),
 			typing_expiry: None,
 			nonce_sequence: 0,
@@ -1053,6 +1070,15 @@ impl Core {
 				self.subscribe(guild_id, channel_id);
 				self.schedule_overrides(Duration::ZERO);
 			}
+			Command::MemberListRange {
+				guild_id,
+				channel_id,
+				visible,
+			} => {
+				self.member_channel = Some(channel_id);
+				self.member_ranges = member_ranges(visible);
+				self.subscribe(guild_id, Some(channel_id));
+			}
 			Command::SearchMembers { guild_id, query } => {
 				if let Err(error) =
 					self.gateway
@@ -1187,9 +1213,11 @@ impl Core {
 		self.rerender_stale(channel_id);
 		self.forward_channel_switch(guild_id, channel_id);
 		self.schedule_overrides(Duration::ZERO);
-		if let Some(guild_id) = guild_id
-			&& self.selected_guild != Some(guild_id)
-		{
+		if self.member_channel != Some(channel_id) {
+			self.member_channel = Some(channel_id);
+			self.member_ranges = member_ranges(0..0);
+		}
+		if let Some(guild_id) = guild_id {
 			self.subscribe(guild_id, Some(channel_id));
 		}
 		if self.selected_guild != guild_id {
@@ -1551,7 +1579,14 @@ impl Core {
 
 	fn subscribe(&self, guild_id: Snowflake, channel_id: Option<Snowflake>) {
 		let channels = channel_id
-			.map(|channel_id| (channel_id, vec![MEMBER_LIST_RANGE]))
+			.map(|channel_id| {
+				let ranges = if self.member_channel == Some(channel_id) {
+					self.member_ranges.clone()
+				} else {
+					member_ranges(0..0)
+				};
+				(channel_id, ranges)
+			})
 			.into_iter()
 			.collect();
 		if let Err(error) = self
