@@ -1,5 +1,5 @@
 use std::f32::consts::{PI, TAU};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Sender, channel};
 use std::thread;
 use std::time::Duration;
@@ -74,7 +74,9 @@ const RINGBACK_NOTES: [Note; 4] = [
 	note(480., 0.6, 0.4, 1.),
 ];
 
-static PLAYING: AtomicBool = AtomicBool::new(false);
+const MAX_PLAYING: usize = 4;
+
+static PLAYING: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Cue {
@@ -198,7 +200,13 @@ impl Playback {
 
 pub fn play(cue: Cue, volume: f32) {
 	let volume = volume.clamp(0., 1.);
-	if volume == 0. || PLAYING.swap(true, Ordering::AcqRel) {
+	if volume == 0. {
+		return;
+	}
+	let reserved = PLAYING.fetch_update(Ordering::AcqRel, Ordering::Acquire, |playing| {
+		(playing < MAX_PLAYING).then_some(playing + 1)
+	});
+	if reserved.is_err() {
 		return;
 	}
 	let spawned = thread::Builder::new()
@@ -208,10 +216,10 @@ pub fn play(cue: Cue, volume: f32) {
 				Ok(_stream) => thread::sleep(Duration::from_secs_f32(cue.seconds()) + PLAYBACK_SLACK),
 				Err(error) => tracing::warn!(%error, "could not play the sound"),
 			}
-			PLAYING.store(false, Ordering::Release);
+			PLAYING.fetch_sub(1, Ordering::AcqRel);
 		});
 	if let Err(error) = spawned {
-		PLAYING.store(false, Ordering::Release);
+		PLAYING.fetch_sub(1, Ordering::AcqRel);
 		tracing::warn!(%error, "could not start the sound thread");
 	}
 }
