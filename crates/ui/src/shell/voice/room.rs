@@ -61,7 +61,7 @@ pub struct VoiceRoom {
 	focused: Option<Snowflake>,
 	viewer: Option<Entity<StreamViewer>>,
 	camera_pending: bool,
-	soundboard_open: bool,
+	soundboard: Option<soundboard::Board>,
 	effect_picker: Entity<EmojiPicker>,
 	effect_picker_open: bool,
 	effect_seen: Option<Instant>,
@@ -195,6 +195,17 @@ impl VoiceRoom {
 	) -> Self {
 		let changes = cx.subscribe_in(&data, window, |this, _, event: &DataEvent, _, cx| {
 			if let DataEvent::Changed(changes) = event
+				&& this.soundboard.is_some()
+				&& (changes.voice_session
+					|| !changes.voice.is_empty()
+					|| changes.selection
+					|| changes.guild_list
+					|| changes.user_settings
+					|| !changes.loaded.is_empty())
+			{
+				this.refresh_soundboard(cx);
+			}
+			if let DataEvent::Changed(changes) = event
 				&& (changes.voice_session
 					|| changes.streams
 					|| changes.calls
@@ -227,7 +238,7 @@ impl VoiceRoom {
 			focused: None,
 			viewer: None,
 			camera_pending: false,
-			soundboard_open: false,
+			soundboard: None,
 			effect_picker,
 			effect_picker_open: false,
 			effect_seen: None,
@@ -289,7 +300,7 @@ impl VoiceRoom {
 	fn toggle_effect_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
 		self.effect_picker_open = !self.effect_picker_open;
 		if self.effect_picker_open {
-			self.soundboard_open = false;
+			self.soundboard = None;
 			self.effect_picker
 				.update(cx, |picker, cx| picker.open(Vec::new(), window, cx));
 		}
@@ -311,14 +322,30 @@ impl VoiceRoom {
 	}
 
 	fn toggle_soundboard(&mut self, guild: Snowflake, cx: &mut Context<Self>) {
-		self.soundboard_open = !self.soundboard_open;
-		if self.soundboard_open {
+		if self.soundboard.take().is_none() {
 			self.effect_picker_open = false;
+			self.soundboard = Some(self.build_soundboard(guild, cx));
 			self.data
 				.read(cx)
 				.send(Command::LoadSoundboard { guild_id: guild });
 		}
 		cx.notify();
+	}
+
+	fn build_soundboard(&self, guild: Snowflake, cx: &Context<Self>) -> soundboard::Board {
+		soundboard::Board::new(&self.data.read(cx).state(), guild, cx)
+	}
+
+	fn refresh_soundboard(&mut self, cx: &Context<Self>) {
+		let guild = self
+			.data
+			.read(cx)
+			.state()
+			.selected()
+			.and_then(|selected| selected.guild_id);
+		if let Some(guild) = guild {
+			self.soundboard = Some(self.build_soundboard(guild, cx));
+		}
 	}
 
 	fn request_previews(&self, cx: &Context<Self>) {
@@ -1185,7 +1212,7 @@ impl VoiceRoom {
 							IconKind::Soundboard,
 							cx.t("voice-soundboard"),
 						)
-						.highlight(self.soundboard_open)
+						.highlight(self.soundboard.is_some())
 						.on_click(cx.listener(move |this, _, _, cx| this.toggle_soundboard(guild_id, cx))),
 					)
 					.child(
@@ -1392,13 +1419,13 @@ impl Render for VoiceRoom {
 								|stage| stage.child(self.status_chip(&snapshot, &theme, cx)),
 							)
 							.when_some(
-								snapshot
-									.guild
-									.filter(|_| connected && self.soundboard_open && !snapshot.stage_channel),
-								|stage, guild| {
+								self.soundboard
+									.as_ref()
+									.filter(|_| connected && !snapshot.stage_channel),
+								|stage, board| {
 									stage.child(soundboard::panel(
+										board,
 										&self.data,
-										guild,
 										snapshot.channel,
 										&theme,
 										cx,

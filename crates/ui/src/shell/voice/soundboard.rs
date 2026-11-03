@@ -17,44 +17,59 @@ const PANEL_MAX_HEIGHT: f32 = 24.;
 const CELL_WIDTH: f32 = 9.;
 const LOCKED_OPACITY: f32 = 0.5;
 
-struct Entry<'a> {
-	sound: &'a SoundboardSound,
+struct Entry {
+	sound_id: Snowflake,
+	name: SharedString,
 	locked: bool,
+	emoji: Option<StatusEmoji>,
 }
 
-struct Group<'a> {
+struct Group {
 	title: SharedString,
-	entries: Vec<Entry<'a>>,
+	entries: Vec<Entry>,
 }
 
-fn group<'a>(title: SharedString, sounds: &'a [SoundboardSound], state: &State) -> Option<Group<'a>> {
+pub struct Board {
+	groups: Vec<Group>,
+}
+
+fn group(title: &str, sounds: &[SoundboardSound], state: &State) -> Option<Group> {
 	let entries: Vec<Entry> = sounds
 		.iter()
 		.filter(|sound| sound.usable())
 		.map(|sound| Entry {
+			sound_id: sound.sound_id,
+			name: sound.name.clone().into(),
 			locked: state.sound_block(sound).is_some(),
-			sound,
+			emoji: StatusEmoji::from_sound(sound),
 		})
 		.collect();
-	(!entries.is_empty()).then_some(Group { title, entries })
+	(!entries.is_empty()).then(|| Group {
+		title: title.to_uppercase().into(),
+		entries,
+	})
 }
 
-fn groups<'a>(state: &'a State, guild: Snowflake, cx: &App) -> Vec<Group<'a>> {
-	let own = state
-		.guild(guild)
-		.and_then(|found| group(found.name.clone().into(), state.guild_sounds(guild)?, state));
-	let others = state
-		.guilds()
-		.filter(|other| other.id != guild && state.has_nitro())
-		.filter_map(|other| group(other.name.clone().into(), state.guild_sounds(other.id)?, state));
-	let defaults = state
-		.default_sounds()
-		.and_then(|sounds| group(cx.t("soundboard-default"), sounds, state));
-	own.into_iter().chain(others).chain(defaults).collect()
+impl Board {
+	pub fn new(state: &State, guild: Snowflake, cx: &App) -> Self {
+		let own = state
+			.guild(guild)
+			.and_then(|found| group(&found.name, state.guild_sounds(guild)?, state));
+		let others = state
+			.guilds()
+			.filter(|other| other.id != guild && state.has_nitro())
+			.filter_map(|other| group(&other.name, state.guild_sounds(other.id)?, state));
+		let defaults = state
+			.default_sounds()
+			.and_then(|sounds| group(&cx.t("soundboard-default"), sounds, state));
+		Self {
+			groups: own.into_iter().chain(others).chain(defaults).collect(),
+		}
+	}
 }
 
-fn cell(entry: &Entry<'_>, channel: Snowflake, data: &Entity<Data>, theme: &Theme, cx: &App) -> AnyElement {
-	let sound_id = entry.sound.sound_id;
+fn cell(entry: &Entry, channel: Snowflake, data: &Entity<Data>, theme: &Theme, cx: &App) -> AnyElement {
+	let sound_id = entry.sound_id;
 	let data = data.clone();
 	div()
 		.id(("voice-sound", sound_id.get()))
@@ -74,7 +89,7 @@ fn cell(entry: &Entry<'_>, channel: Snowflake, data: &Entity<Data>, theme: &Them
 				sound_id,
 			})
 		})
-		.child(match StatusEmoji::from_sound(entry.sound) {
+		.child(match &entry.emoji {
 			Some(emoji) => emoji.element(theme.glyph_md, cx),
 			None => Icon::new(IconKind::Soundboard)
 				.size(theme.glyph_md)
@@ -88,18 +103,12 @@ fn cell(entry: &Entry<'_>, channel: Snowflake, data: &Entity<Data>, theme: &Them
 				.truncate()
 				.text_size(theme.font_sm)
 				.text_color(theme.text_normal)
-				.child(entry.sound.name.clone()),
+				.child(entry.name.clone()),
 		)
 		.into_any_element()
 }
 
-fn section(
-	group: &Group<'_>,
-	channel: Snowflake,
-	data: &Entity<Data>,
-	theme: &Theme,
-	cx: &App,
-) -> AnyElement {
+fn section(group: &Group, channel: Snowflake, data: &Entity<Data>, theme: &Theme, cx: &App) -> AnyElement {
 	div()
 		.flex()
 		.flex_col()
@@ -110,7 +119,7 @@ fn section(
 				.text_size(theme.font_tiny)
 				.font_weight(FontWeight::BOLD)
 				.text_color(theme.header_secondary)
-				.child(group.title.to_uppercase()),
+				.child(group.title.clone()),
 		)
 		.child(
 			div().flex().flex_wrap().children(
@@ -123,15 +132,8 @@ fn section(
 		.into_any_element()
 }
 
-pub fn panel(
-	data: &Entity<Data>,
-	guild: Snowflake,
-	channel: Snowflake,
-	theme: &Theme,
-	cx: &App,
-) -> AnyElement {
-	let state = data.read(cx).state();
-	let groups = groups(&state, guild, cx);
+pub fn panel(board: &Board, data: &Entity<Data>, channel: Snowflake, theme: &Theme, cx: &App) -> AnyElement {
+	let groups = &board.groups;
 	div()
 		.absolute()
 		.left_0()
