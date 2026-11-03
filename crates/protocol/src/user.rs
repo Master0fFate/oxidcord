@@ -1,7 +1,7 @@
 use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
 
-use crate::lenient::{flags_serde, int_enum};
+use crate::lenient::{flags_serde, int_enum, or_default};
 use crate::snowflake::Snowflake;
 
 bitflags! {
@@ -57,22 +57,38 @@ pub struct PrimaryGuild {
 #[serde(default)]
 pub struct User {
 	pub id: Snowflake,
+	#[serde(deserialize_with = "or_default")]
 	pub username: String,
+	#[serde(deserialize_with = "or_default")]
 	pub discriminator: Option<String>,
+	#[serde(deserialize_with = "or_default")]
 	pub global_name: Option<String>,
+	#[serde(deserialize_with = "or_default")]
 	pub avatar: Option<String>,
+	#[serde(deserialize_with = "or_default")]
 	pub bot: Option<bool>,
+	#[serde(deserialize_with = "or_default")]
 	pub system: Option<bool>,
+	#[serde(deserialize_with = "or_default")]
 	pub banner: Option<String>,
+	#[serde(deserialize_with = "or_default")]
 	pub accent_color: Option<i64>,
 	pub flags: UserFlags,
+	#[serde(deserialize_with = "or_default")]
 	pub premium_type: Option<PremiumType>,
 	pub public_flags: UserFlags,
+	#[serde(deserialize_with = "or_default")]
 	pub avatar_decoration_data: Option<AvatarDecorationData>,
+	#[serde(deserialize_with = "or_default")]
 	pub primary_guild: Option<PrimaryGuild>,
+	#[serde(deserialize_with = "or_default")]
 	pub clan: Option<PrimaryGuild>,
+	#[serde(deserialize_with = "or_default")]
 	pub email: Option<String>,
+	#[serde(deserialize_with = "or_default")]
 	pub verified: Option<bool>,
+	#[serde(deserialize_with = "or_default")]
 	pub mfa_enabled: Option<bool>,
+	#[serde(deserialize_with = "or_default")]
 	pub locale: Option<String>,
 }
