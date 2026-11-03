@@ -17,7 +17,7 @@ use crate::ops::{UploadedFile, sanitized_filename};
 use crate::state::Shared;
 
 const BASE_UPLOAD_BYTES: u64 = 20 * 1024 * 1024;
-const PREMIUM_UPLOAD_BYTES: u64 = 1024 * 1024 * 1024;
+const PREMIUM_UPLOAD_BYTES: u64 = 500 * 1024 * 1024;
 const BASE_MESSAGE_CHARS: usize = 2000;
 const PREMIUM_MESSAGE_CHARS: usize = 4000;
 const SLOWMODE_RETRY_SECONDS: f64 = 5.0;
@@ -103,9 +103,9 @@ impl Shared {
 			BASE_MESSAGE_CHARS
 		};
 		if content.chars().count() > message_limit {
-			return Err(ApiError::invalid_body(
-				"content: Must be 2000 or fewer in length.",
-			));
+			return Err(ApiError::invalid_body(format!(
+				"content: Must be {message_limit} or fewer in length."
+			)));
 		}
 		let limit = self.upload_limit();
 		if files.iter().any(|file| file.size as u64 > limit) {

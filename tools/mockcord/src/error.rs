@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -7,7 +9,7 @@ use serde_json::{Value, json};
 pub struct ApiError {
 	status: StatusCode,
 	code: i64,
-	message: &'static str,
+	message: Cow<'static, str>,
 	mfa: bool,
 	retry_after: Option<f64>,
 }
@@ -19,7 +21,7 @@ impl ApiError {
 		Self {
 			status,
 			code,
-			message,
+			message: Cow::Borrowed(message),
 			mfa: false,
 			retry_after: None,
 		}
@@ -29,7 +31,7 @@ impl ApiError {
 		Self::new(StatusCode::INTERNAL_SERVER_ERROR, 0, "500: Internal Server Error")
 	}
 
-	pub const fn slowmode(retry_after: f64) -> Self {
+	pub fn slowmode(retry_after: f64) -> Self {
 		Self {
 			retry_after: Some(retry_after),
 			..Self::new(
@@ -52,7 +54,7 @@ impl ApiError {
 		Self::new(StatusCode::UNAUTHORIZED, 0, "401: Unauthorized")
 	}
 
-	pub const fn mfa_required() -> Self {
+	pub fn mfa_required() -> Self {
 		Self {
 			mfa: true,
 			..Self::new(
@@ -103,8 +105,11 @@ impl ApiError {
 		Self::new(StatusCode::BAD_REQUEST, 80004, "No users with DiscordTag exist")
 	}
 
-	pub const fn invalid_body(message: &'static str) -> Self {
-		Self::new(StatusCode::BAD_REQUEST, 50035, message)
+	pub fn invalid_body(message: impl Into<Cow<'static, str>>) -> Self {
+		Self {
+			message: message.into(),
+			..Self::new(StatusCode::BAD_REQUEST, 50035, "")
+		}
 	}
 
 	pub const fn empty_message() -> Self {
