@@ -91,7 +91,11 @@ impl Shared {
 			channel_id,
 		});
 		let previous = std::mem::replace(&mut *self.voice_join.lock(), next.clone());
-		previous != next
+		let changed = previous != next;
+		if let (true, None, Some(channel_id)) = (changed, guild_id, channel_id) {
+			let _ = self.stop_ringing(channel_id, Some(vec![CURRENT_USER_ID]));
+		}
+		changed
 	}
 
 	fn current_voice(&self) -> Result<VoiceJoin, ApiError> {

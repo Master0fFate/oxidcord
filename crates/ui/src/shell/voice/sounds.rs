@@ -37,7 +37,9 @@ fn is_ringing_out(state: &State) -> bool {
 }
 
 fn is_ringing_in(state: &State) -> bool {
-	state.own_status() != StatusKind::Dnd && state.incoming_calls().next().is_some()
+	let joined = state.voice().map(|voice| voice.channel_id);
+	state.own_status() != StatusKind::Dnd
+		&& state.incoming_calls().any(|call| Some(call.channel_id) != joined)
 }
 
 fn audible_volume(backend: &SettingsBackend, cx: &App) -> Option<f32> {
@@ -46,12 +48,10 @@ fn audible_volume(backend: &SettingsBackend, cx: &App) -> Option<f32> {
 }
 
 fn toggle_loop(slot: &mut Option<Looping>, wanted: bool, cue: Cue, volume: impl FnOnce() -> Option<f32>) {
-	if !wanted {
-		*slot = None;
-	} else if slot.is_none()
-		&& let Some(volume) = volume()
-	{
-		*slot = sound::start_loop(cue, volume);
+	match wanted.then(volume).flatten() {
+		None => *slot = None,
+		Some(volume) if slot.is_none() => *slot = sound::start_loop(cue, volume),
+		Some(_) => {}
 	}
 }
 
@@ -68,7 +68,7 @@ impl VoiceSounds {
 		if changes.voice_cues {
 			self.play_cues(data, backend, cx);
 		}
-		if changes.calls || changes.voice_session || changes.own_status {
+		if changes.calls || changes.voice_session || changes.own_status || changes.client_options {
 			self.sync_loops(data, backend, cx);
 		}
 	}
