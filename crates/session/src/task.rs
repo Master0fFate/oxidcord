@@ -616,7 +616,7 @@ impl Core {
 				self.apply_local(LocalEvent::LatencyMeasured(heartbeat_rtt));
 			}
 			GatewayEvent::DecodeFailure { event } => {
-				tracing::debug!(event, "gateway event could not be decoded");
+				tracing::warn!(event, "gateway event could not be decoded");
 			}
 		}
 	}
