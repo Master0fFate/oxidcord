@@ -1638,7 +1638,7 @@ impl Core {
 
 	fn set_speaker(&mut self, guild_id: Snowflake, channel_id: Snowflake, user_id: Snowflake, speaker: bool) {
 		let own = self.state.read().current_user_id() == Some(user_id);
-		if (speaker || !own) && !self.guild_allows(guild_id, Permissions::MUTE_MEMBERS, "Mute Members") {
+		if (speaker || !own) && !self.channel_allows(channel_id, Permissions::MUTE_MEMBERS, "Mute Members") {
 			return;
 		}
 		let body = json!({ "channel_id": channel_id, "suppress": !speaker });

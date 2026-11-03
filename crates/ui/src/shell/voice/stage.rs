@@ -11,7 +11,6 @@ use crate::components::{dialog_footer, field};
 use crate::data::Data;
 use crate::i18n::Translate as _;
 use crate::icons::IconKind;
-use crate::shell::community::access::GuildAccess;
 use crate::shell::community::data_handle;
 use crate::shell::community::modal::{self, Close};
 use crate::theme::Theme;
@@ -46,15 +45,10 @@ pub fn seat_change(state: &State, guild: Snowflake, target: Snowflake) -> Option
 	if state.channel(channel)?.kind != ChannelType::GuildStageVoice {
 		return None;
 	}
-	let access = GuildAccess::of(state, guild);
 	let speaker = !voice.suppress;
 	let own = me == target;
-	let can_mute = access.has(Permissions::MUTE_MEMBERS);
-	let allowed = if own {
-		speaker || can_mute
-	} else {
-		can_mute && access.outranks(state, guild, target)
-	};
+	let can_mute = state.my_permissions(channel).contains(Permissions::MUTE_MEMBERS);
+	let allowed = if own { speaker || can_mute } else { can_mute };
 	let (label, icon) = match (speaker, own) {
 		(true, _) => ("mod-move-audience", IconKind::Members),
 		(false, true) => ("voice-stage-speak", IconKind::Stage),
