@@ -1,4 +1,6 @@
-use protocol::{Connection, Guild, LenientVec, Message, Relationship, Snowflake, User};
+use protocol::{
+	Connection, Guild, LenientVec, Message, NotificationCenterPage, Relationship, Snowflake, User,
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -112,6 +114,36 @@ impl RestClient {
 	pub async fn delete_mention(&self, message_id: Snowflake) -> Result<()> {
 		self.send_empty(Request::delete(format!("/users/@me/mentions/{message_id}")))
 			.await
+	}
+
+	pub async fn notification_items(
+		&self,
+		after: Option<Snowflake>,
+		limit: u8,
+	) -> Result<NotificationCenterPage> {
+		let mut request = Request::get("/users/@me/notification-center/items")
+			.query(&[("limit", limit.to_string().as_str()), ("with_mentions", "false")]);
+		if let Some(after) = after {
+			request = request.query(&[("after", after.to_string())]);
+		}
+		self.send(request).await
+	}
+
+	pub async fn delete_notification_item(&self, id: Snowflake) -> Result<()> {
+		let request = Request::delete(format!("/users/@me/notification-center/items/{id}"))
+			.json(&json!({ "item_type": "regular" }));
+		self.send_empty(request).await
+	}
+
+	pub async fn ack_notification_items(&self, ids: &[Snowflake]) -> Result<()> {
+		let request = match ids {
+			[id] => Request::post(format!("/users/@me/notification-center/items/{id}/ack")),
+			_ => {
+				let pairs: Vec<(&str, String)> = ids.iter().map(|id| ("item_ids", id.to_string())).collect();
+				Request::post("/users/@me/notification-center/items/bulk-ack").query(&pairs)
+			}
+		};
+		self.send_empty(request).await
 	}
 
 	pub async fn relationships(&self) -> Result<LenientVec<Relationship>> {

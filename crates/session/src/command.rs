@@ -579,6 +579,15 @@ pub enum Command {
 	DismissMention {
 		message_id: Snowflake,
 	},
+	LoadNotifications {
+		after: Option<Snowflake>,
+	},
+	DismissNotification {
+		id: Snowflake,
+	},
+	AckNotifications {
+		ids: Vec<Snowflake>,
+	},
 	PinMessage {
 		channel_id: Snowflake,
 		message_id: Snowflake,

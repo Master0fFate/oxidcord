@@ -58,6 +58,22 @@ pub fn router(shared: Arc<Shared>) -> Router {
 		.route("/users/@me/guilds", get(users::my_guilds))
 		.route("/users/@me/mentions", get(users::my_mentions))
 		.route(
+			"/users/@me/notification-center/items",
+			get(users::notification_items),
+		)
+		.route(
+			"/users/@me/notification-center/items/{id}",
+			delete(users::delete_notification_item),
+		)
+		.route(
+			"/users/@me/notification-center/items/{id}/ack",
+			post(users::ack_notification_item),
+		)
+		.route(
+			"/users/@me/notification-center/items/bulk-ack",
+			post(users::bulk_ack_notification_items),
+		)
+		.route(
 			"/users/@me/message-requests/supplemental-data",
 			get(users::message_request_previews),
 		)

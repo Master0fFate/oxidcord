@@ -836,6 +836,7 @@ stickers-edit-title = Edit Sticker
 stickers-edit-save = Save
 
 inbox-title = Inbox
+inbox-tab-for-you = For You
 inbox-tab-unreads = Unreads
 inbox-tab-mentions = Mentions
 inbox-empty-unreads = You are all caught up.
@@ -847,6 +848,9 @@ inbox-filter-no-everyone = No everyone
 inbox-filter-direct = Direct only
 inbox-empty = No recent mentions.
 inbox-loading = Loading mentions...
+inbox-loading-feed = Loading...
+inbox-empty-feed = Nothing new.
+inbox-load-more = Load more
 
 events-count = { $count ->
     [one] 1 Event

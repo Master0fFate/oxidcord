@@ -16,6 +16,7 @@ use crate::guild::{Guild, ScheduledEvent, UnavailableGuild};
 use crate::lenient::{LenientVec, int_enum, or_default, timestamp, timestamp_or_seconds};
 use crate::member::Member;
 use crate::message::{BURST_REACTION, Message, MessageUpdate};
+use crate::notification_center::NotificationCenterItem;
 use crate::presence::Presence;
 use crate::role::Role;
 use crate::settings::{
@@ -707,6 +708,18 @@ pub struct RecentMentionDelete {
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
+pub struct NotificationCenterItemDelete {
+	pub id: Snowflake,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct NotificationCenterItemsAck {
+	pub id: Snowflake,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct RelationshipRemove {
 	pub id: Snowflake,
 	#[serde(rename = "type")]
@@ -826,6 +839,9 @@ pub enum DispatchEvent {
 	UserNoteUpdate(UserNoteUpdate),
 	RelationshipRemove(RelationshipRemove),
 	RecentMentionDelete(RecentMentionDelete),
+	NotificationCenterItemCreate(Box<NotificationCenterItem>),
+	NotificationCenterItemDelete(NotificationCenterItemDelete),
+	NotificationCenterItemsAck(NotificationCenterItemsAck),
 	VoiceStateUpdate(Box<VoiceState>),
 	VoiceServerUpdate(VoiceServerUpdate),
 	StageInstanceCreate(Box<StageInstance>),
@@ -933,6 +949,9 @@ impl DispatchEvent {
 			"USER_NOTE_UPDATE" => Self::UserNoteUpdate(decode(name, data)?),
 			"RELATIONSHIP_REMOVE" => Self::RelationshipRemove(decode(name, data)?),
 			"RECENT_MENTION_DELETE" => Self::RecentMentionDelete(decode(name, data)?),
+			"NOTIFICATION_CENTER_ITEM_CREATE" => Self::NotificationCenterItemCreate(decode(name, data)?),
+			"NOTIFICATION_CENTER_ITEM_DELETE" => Self::NotificationCenterItemDelete(decode(name, data)?),
+			"NOTIFICATION_CENTER_ITEMS_ACK" => Self::NotificationCenterItemsAck(decode(name, data)?),
 			"VOICE_STATE_UPDATE" => Self::VoiceStateUpdate(decode(name, data)?),
 			"VOICE_SERVER_UPDATE" => Self::VoiceServerUpdate(decode(name, data)?),
 			"STAGE_INSTANCE_CREATE" => Self::StageInstanceCreate(decode(name, data)?),

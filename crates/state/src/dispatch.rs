@@ -258,6 +258,9 @@ impl State {
 				changes
 			}
 			DispatchEvent::RecentMentionDelete(delete) => self.dismiss_mention(delete.message_id),
+			DispatchEvent::NotificationCenterItemCreate(item) => self.notification_created(item),
+			DispatchEvent::NotificationCenterItemDelete(delete) => self.notification_deleted(delete.id),
+			DispatchEvent::NotificationCenterItemsAck(ack) => self.notification_acked(ack.id),
 			DispatchEvent::RelationshipRemove(remove) => {
 				let was_collapsed = self.hides_messages_of(remove.id);
 				let removed = self.relationships.shift_remove(&remove.id).is_some();

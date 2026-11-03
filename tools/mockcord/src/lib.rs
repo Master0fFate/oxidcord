@@ -12,6 +12,7 @@ mod ids;
 mod json;
 mod media;
 mod member_list;
+mod notifications;
 mod ops;
 mod ready;
 mod reconnect;

@@ -8,8 +8,8 @@ use protocol::{
 	ApplicationCommand, ApplicationCommandType, AutoModRule, Channel, ChannelType, CommandApplication,
 	CommandChoice, CommandIndex, Connection, Gif, GifFavorites, GifTrending, Guild, GuildBan,
 	InteractionContext, JoinRequestStatus, LenientVec, Member, MemberVerification, Message,
-	MessageRequestPreview, Permissions,
-	PinnedMessage, ScheduledEvent, Snowflake, SoundboardSound, Sticker, StickerPack, ThreadMember, User,
+	MessageRequestPreview, NotificationCenterItem, Permissions, PinnedMessage, ScheduledEvent, Snowflake,
+	SoundboardSound, Sticker, StickerPack, ThreadMember, User,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -33,6 +33,14 @@ pub enum Loaded {
 		messages: Vec<Message>,
 	},
 	MentionDismissed(Snowflake),
+	NotificationItems {
+		items: Vec<NotificationCenterItem>,
+		cursor: Option<Snowflake>,
+		has_more: bool,
+		append: bool,
+	},
+	NotificationDismissed(Snowflake),
+	NotificationsAcked(Vec<Snowflake>),
 	RequestPreviews {
 		channel_ids: Vec<Snowflake>,
 		previews: Vec<MessageRequestPreview>,
@@ -409,9 +417,17 @@ fn member_allows(command: &ApplicationCommand, permissions: Permissions) -> bool
 	}
 }
 #[derive(Debug, Default)]
+pub(crate) struct NotificationFeed {
+	items: Vec<Arc<NotificationCenterItem>>,
+	cursor: Option<Snowflake>,
+	has_more: bool,
+}
+
+#[derive(Debug, Default)]
 pub(crate) struct Lazy {
 	pub(crate) mentions: HashMap<(bool, bool), Vec<Arc<Message>>>,
 	pub(crate) request_previews: HashMap<Snowflake, Arc<Message>>,
+	pub(crate) notifications: Option<NotificationFeed>,
 	pub(crate) pins: HashMap<Snowflake, PinList>,
 	pub(crate) archived: HashMap<Snowflake, ArchivedThreads>,
 	pub(crate) profiles: HashMap<Snowflake, UserProfile>,
@@ -650,6 +666,16 @@ fn invite_info(raw: RawInvite) -> InviteInfo {
 	}
 }
 
+impl NotificationFeed {
+	fn insert(&mut self, item: NotificationCenterItem) {
+		if self.items.iter().any(|known| known.id == item.id) {
+			return;
+		}
+		let at = self.items.partition_point(|known| known.id > item.id);
+		self.items.insert(at, Arc::new(item));
+	}
+}
+
 impl State {
 	pub(crate) fn apply_loaded(&mut self, loaded: &Loaded) -> Changes {
 		let mut changes = Changes::default();
@@ -671,6 +697,33 @@ impl State {
 				changes.loaded.insert(INBOX_KEY);
 			}
 			Loaded::MentionDismissed(message_id) => return self.dismiss_mention(*message_id),
+			Loaded::NotificationItems {
+				items,
+				cursor,
+				has_more,
+				append,
+			} => {
+				let feed = self
+					.lazy
+					.notifications
+					.get_or_insert_with(NotificationFeed::default);
+				if !*append {
+					feed.items.clear();
+				}
+				for item in items.iter().filter(|item| !item.kind.is_mention()) {
+					feed.insert(item.clone());
+				}
+				feed.cursor = *cursor;
+				feed.has_more = *has_more;
+				changes.loaded.insert(INBOX_KEY);
+			}
+			Loaded::NotificationDismissed(id) => return self.notification_deleted(*id),
+			Loaded::NotificationsAcked(ids) => {
+				for id in ids {
+					self.notification_acked(*id);
+				}
+				changes.loaded.insert(INBOX_KEY);
+			}
 			Loaded::RequestPreviews {
 				channel_ids,
 				previews,
@@ -1213,6 +1266,53 @@ impl State {
 				reason: entry.reason.filter(|reason| !reason.is_empty()),
 			})
 			.collect()
+	}
+
+	pub(crate) fn notification_created(&mut self, item: &NotificationCenterItem) -> Changes {
+		let mut changes = Changes::default();
+		if let Some(feed) = &mut self.lazy.notifications
+			&& !item.kind.is_mention()
+		{
+			feed.insert(item.clone());
+			changes.loaded.insert(INBOX_KEY);
+		}
+		changes
+	}
+
+	pub(crate) fn notification_deleted(&mut self, id: Snowflake) -> Changes {
+		let mut changes = Changes::default();
+		if let Some(feed) = &mut self.lazy.notifications {
+			feed.items.retain(|item| item.id != id);
+			changes.loaded.insert(INBOX_KEY);
+		}
+		changes
+	}
+
+	pub(crate) fn notification_acked(&mut self, id: Snowflake) -> Changes {
+		let mut changes = Changes::default();
+		if let Some(item) = self
+			.lazy
+			.notifications
+			.as_mut()
+			.and_then(|feed| feed.items.iter_mut().find(|item| item.id == id))
+			.filter(|item| !item.acked)
+		{
+			Arc::make_mut(item).acked = true;
+			changes.loaded.insert(INBOX_KEY);
+		}
+		changes
+	}
+
+	pub fn notifications(&self) -> Option<&[Arc<NotificationCenterItem>]> {
+		self.lazy.notifications.as_ref().map(|feed| feed.items.as_slice())
+	}
+
+	pub fn notifications_next(&self) -> Option<Snowflake> {
+		self.lazy
+			.notifications
+			.as_ref()
+			.filter(|feed| feed.has_more)
+			.and_then(|feed| feed.cursor)
 	}
 
 	pub(crate) fn dismiss_mention(&mut self, message_id: Snowflake) -> Changes {

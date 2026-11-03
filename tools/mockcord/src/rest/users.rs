@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::{Path, Query, RawQuery, State};
-use axum::http::HeaderMap;
 use axum::http::header::AUTHORIZATION;
+use axum::http::{HeaderMap, StatusCode};
 use protocol::{Channel, ChannelType, LenientVec, Snowflake, User};
 use serde_json::{Value, json};
 
@@ -104,6 +104,43 @@ pub async fn message_request_previews(
 		})
 		.collect();
 	Json(Value::Array(previews))
+}
+
+pub async fn notification_items(
+	State(shared): State<Arc<Shared>>,
+	Query(params): Query<HashMap<String, String>>,
+) -> Json<Value> {
+	let limit = params
+		.get("limit")
+		.and_then(|limit| limit.parse().ok())
+		.unwrap_or(25)
+		.clamp(1, 100);
+	let after = params.get("after").and_then(|after| after.parse().ok());
+	Json(shared.notification_page(after, limit))
+}
+
+pub async fn delete_notification_item(State(shared): State<Arc<Shared>>, Path(id): Path<u64>) -> StatusCode {
+	shared.delete_notification(id);
+	StatusCode::NO_CONTENT
+}
+
+pub async fn ack_notification_item(State(shared): State<Arc<Shared>>, Path(id): Path<u64>) -> StatusCode {
+	shared.ack_notifications(&[id]);
+	StatusCode::NO_CONTENT
+}
+
+pub async fn bulk_ack_notification_items(
+	State(shared): State<Arc<Shared>>,
+	RawQuery(query): RawQuery,
+) -> StatusCode {
+	let ids: Vec<u64> = query
+		.unwrap_or_default()
+		.split('&')
+		.filter_map(|pair| pair.strip_prefix("item_ids="))
+		.filter_map(|id| id.parse().ok())
+		.collect();
+	shared.ack_notifications(&ids);
+	StatusCode::NO_CONTENT
 }
 
 pub async fn my_connections(State(shared): State<Arc<Shared>>) -> Json<Value> {

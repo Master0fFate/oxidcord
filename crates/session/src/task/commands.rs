@@ -35,6 +35,7 @@ const ACK_BULK_LIMIT: usize = 100;
 const BAN_PAGE_LIMIT: usize = 1000;
 const ARCHIVED_PAGE: u8 = 50;
 const MENTIONS_PAGE: u8 = 25;
+const NOTIFICATIONS_PAGE: u8 = 25;
 const PINS_PAGE: u8 = 50;
 
 struct CommandCall<'a> {
@@ -272,6 +273,9 @@ impl Core {
 			| Command::AckPins { .. }
 			| Command::LoadMentions { .. }
 			| Command::DismissMention { .. }
+			| Command::LoadNotifications { .. }
+			| Command::DismissNotification { .. }
+			| Command::AckNotifications { .. }
 			| Command::PinMessage { .. }
 			| Command::UnpinMessage { .. }
 			| Command::LoadProfile { .. }
@@ -523,6 +527,29 @@ impl Core {
 				self.spawn_load("dismiss mention", move |rest| async move {
 					rest.delete_mention(message_id).await?;
 					Ok(Loaded::MentionDismissed(message_id))
+				})
+			}
+			Command::LoadNotifications { after } => {
+				self.spawn_load("notifications", move |rest| async move {
+					let page = rest.notification_items(after, NOTIFICATIONS_PAGE).await?;
+					Ok(Loaded::NotificationItems {
+						items: page.items.into_vec(),
+						cursor: page.cursor,
+						has_more: page.has_more,
+						append: after.is_some(),
+					})
+				})
+			}
+			Command::DismissNotification { id } => {
+				self.spawn_load("dismiss notification", move |rest| async move {
+					rest.delete_notification_item(id).await?;
+					Ok(Loaded::NotificationDismissed(id))
+				})
+			}
+			Command::AckNotifications { ids } => {
+				self.spawn_load("acknowledge notifications", move |rest| async move {
+					rest.ack_notification_items(&ids).await?;
+					Ok(Loaded::NotificationsAcked(ids))
 				})
 			}
 			Command::PinMessage {
