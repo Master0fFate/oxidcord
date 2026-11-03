@@ -905,6 +905,7 @@ tray-mute = Mute
 tray-deafen = Deafen
 tray-quit = Quit
 taskbar-mentions = Unread Mentions
+tray-mentions = Oxidcord, { $count } unread
 accounts-add = Add an Account
 accounts-manage = Manage Accounts
 accounts-done = Done

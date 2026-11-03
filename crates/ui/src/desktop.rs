@@ -7,7 +7,7 @@ use platform::tray::{Tray, TrayConfig, TrayEvent, TrayItem, TrayLabels};
 use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
 
 use crate::app::AppRoot;
-use crate::i18n::Translate as _;
+use crate::i18n::{ArgValue, Translate as _};
 
 const ICON_BYTES: &[u8] = include_bytes!("../../../assets/icon.png");
 
@@ -194,10 +194,18 @@ mod native {
 }
 
 pub fn set_mentions(window: &Window, mentions: u32, cx: &App) {
-	if let Some(TrayBadge(tray)) = cx.try_global::<TrayBadge>()
-		&& let Err(error) = tray.set_mentions(mentions)
-	{
-		tracing::warn!(%error, "could not update the tray badge");
+	if let Some(TrayBadge(tray)) = cx.try_global::<TrayBadge>() {
+		let tooltip = if mentions > 0 {
+			cx.t_args("tray-mentions", &[("count", ArgValue::from(i64::from(mentions)))])
+		} else {
+			cx.t("app-name")
+		};
+		if let Err(error) = tray
+			.set_mentions(mentions)
+			.and_then(|()| tray.set_tooltip(&tooltip))
+		{
+			tracing::warn!(%error, "could not update the tray badge");
+		}
 	}
 	native::set_mentions(window, mentions, &cx.t("taskbar-mentions"));
 }
