@@ -149,7 +149,7 @@ impl PrivacyPage {
 			cx.t(label),
 			None,
 			select(
-				format!("{label}-{category:?}"),
+				(label, category as usize),
 				labels[selected].clone(),
 				&labels,
 				selected,

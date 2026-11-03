@@ -51,6 +51,7 @@ pub struct TrayConfig {
 pub struct Tray {
 	icon: TrayIcon,
 	base: (Vec<u8>, u32, u32),
+	lit: AtomicBool,
 }
 
 impl Tray {
@@ -83,7 +84,14 @@ impl Tray {
 			.with_menu(Box::new(build_menu(&config.menu, &config.labels)?))
 			.with_menu_on_left_click(false)
 			.build()?;
-		Ok((Tray { icon, base }, receiver))
+		Ok((
+			Tray {
+				icon,
+				base,
+				lit: AtomicBool::new(false),
+			},
+			receiver,
+		))
 	}
 
 	pub fn set_tooltip(&self, tooltip: &str) -> Result<()> {
@@ -92,9 +100,13 @@ impl Tray {
 	}
 
 	pub fn set_mentions(&self, mentions: u32) -> Result<()> {
+		let lit = mentions > 0;
+		if self.lit.swap(lit, Ordering::Relaxed) == lit {
+			return Ok(());
+		}
 		let (rgba, width, height) = &self.base;
 		let mut pixels = rgba.clone();
-		if mentions > 0 {
+		if lit {
 			let (w, h) = (*width as f32, *height as f32);
 			badge::paint_dot(&mut pixels, (*width, *height), (w * 0.72, h * 0.72), w * 0.24);
 		}
