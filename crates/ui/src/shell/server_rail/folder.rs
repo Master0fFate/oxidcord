@@ -8,7 +8,7 @@ use session::Command;
 use state::RailEntry;
 
 use super::reorder::{Drop, new_folder_id, rearranged, restyled, ungrouped};
-use super::{DEFAULT_FOLDER_COLOR, FolderItem, Id, folder_title};
+use super::{DEFAULT_FOLDER_COLOR, Id, folder_title};
 use crate::components::{
 	COLOR_PALETTE, ContextMenuBuilder, color_swatch, dialog_footer, field, parse_hex_color,
 };
@@ -30,13 +30,30 @@ fn send_layout(cx: &App, change: impl FnOnce(&[RailEntry]) -> Option<Vec<RailEnt
 	}
 }
 
-pub(super) fn folder_menu(folder: &FolderItem, cx: &App) -> ContextMenuBuilder {
-	let id = folder.id;
-	let guilds: Vec<Snowflake> = folder.guilds.iter().map(|guild| guild.id).collect();
-	let unread = folder
-		.guilds
-		.iter()
-		.any(|guild| guild.unread || guild.mentions > 0);
+pub(super) fn folder_menu(id: Id) -> ContextMenuBuilder {
+	ContextMenuBuilder::new().lazy(move |cx| folder_menu_now(id, cx))
+}
+
+fn folder_menu_now(id: Id, cx: &App) -> ContextMenuBuilder {
+	let data = data_handle(cx);
+	let (guilds, unread) = {
+		let state = data.read(cx).state();
+		let guilds: Vec<Snowflake> = state
+			.guild_layout()
+			.into_iter()
+			.find_map(|entry| match entry {
+				RailEntry::Folder {
+					id: folder, guilds, ..
+				} if folder == id => Some(guilds),
+				_ => None,
+			})
+			.unwrap_or_default();
+		let unread = guilds
+			.iter()
+			.filter_map(|guild| state.guild_summary(*guild))
+			.any(|summary| summary.unread || summary.mentions > 0);
+		(guilds, unread)
+	};
 	let read_label = cx.t("folder-mark-read");
 	let menu = if unread {
 		ContextMenuBuilder::new().item(read_label, Some(IconKind::Check), move |_, cx| {

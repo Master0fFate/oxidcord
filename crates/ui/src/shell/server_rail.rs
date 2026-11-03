@@ -639,7 +639,7 @@ impl ServerRail {
 				)
 				.on_click(cx.listener(move |this, _, _, cx| this.toggle_folder(id, cx)))
 				.tooltip(tooltip(folder.name.clone()))
-				.context_menu(folder_menu(folder, cx).build());
+				.context_menu(folder_menu(id).build());
 			let inset = (theme.server_rail_width - theme.server_icon) / 2.;
 			return self.drop_slot(
 				tile,
@@ -672,7 +672,7 @@ impl ServerRail {
 			)
 			.on_click(cx.listener(move |this, _, _, cx| this.toggle_folder(id, cx)))
 			.tooltip(tooltip(folder.name.clone()))
-			.context_menu(folder_menu(folder, cx).build());
+			.context_menu(folder_menu(id).build());
 		let header = self.drop_slot(
 			header,
 			Target::Folder(id),
