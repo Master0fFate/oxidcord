@@ -28,6 +28,7 @@ mod server_rail;
 mod server_settings;
 mod settings;
 mod shortcuts;
+mod slash;
 mod threads;
 mod timeline;
 mod title_bar;
@@ -1150,6 +1151,10 @@ impl Shell {
 		if changes.autocomplete {
 			self.composer
 				.update(cx, |composer, cx| composer.on_autocomplete(window, cx));
+		}
+		if changes.loaded.contains(state::COMMAND_CHOICES_KEY) {
+			self.composer
+				.update(cx, |composer, cx| composer.on_command_choices(cx));
 		}
 		if changes.read_state || changes.guild_list || changes.private_channels || changes.relationships {
 			self.update_mentions(window, cx);

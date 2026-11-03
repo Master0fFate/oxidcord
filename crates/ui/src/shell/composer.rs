@@ -16,9 +16,14 @@ use media::SizeHint;
 use plugin_host::ViewContext;
 use plugin_host::api::model::{EmojiInfo, EmojiRef};
 use protocol::expressions::unicode::search_unicode;
-use protocol::{ChannelType, Permissions, Snowflake};
+use protocol::{
+	ApplicationCommandOption, ApplicationCommandType, ChannelType, CommandChoice, CommandOptionType,
+	Permissions, Snowflake,
+};
 use rest::UploadFile;
+use serde_json::Value;
 use session::{Command, ReplyTarget};
+use state::{AppCommand, State};
 
 use super::attachments::{self, CardAction, Edit, Pending};
 use super::community;
@@ -29,6 +34,7 @@ use super::plugins::{
 	self, MenuTarget, PluginMenu as _, command_list, composer_toolbar, has_plugin_items, parse_command,
 };
 use super::poll_create;
+use super::slash::{Invalid, SlashDraft, is_typed};
 use crate::components::{Avatar, ContextMenuBuilder, Divider, IconButton, unicode_emoji};
 use crate::data::{Data, DataEvent};
 use crate::format;
@@ -41,6 +47,7 @@ use crate::theme::{Theme, rem, with_alpha};
 const DRAFT_DELAY: Duration = Duration::from_millis(500);
 const AUTOCOMPLETE_RESORT_WINDOW: Duration = Duration::from_millis(300);
 const MEMBER_SEARCH_DEBOUNCE: Duration = Duration::from_millis(350);
+const CHOICE_DEBOUNCE: Duration = Duration::from_millis(250);
 const TYPING_INTERVAL: Duration = Duration::from_secs(5);
 const MAX_SUGGESTIONS: usize = 8;
 const MAX_CANDIDATES: usize = 200;
@@ -80,6 +87,47 @@ fn silent_suggestion(cx: &Context<Composer>) -> Suggestion {
 		insert: format!("{SILENT_TAG} "),
 		visual: Visual::Channel(IconKind::BellOff),
 		emoji: None,
+		pick: None,
+	}
+}
+
+fn named_value(choice: &CommandChoice) -> (String, Value) {
+	(choice.name.clone(), choice.value.clone())
+}
+
+fn choice_suggestion(name: String, value: Value) -> Suggestion {
+	Suggestion {
+		label: name,
+		detail: None,
+		insert: String::new(),
+		visual: Visual::Channel(IconKind::Check),
+		emoji: None,
+		pick: Some(Pick::Value(value)),
+	}
+}
+
+fn command_suggestion(app: &AppCommand, draft: SlashDraft, label: String) -> Suggestion {
+	let detail = [Some(app.application_name.as_str()), draft.description()]
+		.into_iter()
+		.flatten()
+		.filter(|part| !part.is_empty())
+		.collect::<Vec<_>>()
+		.join(" · ");
+	let visual = match &app.application_icon {
+		Some(icon) => Visual::Image(media::cdn::application_icon_url(
+			app.command.application_id.get(),
+			icon,
+			EMOJI_PIXELS,
+		)),
+		None => Visual::Channel(IconKind::Apps),
+	};
+	Suggestion {
+		insert: format!("/{label} "),
+		label: format!("/{label}"),
+		detail: Some(detail).filter(|detail| !detail.is_empty()),
+		visual,
+		emoji: None,
+		pick: Some(Pick::Command(Box::new(draft))),
 	}
 }
 
@@ -115,12 +163,32 @@ enum Visual {
 }
 
 #[derive(Clone)]
+enum Pick {
+	Command(Box<SlashDraft>),
+	Value(Value),
+	User(Snowflake),
+	Role(Snowflake),
+	Channel(Snowflake),
+}
+
+impl Pick {
+	fn into_value(self) -> Option<Value> {
+		match self {
+			Self::Command(_) => None,
+			Self::Value(value) => Some(value),
+			Self::User(id) | Self::Role(id) | Self::Channel(id) => Some(Value::String(id.to_string())),
+		}
+	}
+}
+
+#[derive(Clone)]
 struct Suggestion {
 	label: String,
 	detail: Option<String>,
 	insert: String,
 	visual: Visual,
 	emoji: Option<EmojiInfo>,
+	pick: Option<Pick>,
 }
 
 struct Autocomplete {
@@ -145,6 +213,9 @@ pub struct Composer {
 	notice: Option<SharedString>,
 	typing: Vec<SharedString>,
 	autocomplete: Option<Autocomplete>,
+	slash: Option<SlashDraft>,
+	choice_generation: u64,
+	choice_task: Option<Task<()>>,
 	emoji_candidates: Vec<Suggestion>,
 	emoji_generation: u64,
 	emoji_requested: Instant,
@@ -244,6 +315,9 @@ impl Composer {
 			notice: None,
 			typing: Vec::new(),
 			autocomplete: None,
+			slash: None,
+			choice_generation: 0,
+			choice_task: None,
 			emoji_candidates: Vec::new(),
 			emoji_generation: 0,
 			emoji_requested: Instant::now(),
@@ -284,6 +358,8 @@ impl Composer {
 		self.reply = None;
 		self.files.clear();
 		self.stickers.clear();
+		self.slash = None;
+		self.choice_task = None;
 		self.dismiss_autocomplete();
 		self.member_query.clear();
 		self.last_typing = None;
@@ -449,6 +525,7 @@ impl Composer {
 		if !access.send {
 			self.reply = None;
 			self.stickers.clear();
+			self.slash = None;
 			self.autocomplete = None;
 		}
 		let placeholder = self.placeholder(cx);
@@ -494,6 +571,10 @@ impl Composer {
 		if self.notice.take().is_some() {
 			cx.notify();
 		}
+		if self.slash.is_some() {
+			self.on_slash_change(cx);
+			return;
+		}
 		self.emoji_tokens
 			.sync(&self.input, &self.data, self.guild, window, cx);
 		let text = self.input.read(cx).value();
@@ -531,6 +612,10 @@ impl Composer {
 		let token = &before[start..];
 		let trigger = token.chars().next().and_then(trigger_of);
 		let query = &token[token.chars().next().map_or(0, char::len_utf8)..];
+		let (trigger, start, query) = match before.strip_prefix('/') {
+			Some(line) if trigger.is_none() => (Some(Trigger::Command), 0, line),
+			_ => (trigger, start, query),
+		};
 		let usable = match trigger {
 			Some(Trigger::Emoji) => {
 				query.chars().count() >= MIN_EMOJI_QUERY
@@ -622,10 +707,15 @@ impl Composer {
 	}
 
 	pub fn on_members(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-		if self.awaiting_members {
-			let text = self.input.read(cx).value();
-			self.update_autocomplete(&text, window, cx);
+		if !self.awaiting_members {
+			return;
 		}
+		if self.slash.is_some() {
+			self.refresh_slash(cx);
+			return;
+		}
+		let text = self.input.read(cx).value();
+		self.update_autocomplete(&text, window, cx);
 	}
 
 	fn plugin_emoji(&mut self, query: &str, cx: &mut Context<Self>) -> Vec<Suggestion> {
@@ -760,6 +850,7 @@ impl Composer {
 								insert: format!("<@{id}> "),
 								visual: Visual::Avatar(avatar_for(&state, id, AVATAR_PIXELS)),
 								emoji: None,
+								pick: Some(Pick::User(id)),
 							},
 						));
 					}
@@ -784,6 +875,7 @@ impl Composer {
 									insert: format!("<@&{}> ", role.id),
 									visual: Visual::Channel(IconKind::Shield),
 									emoji: None,
+									pick: Some(Pick::Role(role.id)),
 								},
 							));
 						}
@@ -800,6 +892,7 @@ impl Composer {
 										insert: format!("@{keyword} "),
 										visual: Visual::Glyph("@".to_owned()),
 										emoji: None,
+										pick: None,
 									},
 								));
 							}
@@ -824,6 +917,7 @@ impl Composer {
 										insert: format!("<#{}> ", channel.id),
 										visual: Visual::Channel(crate::icons::channel_icon(channel.kind)),
 										emoji: None,
+										pick: Some(Pick::Channel(channel.id)),
 									},
 								));
 							}
@@ -842,10 +936,12 @@ impl Composer {
 								insert: format!("/{name} "),
 								visual: Visual::Channel(IconKind::Plugins),
 								emoji: None,
+								pick: None,
 							},
 						));
 					}
 				}
+				found.extend(self.app_command_suggestions(&state, &rank));
 			}
 			Trigger::Emoji => {
 				let unlocked = data.session().plugins().has_emoji_pick();
@@ -867,6 +963,7 @@ impl Composer {
 									custom.animated,
 									EMOJI_PIXELS,
 								)),
+								pick: None,
 								emoji: Some(EmojiInfo {
 									emoji: EmojiRef {
 										id: Some(custom.id.get()),
@@ -894,6 +991,7 @@ impl Composer {
 							label: format!(":{}:", entry.shortcode),
 							detail: None,
 							insert: format!("{glyph} "),
+							pick: None,
 							emoji: Some(EmojiInfo {
 								emoji: EmojiRef {
 									id: None,
@@ -921,6 +1019,9 @@ impl Composer {
 	fn on_key(&mut self, key: &str, window: &mut Window, cx: &mut Context<Self>) -> bool {
 		if !self.input.focus_handle(cx).is_focused(window) {
 			return false;
+		}
+		if self.slash.is_some() && self.autocomplete.is_none() && self.on_slash_key(key, window, cx) {
+			return true;
 		}
 		if let Some(popup) = &mut self.autocomplete {
 			let count = popup.items.len();
@@ -961,6 +1062,19 @@ impl Composer {
 		let Some(item) = popup.items.get(index) else {
 			return;
 		};
+		match (&item.pick, self.slash.is_some()) {
+			(Some(Pick::Command(draft)), _) => {
+				let draft = (**draft).clone();
+				self.enter_slash(draft, window, cx);
+				return;
+			}
+			(Some(pick), true) => {
+				let (pick, label) = (pick.clone(), item.label.clone());
+				self.take_pick(pick, label, window, cx);
+				return;
+			}
+			_ => {}
+		}
 		let insert = item.insert.clone();
 		let range = popup.start..popup.cursor;
 		self.input
@@ -973,6 +1087,10 @@ impl Composer {
 		let Some(channel) = self.channel.filter(|_| self.access.send) else {
 			return;
 		};
+		if self.slash.is_some() {
+			self.submit_slash(channel, window, cx);
+			return;
+		}
 		if self.slowmode_remaining(cx).is_some() {
 			return;
 		}
@@ -1027,6 +1145,429 @@ impl Composer {
 		self.input.update(cx, |state, cx| state.clean(window, cx));
 		cx.emit(ComposerEvent::Sent);
 		cx.notify();
+	}
+
+	fn app_command_suggestions(
+		&self,
+		state: &State,
+		rank: &impl Fn(&str) -> Option<u8>,
+	) -> Vec<(u8, Suggestion)> {
+		let Some(channel) = self.channel else {
+			return Vec::new();
+		};
+		let mut found = Vec::new();
+		for app in state.app_commands(ApplicationCommandType::ChatInput, self.guild, channel) {
+			for draft in SlashDraft::from_command(&app) {
+				let label = draft.label();
+				let Some(hit) = rank(&label) else {
+					continue;
+				};
+				found.push((hit, command_suggestion(&app, draft, label)));
+			}
+		}
+		found
+	}
+
+	fn enter_slash(&mut self, draft: SlashDraft, window: &mut Window, cx: &mut Context<Self>) {
+		self.slash = Some(draft);
+		self.draft_task = None;
+		if let Some(channel) = self.channel {
+			self.data.read(cx).send(Command::SetDraft {
+				channel_id: channel,
+				content: String::new(),
+			});
+		}
+		self.dismiss_autocomplete();
+		self.focus_slot(0, window, cx);
+	}
+
+	fn leave_slash(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+		self.slash = None;
+		self.choice_task = None;
+		self.dismiss_autocomplete();
+		let placeholder = self.placeholder(cx);
+		self.input.update(cx, |state, cx| {
+			state.set_placeholder(placeholder, window, cx);
+			state.clean(window, cx);
+		});
+		cx.notify();
+	}
+
+	fn focus_slot(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+		let Some(slash) = &mut self.slash else {
+			return;
+		};
+		slash.focused = index;
+		let option = slash.focused_option();
+		let typed = option.is_some_and(is_typed);
+		let autocomplete = option.is_some_and(|option| option.autocomplete);
+		let attachment = option.is_some_and(|option| option.kind == CommandOptionType::Attachment);
+		let hint = option.map_or_else(
+			|| cx.t("slash-run"),
+			|option| {
+				SharedString::from(
+					option
+						.description
+						.clone()
+						.filter(|description| !description.is_empty())
+						.unwrap_or_else(|| option.name.clone()),
+				)
+			},
+		);
+		let text = slash
+			.slots
+			.get(index)
+			.filter(|_| typed)
+			.map(|slot| slot.text.clone())
+			.unwrap_or_default();
+		self.input
+			.update(cx, |state, cx| state.set_placeholder(hint, window, cx));
+		self.set_text(text, window, cx);
+		if autocomplete {
+			self.send_choice_request(cx);
+		}
+		if attachment {
+			self.pick_slash_file(cx);
+		}
+		self.refresh_slash(cx);
+	}
+
+	fn move_focus(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+		if self.commit_slash(cx) {
+			self.focus_slot(index, window, cx);
+		}
+	}
+
+	fn commit_slash(&mut self, cx: &mut Context<Self>) -> bool {
+		let Some(slash) = &mut self.slash else {
+			return false;
+		};
+		let Err(invalid) = slash.commit() else {
+			return true;
+		};
+		let name = slash
+			.focused_option()
+			.map(|option| option.name.clone())
+			.unwrap_or_default();
+		let key = match invalid {
+			Invalid::Number => "slash-number",
+			Invalid::Range => "slash-range",
+			Invalid::Length => "slash-length",
+		};
+		self.notice = Some(cx.t_args(key, &[("name", ArgValue::from(name))]));
+		cx.notify();
+		false
+	}
+
+	fn submit_slash(&mut self, channel: Snowflake, window: &mut Window, cx: &mut Context<Self>) {
+		if !self.commit_slash(cx) {
+			return;
+		}
+		let Some(slash) = self.slash.take() else {
+			return;
+		};
+		if let Some(missing) = slash.missing() {
+			let name = slash.options()[missing].name.clone();
+			let in_place = missing == slash.focused;
+			self.slash = Some(slash);
+			if in_place {
+				self.notice = Some(cx.t_args("slash-missing", &[("name", ArgValue::from(name))]));
+				cx.notify();
+			} else {
+				self.focus_slot(missing, window, cx);
+			}
+			return;
+		}
+		let (command, options, files) = slash.finish();
+		self.data.read(cx).send(Command::RunChatCommand {
+			guild_id: self.guild,
+			channel_id: channel,
+			command,
+			options,
+			files,
+		});
+		self.leave_slash(window, cx);
+		cx.emit(ComposerEvent::Sent);
+	}
+
+	fn take_pick(&mut self, pick: Pick, label: String, window: &mut Window, cx: &mut Context<Self>) {
+		let Some(slash) = &mut self.slash else {
+			return;
+		};
+		if let Some(value) = pick.into_value() {
+			slash.fill(value, label);
+		}
+		let next = (slash.focused + 1).min(slash.slots.len().saturating_sub(1));
+		self.focus_slot(next, window, cx);
+	}
+
+	fn on_slash_key(&mut self, key: &str, window: &mut Window, cx: &mut Context<Self>) -> bool {
+		let Some(slash) = &self.slash else {
+			return false;
+		};
+		let (focused, last) = (slash.focused, slash.slots.len().saturating_sub(1));
+		match key {
+			"escape" => self.leave_slash(window, cx),
+			"tab" => self.move_focus((focused + 1).min(last), window, cx),
+			"backspace" if self.input.read(cx).value().is_empty() && focused == 0 => {
+				self.leave_slash(window, cx);
+			}
+			"backspace" if self.input.read(cx).value().is_empty() => {
+				self.move_focus(focused - 1, window, cx);
+			}
+			_ => return false,
+		}
+		true
+	}
+
+	fn on_slash_change(&mut self, cx: &mut Context<Self>) {
+		let text = self.input.read(cx).value();
+		let Some(slash) = &mut self.slash else {
+			return;
+		};
+		slash.type_text(&text);
+		let option = slash.focused_option();
+		let autocomplete = option.is_some_and(|option| option.autocomplete);
+		let people = option.is_some_and(|option| {
+			matches!(
+				option.kind,
+				CommandOptionType::User | CommandOptionType::Mentionable
+			)
+		});
+		if autocomplete {
+			self.choice_task = Some(cx.spawn(async move |this, cx| {
+				cx.background_executor().timer(CHOICE_DEBOUNCE).await;
+				this.update(cx, |this, cx| {
+					this.choice_task = None;
+					this.send_choice_request(cx);
+				})
+				.ok();
+			}));
+		} else {
+			if people {
+				self.search_members(&text, cx);
+			}
+			self.refresh_slash(cx);
+		}
+		cx.notify();
+	}
+
+	fn send_choice_request(&mut self, cx: &mut Context<Self>) {
+		let (Some(slash), Some(channel)) = (&self.slash, self.channel) else {
+			return;
+		};
+		self.choice_generation += 1;
+		let text = self.input.read(cx).value();
+		self.data.read(cx).send(Command::CompleteCommandOption {
+			guild_id: self.guild,
+			channel_id: channel,
+			command: Box::new(slash.command().clone()),
+			options: slash.partial(&text),
+			generation: self.choice_generation,
+		});
+	}
+
+	pub fn on_command_choices(&mut self, cx: &mut Context<Self>) {
+		if self
+			.slash
+			.as_ref()
+			.and_then(SlashDraft::focused_option)
+			.is_some_and(|option| option.autocomplete)
+		{
+			self.refresh_slash(cx);
+		}
+	}
+
+	fn refresh_slash(&mut self, cx: &mut Context<Self>) {
+		let query = self.input.read(cx).value().to_lowercase();
+		let settled = query.is_empty() && self.slash.as_ref().is_some_and(SlashDraft::focused_filled);
+		let items = if settled {
+			Vec::new()
+		} else {
+			self.slash_suggestions(&query, cx)
+		};
+		self.autocomplete = (!items.is_empty()).then_some(Autocomplete {
+			start: 0,
+			cursor: 0,
+			items,
+			selected: 0,
+		});
+		cx.notify();
+	}
+
+	fn slash_suggestions(&self, query: &str, cx: &Context<Self>) -> Vec<Suggestion> {
+		let Some(option) = self.slash.as_ref().and_then(SlashDraft::focused_option) else {
+			return Vec::new();
+		};
+		let (choices, filter) = if option.autocomplete {
+			let data = self.data.read(cx);
+			let state = data.state();
+			let answered = state.command_choices(self.choice_generation).unwrap_or_default();
+			(answered.iter().map(named_value).collect(), "")
+		} else if !option.choices.is_empty() {
+			(option.choices.iter().map(named_value).collect(), query)
+		} else if option.kind == CommandOptionType::Boolean {
+			(
+				vec![
+					(cx.t("slash-true").to_string(), Value::Bool(true)),
+					(cx.t("slash-false").to_string(), Value::Bool(false)),
+				],
+				query,
+			)
+		} else {
+			return self.target_suggestions(option, query, cx);
+		};
+		choices
+			.into_iter()
+			.filter(|(name, _)| name.to_lowercase().contains(filter))
+			.take(MAX_SUGGESTIONS)
+			.map(|(name, value)| choice_suggestion(name, value))
+			.collect()
+	}
+
+	fn target_suggestions(
+		&self,
+		option: &ApplicationCommandOption,
+		query: &str,
+		cx: &Context<Self>,
+	) -> Vec<Suggestion> {
+		match option.kind {
+			CommandOptionType::User | CommandOptionType::Role | CommandOptionType::Mentionable => self
+				.suggestions(Trigger::Mention, query, MAX_CANDIDATES, cx)
+				.into_iter()
+				.filter(|item| {
+					matches!(
+						(&item.pick, option.kind),
+						(
+							Some(Pick::User(_)),
+							CommandOptionType::User | CommandOptionType::Mentionable
+						) | (
+							Some(Pick::Role(_)),
+							CommandOptionType::Role | CommandOptionType::Mentionable
+						)
+					)
+				})
+				.take(MAX_SUGGESTIONS)
+				.collect(),
+			CommandOptionType::Channel => {
+				let channels = self.suggestions(Trigger::Channel, query, MAX_CANDIDATES, cx);
+				let data = self.data.read(cx);
+				let state = data.state();
+				channels
+					.into_iter()
+					.filter(|item| match item.pick {
+						Some(Pick::Channel(id)) => {
+							option.channel_types.is_empty()
+								|| state
+									.channel(id)
+									.is_some_and(|found| option.channel_types.contains(&found.kind))
+						}
+						_ => false,
+					})
+					.take(MAX_SUGGESTIONS)
+					.collect()
+			}
+			_ => Vec::new(),
+		}
+	}
+
+	fn pick_slash_file(&mut self, cx: &mut Context<Self>) {
+		cx.spawn(async move |this, cx| {
+			let Some(handle) = rfd::AsyncFileDialog::new().pick_file().await else {
+				return;
+			};
+			let path = handle.path().to_path_buf();
+			let loaded = cx
+				.background_executor()
+				.spawn(async move { incoming::read_paths(vec![path], 1) })
+				.await;
+			this.update(cx, |this, cx| {
+				let upload = loaded.into_iter().next().map(|file| UploadFile {
+					content_type: rest::content_type_for(&file.name).to_owned(),
+					name: file.name,
+					bytes: Bytes::from(file.bytes),
+					description: None,
+				});
+				if let (Some(slash), Some(upload)) = (&mut this.slash, upload) {
+					slash.attach(upload);
+					cx.notify();
+				}
+			})
+			.ok();
+		})
+		.detach();
+	}
+
+	fn slash_bar(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
+		let slash = self.slash.as_ref()?;
+		let chips = slash
+			.options()
+			.iter()
+			.zip(&slash.slots)
+			.enumerate()
+			.map(|(index, (option, slot))| {
+				let focused = index == slash.focused;
+				div()
+					.id(("slash-option", index))
+					.flex()
+					.items_center()
+					.gap(theme.space_4)
+					.h(rem(28.))
+					.px(theme.space_8)
+					.rounded(theme.radius_sm)
+					.border_1()
+					.border_color(if focused { theme.brand } else { theme.divider })
+					.bg(theme.background_secondary)
+					.text_size(theme.font_sm)
+					.cursor_pointer()
+					.on_click(cx.listener(move |this, _, window, cx| this.move_focus(index, window, cx)))
+					.child(
+						div()
+							.font_weight(FontWeight::SEMIBOLD)
+							.text_color(theme.text_muted)
+							.child(option.name.clone()),
+					)
+					.when(option.required, |chip| {
+						chip.child(div().text_color(theme.danger).child("*"))
+					})
+					.when(!slot.text.is_empty(), |chip| {
+						chip.child(div().text_color(theme.text_normal).child(slot.text.clone()))
+					})
+			})
+			.collect::<Vec<_>>();
+		Some(
+			div()
+				.flex()
+				.flex_wrap()
+				.items_center()
+				.gap(theme.space_8)
+				.px(theme.space_16)
+				.py(theme.space_8)
+				.border_b_1()
+				.border_color(theme.divider)
+				.child(
+					div()
+						.flex()
+						.items_center()
+						.h(rem(28.))
+						.px(theme.space_8)
+						.rounded(theme.radius_sm)
+						.bg(with_alpha(theme.brand, 0.2))
+						.text_size(theme.font_sm)
+						.font_weight(FontWeight::SEMIBOLD)
+						.text_color(theme.text_normal)
+						.child(format!("/{}", slash.label())),
+				)
+				.children(chips)
+				.child(
+					IconButton::new("slash-cancel", IconKind::Close)
+						.icon_size(rem(16.))
+						.hit_size(rem(24.))
+						.tooltip(cx.t("slash-cancel"))
+						.on_click(cx.listener(|this, _, window, cx| this.leave_slash(window, cx))),
+				)
+				.into_any_element(),
+		)
 	}
 
 	fn limit_notice(&self, channel: Snowflake, text: &str, cx: &Context<Self>) -> Option<SharedString> {
@@ -1476,6 +2017,7 @@ impl Render for Composer {
 		let chips = self.file_cards(&theme, cx);
 		let popup = self.popup(&theme, cx);
 		let reply_bar = self.reply_bar(&theme, cx);
+		let slash_bar = self.slash_bar(&theme, cx);
 		let remaining = self.slowmode_remaining(cx);
 		let slowmode = self.slowmode_line(remaining, &theme, cx);
 		let plugin_context = ViewContext {
@@ -1554,6 +2096,7 @@ impl Render for Composer {
 						.border_1()
 						.border_color(theme.divider)
 						.bg(theme.input_background)
+						.children(slash_bar)
 						.children(chips)
 						.child(
 							div()
