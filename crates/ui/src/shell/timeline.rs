@@ -110,6 +110,7 @@ fn same_row(a: &MessageRow, b: &MessageRow) -> bool {
 				&& x.plugin == y.plugin
 				&& x.altered_by == y.altered_by
 				&& x.deleted == y.deleted
+				&& x.interaction == y.interaction
 				&& x.mentions_me == y.mentions_me
 				&& x.member_roles == y.member_roles
 				&& x.rendered.as_ref().map(Arc::as_ptr) == y.rendered.as_ref().map(Arc::as_ptr)
