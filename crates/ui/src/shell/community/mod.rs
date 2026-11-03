@@ -430,7 +430,7 @@ impl Community {
 		links::open_link(HELP_URL, LinkOrigin::default(), &self.backend, window, cx);
 	}
 
-	fn thread_or_channel(&self, cx: &gpui::App) -> Option<Snowflake> {
+	pub(crate) fn thread_or_channel(&self, cx: &gpui::App) -> Option<Snowflake> {
 		self.panel.read(cx).thread().or(self.channel)
 	}
 

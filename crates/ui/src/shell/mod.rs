@@ -787,6 +787,7 @@ impl Shell {
 		let selected = self
 			.community
 			.update(cx, |community, cx| community.route(selected, window, cx));
+		self.sync_pins_unread(cx);
 		if self.channel == Some(selected.channel_id) && self.guild == selected.guild_id {
 			return;
 		}
@@ -855,10 +856,10 @@ impl Shell {
 			bar.set_plugin_context(context, cx);
 		});
 		self.sync_notifications(cx);
-		self.sync_pins_unread(cx);
 		self.sync_request(cx);
 		self.community
 			.update(cx, |community, cx| community.show_main(guild, channel, cx));
+		self.sync_pins_unread(cx);
 		self.timeline.update(cx, |timeline, cx| {
 			timeline.show(guild, channel, name.clone(), direct, window, cx)
 		});
@@ -882,7 +883,9 @@ impl Shell {
 
 	fn sync_pins_unread(&mut self, cx: &mut Context<Self>) {
 		let unread = self
-			.channel
+			.community
+			.read(cx)
+			.thread_or_channel(cx)
 			.is_some_and(|channel| self.data.read(cx).state().pins_unread(channel));
 		self.top_bar.update(cx, |bar, cx| bar.set_pins_unread(unread, cx));
 	}
@@ -928,10 +931,8 @@ impl Shell {
 		if changes.guild_list {
 			self.sync_notifications(cx);
 		}
-		if self
-			.channel
-			.is_some_and(|channel| changes.loaded.contains(channel))
-		{
+		let pins_target = self.community.read(cx).thread_or_channel(cx);
+		if pins_target.is_some_and(|channel| changes.loaded.contains(channel)) {
 			self.sync_pins_unread(cx);
 		}
 		if changes.private_channels || changes.relationships || changes.presence_any() {
