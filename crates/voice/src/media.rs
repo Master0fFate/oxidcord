@@ -211,20 +211,21 @@ impl Media {
 		for sample in frame.iter_mut() {
 			*sample *= gain;
 		}
-		let input_level = meter_level(rms(frame));
-		let previous = self.shared.input_level.load();
-		self.shared
-			.input_level
-			.store(input_level.max(previous * METER_DECAY));
 		self.processor.set_stages(Stages {
 			echo_cancellation: self.shared.echo_cancellation.load(Ordering::Relaxed),
 			auto_gain: self.shared.auto_gain.load(Ordering::Relaxed),
 		});
-		self.processor.process_capture(frame);
+		self.processor.cancel_echo(frame);
 		if self.shared.noise_suppression.load(Ordering::Relaxed) {
 			self.denoiser.process(frame);
 		}
-		let active = self.should_transmit(to_db(rms(frame)));
+		self.processor.level_gain(frame);
+		let level = rms(frame);
+		let previous = self.shared.input_level.load();
+		self.shared
+			.input_level
+			.store(meter_level(level).max(previous * METER_DECAY));
+		let active = self.should_transmit(to_db(level));
 		if active {
 			self.sync_bitrate();
 		}
