@@ -16,7 +16,7 @@ use super::kit;
 use crate::components::{
 	Avatar, PickHandler, ToggleHandler, dialog_footer, field, hint, segmented, select, switch_row,
 };
-use crate::data::Data;
+use crate::data::{Data, DataEvent};
 use crate::i18n::Translate as _;
 use crate::icons::{Icon, IconKind};
 use crate::shell::community::data_handle;
@@ -165,7 +165,28 @@ pub struct OverviewPage {
 	icon: Option<Picked>,
 	banner: Option<Picked>,
 	splash: Option<Picked>,
+	facts: Facts,
 	_subscriptions: Vec<Subscription>,
+}
+
+fn read_facts(data: &Data, guild: Snowflake) -> Facts {
+	let state = data.state();
+	let Some(found) = state.guild(guild) else {
+		return Facts::default();
+	};
+	let has = |feature: &str| found.features.iter().any(|candidate| candidate == feature);
+	Facts {
+		name: found.name.clone(),
+		icon_url: found
+			.icon
+			.as_deref()
+			.map(|hash| media::cdn::guild_icon_url(guild.get(), hash, 256)),
+		owner: found.owner_id.is_some() && found.owner_id == state.current_user_id(),
+		banner: has("BANNER"),
+		splash: has("INVITE_SPLASH"),
+		text_channels: channels_where(found, &[ChannelType::GuildText, ChannelType::GuildAnnouncement]),
+		voice_channels: channels_where(found, &[ChannelType::GuildVoice, ChannelType::GuildStageVoice]),
+	}
 }
 
 impl OverviewPage {
@@ -207,7 +228,16 @@ impl OverviewPage {
 					cx.notify();
 				}
 			}),
+			cx.subscribe(&data, move |this, data, event: &DataEvent, cx| {
+				if let DataEvent::Changed(changes) = event
+					&& (changes.guild_list || changes.channel_lists.contains(guild))
+				{
+					this.facts = read_facts(data.read(cx), guild);
+					cx.notify();
+				}
+			}),
 		];
+		let facts = read_facts(data.read(cx), guild);
 		Self {
 			data,
 			guild,
@@ -220,6 +250,7 @@ impl OverviewPage {
 			icon: None,
 			banner: None,
 			splash: None,
+			facts,
 			_subscriptions: subscriptions,
 		}
 	}
@@ -287,26 +318,6 @@ impl OverviewPage {
 		self.splash = None;
 		self.behavior = self.initial_behavior;
 		cx.notify();
-	}
-
-	fn facts(&self, cx: &App) -> Facts {
-		let state = self.data.read(cx).state();
-		let Some(found) = state.guild(self.guild) else {
-			return Facts::default();
-		};
-		let has = |feature: &str| found.features.iter().any(|candidate| candidate == feature);
-		Facts {
-			name: found.name.clone(),
-			icon_url: found
-				.icon
-				.as_deref()
-				.map(|hash| media::cdn::guild_icon_url(self.guild.get(), hash, 256)),
-			owner: found.owner_id.is_some() && found.owner_id == state.current_user_id(),
-			banner: has("BANNER"),
-			splash: has("INVITE_SPLASH"),
-			text_channels: channels_where(found, &[ChannelType::GuildText, ChannelType::GuildAnnouncement]),
-			voice_channels: channels_where(found, &[ChannelType::GuildVoice, ChannelType::GuildStageVoice]),
-		}
 	}
 
 	fn identity(&self, facts: &Facts, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
@@ -630,7 +641,7 @@ impl OverviewPage {
 impl Render for OverviewPage {
 	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
-		let facts = self.facts(cx);
+		let facts = &self.facts;
 		let dirty = self.dirty(cx);
 		let weak_reset = cx.weak_entity();
 		let weak_save = cx.weak_entity();
@@ -646,18 +657,18 @@ impl Render for OverviewPage {
 					.flex_col()
 					.gap(theme.space_32)
 					.pb(theme.space_32)
-					.child(self.identity(&facts, &theme, cx))
+					.child(self.identity(facts, &theme, cx))
 					.when(facts.banner, |page| {
 						page.child(self.image_row(Backdrop::Banner, &theme, cx))
 					})
 					.when(facts.splash, |page| {
 						page.child(self.image_row(Backdrop::Splash, &theme, cx))
 					})
-					.child(self.system_messages(&facts, &theme, cx))
-					.child(self.inactivity(&facts, &theme, cx))
+					.child(self.system_messages(facts, &theme, cx))
+					.child(self.inactivity(facts, &theme, cx))
 					.child(self.notifications(&theme, cx))
 					.when(facts.owner, |page| {
-						page.child(self.danger_zone(&facts, &theme, cx))
+						page.child(self.danger_zone(facts, &theme, cx))
 					})
 					.overflow_y_scrollbar()
 					.id("overview-scroll")
