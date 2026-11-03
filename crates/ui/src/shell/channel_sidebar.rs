@@ -2,10 +2,10 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use gpui::{
-	AnyElement, App, AppContext as _, ClickEvent, Context, Entity, EventEmitter, FontWeight,
-	InteractiveElement as _, IntoElement, MouseDownEvent, ParentElement as _, Pixels, Point, Render,
-	SharedString, StatefulInteractiveElement as _, Styled as _, Task, Window, div,
-	prelude::FluentBuilder as _, transparent_black,
+	AnyElement, App, AppContext as _, Bounds, ClickEvent, Context, DragMoveEvent, Entity, EventEmitter,
+	FontWeight, InteractiveElement as _, IntoElement, MouseDownEvent, ParentElement as _, Pixels, Point,
+	Render, ScrollHandle, SharedString, StatefulInteractiveElement as _, Styled as _, Task, Window, div,
+	point, prelude::FluentBuilder as _, px, transparent_black,
 };
 use gpui_component::Sizable as _;
 use gpui_component::button::{Button, ButtonVariants as _};
@@ -35,6 +35,8 @@ mod reorder;
 
 const AVATAR_PIXELS: u32 = 48;
 const CLOCK_TICK: Duration = Duration::from_secs(1);
+const EDGE_ZONE: f32 = 48.;
+const EDGE_STEP: f32 = 16.;
 
 pub enum SidebarEvent {
 	SelectChannel(Snowflake),
@@ -104,9 +106,26 @@ pub struct ChannelSidebar {
 	live_events: Vec<LiveEvent>,
 	hide_muted: bool,
 	clock: Option<Task<()>>,
+	list_scroll: ScrollHandle,
+	edge_scroll: f32,
 }
 
 impl EventEmitter<SidebarEvent> for ChannelSidebar {}
+
+fn edge_scroll_speed(pointer: Point<Pixels>, bounds: Bounds<Pixels>) -> f32 {
+	if pointer.x < bounds.left() || pointer.x > bounds.right() {
+		return 0.;
+	}
+	let from_top = f32::from(pointer.y - bounds.top());
+	let from_bottom = f32::from(bounds.bottom() - pointer.y);
+	if from_top < EDGE_ZONE {
+		-(1. - from_top / EDGE_ZONE).min(1.) * EDGE_STEP
+	} else if from_bottom < EDGE_ZONE {
+		(1. - from_bottom / EDGE_ZONE).min(1.) * EDGE_STEP
+	} else {
+		0.
+	}
+}
 
 fn selectable(kind: ChannelType, locked: bool) -> bool {
 	!locked && kind != ChannelType::GuildCategory
@@ -135,7 +154,32 @@ impl ChannelSidebar {
 			live_events: Vec::new(),
 			hide_muted: false,
 			clock: None,
+			list_scroll: ScrollHandle::new(),
+			edge_scroll: 0.,
 		}
+	}
+
+	fn aim_edge_scroll(&mut self, event: &DragMoveEvent<DraggedChannel>, cx: &mut Context<Self>) {
+		let speed = edge_scroll_speed(event.event.position, event.bounds);
+		if speed != self.edge_scroll {
+			self.edge_scroll = speed;
+			cx.notify();
+		}
+	}
+
+	fn step_edge_scroll(&mut self, window: &mut Window, cx: &App) {
+		if self.edge_scroll == 0. {
+			return;
+		}
+		if !cx.has_active_drag() {
+			self.edge_scroll = 0.;
+			return;
+		}
+		let offset = self.list_scroll.offset();
+		let furthest = f32::from(self.list_scroll.max_offset().y);
+		let y = (f32::from(offset.y) - self.edge_scroll).clamp(-furthest, 0.);
+		self.list_scroll.set_offset(point(offset.x, px(y)));
+		window.request_animation_frame();
 	}
 
 	pub fn show(&mut self, guild: Option<Snowflake>, selected: Option<Snowflake>, cx: &mut Context<Self>) {
@@ -949,8 +993,9 @@ fn with_thread_ends(mut channels: Vec<ChannelItem>) -> Vec<ChannelItem> {
 }
 
 impl Render for ChannelSidebar {
-	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+	fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
+		self.step_edge_scroll(window, cx);
 		let categories: Vec<AnyElement> = self
 			.categories
 			.iter()
@@ -984,16 +1029,34 @@ impl Render for ChannelSidebar {
 			})
 			.child(
 				div()
-					.flex()
-					.flex_col()
-					.pb(theme.space_16)
-					.children(banners)
-					.children(events_row)
-					.children(categories)
-					.overflow_y_scrollbar()
 					.id("channel-list")
+					.relative()
 					.flex_1()
-					.min_h_0(),
+					.min_h_0()
+					.on_drag_move(cx.listener(|this, event: &DragMoveEvent<DraggedChannel>, _, cx| {
+						this.aim_edge_scroll(event, cx)
+					}))
+					.child(
+						div()
+							.id("channel-list-scroll")
+							.size_full()
+							.flex()
+							.flex_col()
+							.overflow_y_scroll()
+							.track_scroll(&self.list_scroll)
+							.child(
+								div()
+									.flex()
+									.flex_col()
+									.flex_none()
+									.min_h_full()
+									.pb(theme.space_16)
+									.children(banners)
+									.children(events_row)
+									.children(categories),
+							),
+					)
+					.vertical_scrollbar(&self.list_scroll),
 			)
 	}
 }
