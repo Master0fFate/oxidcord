@@ -577,9 +577,11 @@ impl State {
 			retryable: pending.is_some_and(|pending| pending.retryable),
 			upload: pending
 				.filter(|pending| !pending.files.is_empty())
-				.map(|pending| PendingUpload {
-					files: Arc::clone(&pending.files),
-					uploaded: pending.uploaded,
+				.map(|pending| {
+					Box::new(PendingUpload {
+						files: Arc::clone(&pending.files),
+						uploaded: pending.uploaded,
+					})
 				}),
 			failure_reason: pending.and_then(|pending| pending.failure_reason.clone()),
 			plugin,

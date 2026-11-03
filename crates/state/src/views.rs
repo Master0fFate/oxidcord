@@ -111,7 +111,7 @@ pub struct MessageView {
 	pub pending: bool,
 	pub failed: bool,
 	pub retryable: bool,
-	pub upload: Option<PendingUpload>,
+	pub upload: Option<Box<PendingUpload>>,
 	pub failure_reason: Option<String>,
 	pub plugin: Option<String>,
 	pub altered_by: Option<String>,
