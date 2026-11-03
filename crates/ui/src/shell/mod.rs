@@ -572,8 +572,8 @@ impl Shell {
 			window,
 			|this, _, event: &FriendsEvent, _, cx| this.on_friends(event, cx),
 		));
-		let push_to_talk = (backend.read)().voice.push_to_talk;
-		data.update(cx, |data, _| data.restore_input_mode(push_to_talk));
+		let saved_voice = (backend.read)().voice;
+		data.update(cx, |data, _| data.restore_voice(&saved_voice));
 
 		let member_list = cx.new(|_| MemberList::new(data.clone()));
 		subscriptions.push(cx.subscribe_in(

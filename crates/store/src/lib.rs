@@ -22,7 +22,7 @@ pub use paths::Paths;
 pub use settings::{
 	AccessibilitySettings, ActivitySettings, AppearanceSettings, ChatSettings, ClientSettings,
 	DeveloperSettings, KeybindSettings, NotificationSettings, PluginSettings, Settings, StartupSettings,
-	StorageSettings, StreamerModeSettings, VoiceSettings, WindowSettings,
+	StorageSettings, StreamerModeSettings, UserVolume, VoiceSettings, WindowSettings,
 };
 pub use token::{TokenBackend, TokenStore};
 

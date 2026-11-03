@@ -332,6 +332,7 @@ pub enum Command {
 	SetUserVolume {
 		user_id: Snowflake,
 		volume: f32,
+		muted: bool,
 	},
 	SetInputMode(voice::InputMode),
 	SetPushToTalk(bool),

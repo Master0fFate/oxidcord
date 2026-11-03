@@ -8,7 +8,7 @@ use parking_lot::Mutex;
 use protocol::{Snowflake, Token, VoiceChannelEffect, VoiceServerUpdate, VoiceState};
 use serde_json::json;
 use state::{JoinBlock, LocalEvent, VoiceStatus};
-use store::VoiceSettings;
+use store::{UserVolume, VoiceSettings};
 use tokio::task::JoinHandle;
 use tokio::time::{MissedTickBehavior, interval, sleep};
 use voice::close;
@@ -65,7 +65,7 @@ pub(crate) struct VoiceLink {
 }
 
 impl VoiceLink {
-	pub(crate) fn new(io: VoiceIo, shared: SharedVoice) -> Self {
+	pub(crate) fn new(io: VoiceIo, shared: SharedVoice, saved: &VoiceSettings) -> Self {
 		Self {
 			io,
 			shared,
@@ -77,11 +77,15 @@ impl VoiceLink {
 			connecting: false,
 			generation: 0,
 			camera: false,
-			self_mute: false,
-			self_deaf: false,
+			self_mute: saved.self_mute,
+			self_deaf: saved.self_deaf,
 			server_muted: false,
 			transmitting: false,
-			user_volumes: HashMap::new(),
+			user_volumes: saved
+				.user_volumes
+				.iter()
+				.map(|(user_id, saved)| (*user_id, effective_volume(*saved)))
+				.collect(),
 			sounds: HashMap::new(),
 			camera_device: None,
 			camera_quality: VideoQuality::default(),
@@ -107,6 +111,10 @@ fn settled(level: f32) -> f32 {
 
 pub(super) fn gain(percent: u8) -> f32 {
 	f32::from(percent) / FULL_VOLUME_PERCENT
+}
+
+fn effective_volume(saved: UserVolume) -> f32 {
+	if saved.muted { 0.0 } else { gain(saved.percent) }
 }
 
 fn percent(volume: f32) -> u8 {
@@ -179,6 +187,7 @@ impl Core {
 		if let Some(connection) = &self.voice.connection {
 			connection.set_mute(muted);
 		}
+		self.update_voice_settings(move |settings| settings.self_mute = muted);
 		self.publish_self_state();
 	}
 
@@ -188,6 +197,7 @@ impl Core {
 			connection.set_deaf(deafened);
 		}
 		self.streams.set_deaf(deafened);
+		self.update_voice_settings(move |settings| settings.self_deaf = deafened);
 		self.publish_self_state();
 	}
 
@@ -203,11 +213,23 @@ impl Core {
 		});
 	}
 
-	pub(super) fn set_user_volume(&mut self, user_id: Snowflake, volume: f32) {
-		self.voice.user_volumes.insert(user_id, volume);
+	pub(super) fn set_user_volume(&mut self, user_id: Snowflake, volume: f32, muted: bool) {
+		let saved = UserVolume {
+			percent: percent(volume),
+			muted,
+		};
+		let effective = effective_volume(saved);
+		self.voice.user_volumes.insert(user_id, effective);
 		if let Some(connection) = &self.voice.connection {
-			connection.set_user_volume(user_id, volume);
+			connection.set_user_volume(user_id, effective);
 		}
+		self.update_voice_settings(move |settings| {
+			if saved == UserVolume::default() {
+				settings.user_volumes.remove(&user_id);
+			} else {
+				settings.user_volumes.insert(user_id, saved);
+			}
+		});
 	}
 
 	pub(super) fn set_input_mode(&mut self, mode: InputMode) {

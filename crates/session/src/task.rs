@@ -375,6 +375,11 @@ impl Core {
 			parts.internal.clone(),
 			INITIAL_EPOCH,
 		);
+		let voice = VoiceLink::new(
+			parts.voice_io,
+			parts.shared_voice,
+			&parts.store.settings.read().voice,
+		);
 		Self {
 			state: parts.state,
 			rest: parts.rest,
@@ -395,7 +400,7 @@ impl Core {
 			completion: None,
 			typing_expiry: None,
 			nonce_sequence: 0,
-			voice: VoiceLink::new(parts.voice_io, parts.shared_voice),
+			voice,
 			video: parts.video,
 			streams: StreamLink::default(),
 			custom_status: None,
@@ -1250,7 +1255,11 @@ impl Core {
 			Command::SetSelfMute(muted) => self.set_self_mute(muted),
 			Command::SetSelfDeaf(deafened) => self.set_self_deaf(deafened),
 			Command::SetVoiceDevices { input, output } => self.set_voice_devices(input, output),
-			Command::SetUserVolume { user_id, volume } => self.set_user_volume(user_id, volume),
+			Command::SetUserVolume {
+				user_id,
+				volume,
+				muted,
+			} => self.set_user_volume(user_id, volume, muted),
 			Command::SetInputMode(mode) => self.set_input_mode(mode),
 			Command::SetPushToTalk(transmitting) => self.set_push_to_talk(transmitting),
 			Command::SetInputVolume(volume) => self.set_input_volume(volume),

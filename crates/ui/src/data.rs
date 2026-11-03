@@ -6,7 +6,7 @@ use parking_lot::RwLockReadGuard;
 use protocol::Snowflake;
 use session::{Command, InputMode, SearchResults, Session};
 use state::{Changes, State};
-use store::StreamerModeSettings;
+use store::{StreamerModeSettings, VoiceSettings};
 
 use crate::shell::PluginStore;
 
@@ -109,8 +109,17 @@ impl Data {
 		cx.notify();
 	}
 
-	pub fn restore_input_mode(&mut self, push_to_talk: bool) {
-		self.local_voice.push_to_talk = push_to_talk;
+	pub fn restore_voice(&mut self, saved: &VoiceSettings) {
+		let local = &mut self.local_voice;
+		local.push_to_talk = saved.push_to_talk;
+		local.self_mute = saved.self_mute;
+		local.self_deaf = saved.self_deaf;
+		for (user_id, volume) in &saved.user_volumes {
+			local.volumes.insert(*user_id, f32::from(volume.percent) / 100.);
+			if volume.muted {
+				local.silenced.insert(*user_id);
+			}
+		}
 	}
 
 	pub fn set_input_mode(&mut self, push_to_talk: bool, cx: &mut Context<Self>) {
@@ -149,21 +158,24 @@ impl Data {
 
 	pub fn set_user_volume(&mut self, user_id: Snowflake, volume: f32, cx: &mut Context<Self>) {
 		self.local_voice.volumes.insert(user_id, volume);
-		if !self.is_silenced(user_id) {
-			self.session.send(Command::SetUserVolume { user_id, volume });
-		}
+		self.send_user_volume(user_id);
 		cx.notify();
 	}
 
 	pub fn toggle_silence(&mut self, user_id: Snowflake, cx: &mut Context<Self>) {
-		let volume = if self.local_voice.silenced.remove(&user_id) {
-			self.user_volume(user_id)
-		} else {
+		if !self.local_voice.silenced.remove(&user_id) {
 			self.local_voice.silenced.insert(user_id);
-			0.0
-		};
-		self.session.send(Command::SetUserVolume { user_id, volume });
+		}
+		self.send_user_volume(user_id);
 		cx.notify();
+	}
+
+	fn send_user_volume(&self, user_id: Snowflake) {
+		self.session.send(Command::SetUserVolume {
+			user_id,
+			volume: self.user_volume(user_id),
+			muted: self.is_silenced(user_id),
+		});
 	}
 
 	pub fn search_results(&self) -> Option<Arc<SearchResults>> {

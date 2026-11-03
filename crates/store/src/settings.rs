@@ -1,6 +1,8 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::ErrorKind;
 
+use protocol::Snowflake;
 use protocol::gateway::{CHROME_VERSION, FALLBACK_BUILD_NUMBER};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -119,6 +121,25 @@ pub struct VoiceSettings {
 	pub sensitivity_db: i8,
 	pub camera_device: Option<String>,
 	pub video_preset: u8,
+	pub self_mute: bool,
+	pub self_deaf: bool,
+	pub user_volumes: BTreeMap<Snowflake, UserVolume>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct UserVolume {
+	pub percent: u8,
+	pub muted: bool,
+}
+
+impl Default for UserVolume {
+	fn default() -> Self {
+		Self {
+			percent: 100,
+			muted: false,
+		}
+	}
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -321,6 +342,9 @@ impl Default for VoiceSettings {
 			sensitivity_db: -50,
 			camera_device: None,
 			video_preset: 0,
+			self_mute: false,
+			self_deaf: false,
+			user_volumes: BTreeMap::new(),
 		}
 	}
 }
