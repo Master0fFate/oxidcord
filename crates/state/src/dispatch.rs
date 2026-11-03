@@ -432,6 +432,12 @@ impl State {
 			if update.last_message_id > channel.last_message_id {
 				channel.last_message_id = update.last_message_id;
 				moved = true;
+				if let Some(cache) = self.messages.get_mut(&update.id)
+					&& cache.newest_id() < update.last_message_id
+				{
+					cache.mark_stale();
+					changes.messages.insert(update.id);
+				}
 			}
 			if update.last_pin_timestamp.is_some() {
 				channel.last_pin_timestamp = update.last_pin_timestamp;
