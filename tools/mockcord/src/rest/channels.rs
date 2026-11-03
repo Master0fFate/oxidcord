@@ -19,6 +19,7 @@ use crate::json::{message_id, parse_id, to_json};
 use crate::ops::{Draft, UploadedFile};
 use crate::state::{Shared, Store};
 use crate::threads::ThreadRequest;
+use crate::uploads::SendFault;
 
 const DEFAULT_PAGE_SIZE: usize = 50;
 const PINS_PAGE_SIZE: usize = 50;
@@ -129,13 +130,16 @@ fn draft_from_json(mut body: Value, files: Vec<UploadedFile>) -> Result<Draft, A
 	Ok(Draft::from_create(create, files))
 }
 
-async fn read_multipart_parts(request: Request) -> Result<(Value, Vec<UploadedFile>), ApiError> {
+async fn read_multipart_parts(
+	shared: &Shared,
+	request: Request,
+) -> Result<(Value, Vec<UploadedFile>), ApiError> {
 	let mut form = Multipart::from_request(request, &())
 		.await
 		.map_err(multipart_error)?;
 	let mut payload = json!({});
 	let mut files = Vec::new();
-	while let Some(field) = form.next_field().await.map_err(multipart_error)? {
+	while let Some(mut field) = form.next_field().await.map_err(multipart_error)? {
 		let name = field.name().unwrap_or_default().to_owned();
 		if name == "payload_json" {
 			let text = field.text().await.map_err(multipart_error)?;
@@ -143,25 +147,29 @@ async fn read_multipart_parts(request: Request) -> Result<(Value, Vec<UploadedFi
 		} else if name.starts_with("files[") {
 			let filename = field.file_name().unwrap_or("file").to_owned();
 			let content_type = field.content_type().map(str::to_owned);
-			let bytes = field.bytes().await.map_err(multipart_error)?;
+			let mut size = 0;
+			while let Some(chunk) = field.chunk().await.map_err(multipart_error)? {
+				size += chunk.len();
+				shared.pause_upload().await;
+			}
 			files.push(UploadedFile {
 				filename,
 				content_type,
-				size: bytes.len(),
+				size,
 			});
 		}
 	}
 	Ok((payload, files))
 }
 
-async fn read_body(request: Request) -> Result<(Value, Vec<UploadedFile>), ApiError> {
+async fn read_body(shared: &Shared, request: Request) -> Result<(Value, Vec<UploadedFile>), ApiError> {
 	let multipart = request
 		.headers()
 		.get(CONTENT_TYPE)
 		.and_then(|value| value.to_str().ok())
 		.is_some_and(|value| value.starts_with("multipart/form-data"));
 	if multipart {
-		return read_multipart_parts(request).await;
+		return read_multipart_parts(shared, request).await;
 	}
 	let Json(body) = Json::<Value>::from_request(request, &())
 		.await
@@ -169,8 +177,8 @@ async fn read_body(request: Request) -> Result<(Value, Vec<UploadedFile>), ApiEr
 	Ok((body, Vec::new()))
 }
 
-async fn read_draft(request: Request) -> Result<Draft, ApiError> {
-	let (body, files) = read_body(request).await?;
+async fn read_draft(shared: &Shared, request: Request) -> Result<Draft, ApiError> {
+	let (body, files) = read_body(shared, request).await?;
 	draft_from_json(body, files)
 }
 
@@ -179,7 +187,14 @@ pub async fn create_message(
 	Path(id): Path<u64>,
 	request: Request,
 ) -> ApiResult {
-	let draft = read_draft(request).await?;
+	let mut draft = read_draft(&shared, request).await?;
+	let fault = shared.take_send_fault();
+	if let Some(error) = fault.and_then(SendFault::error) {
+		return Err(error);
+	}
+	draft.files.extend(shared.claim_uploads(&draft.descriptors)?);
+	shared.check_limits(&draft.content, &draft.files)?;
+	draft.skip_echo = matches!(fault, Some(SendFault::SkipEcho));
 	shared.enforce_slowmode(id)?;
 	shared
 		.post_message(id, &shared.fixtures.current_user, draft)
@@ -428,7 +443,7 @@ pub async fn create_thread(
 	Path(id): Path<u64>,
 	request: Request,
 ) -> ApiResult {
-	let (body, files) = read_body(request).await?;
+	let (body, files) = read_body(&shared, request).await?;
 	let starter = match body.get("message") {
 		Some(message) => Some(draft_from_json(message.clone(), files)?),
 		None => None,

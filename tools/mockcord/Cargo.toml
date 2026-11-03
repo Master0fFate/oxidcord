@@ -27,3 +27,4 @@ tracing-subscriber.workspace = true
 chrono.workspace = true
 parking_lot.workspace = true
 image.workspace = true
+futures-util.workspace = true

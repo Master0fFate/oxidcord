@@ -17,6 +17,7 @@ use crate::state::{Shared, Store};
 
 const BURST_COLOR: &str = "#ff73fa";
 const MAX_POLL_ANSWERS: usize = 10;
+const SPOILER_FLAG: u64 = 1 << 3;
 
 pub struct UploadedFile {
 	pub filename: String,
@@ -37,6 +38,7 @@ pub struct Draft {
 	pub descriptors: Vec<AttachmentDescriptor>,
 	pub files: Vec<UploadedFile>,
 	pub poll: Option<PollCreate>,
+	pub skip_echo: bool,
 }
 
 impl Draft {
@@ -60,6 +62,7 @@ impl Draft {
 			descriptors: create.attachments,
 			files,
 			poll: create.poll,
+			skip_echo: false,
 		}
 	}
 }
@@ -94,7 +97,7 @@ fn scan_mentions(content: &str) -> (Vec<u64>, Vec<u64>) {
 	(users, roles)
 }
 
-fn sanitized_filename(name: &str) -> String {
+pub(crate) fn sanitized_filename(name: &str) -> String {
 	name.chars()
 		.map(|c| {
 			if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') {
@@ -316,7 +319,9 @@ impl Shared {
 		}
 		let gateway = self.gateway_message(&store, &value);
 		drop(store);
-		self.announce_message(guild_id, &gateway);
+		if !draft.skip_echo {
+			self.announce_message(guild_id, &gateway);
+		}
 		self.unfurl(channel_id, id, guild_id, &message);
 		Ok(value)
 	}
@@ -699,6 +704,7 @@ fn uploaded_attachment(
 	let descriptor = descriptors
 		.iter()
 		.find(|descriptor| descriptor.id.0 == index as u64);
+	let spoiler = descriptor.is_some_and(|descriptor| descriptor.is_spoiler == Some(true));
 	Attachment {
 		id: Snowflake(attachment_id),
 		url: Some(format!(
@@ -712,7 +718,7 @@ fn uploaded_attachment(
 		description: descriptor.and_then(|descriptor| descriptor.description.clone()),
 		content_type: file.content_type.clone(),
 		size: Some(file.size as i64),
-		flags: Some(0),
+		flags: Some(if spoiler { SPOILER_FLAG } else { 0 }),
 		..Attachment::default()
 	}
 }

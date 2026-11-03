@@ -18,6 +18,7 @@ mod server;
 mod state;
 mod threads;
 mod traffic;
+mod uploads;
 mod voice;
 
 pub use config::MockConfig;

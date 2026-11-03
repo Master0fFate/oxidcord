@@ -17,6 +17,7 @@ use crate::fixtures::Fixtures;
 use crate::hub::Hub;
 use crate::ids::snowflake_at;
 use crate::scenario::VoiceJoin;
+use crate::uploads::SendFault;
 use crate::voice::Signal;
 
 const WINDOW_SECONDS: f64 = 2.0;
@@ -72,6 +73,7 @@ pub struct Store {
 	pub frecency: ProtoFrecencySettings,
 	pub proto_status: Vec<u8>,
 	pub proto_privacy: Vec<u8>,
+	pub uploads: HashMap<String, u64>,
 	last_id: u64,
 }
 
@@ -163,6 +165,7 @@ impl Store {
 				data_version: 1,
 				..ProtoFrecencySettings::default()
 			},
+			uploads: HashMap::new(),
 			last_id,
 		}
 	}
@@ -222,6 +225,8 @@ pub struct Shared {
 	pub voice_signals: broadcast::Sender<Signal>,
 	pub voice_join: Mutex<Option<VoiceJoin>>,
 	pub voice_stale: AtomicBool,
+	pub send_fault: Mutex<Option<SendFault>>,
+	pub slow_uploads: AtomicBool,
 	windows: Mutex<HashMap<String, Window>>,
 	indexed: AtomicBool,
 }
@@ -245,6 +250,8 @@ impl Shared {
 			voice_signals,
 			voice_join: Mutex::new(None),
 			voice_stale: AtomicBool::new(false),
+			send_fault: Mutex::new(None),
+			slow_uploads: AtomicBool::new(false),
 			windows: Mutex::new(HashMap::new()),
 			indexed: AtomicBool::new(false),
 		}

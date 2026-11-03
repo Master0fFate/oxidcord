@@ -25,6 +25,10 @@ impl ApiError {
 		}
 	}
 
+	pub const fn server_error() -> Self {
+		Self::new(StatusCode::INTERNAL_SERVER_ERROR, 0, "500: Internal Server Error")
+	}
+
 	pub const fn slowmode(retry_after: f64) -> Self {
 		Self {
 			retry_after: Some(retry_after),
@@ -34,6 +38,14 @@ impl ApiError {
 				"This action cannot be performed due to slowmode rate limit.",
 			)
 		}
+	}
+
+	pub const fn automod_blocked() -> Self {
+		Self::new(StatusCode::BAD_REQUEST, 200000, "Message blocked by AutoMod")
+	}
+
+	pub const fn file_too_large() -> Self {
+		Self::new(StatusCode::PAYLOAD_TOO_LARGE, 40005, "Request entity too large")
 	}
 
 	pub const fn unauthorized() -> Self {
@@ -125,6 +137,10 @@ impl IntoResponse for ApiError {
 		}
 		if self.mfa {
 			body["mfa"] = json!({ "ticket": "mock-mfa-ticket", "methods": [] });
+		}
+		if let Some(retry_after) = self.retry_after {
+			body["retry_after"] = json!(retry_after);
+			body["global"] = json!(false);
 		}
 		(self.status, Json(body)).into_response()
 	}

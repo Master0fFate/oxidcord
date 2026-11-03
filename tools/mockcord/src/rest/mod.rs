@@ -29,6 +29,7 @@ use crate::gateway;
 use crate::media;
 use crate::reconnect;
 use crate::state::{RateLimitSnapshot, Shared};
+use crate::uploads;
 
 const MAX_BODY_BYTES: usize = 64 * 1024 * 1024;
 const BUCKET_LIMIT: u32 = 5;
@@ -134,6 +135,7 @@ pub fn router(shared: Arc<Shared>) -> Router {
 			"/channels/{id}/messages",
 			get(channels::list_messages).post(channels::create_message),
 		)
+		.route("/channels/{id}/attachments", post(uploads::upload_slots))
 		.route("/channels/{id}/messages/search", get(channels::search_messages))
 		.route("/channels/{id}/messages/bulk-delete", post(admin::bulk_delete))
 		.route("/channels/{id}/messages/{mid}/crosspost", post(channels::message))
@@ -215,6 +217,10 @@ pub fn router(shared: Arc<Shared>) -> Router {
 		.route("/gateway", get(gateway::upgrade))
 		.route("/media/{name}", get(media::media))
 		.route("/mock/reconnect", post(reconnect::reconnect))
+		.route("/mock/send/{fault}", post(uploads::inject_send_fault))
+		.route("/mock/uploads/{pace}", post(uploads::upload_pace))
+		.route("/mock/premium/{kind}", post(uploads::account_premium))
+		.route("/mock/upload/{token}/{name}", put(uploads::put_upload))
 		.nest("/api/v10", api)
 		.fallback(not_found)
 		.layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
