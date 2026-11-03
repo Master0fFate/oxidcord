@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
 use protocol::Snowflake;
 use protocol::gateway::Opcode;
 use serde_json::{Map, Value, json};
@@ -134,28 +133,6 @@ impl GatewayHandle {
 				"self_mute": self_mute,
 				"self_deaf": self_deaf,
 				"self_video": self_video,
-			}),
-		)
-	}
-
-	pub fn voice_state_request_to_speak(
-		&self,
-		guild_id: Option<Snowflake>,
-		channel_id: Option<Snowflake>,
-		self_mute: bool,
-		self_deaf: bool,
-		self_video: bool,
-		request_to_speak_timestamp: Option<DateTime<Utc>>,
-	) -> Result<(), SendError> {
-		self.queue(
-			Opcode::VoiceStateUpdate,
-			json!({
-				"guild_id": guild_id,
-				"channel_id": channel_id,
-				"self_mute": self_mute,
-				"self_deaf": self_deaf,
-				"self_video": self_video,
-				"request_to_speak_timestamp": request_to_speak_timestamp.map(|time| time.to_rfc3339()),
 			}),
 		)
 	}

@@ -207,20 +207,13 @@ impl Shared {
 		Ok(())
 	}
 
-	pub fn sync_seat(&self, rejoined: bool, channel_id: Option<u64>, data: &Value) {
+	pub fn sync_seat(&self, rejoined: bool, channel_id: Option<u64>) {
 		let mut store = self.store.lock();
 		if rejoined {
 			let stage = channel_id.is_some_and(|id| Self::stage_guild(&store, id).is_ok());
 			let seat = store.seats.entry(CURRENT_USER_ID).or_default();
 			seat.suppress = stage;
 			seat.request_to_speak_timestamp = None;
-		}
-		if let Some(request) = data.get("request_to_speak_timestamp") {
-			store
-				.seats
-				.entry(CURRENT_USER_ID)
-				.or_default()
-				.request_to_speak_timestamp = serde_json::from_value(request.clone()).ok().flatten();
 		}
 	}
 

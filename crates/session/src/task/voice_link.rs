@@ -6,6 +6,7 @@ use chrono::Utc;
 use gateway::SendError;
 use parking_lot::Mutex;
 use protocol::{Snowflake, Token, VoiceServerUpdate, VoiceState};
+use serde_json::json;
 use state::{JoinBlock, LocalEvent, VoiceStatus};
 use store::VoiceSettings;
 use tokio::task::JoinHandle;
@@ -244,16 +245,12 @@ impl Core {
 
 	pub(super) fn request_to_speak(&mut self, guild_id: Snowflake, channel_id: Snowflake, request: bool) {
 		self.apply_local(LocalEvent::HandRequested(request));
-		if let Err(error) = self.gateway.voice_state_request_to_speak(
-			Some(guild_id),
-			Some(channel_id),
-			self.voice.self_mute,
-			self.voice.self_deaf,
-			self.voice.camera,
-			request.then(Utc::now),
-		) {
-			tracing::warn!(%error, "request to speak was not sent");
-		}
+		self.patch_voice_state(
+			guild_id,
+			None,
+			json!({ "channel_id": channel_id, "request_to_speak_timestamp": request.then(Utc::now) }),
+			"request to speak",
+		);
 	}
 
 	pub(super) fn start_call(&self, channel_id: Snowflake) {

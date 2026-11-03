@@ -1645,7 +1645,7 @@ impl Core {
 		self.patch_voice_state(guild_id, (!own).then_some(user_id), body, "set speaker");
 	}
 
-	fn patch_voice_state(
+	pub(super) fn patch_voice_state(
 		&self,
 		guild_id: Snowflake,
 		user_id: Option<Snowflake>,
