@@ -207,6 +207,11 @@ pub async fn delete_guild(State(shared): Mock, Path(id): Path<u64>) -> NoContent
 	Ok(StatusCode::NO_CONTENT)
 }
 
+pub async fn guild_pincode(State(shared): Mock, Path(id): Path<u64>) -> NoContent {
+	shared.send_ownership_code(id)?;
+	Ok(StatusCode::NO_CONTENT)
+}
+
 pub async fn ack_bulk(State(shared): Mock, Json(body): Json<Value>) -> NoContent {
 	for entry in body["read_states"].as_array().into_iter().flatten() {
 		if let (Some(channel_id), Some(message_id)) =

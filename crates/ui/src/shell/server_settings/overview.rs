@@ -8,11 +8,14 @@ use gpui::{
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
 use gpui_component::scroll::ScrollableElement as _;
-use protocol::{ChannelType, DefaultMessageNotifications, Snowflake, SystemChannelFlags};
+use protocol::{
+	ChannelType, DefaultMessageNotifications, ExplicitContentFilter, Snowflake, SystemChannelFlags,
+	VerificationLevel,
+};
 use session::{Command, GuildEdit};
 use state::GuildState;
 
-use super::kit;
+use super::{kit, transfer};
 use crate::components::{
 	Avatar, PickHandler, ToggleHandler, dialog_footer, field, hint, segmented, select, switch_row,
 };
@@ -40,6 +43,18 @@ const NOTIFICATIONS: [(&str, DefaultMessageNotifications); 2] = [
 	("notify-all", DefaultMessageNotifications::AllMessages),
 	("notify-mentions", DefaultMessageNotifications::OnlyMentions),
 ];
+const VERIFICATIONS: [(&str, VerificationLevel); 5] = [
+	("verification-none", VerificationLevel::None),
+	("verification-low", VerificationLevel::Low),
+	("verification-medium", VerificationLevel::Medium),
+	("verification-high", VerificationLevel::High),
+	("verification-highest", VerificationLevel::VeryHigh),
+];
+const FILTERS: [(&str, ExplicitContentFilter); 3] = [
+	("filter-off", ExplicitContentFilter::Disabled),
+	("filter-roleless", ExplicitContentFilter::MembersWithoutRoles),
+	("filter-all", ExplicitContentFilter::AllMembers),
+];
 const SYSTEM_SWITCHES: [(SystemChannelFlags, &str, &str); 3] = [
 	(
 		SystemChannelFlags::SUPPRESS_JOIN_NOTIFICATIONS,
@@ -65,6 +80,8 @@ struct Behavior {
 	afk_channel: Option<Snowflake>,
 	afk_timeout: u32,
 	notifications: DefaultMessageNotifications,
+	verification: VerificationLevel,
+	content_filter: ExplicitContentFilter,
 }
 
 impl Behavior {
@@ -77,6 +94,8 @@ impl Behavior {
 			notifications: guild
 				.default_notifications
 				.unwrap_or(DefaultMessageNotifications::AllMessages),
+			verification: guild.verification_level.unwrap_or_default(),
+			content_filter: guild.explicit_content_filter.unwrap_or_default(),
 		}
 	}
 }
@@ -296,6 +315,9 @@ impl OverviewPage {
 				afk_channel_id: (now.afk_channel != was.afk_channel).then_some(now.afk_channel),
 				afk_timeout: (now.afk_timeout != was.afk_timeout).then_some(now.afk_timeout),
 				default_notifications: (now.notifications != was.notifications).then_some(now.notifications),
+				verification_level: (now.verification != was.verification).then_some(now.verification),
+				explicit_content_filter: (now.content_filter != was.content_filter)
+					.then_some(now.content_filter),
 			},
 		});
 		if !name.is_empty() {
@@ -503,6 +525,71 @@ impl OverviewPage {
 			.into_any_element()
 	}
 
+	fn safety(&self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+		let levels: Vec<SharedString> = VERIFICATIONS.iter().map(|(key, _)| cx.t(key)).collect();
+		let level = VERIFICATIONS
+			.iter()
+			.position(|(_, level)| *level == self.behavior.verification)
+			.unwrap_or(0);
+		let filters: Vec<SharedString> = FILTERS.iter().map(|(key, _)| cx.t(key)).collect();
+		let filter = FILTERS
+			.iter()
+			.position(|(_, filter)| *filter == self.behavior.content_filter)
+			.unwrap_or(0);
+		let weak_level = cx.weak_entity();
+		let pick_level: PickHandler = Rc::new(move |index, _, cx| {
+			if let Some((_, level)) = VERIFICATIONS.get(index) {
+				weak_level
+					.update(cx, |this, cx| {
+						this.behavior.verification = *level;
+						cx.notify();
+					})
+					.ok();
+			}
+		});
+		let weak_filter = cx.weak_entity();
+		let pick_filter: PickHandler = Rc::new(move |index, _, cx| {
+			if let Some((_, filter)) = FILTERS.get(index) {
+				weak_filter
+					.update(cx, |this, cx| {
+						this.behavior.content_filter = *filter;
+						cx.notify();
+					})
+					.ok();
+			}
+		});
+		div()
+			.flex()
+			.flex_col()
+			.gap(theme.space_16)
+			.child(self.section_title("server-overview-safety", theme, cx))
+			.child(field(
+				cx.t("server-overview-verification"),
+				theme,
+				select(
+					"server-overview-verification",
+					levels[level].clone(),
+					&levels,
+					level,
+					pick_level,
+				),
+			))
+			.child(hint(cx.t("server-overview-verification-hint"), theme))
+			.child(field(
+				cx.t("server-overview-filter"),
+				theme,
+				select(
+					"server-overview-filter",
+					filters[filter].clone(),
+					&filters,
+					filter,
+					pick_filter,
+				),
+			))
+			.child(hint(cx.t("server-overview-filter-hint"), theme))
+			.into_any_element()
+	}
+
 	fn notifications(&self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
 		let labels: Vec<SharedString> = NOTIFICATIONS.iter().map(|(key, _)| cx.t(key)).collect();
 		let selected = NOTIFICATIONS
@@ -615,7 +702,27 @@ impl OverviewPage {
 	fn danger_zone(&self, facts: &Facts, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
 		let guild = self.guild;
 		let name = facts.name.clone();
-		div()
+		let transfer_name = facts.name.clone();
+		let transfer = div()
+			.flex()
+			.items_center()
+			.justify_between()
+			.gap(theme.space_16)
+			.child(
+				div()
+					.flex()
+					.flex_col()
+					.child(self.section_title("server-overview-transfer", theme, cx))
+					.child(hint(cx.t("server-overview-transfer-hint"), theme)),
+			)
+			.child(
+				Button::new("overview-transfer")
+					.danger()
+					.outline()
+					.label(cx.t("server-overview-transfer"))
+					.on_click(move |_, window, cx| transfer::open(window, cx, guild, transfer_name.clone())),
+			);
+		let delete = div()
 			.flex()
 			.items_center()
 			.justify_between()
@@ -633,7 +740,13 @@ impl OverviewPage {
 					.outline()
 					.label(cx.t("server-overview-delete"))
 					.on_click(move |_, window, cx| open_delete(window, cx, guild, name.clone())),
-			)
+			);
+		div()
+			.flex()
+			.flex_col()
+			.gap(theme.space_16)
+			.child(transfer)
+			.child(delete)
 			.into_any_element()
 	}
 }
@@ -667,6 +780,7 @@ impl Render for OverviewPage {
 					.child(self.system_messages(facts, &theme, cx))
 					.child(self.inactivity(facts, &theme, cx))
 					.child(self.notifications(&theme, cx))
+					.child(self.safety(&theme, cx))
 					.when(facts.owner, |page| {
 						page.child(self.danger_zone(facts, &theme, cx))
 					})

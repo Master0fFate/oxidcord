@@ -126,6 +126,7 @@ pub fn router(shared: Arc<Shared>) -> Router {
 				.patch(admin::modify_guild)
 				.delete(admin::delete_guild),
 		)
+		.route("/guilds/{id}/pincode", put(admin::guild_pincode))
 		.route(
 			"/guilds/{id}/member-verification",
 			get(admin::member_verification),

@@ -2,9 +2,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use chrono::{DateTime, Duration, Utc};
 use protocol::{
-	Channel, ChannelFlags, ChannelType, DefaultMessageNotifications, Emoji, ForumLayout, ForumSortOrder,
-	ForumTag, LenientVec, Member, MessageType, PermissionOverwrite, PermissionOverwriteKind, Permissions,
-	Relationship, RelationshipKind, Role, RoleColors, Snowflake, UserGuildSettings, VideoQualityMode,
+	Channel, ChannelFlags, ChannelType, DefaultMessageNotifications, Emoji, ExplicitContentFilter,
+	ForumLayout, ForumSortOrder, ForumTag, LenientVec, Member, MessageType, PermissionOverwrite,
+	PermissionOverwriteKind, Permissions, Relationship, RelationshipKind, Role, RoleColors, Snowflake,
+	UserGuildSettings, VerificationLevel, VideoQualityMode,
 };
 use serde_json::{Value, json};
 
@@ -620,9 +621,26 @@ impl Shared {
 		merged
 	}
 
+	pub fn send_ownership_code(&self, guild_id: u64) -> Result<(), ApiError> {
+		let store = self.store.lock();
+		self.live_guild(&store, guild_id)?;
+		store.properties[&guild_id]
+			.owner_id
+			.filter(|owner| owner.0 == CURRENT_USER_ID)
+			.map(drop)
+			.ok_or_else(ApiError::missing_permissions)
+	}
+
 	pub fn modify_guild(&self, guild_id: u64, body: &Value) -> Result<Value, ApiError> {
 		let mut store = self.store.lock();
 		let guild = self.live_guild(&store, guild_id)?;
+		let new_owner = parse_id(&body["owner_id"]);
+		if new_owner.is_some()
+			&& (store.properties[&guild_id].owner_id != Some(Snowflake(CURRENT_USER_ID))
+				|| body["code"].as_str().is_none_or(str::is_empty))
+		{
+			return Err(ApiError::missing_permissions());
+		}
 		let new_icon = format!("{:032x}", store.next_snowflake());
 		let properties = store
 			.properties
@@ -659,6 +677,15 @@ impl Shared {
 		}
 		if let Some(level) = body["default_message_notifications"].as_i64() {
 			properties.default_message_notifications = Some(DefaultMessageNotifications::from(level));
+		}
+		if let Some(level) = body["verification_level"].as_i64() {
+			properties.verification_level = Some(VerificationLevel::from(level));
+		}
+		if let Some(filter) = body["explicit_content_filter"].as_i64() {
+			properties.explicit_content_filter = Some(ExplicitContentFilter::from(filter));
+		}
+		if let Some(owner) = new_owner {
+			properties.owner_id = Some(Snowflake(owner));
 		}
 		store.push_audit(
 			guild_id,

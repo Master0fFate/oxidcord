@@ -91,6 +91,24 @@ impl RestClient {
 			.await
 	}
 
+	pub async fn request_ownership_code(&self, guild_id: Snowflake) -> Result<()> {
+		self.send_empty(Request::put(format!("/guilds/{guild_id}/pincode")))
+			.await
+	}
+
+	pub async fn transfer_guild(
+		&self,
+		guild_id: Snowflake,
+		owner_id: Snowflake,
+		code: Option<&str>,
+	) -> Result<Value> {
+		let mut changes = json!({ "owner_id": owner_id });
+		if let Some(code) = code {
+			changes["code"] = json!(code);
+		}
+		self.modify_guild(guild_id, changes).await
+	}
+
 	pub async fn create_guild_channel(&self, guild_id: Snowflake, body: Value) -> Result<Channel> {
 		self.send(Request::post(format!("/guilds/{guild_id}/channels")).json(&body))
 			.await

@@ -15,6 +15,7 @@ pub mod sound_edit;
 pub mod sounds;
 pub mod sticker_edit;
 pub mod stickers;
+mod transfer;
 
 use gpui::{
 	AnyElement, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable, FontWeight,

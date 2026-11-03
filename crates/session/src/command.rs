@@ -13,10 +13,11 @@ use plugin_host::{Navigation, Permission, PickedPath, ViewContext};
 use protocol::rest::ModalAnswer;
 use protocol::{
 	ApplicationCommand, AutoModRule, ChannelPosition, ChannelType, ComponentType,
-	DefaultMessageNotifications, DefaultReaction, ForumLayout, ForumSortOrder, Gif, InteractionOption,
-	MediaRedaction, MediaScope, MemberVerification, MessageFlags, Nonce, NotificationLevel,
-	PermissionOverwriteKind, Permissions, PollCreate, PrivacyChange, Role, RoleColors, ScheduledEventKind,
-	ScheduledEventStatus, Snowflake, StatusKind, SystemChannelFlags, VideoQualityMode,
+	DefaultMessageNotifications, DefaultReaction, ExplicitContentFilter, ForumLayout, ForumSortOrder, Gif,
+	InteractionOption, MediaRedaction, MediaScope, MemberVerification, MessageFlags, Nonce,
+	NotificationLevel, PermissionOverwriteKind, Permissions, PollCreate, PrivacyChange, Role, RoleColors,
+	ScheduledEventKind, ScheduledEventStatus, Snowflake, StatusKind, SystemChannelFlags, VerificationLevel,
+	VideoQualityMode,
 };
 use rest::UploadFile;
 use rest::api::SearchQuery;
@@ -176,6 +177,8 @@ pub struct GuildEdit {
 	pub afk_channel_id: Option<Option<Snowflake>>,
 	pub afk_timeout: Option<u32>,
 	pub default_notifications: Option<DefaultMessageNotifications>,
+	pub verification_level: Option<VerificationLevel>,
+	pub explicit_content_filter: Option<ExplicitContentFilter>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -631,6 +634,9 @@ pub enum Command {
 		guild_id: Snowflake,
 		form: MemberVerification,
 	},
+	WithdrawJoinRequest {
+		guild_id: Snowflake,
+	},
 	AcceptInvite {
 		code: String,
 	},
@@ -675,6 +681,14 @@ pub enum Command {
 	},
 	DeleteGuild {
 		guild_id: Snowflake,
+	},
+	RequestOwnershipCode {
+		guild_id: Snowflake,
+	},
+	TransferGuild {
+		guild_id: Snowflake,
+		owner_id: Snowflake,
+		code: Option<String>,
 	},
 	CreateChannel {
 		guild_id: Snowflake,

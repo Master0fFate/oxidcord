@@ -112,6 +112,15 @@ fn guild_edit_body(edit: GuildEdit) -> Value {
 			"default_message_notifications",
 			edit.default_notifications.map(|level| json!(i64::from(level))),
 		),
+		(
+			"verification_level",
+			edit.verification_level.map(|level| json!(i64::from(level))),
+		),
+		(
+			"explicit_content_filter",
+			edit.explicit_content_filter
+				.map(|filter| json!(i64::from(filter))),
+		),
 	])
 }
 
@@ -1423,6 +1432,30 @@ impl Core {
 						let state = self.state.read();
 						state.current_user_id().filter(|me| {
 							!state
+			Command::RequestOwnershipCode { guild_id } => {
+				if self.owns_guild(guild_id) {
+					self.spawn_action("ownership code", move |rest| async move {
+						rest.request_ownership_code(guild_id).await
+					});
+				} else {
+					self.reject("Only the owner can transfer a server");
+				}
+			}
+			Command::TransferGuild {
+				guild_id,
+				owner_id,
+				code,
+			} => {
+				if self.owns_guild(guild_id) {
+					self.spawn_action("transfer server", move |rest| async move {
+						rest.transfer_guild(guild_id, owner_id, code.as_deref())
+							.await
+							.map(drop)
+					});
+				} else {
+					self.reject("Only the owner can transfer a server");
+				}
+			}
 								.guild_permissions(guild_id, *me)
 								.contains(Permissions::ADMINISTRATOR)
 						})

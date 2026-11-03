@@ -4,11 +4,19 @@ use std::time::Instant;
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use protocol::{
-	Channel, ChannelType, DefaultMessageNotifications, Emoji, Guild, JoinRequestStatus, Member, Role,
-	ScheduledEvent, Snowflake, StageInstance, SystemChannelFlags, VoiceState,
+	Channel, ChannelType, DefaultMessageNotifications, Emoji, ExplicitContentFilter, Guild,
+	JoinRequestStatus, Member, Role, ScheduledEvent, Snowflake, StageInstance, SystemChannelFlags,
+	VerificationLevel, VoiceState,
 };
 
 use crate::member_list::MemberList;
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Application {
+	pub name: String,
+	pub icon: Option<String>,
+	pub status: Option<JoinRequestStatus>,
+}
 
 pub const ENHANCED_ROLE_COLORS: &str = "ENHANCED_ROLE_COLORS";
 pub const ROLE_ICONS: &str = "ROLE_ICONS";
@@ -32,6 +40,8 @@ pub struct GuildState {
 	pub unavailable: bool,
 	pub join_request: Option<JoinRequestStatus>,
 	pub default_notifications: Option<DefaultMessageNotifications>,
+	pub verification_level: Option<VerificationLevel>,
+	pub explicit_content_filter: Option<ExplicitContentFilter>,
 	pub system_channel_id: Option<Snowflake>,
 	pub system_channel_flags: SystemChannelFlags,
 	pub afk_channel_id: Option<Snowflake>,
@@ -141,6 +151,8 @@ impl GuildState {
 		self.large = guild.large.unwrap_or(self.large);
 		self.unavailable = guild.unavailable.unwrap_or(false);
 		self.default_notifications = guild.default_message_notifications.or(self.default_notifications);
+		self.verification_level = guild.verification_level.or(self.verification_level);
+		self.explicit_content_filter = guild.explicit_content_filter.or(self.explicit_content_filter);
 		if !guild.features.is_empty() {
 			self.features.clone_from(&guild.features);
 		}
