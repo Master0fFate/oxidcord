@@ -232,6 +232,7 @@ impl State {
 	}
 
 	fn replace_status_settings(&mut self, bytes: Vec<u8>, partial: bool) -> Changes {
+		let carries_status = !partial || decode_status(&bytes).status.is_some();
 		let mut bytes = if partial {
 			merge_fields(&self.proto_status, &bytes)
 		} else {
@@ -248,7 +249,7 @@ impl State {
 			bytes = status_with_custom(&bytes, None);
 		}
 		let mut changes = Changes::default();
-		if let Some(chosen) = &status.status {
+		if carries_status && let Some(chosen) = &status.status {
 			changes.own_status = self.restore_status(chosen);
 		}
 		if status != self.status_settings {
