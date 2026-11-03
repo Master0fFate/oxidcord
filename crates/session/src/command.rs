@@ -336,6 +336,8 @@ pub enum Command {
 	},
 	SetInputMode(voice::InputMode),
 	SetPushToTalk(bool),
+	SetPushToMute(bool),
+	SetPriorityTalk(bool),
 	SetInputVolume(f32),
 	SetOutputVolume(f32),
 	SetNoiseSuppression(bool),

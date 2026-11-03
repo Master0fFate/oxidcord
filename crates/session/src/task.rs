@@ -1262,6 +1262,8 @@ impl Core {
 			} => self.set_user_volume(user_id, volume, muted),
 			Command::SetInputMode(mode) => self.set_input_mode(mode),
 			Command::SetPushToTalk(transmitting) => self.set_push_to_talk(transmitting),
+			Command::SetPushToMute(muted) => self.set_push_to_mute(muted),
+			Command::SetPriorityTalk(active) => self.set_priority_talk(active),
 			Command::SetInputVolume(volume) => self.set_input_volume(volume),
 			Command::SetOutputVolume(volume) => self.set_output_volume(volume),
 			Command::SetNoiseSuppression(enabled) => self.set_noise_suppression(enabled),

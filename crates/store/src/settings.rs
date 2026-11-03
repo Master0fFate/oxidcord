@@ -148,6 +148,10 @@ pub struct KeybindSettings {
 	pub push_to_talk: Option<String>,
 	pub toggle_mute: Option<String>,
 	pub toggle_deafen: Option<String>,
+	pub toggle_camera: Option<String>,
+	pub toggle_screen_share: Option<String>,
+	pub push_to_mute: Option<String>,
+	pub priority_push_to_talk: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

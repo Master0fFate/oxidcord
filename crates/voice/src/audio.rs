@@ -13,6 +13,7 @@ use tracing::warn;
 
 use crate::codec::Profile;
 use crate::error::{Result, VoiceError};
+use crate::wire::SPEAKING_MICROPHONE;
 
 #[cfg(windows)]
 mod loopback;
@@ -22,7 +23,6 @@ pub(crate) use loopback::SystemScope;
 
 const CAPTURE_LIMIT_SECONDS: usize = 2;
 const PLAYBACK_LIMIT_SECONDS: usize = 1;
-const SPEAKING_MICROPHONE: u8 = 1;
 const SPEAKING_SOUNDSHARE: u8 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

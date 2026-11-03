@@ -138,6 +138,14 @@ impl Data {
 		cx.notify();
 	}
 
+	pub fn set_push_muted(&self, muted: bool) {
+		self.session.send(Command::SetPushToMute(muted));
+	}
+
+	pub fn set_priority_talking(&self, active: bool) {
+		self.session.send(Command::SetPriorityTalk(active));
+	}
+
 	pub fn user_volume(&self, user_id: Snowflake) -> f32 {
 		self.local_voice.volumes.get(&user_id).copied().unwrap_or(1.0)
 	}

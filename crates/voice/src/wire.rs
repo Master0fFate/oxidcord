@@ -43,6 +43,9 @@ pub mod close {
 	pub const CALL_TERMINATED: u16 = 4022;
 }
 
+pub const SPEAKING_MICROPHONE: u8 = 1;
+pub const SPEAKING_PRIORITY: u8 = 4;
+
 #[derive(Debug, Deserialize)]
 pub struct RawFrame {
 	pub op: u8,

@@ -655,7 +655,7 @@ pub(crate) struct Supervisor {
 	ssrc: u32,
 	ssrcs: VideoSsrcs,
 	announced: Option<(VideoKind, VideoQuality)>,
-	speaking: u8,
+	speaking_flags: u8,
 	dave: DaveSession,
 	outbox: Vec<Outgoing>,
 }
@@ -699,7 +699,7 @@ impl Supervisor {
 			ssrc,
 			ssrcs: established.ssrcs,
 			announced: None,
-			speaking: 0,
+			speaking_flags: 0,
 			dave,
 			outbox: Vec::new(),
 		};
@@ -752,7 +752,7 @@ impl Supervisor {
 				},
 				command = self.commands.recv() => match command {
 					Some(Control::Speaking(flags)) => {
-						self.speaking = flags;
+						self.speaking_flags = flags;
 						self.shared.hub.emit(VoiceEvent::Speaking {
 							user_id: self.credentials.user_id(),
 							speaking: flags != 0,
@@ -1054,7 +1054,7 @@ impl Supervisor {
 	async fn after_resume(&mut self) -> Recovery {
 		if self
 			.link
-			.send(speaking_frame(self.speaking, self.ssrc))
+			.send(speaking_frame(self.speaking_flags, self.ssrc))
 			.await
 			.is_err()
 		{

@@ -360,7 +360,7 @@ impl AppRoot {
 		let session = (self.start_session)(token.to_owned(), notify);
 		session.set_video_sink(cx.global::<Textures>().0.clone());
 		let data = cx.new(|_| Data::new(session));
-		VoiceHotkeys::attach(data.downgrade(), cx);
+		VoiceHotkeys::attach(data.downgrade(), self.backend.clone(), cx);
 		self._switch_subscription =
 			Some(
 				cx.subscribe_in(&data, window, |_, data, event: &DataEvent, window, cx| {

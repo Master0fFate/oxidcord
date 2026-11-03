@@ -26,6 +26,7 @@ use crate::transform::{Codec, FrameTransform};
 use crate::video::VideoStream;
 use crate::video::receive::{DecodeJob, DecodeWorker};
 use crate::video::rtp::{self as video_rtp, H264Depacketizer};
+use crate::wire::SPEAKING_PRIORITY;
 
 const TICK: Duration = Duration::from_millis(10);
 const FRAME_DURATION: Duration = Duration::from_millis(20);
@@ -83,7 +84,7 @@ pub(crate) struct Media {
 	frame: Vec<f32>,
 	sequence: u16,
 	timestamp: u32,
-	speaking: bool,
+	speaking_flags: u8,
 	silence_left: u8,
 	next_playout: Instant,
 	#[cfg(feature = "testing")]
@@ -122,7 +123,7 @@ impl Media {
 			frame: vec![0.0; FRAME_SAMPLES],
 			sequence: rand::random(),
 			timestamp: rand::random(),
-			speaking: false,
+			speaking_flags: 0,
 			silence_left: 0,
 			next_playout: now,
 			#[cfg(feature = "testing")]
@@ -233,9 +234,15 @@ impl Media {
 	fn transmit(&mut self, active: bool, frame: &[f32]) {
 		if active {
 			self.silence_left = SILENCE_FRAMES_BEFORE_PAUSE;
-			if !self.speaking {
-				self.speaking = true;
-				let _ = self.control.send(Control::Speaking(self.route.speaking_flag()));
+			let base = self.route.speaking_flag();
+			let flags = if self.shared.priority.load(Ordering::Relaxed) {
+				base | SPEAKING_PRIORITY
+			} else {
+				base
+			};
+			if self.speaking_flags != flags {
+				self.speaking_flags = flags;
+				let _ = self.control.send(Control::Speaking(flags));
 			}
 			match self.encoder.encode(frame) {
 				Ok(packet) if packet.len() > MAX_DTX_PACKET_BYTES => {
@@ -245,13 +252,13 @@ impl Media {
 				Ok(_) => {}
 				Err(error) => warn!(%error, "opus encode failed"),
 			}
-		} else if self.speaking {
+		} else if self.speaking_flags != 0 {
 			if self.silence_left > 0 {
 				self.silence_left -= 1;
 				self.send_silence();
 			}
 			if self.silence_left == 0 {
-				self.speaking = false;
+				self.speaking_flags = 0;
 				let _ = self.control.send(Control::Speaking(0));
 			}
 		}
@@ -273,9 +280,13 @@ impl Media {
 		if self.shared.muted.load(Ordering::Relaxed)
 			|| self.shared.deafened.load(Ordering::Relaxed)
 			|| self.shared.server_muted.load(Ordering::Relaxed)
+			|| self.shared.push_muted.load(Ordering::Relaxed)
 		{
 			self.gate.reset();
 			return false;
+		}
+		if self.shared.priority.load(Ordering::Relaxed) {
+			return true;
 		}
 		match self.shared.input_mode() {
 			InputMode::VoiceActivity => self.gate.update(level_db, self.shared.vad_threshold_db.load()),

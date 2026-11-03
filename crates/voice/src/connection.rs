@@ -200,6 +200,14 @@ impl VoiceConnection {
 		self.shared.transmitting.store(transmitting, Ordering::Relaxed);
 	}
 
+	pub fn set_push_muted(&self, muted: bool) {
+		self.shared.push_muted.store(muted, Ordering::Relaxed);
+	}
+
+	pub fn set_priority(&self, priority: bool) {
+		self.shared.priority.store(priority, Ordering::Relaxed);
+	}
+
 	pub fn set_noise_suppression(&self, enabled: bool) {
 		self.shared.noise_suppression.store(enabled, Ordering::Relaxed);
 	}

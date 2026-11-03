@@ -181,6 +181,11 @@ async fn on_frame(voice: &Voice, socket: &mut WebSocket, peer: &mut Peer, frame:
 		}
 		Some(3) => send(socket, &json!({ "op": 6, "d": { "t": data["t"] } })).await,
 		Some(5) => {
+			tracing::info!(
+				flags = data["speaking"].as_u64().unwrap_or_default(),
+				user_id = ?peer.user_id,
+				"mock voice speaking"
+			);
 			let speaking = json!({
 				"op": 5,
 				"d": {

@@ -5,7 +5,7 @@ use std::time::Duration;
 use chrono::Utc;
 use gateway::SendError;
 use parking_lot::Mutex;
-use protocol::{Snowflake, Token, VoiceChannelEffect, VoiceServerUpdate, VoiceState};
+use protocol::{Permissions, Snowflake, Token, VoiceChannelEffect, VoiceServerUpdate, VoiceState};
 use serde_json::json;
 use state::{JoinBlock, LocalEvent, VoiceStatus};
 use store::{UserVolume, VoiceSettings};
@@ -56,6 +56,8 @@ pub(crate) struct VoiceLink {
 	pub(super) self_deaf: bool,
 	server_muted: bool,
 	transmitting: bool,
+	push_muted: bool,
+	priority: bool,
 	user_volumes: HashMap<Snowflake, f32>,
 	sounds: HashMap<Snowflake, voice::Sound>,
 	pub(super) camera_device: Option<String>,
@@ -81,6 +83,8 @@ impl VoiceLink {
 			self_deaf: saved.self_deaf,
 			server_muted: false,
 			transmitting: false,
+			push_muted: false,
+			priority: false,
 			user_volumes: saved
 				.user_volumes
 				.iter()
@@ -244,6 +248,35 @@ impl Core {
 		if let Some(connection) = &self.voice.connection {
 			connection.set_transmitting(transmitting);
 		}
+	}
+
+	pub(super) fn set_push_to_mute(&mut self, muted: bool) {
+		self.voice.push_muted = muted;
+		if let Some(connection) = &self.voice.connection {
+			connection.set_push_muted(muted);
+		}
+	}
+
+	pub(super) fn set_priority_talk(&mut self, active: bool) {
+		let allowed = active && self.can_speak_with_priority();
+		if active && !allowed {
+			self.reject("You need the Priority Speaker permission");
+		}
+		self.voice.priority = allowed;
+		if let Some(connection) = &self.voice.connection {
+			connection.set_priority(allowed);
+		}
+	}
+
+	fn can_speak_with_priority(&self) -> bool {
+		self.voice.target.is_some_and(|target| {
+			target.guild_id.is_some()
+				&& self
+					.state
+					.read()
+					.my_permissions(target.channel_id)
+					.contains(Permissions::PRIORITY_SPEAKER)
+		})
 	}
 
 	pub(super) fn set_input_volume(&mut self, volume: f32) {
@@ -741,6 +774,8 @@ impl Core {
 			connection.set_audio_bitrate(bitrate);
 		}
 		connection.set_transmitting(self.voice.transmitting);
+		connection.set_push_muted(self.voice.push_muted);
+		connection.set_priority(self.voice.priority);
 		connection.set_mute(self.voice.self_mute);
 		connection.set_deaf(self.voice.self_deaf);
 		connection.set_server_muted(self.voice.server_muted);
