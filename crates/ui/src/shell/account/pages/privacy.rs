@@ -31,18 +31,32 @@ const VISIBILITIES: [(u32, &str); 3] = [
 ];
 const DEFAULT_VISIBILITY: u32 = 3;
 
+struct GuildRow {
+	id: Snowflake,
+	name: SharedString,
+	dms_open: bool,
+	requests_open: bool,
+}
+
 pub struct PrivacyPage {
 	data: Entity<Data>,
-	guilds: Vec<(Snowflake, SharedString)>,
+	guilds: Vec<GuildRow>,
 	_subscription: Subscription,
 }
 
-fn guild_list(data: &Entity<Data>, cx: &Context<PrivacyPage>) -> Vec<(Snowflake, SharedString)> {
-	data.read(cx)
-		.state()
+fn guild_list(data: &Entity<Data>, cx: &Context<PrivacyPage>) -> Vec<GuildRow> {
+	let data = data.read(cx);
+	let state = data.state();
+	let privacy = state.privacy();
+	state
 		.guild_summaries()
 		.into_iter()
-		.map(|summary| (summary.id, summary.name.into()))
+		.map(|summary| GuildRow {
+			dms_open: !privacy.restricted_guilds.contains(&summary.id),
+			requests_open: !privacy.request_restricted_guilds.contains(&summary.id),
+			id: summary.id,
+			name: summary.name.into(),
+		})
 		.collect()
 }
 
@@ -67,17 +81,10 @@ impl PrivacyPage {
 		self.data.read(cx).send(Command::SetPrivacy(change));
 	}
 
-	fn guild_row(
-		&self,
-		index: usize,
-		guild_id: Snowflake,
-		name: &SharedString,
-		open: (bool, bool),
-		theme: &Theme,
-		cx: &mut Context<Self>,
-	) -> AnyElement {
+	fn guild_row(&self, index: usize, guild: &GuildRow, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+		let guild_id = guild.id;
 		let dms = Switch::new(("privacy-guild-dms", index))
-			.checked(open.0)
+			.checked(guild.dms_open)
 			.on_change(cx.listener(move |this, checked: &bool, _, cx| {
 				this.change(
 					PrivacyChange::GuildDms {
@@ -88,7 +95,7 @@ impl PrivacyPage {
 				);
 			}));
 		let requests = Switch::new(("privacy-guild-requests", index))
-			.checked(open.1)
+			.checked(guild.requests_open)
 			.on_change(cx.listener(move |this, checked: &bool, _, cx| {
 				this.change(
 					PrivacyChange::GuildRequests {
@@ -99,7 +106,7 @@ impl PrivacyPage {
 				);
 			}));
 		row(
-			name.clone(),
+			guild.name.clone(),
 			None,
 			div()
 				.flex()
@@ -187,22 +194,22 @@ fn labeled(label: SharedString, switch: Switch, theme: &Theme) -> AnyElement {
 impl Render for PrivacyPage {
 	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
-		let (privacy, explicit) = {
+		let (dms_restricted, requests_restricted, visibility, explicit) = {
 			let data = self.data.read(cx);
 			let state = data.state();
-			(state.privacy().clone(), state.explicit_media())
+			let privacy = state.privacy();
+			(
+				privacy.default_guilds_restricted,
+				privacy.default_request_restricted,
+				privacy.profile_visibility,
+				state.explicit_media(),
+			)
 		};
 		let guild_rows: Vec<AnyElement> = self
 			.guilds
 			.iter()
 			.enumerate()
-			.map(|(index, (guild_id, name))| {
-				let open = (
-					!privacy.restricted_guilds.contains(guild_id),
-					!privacy.request_restricted_guilds.contains(guild_id),
-				);
-				self.guild_row(index, *guild_id, name, open, &theme, cx)
-			})
+			.map(|(index, guild)| self.guild_row(index, guild, &theme, cx))
 			.collect();
 		let media_rows: Vec<AnyElement> = MEDIA_SCOPES
 			.iter()
@@ -221,7 +228,7 @@ impl Render for PrivacyPage {
 						cx.t("privacy-dms-default"),
 						Some(cx.t("privacy-dms-default-note")),
 						Switch::new("privacy-dms-default")
-							.checked(!privacy.default_guilds_restricted)
+							.checked(!dms_restricted)
 							.on_change(cx.listener(|this, checked: &bool, _, cx| {
 								this.change(
 									PrivacyChange::DefaultGuildDms {
@@ -236,7 +243,7 @@ impl Render for PrivacyPage {
 						cx.t("privacy-requests-default"),
 						Some(cx.t("privacy-requests-default-note")),
 						Switch::new("privacy-requests-default")
-							.checked(!privacy.default_request_restricted)
+							.checked(!requests_restricted)
 							.on_change(cx.listener(|this, checked: &bool, _, cx| {
 								this.change(
 									PrivacyChange::DefaultRequests {
@@ -260,7 +267,7 @@ impl Render for PrivacyPage {
 					.flex()
 					.flex_col()
 					.child(heading(cx.t("privacy-profile"), &theme))
-					.child(self.visibility_row(privacy.profile_visibility, &theme, cx)),
+					.child(self.visibility_row(visibility, &theme, cx)),
 			)
 			.child(
 				div()
