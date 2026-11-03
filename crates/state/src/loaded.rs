@@ -7,7 +7,8 @@ use protocol::lenient::{or_default, timestamp, timestamp_or_seconds};
 use protocol::{
 	ApplicationCommand, ApplicationCommandType, AutoModRule, Channel, ChannelType, CommandApplication,
 	CommandChoice, CommandIndex, Connection, Gif, GifFavorites, GifTrending, Guild, GuildBan,
-	InteractionContext, JoinRequestStatus, LenientVec, Member, MemberVerification, Message, Permissions,
+	InteractionContext, JoinRequestStatus, LenientVec, Member, MemberVerification, Message,
+	MessageRequestPreview, Permissions,
 	PinnedMessage, ScheduledEvent, Snowflake, SoundboardSound, Sticker, StickerPack, ThreadMember, User,
 };
 use serde::Deserialize;
@@ -22,6 +23,7 @@ pub const INBOX_KEY: Snowflake = Snowflake(1);
 const VOICE_REGIONS_KEY: Snowflake = Snowflake(2);
 pub const COMMAND_CHOICES_KEY: Snowflake = Snowflake(3);
 pub const CONNECTIONS_KEY: Snowflake = Snowflake(4);
+pub const REQUESTS_KEY: Snowflake = Snowflake(5);
 
 #[derive(Debug, Clone)]
 pub enum Loaded {
@@ -31,6 +33,10 @@ pub enum Loaded {
 		messages: Vec<Message>,
 	},
 	MentionDismissed(Snowflake),
+	RequestPreviews {
+		channel_ids: Vec<Snowflake>,
+		previews: Vec<MessageRequestPreview>,
+	},
 	CommandIndex {
 		scope: Snowflake,
 		index: CommandIndex,
@@ -405,6 +411,7 @@ fn member_allows(command: &ApplicationCommand, permissions: Permissions) -> bool
 #[derive(Debug, Default)]
 pub(crate) struct Lazy {
 	pub(crate) mentions: HashMap<(bool, bool), Vec<Arc<Message>>>,
+	pub(crate) request_previews: HashMap<Snowflake, Arc<Message>>,
 	pub(crate) pins: HashMap<Snowflake, PinList>,
 	pub(crate) archived: HashMap<Snowflake, ArchivedThreads>,
 	pub(crate) profiles: HashMap<Snowflake, UserProfile>,
@@ -664,6 +671,24 @@ impl State {
 				changes.loaded.insert(INBOX_KEY);
 			}
 			Loaded::MentionDismissed(message_id) => return self.dismiss_mention(*message_id),
+			Loaded::RequestPreviews {
+				channel_ids,
+				previews,
+			} => {
+				for channel_id in channel_ids {
+					self.lazy.request_previews.remove(channel_id);
+				}
+				for preview in previews {
+					let Some(message) = &preview.message_preview else {
+						continue;
+					};
+					self.ingest_message_people(None, message);
+					self.lazy
+						.request_previews
+						.insert(preview.channel_id, Arc::new(message.clone()));
+				}
+				changes.loaded.insert(REQUESTS_KEY);
+			}
 			Loaded::CommandIndex { scope, index } => {
 				self.lazy.command_scopes.insert(*scope, CommandScope::from(index));
 				changes.loaded.insert(*scope);
@@ -1223,6 +1248,10 @@ impl State {
 			added = true;
 		}
 		added
+	}
+
+	pub fn request_preview(&self, channel_id: Snowflake) -> Option<&Arc<Message>> {
+		self.lazy.request_previews.get(&channel_id)
 	}
 
 	pub fn mentions(&self, roles: bool, everyone: bool) -> Option<&[Arc<Message>]> {

@@ -34,7 +34,7 @@ pub use limits::{ExpressionLimits, PREMIUM_UPLOAD_BYTES};
 pub use loaded::{
 	AppCommand, AuditChange, AuditEntry, AuditLog, AuthSession, BanEntry, COMMAND_CHOICES_KEY,
 	CONNECTIONS_KEY, ConnectedAccount, GuildProfile, INBOX_KEY, InviteInfo, InvitePreview, Loaded, Pin,
-	ProfileBadge, ProfileEffect, USER_COMMANDS, UserProfile, VoiceRegion, audit_action_label,
+	ProfileBadge, ProfileEffect, REQUESTS_KEY, USER_COMMANDS, UserProfile, VoiceRegion, audit_action_label,
 };
 pub use member_list::{MemberList, MemberSlot};
 pub use messages::{ChannelMessages, MESSAGE_CAP, PendingFile, PendingMessage, apply_update};

@@ -673,6 +673,9 @@ pub enum Command {
 	AcceptMessageRequest {
 		channel_id: Snowflake,
 	},
+	LoadRequestPreviews {
+		channel_ids: Vec<Snowflake>,
+	},
 	RejectMessageRequests {
 		channel_ids: Vec<Snowflake>,
 	},

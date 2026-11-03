@@ -334,6 +334,7 @@ impl Core {
 			| Command::CloseDm { .. }
 			| Command::AcceptMessageRequest { .. }
 			| Command::RejectMessageRequests { .. }
+			| Command::LoadRequestPreviews { .. }
 			| Command::MuteChannel { .. }
 			| Command::UnmuteChannel { .. }
 			| Command::MuteGuild { .. }
@@ -924,6 +925,15 @@ impl Core {
 				self.spawn_action("accept message request", move |rest| async move {
 					rest.accept_message_request(channel_id).await
 				});
+			}
+			Command::LoadRequestPreviews { channel_ids } => {
+				self.spawn_load("message request previews", move |rest| async move {
+					let previews = rest.message_request_previews(&channel_ids).await?;
+					Ok(Loaded::RequestPreviews {
+						channel_ids,
+						previews,
+					})
+				})
 			}
 			Command::RejectMessageRequests { channel_ids } => {
 				self.spawn_action("ignore message requests", move |rest| async move {

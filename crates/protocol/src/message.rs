@@ -390,6 +390,13 @@ pub struct PinnedPage {
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
+pub struct MessageRequestPreview {
+	pub channel_id: Snowflake,
+	pub message_preview: Option<Message>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct CallInfo {
 	pub participants: Vec<Snowflake>,
 	#[serde(deserialize_with = "timestamp")]

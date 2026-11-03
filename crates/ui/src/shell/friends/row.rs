@@ -90,8 +90,16 @@ impl FriendsPage {
 			Kind::Outgoing => cx.t("friends-outgoing-request"),
 			Kind::Blocked => cx.t("friends-blocked"),
 			Kind::Ignored => cx.t("friends-ignored"),
-			Kind::Request(_) => cx.t("friends-request"),
-			Kind::Spam(_) => cx.t("friends-spam"),
+			Kind::Request(channel_id) => self
+				.previews
+				.get(&channel_id)
+				.cloned()
+				.unwrap_or_else(|| cx.t("friends-request")),
+			Kind::Spam(channel_id) => self
+				.previews
+				.get(&channel_id)
+				.cloned()
+				.unwrap_or_else(|| cx.t("friends-spam")),
 			Kind::Friend => item
 				.activity
 				.clone()

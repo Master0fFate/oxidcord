@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::Json;
-use axum::extract::{Path, Query, State};
+use axum::extract::{Path, Query, RawQuery, State};
 use axum::http::HeaderMap;
 use axum::http::header::AUTHORIZATION;
 use protocol::{Channel, ChannelType, LenientVec, Snowflake, User};
@@ -82,6 +82,28 @@ pub async fn my_mentions(
 			.map(|(_, message)| message.clone())
 			.collect(),
 	))
+}
+
+pub async fn message_request_previews(
+	State(shared): State<Arc<Shared>>,
+	RawQuery(query): RawQuery,
+) -> Json<Value> {
+	let store = shared.store.lock();
+	let previews = query
+		.unwrap_or_default()
+		.split('&')
+		.filter_map(|pair| pair.strip_prefix("channel_ids="))
+		.filter_map(|id| id.parse::<u64>().ok())
+		.filter(|id| store.channels.get(id).is_some_and(Channel::is_request))
+		.map(|id| {
+			let first = store
+				.messages
+				.get(&id)
+				.and_then(|messages| messages.values().next());
+			json!({ "channel_id": id.to_string(), "message_preview": first })
+		})
+		.collect();
+	Json(Value::Array(previews))
 }
 
 pub async fn my_connections(State(shared): State<Arc<Shared>>) -> Json<Value> {

@@ -3,6 +3,8 @@ mod add;
 mod feature;
 mod row;
 
+use std::collections::{HashMap, HashSet};
+
 use gpui::{
 	AnyElement, AppContext as _, Context, ElementId, Entity, EventEmitter, FontWeight,
 	InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Point, Render, SharedString,
@@ -14,7 +16,7 @@ use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::scroll::ScrollableElement as _;
 use protocol::Snowflake;
 use session::Command;
-use state::{Changes, IdSet};
+use state::{Changes, IdSet, REQUESTS_KEY};
 use state::{RelationshipRow, RequestRow};
 
 pub use self::feature::{FeatureKind, FeaturePage};
@@ -23,7 +25,11 @@ use crate::components::Divider;
 use crate::data::Data;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
+use crate::lookup::Lookup;
+use crate::shell::message::{Plain, Prefs, preview};
 use crate::theme::Theme;
+
+const PREVIEW_LENGTH: usize = 120;
 
 pub enum FriendsEvent {
 	OpenDm,
@@ -80,6 +86,8 @@ pub struct FriendsPage {
 	blocked: Vec<RelationshipRow>,
 	ignored: Vec<RelationshipRow>,
 	requests: Vec<RequestRow>,
+	previews: HashMap<Snowflake, SharedString>,
+	previews_asked: HashSet<Snowflake>,
 	add_outcome: AddOutcome,
 	_subscriptions: Vec<Subscription>,
 }
@@ -117,6 +125,8 @@ impl FriendsPage {
 			blocked: Vec::new(),
 			ignored: Vec::new(),
 			requests: Vec::new(),
+			previews: HashMap::new(),
+			previews_asked: HashSet::new(),
 			add_outcome: AddOutcome::Idle,
 			_subscriptions: subscriptions,
 		};
@@ -134,6 +144,7 @@ impl FriendsPage {
 		self.ignored = state.ignored();
 		self.requests = state.message_requests();
 		drop(state);
+		self.load_previews(cx);
 		cx.notify();
 	}
 
@@ -141,6 +152,53 @@ impl FriendsPage {
 		let requests = self.data.read(cx).state().message_requests();
 		if requests != self.requests {
 			self.requests = requests;
+			self.load_previews(cx);
+			cx.notify();
+		}
+	}
+
+	fn load_previews(&mut self, cx: &mut Context<Self>) {
+		if self.tab != Tab::Requests {
+			return;
+		}
+		let missing: Vec<Snowflake> = self
+			.requests
+			.iter()
+			.map(|request| request.channel_id)
+			.filter(|channel_id| self.previews_asked.insert(*channel_id))
+			.collect();
+		if !missing.is_empty() {
+			self.data
+				.read(cx)
+				.send(Command::LoadRequestPreviews { channel_ids: missing });
+		}
+	}
+
+	fn refresh_previews(&mut self, cx: &mut Context<Self>) {
+		let h24 = Prefs::load(cx).time_24h;
+		let previews: HashMap<Snowflake, SharedString> = {
+			let data = self.data.read(cx);
+			let state = data.state();
+			let lookup = Lookup {
+				state: &state,
+				guild: None,
+			};
+			let plain = Plain {
+				lookup: &lookup,
+				h24,
+				cx,
+			};
+			self.requests
+				.iter()
+				.filter_map(|request| {
+					let message = state.request_preview(request.channel_id)?;
+					let text = preview(message, PREVIEW_LENGTH, &plain);
+					Some((request.channel_id, text.into()))
+				})
+				.collect()
+		};
+		if previews != self.previews {
+			self.previews = previews;
 			cx.notify();
 		}
 	}
@@ -154,6 +212,9 @@ impl FriendsPage {
 			self.refresh(cx);
 		} else if changes.private_channels {
 			self.refresh_requests(cx);
+		}
+		if changes.loaded.contains(REQUESTS_KEY) {
+			self.refresh_previews(cx);
 		}
 		if changes.friend_request {
 			self.settle_request(cx);
@@ -182,6 +243,7 @@ impl FriendsPage {
 
 	fn select(&mut self, tab: Tab, cx: &mut Context<Self>) {
 		self.tab = tab;
+		self.load_previews(cx);
 		cx.notify();
 	}
 

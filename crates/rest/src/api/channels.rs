@@ -5,8 +5,8 @@ use protocol::rest::{
 	CreateMessage, EditMessage, MessagesQuery, ModalSubmission,
 };
 use protocol::{
-	BURST_REACTION, Channel, ChannelType, CommandIndex, InviteAccepted, LenientVec, Message, PinnedPage,
-	Snowflake, ThreadMember, User,
+	BURST_REACTION, Channel, ChannelType, CommandIndex, InviteAccepted, LenientVec, Message,
+	MessageRequestPreview, PinnedPage, Snowflake, ThreadMember, User,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -18,6 +18,7 @@ use crate::request::{Request, UploadFile, UploadProgress, encode_component};
 
 const CONSENT_ACCEPTED: i64 = 2;
 const MESSAGE_REQUEST_BATCH: usize = 50;
+const MESSAGE_REQUEST_PREVIEW_BATCH: usize = 25;
 const CLOUD_UPLOAD_MIN_BYTES: usize = 8 * 1024 * 1024;
 
 fn descriptor(index: usize, file: &UploadFile, uploaded_filename: Option<String>) -> AttachmentDescriptor {
@@ -627,6 +628,23 @@ impl RestClient {
 			self.send_empty(request).await?;
 		}
 		Ok(())
+	}
+
+	pub async fn message_request_previews(
+		&self,
+		channel_ids: &[Snowflake],
+	) -> Result<Vec<MessageRequestPreview>> {
+		let mut previews = Vec::with_capacity(channel_ids.len());
+		for batch in channel_ids.chunks(MESSAGE_REQUEST_PREVIEW_BATCH) {
+			let pairs: Vec<(&str, String)> = batch
+				.iter()
+				.map(|channel_id| ("channel_ids", channel_id.to_string()))
+				.collect();
+			let request = Request::get("/users/@me/message-requests/supplemental-data").query(&pairs);
+			let found: LenientVec<MessageRequestPreview> = self.send(request).await?;
+			previews.extend(found);
+		}
+		Ok(previews)
 	}
 
 	pub async fn set_channel_overwrite(
