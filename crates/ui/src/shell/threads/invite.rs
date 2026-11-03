@@ -18,6 +18,7 @@ use crate::shell::community::modal::{self, Close};
 use crate::theme::Theme;
 
 const ROW_LIMIT: usize = 50;
+const ADD_ACTION: &str = "add thread member";
 
 struct Row {
 	id: Snowflake,
@@ -55,8 +56,21 @@ impl InviteMembers {
 		let placeholder = cx.t("members-search");
 		let search = cx.new(|cx| InputState::new(window, cx).placeholder(placeholder));
 		let subscriptions = vec![
-			cx.subscribe(&data, move |_, _, event: &DataEvent, cx| match event {
-				DataEvent::Changed(changes) if changes.members.contains(guild) => cx.notify(),
+			cx.subscribe(&data, move |this, data, event: &DataEvent, cx| match event {
+				DataEvent::Changed(changes) => {
+					let failed = changes.rejected
+						&& data
+							.read(cx)
+							.state()
+							.last_rejection()
+							.is_some_and(|rejection| rejection.reason.starts_with(ADD_ACTION));
+					if failed {
+						this.added.pop();
+					}
+					if failed || changes.members.contains(guild) {
+						cx.notify();
+					}
+				}
 				DataEvent::MediaReady => cx.notify(),
 				_ => {}
 			}),
