@@ -212,6 +212,7 @@ pub struct SignalTrigger {
 	icon: IconKind,
 	color: Hsla,
 	selected: bool,
+	compact: bool,
 }
 
 impl SignalTrigger {
@@ -220,7 +221,13 @@ impl SignalTrigger {
 			icon,
 			color,
 			selected: false,
+			compact: false,
 		}
+	}
+
+	pub fn compact(mut self) -> Self {
+		self.compact = true;
+		self
 	}
 }
 
@@ -238,16 +245,21 @@ impl Selectable for SignalTrigger {
 impl RenderOnce for SignalTrigger {
 	fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
 		let theme = cx.global::<Theme>();
+		let (frame, icon) = if self.compact {
+			(theme.voice_icon_md, theme.voice_icon_sm)
+		} else {
+			(theme.voice_button, theme.voice_icon_md)
+		};
 		div()
 			.flex()
 			.flex_none()
 			.items_center()
 			.justify_center()
-			.size(theme.voice_button)
+			.size(frame)
 			.rounded(theme.radius_sm)
 			.cursor_pointer()
 			.when(self.selected, |trigger| trigger.bg(theme.modifier_selected))
 			.hover(|style| style.bg(theme.modifier_hover))
-			.child(Icon::new(self.icon).size(theme.voice_icon_md).color(self.color))
+			.child(Icon::new(self.icon).size(icon).color(self.color))
 	}
 }

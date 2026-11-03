@@ -1,3 +1,4 @@
+mod code;
 mod codec;
 mod cryptor;
 mod frame;

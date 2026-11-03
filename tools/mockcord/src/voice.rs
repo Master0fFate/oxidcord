@@ -54,6 +54,7 @@ struct Peer {
 #[derive(Clone)]
 pub enum Signal {
 	Frame(String),
+	Binary(Vec<u8>),
 	Close(u16),
 }
 
@@ -130,6 +131,11 @@ async fn signal(voice: Arc<Voice>, mut socket: WebSocket) {
 			broadcast = signals.recv() => match broadcast {
 				Ok(Signal::Frame(frame)) => {
 					if socket.send(Message::Text(frame.into())).await.is_err() {
+						break;
+					}
+				}
+				Ok(Signal::Binary(frame)) => {
+					if socket.send(Message::Binary(frame.into())).await.is_err() {
 						break;
 					}
 				}

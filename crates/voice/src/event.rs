@@ -37,6 +37,7 @@ pub enum VoiceEvent {
 		epoch: u64,
 		version: u8,
 		members: Vec<Snowflake>,
+		privacy_code: Option<String>,
 	},
 	DaveFailure(String),
 	VideoStarted {

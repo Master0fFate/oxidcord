@@ -8,7 +8,7 @@ use crate::messages::PendingFile;
 use crate::notifications::AlertVerdict;
 use crate::plugin_shell::{ChannelDecoration, ClientOptions, DmSectionView, UiIntent};
 use crate::views::{RenderedMessage, UserOverride};
-use crate::voice::{StreamInfo, VideoKind, VoiceStatus};
+use crate::voice::{E2eeInfo, StreamInfo, VideoKind, VoiceStatus};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoadDirection {
@@ -119,6 +119,8 @@ pub enum LocalEvent {
 		output: f32,
 	},
 	HandRequested(bool),
+	VoiceE2ee(Option<E2eeInfo>),
+	VoiceE2eeFailed,
 	CameraChanged(bool),
 	ScreenShareChanged(Option<StreamInfo>),
 	Watching(Option<String>),

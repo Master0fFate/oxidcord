@@ -42,6 +42,13 @@ pub struct MicTest {
 	pub remaining_secs: u32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct E2eeInfo {
+	pub epoch: u64,
+	pub privacy_code: Option<String>,
+	pub members: Vec<Snowflake>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct VoiceSession {
 	pub channel_id: Snowflake,
@@ -59,6 +66,8 @@ pub struct VoiceSession {
 	pub remote_video: HashMap<Snowflake, VideoKind>,
 	pub effects: HashMap<Snowflake, VoiceEffect>,
 	pub connected_at: Option<DateTime<Utc>>,
+	pub e2ee: Option<E2eeInfo>,
+	pub e2ee_failed: bool,
 }
 
 pub const VOICE_EFFECT_LIFETIME: Duration = Duration::from_secs(3);
@@ -221,6 +230,8 @@ impl State {
 					session.watching = None;
 					session.remote_video.clear();
 					session.effects.clear();
+					session.e2ee = None;
+					session.e2ee_failed = false;
 				}
 				changed
 			}
@@ -241,6 +252,8 @@ impl State {
 					remote_video: HashMap::new(),
 					effects: HashMap::new(),
 					connected_at: (*status == VoiceStatus::Connected).then(Utc::now),
+					e2ee: None,
+					e2ee_failed: false,
 				});
 				true
 			}
@@ -278,6 +291,19 @@ impl State {
 			changed
 		});
 		voice_session_changes(changed)
+	}
+
+	pub(crate) fn voice_e2ee(&mut self, info: Option<E2eeInfo>) -> Changes {
+		self.edit_voice(|session| {
+			let changed = session.e2ee != info || session.e2ee_failed;
+			session.e2ee = info;
+			session.e2ee_failed = false;
+			changed
+		})
+	}
+
+	pub(crate) fn voice_e2ee_failed(&mut self) -> Changes {
+		self.edit_voice(|session| !std::mem::replace(&mut session.e2ee_failed, true))
 	}
 
 	pub(crate) fn mic_test_changed(&mut self, test: Option<MicTest>) -> Changes {

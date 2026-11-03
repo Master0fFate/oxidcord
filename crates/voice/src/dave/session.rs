@@ -18,6 +18,7 @@ use serde_json::{Value, json};
 use tls_codec::{DeserializeBytes, Serialize};
 use tokio_tungstenite::tungstenite::Message;
 
+use super::code::privacy_code;
 use super::ratchet::{KEY_BYTES, KeyRatchet};
 use super::transform::{DaveStats, DaveTransform, FrameCrypto};
 use crate::error::{Result, VoiceError};
@@ -83,6 +84,7 @@ pub enum DaveEvent {
 		epoch: u64,
 		version: u8,
 		members: Vec<u64>,
+		privacy_code: Option<String>,
 	},
 	Failure(String),
 }
@@ -93,6 +95,7 @@ struct Transition {
 	own: Option<KeyRatchet>,
 	epoch: u64,
 	members: Vec<u64>,
+	privacy_code: Option<String>,
 }
 
 struct EpochKeys {
@@ -100,6 +103,7 @@ struct EpochKeys {
 	senders: Vec<(u64, KeyRatchet)>,
 	epoch: u64,
 	members: Vec<u64>,
+	privacy_code: Option<String>,
 }
 
 pub struct DaveSession {
@@ -329,7 +333,10 @@ impl DaveSession {
 		} else {
 			match self.derive_keys() {
 				Ok(keys) => self.install(transition_id, version, keys),
-				Err(_) => self.bare_transition(transition_id, version),
+				Err(error) => {
+					self.report(&error);
+					self.bare_transition(transition_id, version)
+				}
 			}
 		};
 		self.schedule(transition)
@@ -479,6 +486,7 @@ impl DaveSession {
 			own: Some(keys.own),
 			epoch: keys.epoch,
 			members: keys.members,
+			privacy_code: keys.privacy_code,
 		}
 	}
 
@@ -489,6 +497,7 @@ impl DaveSession {
 			own: None,
 			epoch: self.epoch().unwrap_or_default(),
 			members: self.members(),
+			privacy_code: None,
 		}
 	}
 
@@ -515,6 +524,7 @@ impl DaveSession {
 			epoch: transition.epoch,
 			version: transition.version,
 			members: transition.members,
+			privacy_code: transition.privacy_code,
 		});
 	}
 
@@ -541,6 +551,7 @@ impl DaveSession {
 			senders,
 			epoch: group.epoch().as_u64(),
 			members,
+			privacy_code: privacy_code(group.epoch_authenticator().as_slice()),
 		})
 	}
 

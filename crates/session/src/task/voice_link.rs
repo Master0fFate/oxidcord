@@ -7,7 +7,7 @@ use gateway::SendError;
 use parking_lot::Mutex;
 use protocol::{Permissions, Snowflake, Token, VoiceChannelEffect, VoiceServerUpdate, VoiceState};
 use serde_json::json;
-use state::{JoinBlock, LocalEvent, VoiceStatus};
+use state::{E2eeInfo, JoinBlock, LocalEvent, VoiceStatus};
 use store::{UserVolume, VoiceSettings};
 use tokio::task::JoinHandle;
 use tokio::time::{MissedTickBehavior, interval, sleep};
@@ -561,6 +561,17 @@ impl Core {
 					speaking: false,
 				});
 			}
+			VoiceEvent::Dave {
+				epoch,
+				version,
+				members,
+				privacy_code,
+			} => self.apply_local(LocalEvent::VoiceE2ee((version > 0).then_some(E2eeInfo {
+				epoch,
+				privacy_code,
+				members,
+			}))),
+			VoiceEvent::DaveFailure(reason) => self.on_dave_failure(&reason),
 			VoiceEvent::Disconnected {
 				reconnecting: true, ..
 			} => self.announce(VoiceStatus::Reconnecting),
@@ -588,6 +599,15 @@ impl Core {
 				});
 			}
 			_ => {}
+		}
+	}
+
+	fn on_dave_failure(&mut self, reason: &str) {
+		tracing::warn!(reason, "voice encryption failed");
+		let already_failed = self.state.read().voice().is_some_and(|voice| voice.e2ee_failed);
+		self.apply_local(LocalEvent::VoiceE2eeFailed);
+		if !already_failed {
+			self.reject("Call encryption failed");
 		}
 	}
 

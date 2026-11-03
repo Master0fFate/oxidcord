@@ -64,6 +64,7 @@ pub fn router(shared: Arc<Shared>) -> Router {
 		.route("/mock/voice/move", post(admin::voice_move))
 		.route("/mock/voice/reassign", post(admin::voice_reassign))
 		.route("/mock/voice/server-mute", post(admin::voice_server_mute))
+		.route("/mock/voice/dave-failure", post(admin::voice_dave_failure))
 		.route("/stage-instances", post(stage::create))
 		.route(
 			"/stage-instances/{id}",

@@ -648,6 +648,8 @@ impl State {
 				});
 			}
 			LocalEvent::HandRequested(requested) => return self.hand_requested_changed(*requested),
+			LocalEvent::VoiceE2ee(info) => return self.voice_e2ee(info.clone()),
+			LocalEvent::VoiceE2eeFailed => return self.voice_e2ee_failed(),
 			LocalEvent::CameraChanged(on) => return self.camera_changed(*on),
 			LocalEvent::ScreenShareChanged(info) => return self.screen_share_changed(info.clone()),
 			LocalEvent::Watching(stream_key) => return self.watching_changed(stream_key.clone()),

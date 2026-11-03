@@ -12,6 +12,7 @@ use protocol::Snowflake;
 use state::{State, VoiceStats, VoiceStatus};
 
 use super::actions;
+use super::e2ee::{self, E2eeView};
 use super::picker;
 use super::quality::Preset;
 use super::video_sink::Textures;
@@ -232,10 +233,11 @@ impl Render for VoicePanel {
 					voice.screen_share.is_some(),
 					voice.channel_id,
 					voice.guild_id,
+					E2eeView::new(voice, |user| state.display_name(voice.guild_id, user).into()),
 				)
 			})
 		};
-		let Some((status, stats, camera_on, screen_on, channel, guild)) = snapshot else {
+		let Some((status, stats, camera_on, screen_on, channel, guild, e2ee_view)) = snapshot else {
 			return div().into_any_element();
 		};
 		let (status_key, status_color) = status_style(&status, &theme);
@@ -397,18 +399,8 @@ impl Render for VoicePanel {
 									.font_weight(FontWeight::SEMIBOLD)
 									.text_color(status_color)
 									.child(div().truncate().child(cx.t(status_key)))
-									.when(connected && stats.e2ee, |row| {
-										row.child(
-											div()
-												.id("voice-e2ee")
-												.flex_none()
-												.tooltip(tooltip(cx.t("voice-e2ee-on")))
-												.child(
-													Icon::new(IconKind::Lock)
-														.size(theme.voice_icon_sm)
-														.color(theme.success),
-												),
-										)
+									.when_some(e2ee_view.filter(|_| connected), |row, view| {
+										row.child(e2ee::badge(view, cx))
 									})
 									.when_some(ping_text, |row, ping| {
 										row.child(

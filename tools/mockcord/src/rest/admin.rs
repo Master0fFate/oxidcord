@@ -667,6 +667,11 @@ pub async fn voice_reassign(State(shared): Mock) -> NoContent {
 	Ok(StatusCode::NO_CONTENT)
 }
 
+pub async fn voice_dave_failure(State(shared): Mock) -> NoContent {
+	shared.voice_dave_failure()?;
+	Ok(StatusCode::NO_CONTENT)
+}
+
 pub async fn voice_close(State(shared): Mock, Path(code): Path<u16>) -> NoContent {
 	shared.voice_close(code);
 	Ok(StatusCode::NO_CONTENT)

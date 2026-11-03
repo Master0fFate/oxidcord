@@ -15,6 +15,7 @@ const CLOSE_SESSION_INVALID: u16 = 4006;
 const CLOSE_SESSION_TIMEOUT: u16 = 4009;
 const PREVIEW_DATA_PREFIX: &str = "data:image/jpeg;base64,";
 const PREVIEW_CDN: &str = "https://cdn.discordapp.com/stream-previews";
+const DAVE_EXTERNAL_SENDER_OPCODE: u8 = 25;
 
 #[derive(Clone, PartialEq)]
 pub struct VoiceJoin {
@@ -189,6 +190,13 @@ impl Shared {
 			self.voice_stale.store(true, Ordering::Release);
 		}
 		let _ = self.voice_signals.send(Signal::Close(code));
+	}
+
+	pub fn voice_dave_failure(&self) -> Result<(), ApiError> {
+		self.current_voice()?;
+		let frame = vec![0, 0, DAVE_EXTERNAL_SENDER_OPCODE, 0xff, 0xff];
+		let _ = self.voice_signals.send(Signal::Binary(frame));
+		Ok(())
 	}
 
 	fn other_voice_channel(&self, join: &VoiceJoin) -> Result<u64, ApiError> {

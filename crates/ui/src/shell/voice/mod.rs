@@ -1,5 +1,6 @@
 mod actions;
 mod call;
+mod e2ee;
 mod hotkeys;
 mod keybinds;
 mod live;
