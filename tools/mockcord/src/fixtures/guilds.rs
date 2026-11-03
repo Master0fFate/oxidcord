@@ -30,6 +30,7 @@ const SLOWMODE_CHANNEL_INDEX: usize = 1;
 const LARGE_GUILD_STRIDE: usize = 3;
 const LARGE_GUILD_MEMBERS: usize = 650;
 const PIN_BACKLOG: usize = 60;
+const ARCHIVED_BACKLOG: i64 = 55;
 const INVITABLE_MESSAGES: usize = 30;
 const INVITABLE_MEMBERS: usize = 12;
 const INVITABLE_NAME: &str = "Rules Hall";
@@ -952,8 +953,21 @@ pub fn build(builder: &mut Builder, index: usize) -> GuildFixture {
 		invitable: Some(false),
 		..metadata
 	});
-	builder.channels.insert(private_id, private);
-	let private_thread_ids = vec![private_id];
+	builder.channels.insert(private_id, private.clone());
+	let mut private_thread_ids = vec![private_id];
+	if index == 0 {
+		for number in 1..=ARCHIVED_BACKLOG {
+			let id = builder.ids.next();
+			let mut older = private.clone();
+			older.id = Snowflake(id);
+			older.name = Some(format!("case {number}"));
+			if let Some(metadata) = older.thread_metadata.as_mut() {
+				metadata.archive_timestamp = Some(anchor - Duration::days(3) - Duration::hours(number));
+			}
+			builder.channels.insert(id, older);
+			private_thread_ids.push(id);
+		}
+	}
 
 	let authors: Vec<&User> = members.iter().filter_map(|member| member.user.as_ref()).collect();
 	let mention_targets: Vec<(u64, String)> = layout

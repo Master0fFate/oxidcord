@@ -18,6 +18,7 @@ type NoContent = Result<StatusCode, ApiError>;
 const AUDIT_REASON: &str = "x-audit-log-reason";
 const MFA_AUTHORIZATION: &str = "x-discord-mfa-authorization";
 const DEFAULT_REACTION_LIMIT: usize = 25;
+const DEFAULT_ARCHIVED_LIMIT: usize = 50;
 
 fn audit_reason(headers: &HeaderMap) -> Option<String> {
 	let raw = headers.get(AUDIT_REASON)?.to_str().ok()?;
@@ -347,28 +348,94 @@ pub async fn active_threads(State(shared): Mock, Path(id): Path<u64>) -> ApiResu
 	})))
 }
 
-fn archived_in(shared: &Shared, parent: u64, scope: impl Fn(&Store, &Channel) -> bool) -> ApiResult {
+#[derive(serde::Deserialize)]
+pub struct ArchivedParams {
+	before: Option<String>,
+	limit: Option<usize>,
+}
+
+fn page_threads<K: Ord>(
+	threads: &mut Vec<&Channel>,
+	key: impl Fn(&Channel) -> K,
+	before: Option<K>,
+	limit: usize,
+) -> bool {
+	threads.sort_by_key(|thread| std::cmp::Reverse(key(thread)));
+	if let Some(before) = before {
+		threads.retain(|thread| key(thread) < before);
+	}
+	let has_more = threads.len() > limit;
+	threads.truncate(limit);
+	has_more
+}
+
+fn archived_in(
+	shared: &Shared,
+	parent: u64,
+	params: ArchivedParams,
+	by_timestamp: bool,
+	scope: impl Fn(&Store, &Channel) -> bool,
+) -> ApiResult {
 	let parent_id = protocol::Snowflake(parent);
-	Ok(Json(shared.threads_json(|store, thread| {
-		thread.parent_id == Some(parent_id)
-			&& scope(store, thread)
-			&& thread
-				.thread_metadata
-				.as_ref()
-				.is_some_and(|metadata| metadata.archived)
-	})))
+	let limit = params.limit.unwrap_or(DEFAULT_ARCHIVED_LIMIT);
+	let archived_at = |thread: &Channel| {
+		thread
+			.thread_metadata
+			.as_ref()
+			.and_then(|metadata| metadata.archive_timestamp)
+			.unwrap_or_default()
+	};
+	Ok(Json(shared.threads_page(
+		|store, thread| {
+			thread.parent_id == Some(parent_id)
+				&& scope(store, thread)
+				&& thread
+					.thread_metadata
+					.as_ref()
+					.is_some_and(|metadata| metadata.archived)
+		},
+		|threads| {
+			if by_timestamp {
+				let before = params
+					.before
+					.as_deref()
+					.and_then(|before| chrono::DateTime::parse_from_rfc3339(before).ok())
+					.map(|before| before.with_timezone(&chrono::Utc));
+				page_threads(threads, archived_at, before, limit)
+			} else {
+				let before = params.before.as_deref().and_then(|before| before.parse().ok());
+				page_threads(threads, |thread| thread.id.0, before, limit)
+			}
+		},
+	)))
 }
 
-pub async fn archived_threads(State(shared): Mock, Path(id): Path<u64>) -> ApiResult {
-	archived_in(&shared, id, |_, thread| thread.kind != ChannelType::PrivateThread)
+pub async fn archived_threads(
+	State(shared): Mock,
+	Path(id): Path<u64>,
+	Query(params): Query<ArchivedParams>,
+) -> ApiResult {
+	archived_in(&shared, id, params, true, |_, thread| {
+		thread.kind != ChannelType::PrivateThread
+	})
 }
 
-pub async fn archived_private_threads(State(shared): Mock, Path(id): Path<u64>) -> ApiResult {
-	archived_in(&shared, id, |_, thread| thread.kind == ChannelType::PrivateThread)
+pub async fn archived_private_threads(
+	State(shared): Mock,
+	Path(id): Path<u64>,
+	Query(params): Query<ArchivedParams>,
+) -> ApiResult {
+	archived_in(&shared, id, params, true, |_, thread| {
+		thread.kind == ChannelType::PrivateThread
+	})
 }
 
-pub async fn joined_archived_private_threads(State(shared): Mock, Path(id): Path<u64>) -> ApiResult {
-	archived_in(&shared, id, |store, thread| {
+pub async fn joined_archived_private_threads(
+	State(shared): Mock,
+	Path(id): Path<u64>,
+	Query(params): Query<ArchivedParams>,
+) -> ApiResult {
+	archived_in(&shared, id, params, false, |store, thread| {
 		thread.kind == ChannelType::PrivateThread && store.joined_threads.contains(&thread.id.0)
 	})
 }

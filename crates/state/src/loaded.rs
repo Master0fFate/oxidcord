@@ -55,6 +55,7 @@ pub enum Loaded {
 		members: Vec<ThreadMember>,
 		has_more: bool,
 		private: bool,
+		append: bool,
 	},
 	ActiveThreads {
 		guild_id: Snowflake,
@@ -322,6 +323,7 @@ pub(crate) struct ArchivedThreads {
 	pub(crate) ids: Vec<Snowflake>,
 	pub(crate) private_ids: Vec<Snowflake>,
 	pub(crate) has_more: bool,
+	pub(crate) private_has_more: bool,
 }
 
 pub const USER_COMMANDS: Snowflake = Snowflake(0);
@@ -719,16 +721,25 @@ impl State {
 				members,
 				has_more,
 				private,
+				append,
 			} => {
 				let guild_id = self.channel_guild(*channel_id);
-				let ids = self.store_threads(guild_id, threads, members, &mut changes);
+				let fetched = self.store_threads(guild_id, threads, members, &mut changes);
 				let entry = self.lazy.archived.entry(*channel_id).or_default();
-				if *private {
-					entry.private_ids = ids;
+				let (ids, more) = if *private {
+					(&mut entry.private_ids, &mut entry.private_has_more)
 				} else {
-					entry.ids = ids;
-					entry.has_more = *has_more;
+					(&mut entry.ids, &mut entry.has_more)
+				};
+				if !*append {
+					ids.clear();
 				}
+				for id in fetched {
+					if !ids.contains(&id) {
+						ids.push(id);
+					}
+				}
+				*more = *has_more;
 				changes.loaded.insert(*channel_id);
 			}
 			Loaded::ActiveThreads {
@@ -1264,6 +1275,34 @@ impl State {
 			.chain(&archived.private_ids)
 			.filter_map(|id| self.channel(*id))
 			.collect()
+	}
+
+	pub fn archived_has_more(&self, channel_id: Snowflake) -> bool {
+		self.lazy
+			.archived
+			.get(&channel_id)
+			.is_some_and(|archived| archived.has_more || archived.private_has_more)
+	}
+
+	pub fn archived_tail(&self, channel_id: Snowflake, private: bool) -> Option<&Channel> {
+		let archived = self.lazy.archived.get(&channel_id)?;
+		let (ids, more) = if private {
+			(&archived.private_ids, archived.private_has_more)
+		} else {
+			(&archived.ids, archived.has_more)
+		};
+		if !more {
+			return None;
+		}
+		ids.iter()
+			.rev()
+			.filter_map(|id| self.channel(*id))
+			.find(|thread| {
+				thread
+					.thread_metadata
+					.as_ref()
+					.is_some_and(|metadata| metadata.archived)
+			})
 	}
 
 	pub fn profile(&self, user_id: Snowflake) -> Option<&UserProfile> {

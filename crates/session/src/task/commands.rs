@@ -445,7 +445,7 @@ impl Core {
 			Command::SetThreadNotifications { thread_id, level } => {
 				self.patch_thread_settings(thread_id, json!({ "flags": ThreadMember::level_flag(level) }))
 			}
-			Command::LoadArchivedThreads { channel_id } => {
+			Command::LoadArchivedThreads { channel_id, more } => {
 				let private_scope = {
 					let state = self.state.read();
 					state
@@ -462,9 +462,9 @@ impl Core {
 							}
 						})
 				};
-				self.load_archived_threads(channel_id, ArchivedScope::Public);
+				self.load_archived_threads(channel_id, ArchivedScope::Public, more);
 				if let Some(scope) = private_scope {
-					self.load_archived_threads(channel_id, scope);
+					self.load_archived_threads(channel_id, scope, more);
 				}
 			}
 			Command::LoadActiveThreads { guild_id } => {
@@ -782,10 +782,27 @@ impl Core {
 		(kind, Permissions::CREATE_PUBLIC_THREADS, "Create Public Threads")
 	}
 
-	fn load_archived_threads(&self, channel_id: Snowflake, scope: ArchivedScope) {
+	fn archived_cursor(&self, channel_id: Snowflake, scope: ArchivedScope) -> Option<String> {
+		let state = self.state.read();
+		let tail = state.archived_tail(channel_id, scope != ArchivedScope::Public)?;
+		if scope == ArchivedScope::JoinedPrivate {
+			return Some(tail.id.to_string());
+		}
+		tail.thread_metadata.as_ref()?.archive_timestamp.map(timestamp)
+	}
+
+	fn load_archived_threads(&self, channel_id: Snowflake, scope: ArchivedScope, more: bool) {
+		let before = if more {
+			let Some(cursor) = self.archived_cursor(channel_id, scope) else {
+				return;
+			};
+			Some(cursor)
+		} else {
+			None
+		};
 		self.spawn_load("archived threads", move |rest| async move {
 			let list = rest
-				.threads_archived(channel_id, scope, None, Some(ARCHIVED_PAGE))
+				.threads_archived(channel_id, scope, before.as_deref(), Some(ARCHIVED_PAGE))
 				.await?;
 			Ok(Loaded::ArchivedThreads {
 				channel_id,
@@ -793,6 +810,7 @@ impl Core {
 				members: list.members.into_vec(),
 				has_more: list.has_more,
 				private: scope != ArchivedScope::Public,
+				append: before.is_some(),
 			})
 		});
 	}

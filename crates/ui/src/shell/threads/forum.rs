@@ -139,7 +139,10 @@ impl ForumView {
 			};
 			let data = self.data.read(cx);
 			data.send(Command::LoadActiveThreads { guild_id: guild });
-			data.send(Command::LoadArchivedThreads { channel_id: channel });
+			data.send(Command::LoadArchivedThreads {
+				channel_id: channel,
+				more: false,
+			});
 		}
 		self.request_starters(cx);
 		cx.notify();

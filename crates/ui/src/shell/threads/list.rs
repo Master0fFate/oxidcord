@@ -63,7 +63,19 @@ impl ThreadList {
 		data.send(Command::LoadActiveThreads { guild_id: self.guild });
 		data.send(Command::LoadArchivedThreads {
 			channel_id: self.channel,
+			more: false,
 		});
+	}
+
+	fn load_more(&self, cx: &Context<Self>) {
+		self.data.read(cx).send(Command::LoadArchivedThreads {
+			channel_id: self.channel,
+			more: true,
+		});
+	}
+
+	fn has_more(&self, cx: &Context<Self>) -> bool {
+		self.tab == Tab::Archived && self.data.read(cx).state().archived_has_more(self.channel)
 	}
 
 	pub fn refresh(&mut self, cx: &mut Context<Self>) {
@@ -215,6 +227,7 @@ impl Render for ThreadList {
 		let theme = Theme::current(cx);
 		let entries = self.entries(cx);
 		let empty = entries.is_empty();
+		let has_more = self.has_more(cx);
 		let rows: Vec<AnyElement> = entries.iter().map(|entry| self.row(entry, &theme, cx)).collect();
 		let weak = cx.weak_entity();
 		let tabs: PickHandler = std::rc::Rc::new(move |index, _, cx| {
@@ -302,6 +315,16 @@ impl Render for ThreadList {
 										.color(theme.interactive_muted),
 								)
 								.child(cx.t("thread-empty")),
+						)
+					})
+					.when(has_more, |list| {
+						list.child(
+							div().flex().justify_center().py(theme.space_8).child(
+								Button::new("thread-more")
+									.outline()
+									.label(cx.t("audit-load-more"))
+									.on_click(cx.listener(|this, _, _, cx| this.load_more(cx))),
+							),
 						)
 					})
 					.overflow_y_scrollbar()

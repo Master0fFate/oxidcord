@@ -553,6 +553,7 @@ pub enum Command {
 	},
 	LoadArchivedThreads {
 		channel_id: Snowflake,
+		more: bool,
 	},
 	LoadActiveThreads {
 		guild_id: Snowflake,

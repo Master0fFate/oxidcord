@@ -1734,6 +1734,14 @@ impl Shared {
 	}
 
 	pub fn threads_json(&self, filter: impl Fn(&Store, &Channel) -> bool) -> Value {
+		self.threads_page(filter, |_| false)
+	}
+
+	pub fn threads_page(
+		&self,
+		filter: impl Fn(&Store, &Channel) -> bool,
+		page: impl FnOnce(&mut Vec<&Channel>) -> bool,
+	) -> Value {
 		let store = self.store.lock();
 		let mut threads: Vec<&Channel> = store
 			.channels
@@ -1741,6 +1749,7 @@ impl Shared {
 			.filter(|channel| is_thread(channel.kind) && filter(&store, channel))
 			.collect();
 		threads.sort_by_key(|channel| std::cmp::Reverse(channel.id));
+		let has_more = page(&mut threads);
 		let members: Vec<Value> = threads
 			.iter()
 			.filter(|thread| store.joined_threads.contains(&thread.id.0))
@@ -1749,7 +1758,7 @@ impl Shared {
 		json!({
 			"threads": threads.iter().map(|thread| store.thread_json(thread)).collect::<Vec<_>>(),
 			"members": members,
-			"has_more": false,
+			"has_more": has_more,
 		})
 	}
 
