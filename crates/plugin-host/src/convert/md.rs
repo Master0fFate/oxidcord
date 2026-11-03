@@ -46,6 +46,10 @@ struct Flatten {
 	legacy: bool,
 }
 
+fn game_mention(text: &str) -> Option<u64> {
+	text.strip_prefix("<@$")?.strip_suffix('>')?.parse().ok()
+}
+
 impl Flatten {
 	fn push_all(&mut self, nodes: &[Node]) -> Vec<u32> {
 		nodes.iter().map(|node| self.push(node)).collect()
@@ -311,7 +315,9 @@ impl<S: Source + ?Sized> Reader<'_, S> {
 				mono: span.mono,
 			},
 			Item::Md(node) => match node {
-				MdNode::Text(text) => Node::Text(text.clone()),
+				MdNode::Text(text) => {
+					game_mention(text).map_or_else(|| Node::Text(text.clone()), Node::GameMention)
+				}
 				MdNode::Bold(children) => Node::Bold(self.read_all(children, child_min, child_depth)?),
 				MdNode::Italic(children) => Node::Italic(self.read_all(children, child_min, child_depth)?),
 				MdNode::Underline(children) => {
