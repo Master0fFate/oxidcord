@@ -11,7 +11,7 @@ use tokio::time::{MissedTickBehavior, interval};
 use tracing::{debug, warn};
 
 use crate::chain::{CaptureChain, PlaybackChain};
-use crate::codec::{FRAME_SAMPLES, SILENCE_FRAME, STEREO_FRAME_SAMPLES, VoiceEncoder};
+use crate::codec::{DEFAULT_BITRATE_BPS, FRAME_SAMPLES, SILENCE_FRAME, STEREO_FRAME_SAMPLES, VoiceEncoder};
 use crate::crypto::PacketCipher;
 use crate::denoise::Denoiser;
 use crate::gate::{VoiceGate, meter_level, rms, to_db};
@@ -69,6 +69,7 @@ pub(crate) struct Media {
 	system_frame: Vec<f32>,
 	playback: PlaybackChain,
 	encoder: VoiceEncoder,
+	applied_bitrate: u32,
 	denoiser: Denoiser,
 	gate: VoiceGate,
 	mixer: Mixer,
@@ -106,6 +107,7 @@ impl Media {
 			system: CaptureChain::system(),
 			system_frame: vec![0.0; FRAME_SAMPLES],
 			encoder: VoiceEncoder::new()?,
+			applied_bitrate: DEFAULT_BITRATE_BPS,
 			denoiser: Denoiser::new(),
 			gate: VoiceGate::default(),
 			mixer: Mixer::new(STEREO_FRAME_SAMPLES),
@@ -205,6 +207,7 @@ impl Media {
 				self.speaking = true;
 				let _ = self.control.send(Control::Speaking(true));
 			}
+			self.sync_bitrate();
 			match self.encoder.encode(frame) {
 				Ok(packet) if packet.len() > MAX_DTX_PACKET_BYTES => {
 					let packet = packet.to_vec();
@@ -224,6 +227,17 @@ impl Media {
 			}
 		}
 		self.timestamp = self.timestamp.wrapping_add(FRAME_SAMPLES as u32);
+	}
+
+	fn sync_bitrate(&mut self) {
+		let wanted = self.shared.audio_bitrate.load(Ordering::Relaxed);
+		if wanted == self.applied_bitrate {
+			return;
+		}
+		self.applied_bitrate = wanted;
+		if let Err(error) = self.encoder.set_bitrate(wanted) {
+			warn!(%error, "opus bitrate was not applied");
+		}
 	}
 
 	fn mix_system(&mut self, frame: &mut [f32], microphone_active: bool) -> bool {

@@ -338,6 +338,18 @@ impl Core {
 		}
 	}
 
+	pub(super) fn voice_channel_updated(&self, channel_id: Snowflake) {
+		if self
+			.voice
+			.target
+			.is_some_and(|target| target.channel_id == channel_id)
+			&& let Some(connection) = &self.voice.connection
+			&& let Some(bitrate) = self.channel_bitrate(channel_id)
+		{
+			connection.set_audio_bitrate(bitrate);
+		}
+	}
+
 	pub(super) fn voice_server_update(&mut self, update: VoiceServerUpdate) {
 		let Some(target) = self.voice.target else {
 			return;
@@ -616,6 +628,11 @@ impl Core {
 			));
 			connection.set_input_mode(input_mode(voice.push_to_talk));
 		}
+		if let Some(target) = self.voice.target
+			&& let Some(bitrate) = self.channel_bitrate(target.channel_id)
+		{
+			connection.set_audio_bitrate(bitrate);
+		}
 		connection.set_transmitting(self.voice.transmitting);
 		connection.set_mute(self.voice.self_mute);
 		connection.set_deaf(self.voice.self_deaf);
@@ -630,6 +647,11 @@ impl Core {
 		if self.voice.camera {
 			self.start_camera(self.voice.camera_device.clone(), self.voice.camera_quality);
 		}
+	}
+
+	fn channel_bitrate(&self, channel_id: Snowflake) -> Option<u32> {
+		let bitrate = self.state.read().channel(channel_id)?.bitrate?;
+		u32::try_from(bitrate).ok()
 	}
 
 	fn spawn_pump(&self, connection: Arc<VoiceConnection>) -> JoinHandle<()> {

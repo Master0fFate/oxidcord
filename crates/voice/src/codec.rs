@@ -7,7 +7,9 @@ pub const FRAME_SAMPLES: usize = 960;
 pub const STEREO_FRAME_SAMPLES: usize = FRAME_SAMPLES * 2;
 pub const SILENCE_FRAME: [u8; 3] = [0xf8, 0xff, 0xfe];
 
-const BITRATE_BPS: i32 = 64_000;
+pub const DEFAULT_BITRATE_BPS: u32 = 64_000;
+pub const MIN_BITRATE_BPS: u32 = 8_000;
+pub const MAX_BITRATE_BPS: u32 = 384_000;
 const EXPECTED_LOSS_PERCENT: i32 = 10;
 const MAX_PACKET_BYTES: usize = 1275;
 
@@ -19,7 +21,7 @@ pub struct VoiceEncoder {
 impl VoiceEncoder {
 	pub fn new() -> Result<Self> {
 		let mut inner = Encoder::new(SAMPLE_RATE, Channels::Mono, Application::Voip)?;
-		inner.set_bitrate(Bitrate::Bits(BITRATE_BPS))?;
+		inner.set_bitrate(Bitrate::Bits(DEFAULT_BITRATE_BPS as i32))?;
 		inner.set_inband_fec(true)?;
 		inner.set_packet_loss_perc(EXPECTED_LOSS_PERCENT)?;
 		inner.set_dtx(true)?;
@@ -27,6 +29,12 @@ impl VoiceEncoder {
 			inner,
 			packet: [0; MAX_PACKET_BYTES],
 		})
+	}
+
+	pub fn set_bitrate(&mut self, bitrate_bps: u32) -> Result<()> {
+		let clamped = bitrate_bps.clamp(MIN_BITRATE_BPS, MAX_BITRATE_BPS);
+		self.inner.set_bitrate(Bitrate::Bits(clamped as i32))?;
+		Ok(())
 	}
 
 	pub fn encode(&mut self, mono: &[f32]) -> Result<&[u8]> {

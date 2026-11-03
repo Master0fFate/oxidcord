@@ -739,6 +739,7 @@ impl Core {
 				}
 			}
 			DispatchEvent::VoiceServerUpdate(update) => self.voice_server_update(update),
+			DispatchEvent::ChannelUpdate(channel) => self.voice_channel_updated(channel.id),
 			DispatchEvent::StreamCreate(stream) => self.stream_created(&stream),
 			DispatchEvent::StreamServerUpdate(update) => self.stream_server_updated(update),
 			DispatchEvent::StreamDelete(delete) => self.stream_deleted(&delete),

@@ -182,6 +182,10 @@ impl VoiceConnection {
 		self.shared.noise_suppression.store(enabled, Ordering::Relaxed);
 	}
 
+	pub fn set_audio_bitrate(&self, bitrate_bps: u32) {
+		self.shared.audio_bitrate.store(bitrate_bps, Ordering::Relaxed);
+	}
+
 	pub fn input_level(&self) -> f32 {
 		self.shared.input_level.load()
 	}

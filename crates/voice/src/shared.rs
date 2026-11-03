@@ -7,6 +7,7 @@ use protocol::Snowflake;
 
 use crate::atomic::AtomicF32;
 use crate::audio::{AudioEngine, Rings};
+use crate::codec::DEFAULT_BITRATE_BPS;
 use crate::dave::DaveStats;
 use crate::denoise;
 use crate::event::EventHub;
@@ -114,6 +115,7 @@ pub(crate) struct Shared {
 	input_mode: AtomicU8,
 	pub vad_threshold_db: AtomicF32,
 	pub input_volume: AtomicF32,
+	pub audio_bitrate: AtomicU32,
 	pub output_volume: AtomicF32,
 	pub input_level: AtomicF32,
 	pub output_level: AtomicF32,
@@ -141,6 +143,7 @@ impl Shared {
 			input_mode: AtomicU8::new(InputMode::VoiceActivity as u8),
 			vad_threshold_db: AtomicF32::new(DEFAULT_VAD_THRESHOLD_DB),
 			input_volume: AtomicF32::new(1.0),
+			audio_bitrate: AtomicU32::new(DEFAULT_BITRATE_BPS),
 			output_volume: AtomicF32::new(1.0),
 			input_level: AtomicF32::new(0.0),
 			output_level: AtomicF32::new(0.0),
