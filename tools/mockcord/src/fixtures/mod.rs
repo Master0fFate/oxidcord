@@ -5,7 +5,7 @@ mod messages;
 mod people;
 pub(crate) mod previews;
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use chrono::{DateTime, Utc};
 use protocol::{
@@ -17,7 +17,7 @@ use rand::rngs::StdRng;
 use serde::Serialize;
 use serde_json::Value;
 
-pub use guilds::{GuildFixture, random_presence};
+pub use guilds::{GuildFixture, GuildOrigin, MEMBER_GATE_FEATURE, random_presence};
 
 use crate::config::MockConfig;
 use crate::ids::EntityIds;
@@ -29,6 +29,7 @@ const MIN_POOL_SIZE: usize = 40;
 const READ_CUTOFF_PERCENT: usize = 85;
 const UNREAD_DM_POSITIONS: [usize; 2] = [1, 3];
 const SETTINGS_VERSION: i64 = 1;
+const SPARE_GUILDS: usize = 4;
 
 struct Builder {
 	rng: StdRng,
@@ -99,6 +100,10 @@ impl Fixtures {
 		let relationships = people::build_relationships(&builder);
 		let read_states = build_read_states(&builder, &guilds, &private_channel_ids);
 		let user_guild_settings = build_user_guild_settings(&guilds);
+		guilds.push(guilds::build_invitable(&mut builder));
+		for number in 1..=SPARE_GUILDS {
+			guilds.push(guilds::build_spare(&mut builder, number));
+		}
 		let mut users: BTreeMap<u64, User> = builder
 			.people
 			.pool
@@ -125,7 +130,19 @@ impl Fixtures {
 		self.guilds.iter().find(|guild| guild.id == id)
 	}
 
+	fn seeded_guilds(&self) -> impl Iterator<Item = &GuildFixture> {
+		self.guilds
+			.iter()
+			.filter(|guild| guild.origin == GuildOrigin::Seeded)
+	}
+
 	pub fn summary(&self) -> FixtureSummary {
+		let unseeded_channels: HashSet<u64> = self
+			.guilds
+			.iter()
+			.filter(|guild| guild.origin != GuildOrigin::Seeded)
+			.flat_map(|guild| guild.channel_ids.iter().chain(&guild.thread_ids).copied())
+			.collect();
 		let unread_channels = self
 			.read_states
 			.iter()
@@ -138,10 +155,15 @@ impl Fixtures {
 			})
 			.count();
 		FixtureSummary {
-			guilds: self.guilds.len(),
-			channels: self.channels.len(),
-			messages: self.messages.values().map(BTreeMap::len).sum(),
-			members: self.guilds.iter().map(|guild| guild.members.len()).sum(),
+			guilds: self.seeded_guilds().count(),
+			channels: self.channels.len() - unseeded_channels.len(),
+			messages: self
+				.messages
+				.iter()
+				.filter(|(channel_id, _)| !unseeded_channels.contains(channel_id))
+				.map(|(_, messages)| messages.len())
+				.sum(),
+			members: self.seeded_guilds().map(|guild| guild.members.len()).sum(),
 			unread_channels,
 			total_mentions: self
 				.read_states

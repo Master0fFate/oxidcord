@@ -30,6 +30,18 @@ const SLOWMODE_CHANNEL_INDEX: usize = 1;
 const LARGE_GUILD_STRIDE: usize = 3;
 const LARGE_GUILD_MEMBERS: usize = 650;
 const PIN_BACKLOG: usize = 60;
+const INVITABLE_MESSAGES: usize = 30;
+const INVITABLE_MEMBERS: usize = 12;
+const INVITABLE_NAME: &str = "Rules Hall";
+const SPARE_NAME: &str = "New Server";
+pub const MEMBER_GATE_FEATURE: &str = "MEMBER_VERIFICATION_GATE_ENABLED";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GuildOrigin {
+	Seeded,
+	Invitable,
+	Spare,
+}
 
 pub struct GuildFixture {
 	pub id: u64,
@@ -49,6 +61,7 @@ pub struct GuildFixture {
 	pub stage_instance: StageInstance,
 	pub joined_at: DateTime<Utc>,
 	pub large: bool,
+	pub origin: GuildOrigin,
 }
 
 impl GuildFixture {
@@ -61,6 +74,9 @@ impl GuildFixture {
 	}
 
 	pub fn permissions_for(&self, member: &Member) -> Permissions {
+		if member.id().is_some() && member.id() == self.properties.owner_id {
+			return Permissions::all();
+		}
 		let granted = self
 			.roles
 			.iter()
@@ -1058,5 +1074,92 @@ pub fn build(builder: &mut Builder, index: usize) -> GuildFixture {
 		stage_instance,
 		joined_at: anchor - Duration::days(400),
 		large: is_large(index),
+		origin: GuildOrigin::Seeded,
+	}
+}
+
+pub fn build_invitable(builder: &mut Builder) -> GuildFixture {
+	let config = builder.config.clone();
+	builder.config.messages_per_channel = INVITABLE_MESSAGES;
+	builder.config.members_per_guild = INVITABLE_MEMBERS;
+	let mut guild = build(builder, 0);
+	builder.config = config;
+	guild.origin = GuildOrigin::Invitable;
+	guild.properties.name = Some(INVITABLE_NAME.to_owned());
+	guild.properties.features.push(MEMBER_GATE_FEATURE.to_owned());
+	let me = &mut guild.members[0];
+	me.roles.clear();
+	me.pending = Some(true);
+	guild
+}
+
+pub fn build_spare(builder: &mut Builder, number: usize) -> GuildFixture {
+	let guild_id = builder.ids.next();
+	let category_id = builder.ids.next();
+	let general_id = builder.ids.next();
+	let anchor = builder.anchor;
+	let mut everyone = role(guild_id, "@everyone", 0, false, 0, base_permissions());
+	everyone.mentionable = false;
+	let mut channel_ids = Vec::new();
+	let category = guild_channel(
+		category_id,
+		guild_id,
+		ChannelType::GuildCategory,
+		"Text Channels",
+		0,
+		None,
+	);
+	add_channel(builder, &mut channel_ids, category);
+	let general = guild_channel(
+		general_id,
+		guild_id,
+		ChannelType::GuildText,
+		"general",
+		1,
+		Some(category_id),
+	);
+	add_channel(builder, &mut channel_ids, general);
+	builder.messages.insert(general_id, BTreeMap::new());
+	let owner = builder.people.current.clone();
+	let members = vec![Member {
+		user: Some(owner.clone()),
+		joined_at: Some(anchor),
+		flags: Some(0),
+		pending: Some(false),
+		guild_id: Some(Snowflake(guild_id)),
+		..Member::default()
+	}];
+	let presences = build_presences(builder, &members);
+	let properties = GuildProperties {
+		id: Some(Snowflake(guild_id)),
+		name: Some(format!("{SPARE_NAME} {number}")),
+		owner_id: Some(owner.id),
+		verification_level: Some(VerificationLevel::None),
+		default_message_notifications: Some(DefaultMessageNotifications::AllMessages),
+		explicit_content_filter: Some(ExplicitContentFilter::Disabled),
+		system_channel_id: Some(Snowflake(general_id)),
+		max_members: Some(500_000),
+		premium_tier: Some(PremiumTier::None),
+		premium_subscription_count: Some(0),
+		preferred_locale: Some("en-US".to_owned()),
+		nsfw_level: Some(NsfwLevel::Default),
+		..GuildProperties::default()
+	};
+	GuildFixture {
+		id: guild_id,
+		properties,
+		roles: vec![everyone],
+		channel_ids,
+		message_channel_ids: vec![general_id],
+		thread_ids: Vec::new(),
+		muted_channel_id: general_id,
+		emojis: Vec::new(),
+		member_index: HashMap::from([(owner.id.0, 0)]),
+		members,
+		presences,
+		voice_states: Vec::new(),
+		joined_at: anchor,
+		large: false,
+		origin: GuildOrigin::Spare,
 	}
 }

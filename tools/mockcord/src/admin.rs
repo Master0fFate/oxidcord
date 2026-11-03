@@ -9,11 +9,11 @@ use protocol::{
 use serde_json::{Value, json};
 
 use crate::error::ApiError;
-use crate::fixtures::{CURRENT_USER_ID, Fixtures, GuildFixture};
+use crate::fixtures::{CURRENT_USER_ID, Fixtures, GuildFixture, GuildOrigin};
 use crate::ids::snowflake_at;
 use crate::json::{parse_id, to_json};
 use crate::ops::{Draft, now_iso};
-use crate::ready::is_thread;
+use crate::ready::{guild_create, is_thread};
 use crate::state::{Shared, Store};
 
 const AUDIT_PAGE: usize = 50;
@@ -268,7 +268,7 @@ impl Shared {
 	pub(crate) fn live_guild(&self, store: &Store, id: u64) -> Result<&GuildFixture, ApiError> {
 		self.fixtures
 			.guild(id)
-			.filter(|_| !store.left_guilds.contains(&id))
+			.filter(|_| !store.absent_guilds.contains(&id))
 			.ok_or_else(ApiError::unknown_guild)
 	}
 
@@ -1224,40 +1224,64 @@ impl Shared {
 			.filter(|name| !name.is_empty())
 			.ok_or_else(|| ApiError::invalid_body("name is required"))?;
 		let mut store = self.store.lock();
-		let guild_id = store.next_snowflake();
-		let channel_id = store.next_snowflake();
-		let owner = to_json(&store.current_user);
-		let joined = Utc::now().to_rfc3339();
-		let guild = json!({
-			"id": guild_id.to_string(),
-			"name": name,
-			"icon": Value::Null,
-			"owner_id": CURRENT_USER_ID.to_string(),
-			"member_count": 1,
-			"joined_at": joined,
-			"roles": [{ "id": guild_id.to_string(), "name": "@everyone", "permissions": "2248473465835073", "position": 0, "color": 0 }],
-			"emojis": [],
-			"stickers": [],
-			"channels": [{
-				"id": channel_id.to_string(),
-				"type": 0,
-				"guild_id": guild_id.to_string(),
-				"name": "general",
-				"position": 0,
-			}],
-			"threads": [],
-			"members": [{ "user": owner, "roles": [], "joined_at": joined }],
-			"voice_states": [],
-			"presences": [],
-			"features": [],
-			"premium_tier": 0,
-			"verification_level": 0,
-			"system_channel_id": channel_id.to_string(),
-		});
-		store.created_guilds.insert(guild_id, guild.clone());
+		let guild = self
+			.fixtures
+			.guilds
+			.iter()
+			.find(|guild| guild.origin == GuildOrigin::Spare && store.absent_guilds.contains(&guild.id))
+			.ok_or_else(ApiError::max_guilds)?;
+		store.absent_guilds.remove(&guild.id);
+		if let Some(properties) = store.properties.get_mut(&guild.id) {
+			properties.name = Some(name.to_owned());
+		}
+		let payload = guild_create(self, &store, guild);
 		drop(store);
-		self.hub.broadcast("GUILD_CREATE", &guild);
-		Ok(guild)
+		self.hub.broadcast("GUILD_CREATE", &payload);
+		Ok(payload)
+	}
+
+	pub fn fixture_invite_guild(&self, code: &str) -> Option<&GuildFixture> {
+		let index = match code.strip_prefix("mock")? {
+			"" => 0,
+			digits => digits.parse::<usize>().ok()?,
+		};
+		self.fixtures.guilds.get(index)
+	}
+
+	pub fn accept_invite(&self, code: &str) -> Result<Value, ApiError> {
+		let mut store = self.store.lock();
+		let created = store
+			.invites
+			.get(code)
+			.and_then(|invite| parse_id(&invite["guild_id"]))
+			.and_then(|guild_id| self.fixtures.guild(guild_id));
+		let guild = created
+			.or_else(|| self.fixture_invite_guild(code))
+			.ok_or_else(ApiError::unknown_invite)?;
+		let new_member = store.absent_guilds.remove(&guild.id);
+		if new_member {
+			store.member_edits.remove(&(guild.id, CURRENT_USER_ID));
+			if let Some(uses) = store.invites.get_mut(code).map(|invite| &mut invite["uses"]) {
+				*uses = json!(uses.as_i64().unwrap_or(0) + 1);
+			}
+		}
+		let channel = guild
+			.message_channel_ids
+			.first()
+			.and_then(|id| store.channels.get(id));
+		let member = store.member_now(guild, CURRENT_USER_ID);
+		let mut invite = self.invite_value(&store, guild, channel);
+		invite["code"] = json!(code);
+		invite["new_member"] = json!(new_member);
+		invite["show_verification_form"] =
+			json!(new_member && member.as_ref().is_some_and(|member| member.pending == Some(true)));
+		let created = new_member.then(|| guild_create(self, &store, guild));
+		drop(store);
+		if let Some(payload) = created {
+			self.hub.broadcast("GUILD_CREATE", &payload);
+			self.hub.broadcast("GUILD_MEMBER_ADD", &to_json(&member));
+		}
+		Ok(invite)
 	}
 
 	pub fn delete_invite(&self, code: &str) -> Result<Value, ApiError> {
@@ -1282,7 +1306,7 @@ impl Shared {
 	pub fn leave_guild(&self, guild_id: u64) -> Result<(), ApiError> {
 		let mut store = self.store.lock();
 		self.live_guild(&store, guild_id)?;
-		store.left_guilds.insert(guild_id);
+		store.absent_guilds.insert(guild_id);
 		drop(store);
 		self.hub
 			.broadcast("GUILD_DELETE", &json!({ "id": guild_id.to_string() }));

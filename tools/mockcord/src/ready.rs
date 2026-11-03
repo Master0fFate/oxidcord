@@ -8,7 +8,7 @@ use protocol::{
 use rand::Rng;
 use serde_json::{Value, json};
 
-use crate::fixtures::{Fixtures, GuildFixture};
+use crate::fixtures::{CURRENT_USER_ID, Fixtures, GuildFixture};
 use crate::json::to_json;
 use crate::rest::guild_stickers_snapshot;
 use crate::state::{Shared, Store};
@@ -89,16 +89,31 @@ fn ready_guild(shared: &Shared, store: &Store, guild: &GuildFixture) -> Value {
 	})
 }
 
+fn current_member_json(store: &Store, guild: &GuildFixture) -> Vec<Value> {
+	store
+		.member_now(guild, CURRENT_USER_ID)
+		.iter()
+		.map(to_json)
+		.collect()
+}
+
+pub fn guild_create(shared: &Shared, store: &Store, guild: &GuildFixture) -> Value {
+	let mut payload = ready_guild(shared, store, guild);
+	payload["members"] = json!(current_member_json(store, guild));
+	payload["presences"] = json!(guild_presences(store, guild.id));
+	payload
+}
+
 fn live_guilds<'a>(fixtures: &'a Fixtures, store: &Store) -> impl Iterator<Item = &'a GuildFixture> {
 	fixtures
 		.guilds
 		.iter()
-		.filter(|guild| !store.left_guilds.contains(&guild.id))
+		.filter(|guild| !store.absent_guilds.contains(&guild.id))
 }
 
 fn merged_members(fixtures: &Fixtures, store: &Store) -> Value {
 	let per_guild: Vec<Vec<Value>> = live_guilds(fixtures, store)
-		.map(|guild| vec![to_json(guild.current_member())])
+		.map(|guild| current_member_json(store, guild))
 		.collect();
 	json!(per_guild)
 }

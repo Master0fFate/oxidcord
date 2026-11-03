@@ -14,7 +14,7 @@ use serde_json::Value;
 use tokio::sync::{broadcast, watch};
 
 use crate::config::MockConfig;
-use crate::fixtures::Fixtures;
+use crate::fixtures::{Fixtures, GuildOrigin};
 use crate::hub::Hub;
 use crate::ids::snowflake_at;
 use crate::scenario::VoiceJoin;
@@ -67,7 +67,7 @@ pub struct Store {
 	pub automod_rules: HashMap<u64, Vec<AutoModRule>>,
 	pub member_edits: HashMap<(u64, u64), Member>,
 	pub invites: BTreeMap<String, Value>,
-	pub left_guilds: BTreeSet<u64>,
+	pub absent_guilds: BTreeSet<u64>,
 	pub ended_sessions: BTreeSet<String>,
 	pub guild_bios: HashMap<(u64, u64), String>,
 	pub audit: HashMap<u64, Vec<Value>>,
@@ -75,7 +75,6 @@ pub struct Store {
 	pub thread_member_settings: HashMap<u64, Value>,
 	pub slowmode: HashMap<u64, Instant>,
 	pub pinned_at: HashMap<u64, DateTime<Utc>>,
-	pub created_guilds: HashMap<u64, Value>,
 	pub frecency: ProtoFrecencySettings,
 	pub proto_status: Vec<u8>,
 	pub proto_privacy: Vec<u8>,
@@ -159,8 +158,12 @@ impl Store {
 			automod_rules: crate::automod::seed_automod(fixtures),
 			member_edits: HashMap::new(),
 			invites: BTreeMap::new(),
-			created_guilds: HashMap::new(),
-			left_guilds: BTreeSet::new(),
+			absent_guilds: fixtures
+				.guilds
+				.iter()
+				.filter(|guild| guild.origin != GuildOrigin::Seeded)
+				.map(|guild| guild.id)
+				.collect(),
 			ended_sessions: BTreeSet::new(),
 			guild_bios: HashMap::new(),
 			audit: crate::admin::seed_audit(fixtures),

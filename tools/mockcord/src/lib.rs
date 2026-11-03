@@ -16,6 +16,7 @@ mod ready;
 mod reconnect;
 mod rest;
 mod scenario;
+mod screening;
 mod server;
 mod stage;
 mod state;

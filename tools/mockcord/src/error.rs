@@ -101,6 +101,14 @@ impl ApiError {
 		Self::new(StatusCode::NOT_FOUND, 10013, "Unknown User")
 	}
 
+	pub const fn max_guilds() -> Self {
+		Self::new(
+			StatusCode::BAD_REQUEST,
+			30001,
+			"Maximum number of server memberships reached",
+		)
+	}
+
 	pub const fn unknown_tag() -> Self {
 		Self::new(StatusCode::BAD_REQUEST, 80004, "No users with DiscordTag exist")
 	}

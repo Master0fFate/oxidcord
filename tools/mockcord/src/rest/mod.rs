@@ -98,6 +98,11 @@ pub fn router(shared: Arc<Shared>) -> Router {
 		)
 		.route("/guilds/{id}", get(guilds::guild).patch(admin::modify_guild))
 		.route(
+			"/guilds/{id}/member-verification",
+			get(admin::member_verification),
+		)
+		.route("/guilds/{id}/requests/@me", put(admin::submit_join_request))
+		.route(
 			"/guilds/{id}/channels",
 			get(guilds::channels).post(admin::create_channel),
 		)

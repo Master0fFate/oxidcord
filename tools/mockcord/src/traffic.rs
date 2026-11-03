@@ -11,7 +11,7 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 use crate::fixtures::corpus::{SENTENCES, pick};
-use crate::fixtures::{CURRENT_USER_ID, random_presence};
+use crate::fixtures::{CURRENT_USER_ID, GuildFixture, GuildOrigin, random_presence};
 use crate::json::parse_id;
 use crate::member_list::presence_json;
 use crate::ops::Draft;
@@ -81,8 +81,12 @@ struct Target {
 fn pick_target(shared: &Shared) -> Option<Target> {
 	let fixtures = &shared.fixtures;
 	let mut rng = live_rng();
-	let total: usize = fixtures
+	let guilds: Vec<&GuildFixture> = fixtures
 		.guilds
+		.iter()
+		.filter(|guild| guild.origin == GuildOrigin::Seeded)
+		.collect();
+	let total: usize = guilds
 		.iter()
 		.map(|guild| guild.message_channel_ids.len())
 		.sum::<usize>()
@@ -92,7 +96,7 @@ fn pick_target(shared: &Shared) -> Option<Target> {
 	}
 	let mut index = rng.random_range(0..total);
 	let mut resolved = None;
-	for guild in &fixtures.guilds {
+	for guild in guilds {
 		if index < guild.message_channel_ids.len() {
 			let authors: Vec<&User> = guild
 				.members

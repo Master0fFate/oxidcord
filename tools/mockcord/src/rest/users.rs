@@ -37,7 +37,7 @@ pub async fn my_guilds(State(shared): State<Arc<Shared>>) -> Json<Value> {
 		.fixtures
 		.guilds
 		.iter()
-		.filter(|guild| !store.left_guilds.contains(&guild.id))
+		.filter(|guild| !store.absent_guilds.contains(&guild.id))
 		.map(|guild| {
 			json!({
 				"id": guild.id.to_string(),
@@ -183,15 +183,8 @@ pub async fn invite(State(shared): State<Arc<Shared>>, Path(code): Path<String>)
 	if let Some(created) = shared.invite_json(&code) {
 		return Ok(Json(created));
 	}
-	let index = match code.strip_prefix("mock") {
-		Some("") => 0,
-		Some(digits) => digits.parse::<usize>().map_err(|_| ApiError::unknown_invite())?,
-		None => return Err(ApiError::unknown_invite()),
-	};
 	let guild = shared
-		.fixtures
-		.guilds
-		.get(index)
+		.fixture_invite_guild(&code)
 		.ok_or_else(ApiError::unknown_invite)?;
 	let properties = &guild.properties;
 	let channel = guild

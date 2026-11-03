@@ -168,10 +168,19 @@ pub async fn ack_bulk(State(shared): Mock, Json(body): Json<Value>) -> NoContent
 }
 
 pub async fn accept_invite(State(shared): Mock, Path(code): Path<String>) -> ApiResult {
-	shared
-		.invite_json(&code)
-		.map(Json)
-		.ok_or_else(ApiError::unknown_invite)
+	shared.accept_invite(&code).map(Json)
+}
+
+pub async fn member_verification(State(shared): Mock, Path(id): Path<u64>) -> ApiResult {
+	shared.member_verification_json(id).map(Json)
+}
+
+pub async fn submit_join_request(
+	State(shared): Mock,
+	Path(id): Path<u64>,
+	Json(body): Json<Value>,
+) -> ApiResult {
+	shared.submit_join_request(id, &body).map(Json)
 }
 
 pub async fn create_guild(State(shared): Mock, Json(body): Json<Value>) -> ApiResult {

@@ -299,7 +299,7 @@ fn live_guild_index(shared: &Shared, id: u64) -> Result<usize, ApiError> {
 		.iter()
 		.position(|guild| guild.id == id)
 		.ok_or_else(ApiError::unknown_guild)?;
-	if shared.store.lock().left_guilds.contains(&id) {
+	if shared.store.lock().absent_guilds.contains(&id) {
 		return Err(ApiError::unknown_guild());
 	}
 	Ok(index)
