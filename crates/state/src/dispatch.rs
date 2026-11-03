@@ -215,7 +215,7 @@ impl State {
 			DispatchEvent::UserSettingsProtoUpdate(update) => self.apply_settings_proto_update(update),
 			DispatchEvent::UserGuildSettingsUpdate(settings) => self.guild_settings_update(settings),
 			DispatchEvent::RelationshipAdd(relationship) => {
-				let was_blocked = self.is_blocked(relationship.id);
+				let was_collapsed = self.hides_messages_of(relationship.id);
 				let notify = relationship.should_notify
 					&& relationship.kind == RelationshipKind::IncomingRequest
 					&& !relationship.is_spam_request
@@ -228,14 +228,14 @@ impl State {
 				if notify {
 					self.note_friend_notice(relationship.id);
 				}
-				let mut changes = self.relationship_changed(relationship.id, was_blocked);
+				let mut changes = self.relationship_changed(relationship.id, was_collapsed);
 				changes.friend_notice = notify;
 				changes
 			}
 			DispatchEvent::RelationshipUpdate(update) => {
-				let was_blocked = self.is_blocked(update.id);
+				let was_collapsed = self.hides_messages_of(update.id);
 				let updated = self.update_relationship(update);
-				let mut changes = self.relationship_changed(update.id, was_blocked);
+				let mut changes = self.relationship_changed(update.id, was_collapsed);
 				changes.relationships = updated;
 				changes
 			}
@@ -246,9 +246,9 @@ impl State {
 				changes
 			}
 			DispatchEvent::RelationshipRemove(remove) => {
-				let was_blocked = self.is_blocked(remove.id);
+				let was_collapsed = self.hides_messages_of(remove.id);
 				let removed = self.relationships.shift_remove(&remove.id).is_some();
-				let mut changes = self.relationship_changed(remove.id, was_blocked);
+				let mut changes = self.relationship_changed(remove.id, was_collapsed);
 				changes.relationships = removed;
 				changes
 			}
@@ -740,12 +740,12 @@ impl State {
 		changes
 	}
 
-	fn relationship_changed(&self, user_id: Snowflake, was_blocked: bool) -> Changes {
+	fn relationship_changed(&self, user_id: Snowflake, was_collapsed: bool) -> Changes {
 		let mut changes = Changes {
 			relationships: true,
 			..Changes::default()
 		};
-		if was_blocked != self.is_blocked(user_id) {
+		if was_collapsed != self.hides_messages_of(user_id) {
 			changes.messages.mark_all();
 		}
 		changes

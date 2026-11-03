@@ -34,6 +34,7 @@ pub enum DmSidebarEvent {
 	CreateGroup,
 	CloseDm(Snowflake),
 	OpenProfile { user: Snowflake, at: Point<Pixels> },
+	EditNote { user: Snowflake, at: Point<Pixels> },
 	Call(Snowflake),
 }
 
@@ -385,6 +386,7 @@ impl DmSidebar {
 		let menu = match dm.user {
 			Some(user) => {
 				let profile = weak.clone();
+				let note = weak.clone();
 				menu.item(
 					cx.t("menu-profile"),
 					Some(IconKind::Profile),
@@ -395,6 +397,11 @@ impl DmSidebar {
 							.ok();
 					},
 				)
+				.item(cx.t("menu-note"), Some(IconKind::Edit), move |window, cx| {
+					let at = window.mouse_position();
+					note.update(cx, |_, cx| cx.emit(DmSidebarEvent::EditNote { user, at }))
+						.ok();
+				})
 			}
 			None => menu,
 		};

@@ -146,6 +146,7 @@ pub enum MessageRow {
 		last: Snowflake,
 		count: usize,
 		revealed: bool,
+		ignored: bool,
 	},
 	HistoryStart,
 	Loading,
@@ -189,6 +190,15 @@ pub struct MemberRow {
 	pub status: StatusKind,
 	pub hoisted_role: Option<Snowflake>,
 	pub activity: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RoleMembers {
+	pub name: String,
+	pub color: Option<u32>,
+	pub members: Vec<MemberRow>,
+	pub count: u64,
+	pub partial: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

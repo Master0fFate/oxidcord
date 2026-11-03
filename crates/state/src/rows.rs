@@ -17,11 +17,12 @@ use crate::permissions::compute_permissions;
 use crate::state::State;
 use crate::views::{
 	ChannelRow, ChannelTreeNode, DmRow, GuildSummary, JoinBlock, MemberListRow, MemberRow, MessageRow,
-	MessageView, PendingUpload, RenderedMessage, RequestRow, RoleIcon, UnreadSince,
+	MessageView, PendingUpload, RenderedMessage, RequestRow, RoleIcon, RoleMembers, UnreadSince,
 };
 
 const GROUPING_WINDOW: TimeDelta = TimeDelta::minutes(7);
 const UNREAD_COUNT_CAP: usize = 50;
+const ROLE_MEMBER_LIMIT: usize = 100;
 
 struct RowContext<'a> {
 	settings: Option<&'a UserGuildSettings>,
@@ -506,13 +507,14 @@ impl State {
 			if pending.is_none() && cache.is_hidden(message.id) {
 				continue;
 			}
-			if pending.is_none() && self.is_blocked(message.author.id) {
+			if pending.is_none() && self.hides_messages_of(message.author.id) {
 				let revealed = *blocked_run.get_or_insert_with(|| {
-					let (mut count, mut last, mut revealed) = (0, message.id, false);
+					let (mut count, mut last, mut revealed, mut ignored) = (0, message.id, false, true);
 					for member in self.blocked_run(cache, message.id) {
 						count += 1;
 						last = member.id;
 						revealed |= self.revealed_blocked.contains(&member.id);
+						ignored &= !self.is_blocked(member.author.id);
 					}
 					let day = local_day(message);
 					if separated_day != Some(day) {
@@ -524,6 +526,7 @@ impl State {
 						last,
 						count,
 						revealed,
+						ignored,
 					});
 					run_between = true;
 					revealed
@@ -568,7 +571,7 @@ impl State {
 		cache.ordered[start..]
 			.iter()
 			.filter(|message| !cache.is_hidden(message.id))
-			.take_while(|message| self.is_blocked(message.author.id))
+			.take_while(|message| self.hides_messages_of(message.author.id))
 	}
 
 	pub fn unread_since(&self, channel_id: Snowflake, anchor: Snowflake) -> Option<UnreadSince> {
@@ -724,6 +727,34 @@ impl State {
 		self.guilds
 			.get(&guild_id)
 			.map_or(0, |guild| guild.member_list.row_count())
+	}
+
+	pub fn role_members(&self, guild_id: Snowflake, role_id: Snowflake) -> Option<RoleMembers> {
+		let guild = self.guilds.get(&guild_id)?;
+		let role = guild.roles.get(&role_id)?;
+		let mut members: Vec<MemberRow> = guild
+			.members
+			.iter()
+			.filter(|(_, member)| member.roles.contains(&role_id))
+			.map(|(user_id, _)| self.member_row(guild, *user_id))
+			.collect();
+		let known = members.len();
+		members.sort_by_cached_key(|row| row.display.to_lowercase());
+		members.truncate(ROLE_MEMBER_LIMIT);
+		let total = self
+			.role_member_counts(guild_id)
+			.and_then(|counts| counts.get(&role_id).copied());
+		let everyone_known = guild
+			.member_count
+			.is_some_and(|count| guild.members.len() as i64 >= count);
+		Some(RoleMembers {
+			name: role.name.clone(),
+			color: role_color_value(role),
+			count: total.map_or(known as u64, |total| total.max(known as u64)),
+			partial: known > ROLE_MEMBER_LIMIT
+				|| (!everyone_known && total.is_none_or(|total| (known as u64) < total)),
+			members,
+		})
 	}
 
 	pub fn member_row(&self, guild: &GuildState, user_id: Snowflake) -> MemberRow {

@@ -223,6 +223,10 @@ pub enum RowAction {
 		user: Snowflake,
 		at: Point<Pixels>,
 	},
+	OpenRole {
+		role: Snowflake,
+		at: Point<Pixels>,
+	},
 	JumpTo(Snowflake),
 	OpenChannel(Snowflake),
 	PrefillCommand(String),
@@ -363,8 +367,9 @@ pub fn render_row(row: &MessageRow, env: &RowEnv, cx: &App) -> AnyElement {
 			first,
 			count,
 			revealed,
+			ignored,
 			..
-		} => blocked_run(*first, *count, *revealed, env, cx),
+		} => blocked_run(*first, *count, *revealed, *ignored, env, cx),
 		MessageRow::Message(view) if renders_as_message(&view.message) => {
 			if env.compact {
 				compact_message(view, env, cx)
@@ -532,7 +537,14 @@ fn unread_marker(theme: &Theme, cx: &App) -> AnyElement {
 		.into_any_element()
 }
 
-fn blocked_run(first: Snowflake, count: usize, revealed: bool, env: &RowEnv, cx: &App) -> AnyElement {
+fn blocked_run(
+	first: Snowflake,
+	count: usize,
+	revealed: bool,
+	ignored: bool,
+	env: &RowEnv,
+	cx: &App,
+) -> AnyElement {
 	let theme = env.theme;
 	let toggle = env.dispatch.clone();
 	let hover = theme.link;
@@ -545,7 +557,14 @@ fn blocked_run(first: Snowflake, count: usize, revealed: bool, env: &RowEnv, cx:
 		.text_size(theme.font_sm)
 		.text_color(theme.text_muted)
 		.child(Icon::new(IconKind::EyeOff).size(rem(14.)).color(theme.text_muted))
-		.child(cx.t_args("timeline-blocked", &[("count", ArgValue::from(count))]))
+		.child(cx.t_args(
+			if ignored {
+				"timeline-ignored"
+			} else {
+				"timeline-blocked"
+			},
+			&[("count", ArgValue::from(count))],
+		))
 		.child(
 			div()
 				.id(("blocked-reveal", first.get()))

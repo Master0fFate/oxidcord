@@ -57,6 +57,10 @@ pub enum TimelineEvent {
 		user: Snowflake,
 		at: Point<Pixels>,
 	},
+	OpenRole {
+		role: Snowflake,
+		at: Point<Pixels>,
+	},
 	PrefillCommand(String),
 }
 
@@ -122,14 +126,22 @@ fn same_row(a: &MessageRow, b: &MessageRow) -> bool {
 				last: x_last,
 				count: x_count,
 				revealed: x_revealed,
+				ignored: x_ignored,
 			},
 			MessageRow::BlockedRun {
 				first: y,
 				last: y_last,
 				count: y_count,
 				revealed: y_revealed,
+				ignored: y_ignored,
 			},
-		) => x == y && x_last == y_last && x_count == y_count && x_revealed == y_revealed,
+		) => {
+			x == y
+				&& x_last == y_last
+				&& x_count == y_count
+				&& x_revealed == y_revealed
+				&& x_ignored == y_ignored
+		}
 		(MessageRow::UnreadMarker, MessageRow::UnreadMarker)
 		| (MessageRow::HistoryStart, MessageRow::HistoryStart)
 		| (MessageRow::Loading, MessageRow::Loading) => true,
@@ -806,6 +818,7 @@ impl Timeline {
 			}
 			RowAction::OpenEmoji { message_id, at } => cx.emit(TimelineEvent::OpenEmoji { message_id, at }),
 			RowAction::OpenProfile { user, at } => cx.emit(TimelineEvent::OpenProfile { user, at }),
+			RowAction::OpenRole { role, at } => cx.emit(TimelineEvent::OpenRole { role, at }),
 			RowAction::JumpTo(message) => self.jump_to(message, cx),
 			RowAction::OpenChannel(channel_id) => {
 				let data = self.data.read(cx);

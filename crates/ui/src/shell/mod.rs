@@ -23,6 +23,7 @@ mod poll_create;
 mod profile;
 mod quick_switcher;
 mod request_bar;
+mod role_popover;
 mod search_hints;
 mod search_panel;
 mod server_rail;
@@ -72,6 +73,7 @@ use self::pickers::PickerTab;
 use self::plugins::{DebugPanel, PluginUi, PluginUiEvent, RightPanel as PluginRightPanel, SidebarPanel};
 use self::profile::{ProfileCard, ProfileEvent};
 use self::quick_switcher::{QuickSwitcher, QuickSwitcherEvent};
+use self::role_popover::{RolePopover, RolePopoverEvent};
 use self::search_panel::{SearchEvent, SearchPanel};
 use self::server_rail::{RailEvent, ServerRail};
 use self::settings::{SettingsEvent, SettingsWindow};
@@ -143,6 +145,10 @@ enum Overlay {
 	},
 	VoiceUser {
 		menu: Entity<UserMenu>,
+		at: Point<Pixels>,
+	},
+	Role {
+		card: Entity<RolePopover>,
 		at: Point<Pixels>,
 	},
 }
@@ -419,6 +425,9 @@ impl Shell {
 				DmSidebarEvent::OpenProfile { user, at } => {
 					this.open_profile(*user, *at, Anchor::TopLeft, cx)
 				}
+				DmSidebarEvent::EditNote { user, at } => {
+					this.show_profile(*user, *at, Anchor::TopLeft, true, cx)
+				}
 				DmSidebarEvent::Call(id) => {
 					this.select(None, *id, cx);
 					this.send(Command::StartCall { channel_id: *id }, cx);
@@ -526,6 +535,7 @@ impl Shell {
 					CommunityEvent::OpenProfile { user, at } => {
 						this.open_profile(*user, *at, Anchor::TopLeft, cx)
 					}
+					CommunityEvent::OpenRole { role, at } => this.open_role(*role, *at, cx),
 					CommunityEvent::Jump { channel, message } => this.jump_to(*channel, *message, cx),
 					CommunityEvent::SearchIn(channel) => this
 						.top_bar
@@ -1455,6 +1465,7 @@ impl Shell {
 				}
 			}
 			TimelineEvent::OpenProfile { user, at } => self.open_profile(*user, *at, Anchor::TopLeft, cx),
+			TimelineEvent::OpenRole { role, at } => self.open_role(*role, *at, cx),
 			TimelineEvent::PrefillCommand(name) => self
 				.composer
 				.update(cx, |composer, cx| composer.prefill_command(name, window, cx)),
@@ -1487,10 +1498,21 @@ impl Shell {
 	}
 
 	fn open_profile(&mut self, user: Snowflake, at: Point<Pixels>, anchor: Anchor, cx: &mut Context<Self>) {
+		self.show_profile(user, at, anchor, false, cx);
+	}
+
+	fn show_profile(
+		&mut self,
+		user: Snowflake,
+		at: Point<Pixels>,
+		anchor: Anchor,
+		focus_note: bool,
+		cx: &mut Context<Self>,
+	) {
 		let data = self.data.clone();
 		let guild = self.guild;
 		let backend = self.backend.clone();
-		let card = cx.new(|cx| ProfileCard::new(data, backend, user, guild, cx));
+		let card = cx.new(|cx| ProfileCard::new(data, backend, user, guild, focus_note, cx));
 		let subscription = cx.subscribe(&card, |this, _, event: &ProfileEvent, cx| {
 			if let ProfileEvent::OpenFull { user, guild } = event {
 				this.account
@@ -1501,6 +1523,21 @@ impl Shell {
 		});
 		self._subscriptions.push(subscription);
 		self.overlay = Some(Overlay::Profile { card, at, anchor });
+		cx.notify();
+	}
+
+	fn open_role(&mut self, role: Snowflake, at: Point<Pixels>, cx: &mut Context<Self>) {
+		let Some(guild) = self.guild else {
+			return;
+		};
+		let data = self.data.clone();
+		let card = cx.new(|cx| RolePopover::new(data, guild, role, cx));
+		let subscription = cx.subscribe(&card, |this, _, event: &RolePopoverEvent, cx| {
+			let RolePopoverEvent::OpenProfile { user, at } = event;
+			this.open_profile(*user, *at, Anchor::TopLeft, cx);
+		});
+		self._subscriptions.push(subscription);
+		self.overlay = Some(Overlay::Role { card, at });
 		cx.notify();
 	}
 
@@ -1922,6 +1959,7 @@ impl Shell {
 			Overlay::VoiceUser { menu, at } => {
 				floating(menu.clone().into_any_element(), *at, Anchor::TopLeft, cx)
 			}
+			Overlay::Role { card, at } => floating(card.clone().into_any_element(), *at, Anchor::TopLeft, cx),
 		})
 	}
 }

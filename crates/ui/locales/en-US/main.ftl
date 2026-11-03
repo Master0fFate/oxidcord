@@ -97,6 +97,10 @@ timeline-blocked = { $count ->
     [one] { $count } blocked message
    *[other] { $count } blocked messages
 }
+timeline-ignored = { $count ->
+    [one] { $count } ignored message
+   *[other] { $count } ignored messages
+}
 timeline-blocked-show = Show
 timeline-blocked-hide = Hide
 timeline-jump-latest = Jump to latest
@@ -175,6 +179,7 @@ action-cancel = Cancel
 menu-copy-text = Copy Text
 menu-copy-user-id = Copy User ID
 menu-profile = Profile
+menu-note = Note
 menu-message = Message
 menu-mention = Mention
 menu-add-friend = Add Friend
@@ -301,6 +306,7 @@ automod-flagged = Flagged
 
 mention-channel-unknown = unknown
 mention-role-unknown = deleted-role
+role-partial = Partial list
 mention-game = Game
 mention-message = Message
 message-preview-poll = Poll: { $question }

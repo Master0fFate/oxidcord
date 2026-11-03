@@ -92,6 +92,7 @@ pub enum CommunityEvent {
 	OpenImage(Gallery),
 	OpenVideoFullscreen(VideoFullscreenTarget),
 	OpenProfile { user: Snowflake, at: Point<Pixels> },
+	OpenRole { role: Snowflake, at: Point<Pixels> },
 	Jump { channel: Snowflake, message: Snowflake },
 	SearchIn(Snowflake),
 	Layout,
@@ -738,6 +739,9 @@ impl Community {
 			}
 			TimelineEvent::OpenProfile { user, at } => {
 				cx.emit(CommunityEvent::OpenProfile { user: *user, at: *at })
+			}
+			TimelineEvent::OpenRole { role, at } => {
+				cx.emit(CommunityEvent::OpenRole { role: *role, at: *at })
 			}
 			TimelineEvent::Reply(message) => self.reply_in_thread(*message, window, cx),
 			TimelineEvent::PrefillCommand(name) => {

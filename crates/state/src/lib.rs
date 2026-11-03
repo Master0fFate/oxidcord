@@ -54,8 +54,8 @@ pub use state::{
 pub use threads::ForumPost;
 pub use views::{
 	ChannelRow, ChannelTreeNode, DmRow, GuildSummary, JoinBlock, MemberListRow, MemberRow, MessageRow,
-	MessageView, PendingUpload, RelationshipRow, RenderedMessage, RequestRow, RoleIcon, UnreadSince,
-	UserOverride,
+	MessageView, PendingUpload, RelationshipRow, RenderedMessage, RequestRow, RoleIcon, RoleMembers,
+	UnreadSince, UserOverride,
 };
 pub use voice::{
 	Call, E2eeInfo, E2eeMember, MicTest, SoundBlock, StreamInfo, StreamSummary, VOICE_EFFECT_LIFETIME,

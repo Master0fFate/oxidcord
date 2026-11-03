@@ -262,6 +262,7 @@ enum Click {
 	Link(String),
 	Spoiler(usize),
 	User(Snowflake),
+	Role(Snowflake),
 	Channel(Snowflake),
 	Command(String),
 }
@@ -306,6 +307,7 @@ struct Style {
 	spoiler: Option<usize>,
 	link: Option<String>,
 	user: Option<Snowflake>,
+	role: Option<Snowflake>,
 	channel: Option<Snowflake>,
 	command: Option<String>,
 }
@@ -333,6 +335,8 @@ impl Inline {
 			self.clicks.push((range, Click::Link(url.clone())));
 		} else if let Some(user) = style.user {
 			self.clicks.push((range, Click::User(user)));
+		} else if let Some(role) = style.role {
+			self.clicks.push((range, Click::Role(role)));
 		} else if let Some(channel) = style.channel {
 			self.clicks.push((range, Click::Channel(channel)));
 		} else if let Some(command) = &style.command {
@@ -411,6 +415,10 @@ impl Inline {
 				Click::Spoiler(spoiler) => RowAction::ToggleSpoiler(message_id, *spoiler),
 				Click::User(user) => RowAction::OpenProfile {
 					user: *user,
+					at: window.mouse_position(),
+				},
+				Click::Role(role) => RowAction::OpenRole {
+					role: *role,
 					at: window.mouse_position(),
 				},
 				Click::Channel(channel) => RowAction::OpenChannel(*channel),
@@ -713,15 +721,15 @@ impl<'a> Blocks<'a> {
 				self.mention(label, None, &next);
 			}
 			Node::RoleMention(id) => {
-				let (name, color) = self
-					.env
-					.lookup
-					.role(*id)
-					.unwrap_or_else(|| (self.cx.t("mention-role-unknown").to_string(), None));
+				let found = self.env.lookup.role(*id);
+				let mut next = style.clone();
+				next.role = found.as_ref().map(|_| Snowflake::from(*id));
+				let (name, color) =
+					found.unwrap_or_else(|| (self.cx.t("mention-role-unknown").to_string(), None));
 				self.mention(
 					format!("@{name}"),
 					color.map(crate::model::role_display_color),
-					style,
+					&next,
 				);
 			}
 			Node::ChannelMention(id) => match self.env.lookup.channel(*id) {

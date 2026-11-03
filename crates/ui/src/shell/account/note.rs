@@ -68,6 +68,10 @@ impl NoteBox {
 		}
 	}
 
+	pub fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
+		self.input.update(cx, |state, cx| state.focus(window, cx));
+	}
+
 	fn commit(&mut self, cx: &mut Context<Self>) {
 		let value = self.input.read(cx).value();
 		let value = value.trim();

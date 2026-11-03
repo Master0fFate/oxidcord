@@ -38,6 +38,7 @@ pub struct ProfileCard {
 	guild: Option<Snowflake>,
 	requested_icons: HashSet<Snowflake>,
 	note: Option<Entity<account::NoteBox>>,
+	focus_note: bool,
 	ticking: bool,
 	_subscription: Subscription,
 	_ticker: Task<()>,
@@ -51,6 +52,7 @@ impl ProfileCard {
 		backend: Rc<SettingsBackend>,
 		user: Snowflake,
 		guild: Option<Snowflake>,
+		focus_note: bool,
 		cx: &mut Context<Self>,
 	) -> Self {
 		{
@@ -97,6 +99,7 @@ impl ProfileCard {
 			guild,
 			requested_icons: HashSet::new(),
 			note: None,
+			focus_note,
 			ticking: false,
 			_subscription: subscription,
 			_ticker: ticker,
@@ -130,7 +133,11 @@ impl Render for ProfileCard {
 		let (user, guild) = (self.user, self.guild);
 		if !profile.mine && self.note.is_none() {
 			let data = self.data.clone();
-			self.note = Some(cx.new(|cx| account::NoteBox::new(data, user, window, cx)));
+			let note = cx.new(|cx| account::NoteBox::new(data, user, window, cx));
+			if self.focus_note {
+				note.update(cx, |note, cx| note.focus(window, cx));
+			}
+			self.note = Some(note);
 		}
 		let backend = self.backend.clone();
 		let open: account::OpenLink = Rc::new(move |url, window, cx| {
