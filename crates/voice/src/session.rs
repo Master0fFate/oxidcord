@@ -850,7 +850,7 @@ impl Supervisor {
 				} => VoiceEvent::Dave {
 					epoch,
 					version,
-					members: members.into_iter().map(Snowflake).collect(),
+					members,
 					privacy_code,
 				},
 				DaveEvent::Failure(reason) => VoiceEvent::DaveFailure(reason),

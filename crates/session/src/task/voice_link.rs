@@ -7,7 +7,7 @@ use gateway::SendError;
 use parking_lot::Mutex;
 use protocol::{Permissions, Snowflake, Token, VoiceChannelEffect, VoiceServerUpdate, VoiceState};
 use serde_json::json;
-use state::{E2eeInfo, JoinBlock, LocalEvent, VoiceStatus};
+use state::{E2eeInfo, E2eeMember, JoinBlock, LocalEvent, VoiceStatus};
 use store::{Store, UserVolume, VoiceSettings};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
@@ -671,11 +671,19 @@ impl Core {
 				version,
 				members,
 				privacy_code,
-			} => self.apply_local(LocalEvent::VoiceE2ee((version > 0).then_some(E2eeInfo {
-				epoch,
-				privacy_code,
-				members,
-			}))),
+			} => self.apply_local(LocalEvent::VoiceE2ee(
+				(version > 0).then_some(E2eeInfo {
+					epoch,
+					privacy_code,
+					members: members
+						.into_iter()
+						.map(|member| E2eeMember {
+							user_id: Snowflake(member.user_id),
+							signature_key: member.signature_key,
+						})
+						.collect(),
+				}),
+			)),
 			VoiceEvent::DaveFailure(reason) => self.on_dave_failure(&reason),
 			VoiceEvent::Disconnected {
 				reconnecting: true, ..

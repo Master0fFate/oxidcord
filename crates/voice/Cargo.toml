@@ -37,6 +37,7 @@ openmls_basic_credential.workspace = true
 tls_codec.workspace = true
 hmac.workspace = true
 sha2.workspace = true
+scrypt.workspace = true
 nnnoiseless = { workspace = true, optional = true }
 sonora.workspace = true
 openh264.workspace = true

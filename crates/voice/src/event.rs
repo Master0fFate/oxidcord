@@ -5,6 +5,7 @@ use protocol::Snowflake;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TrySendError;
 
+use crate::dave::DaveMember;
 use crate::video::VideoKind;
 
 const EVENT_CAPACITY: usize = 256;
@@ -36,7 +37,7 @@ pub enum VoiceEvent {
 	Dave {
 		epoch: u64,
 		version: u8,
-		members: Vec<Snowflake>,
+		members: Vec<DaveMember>,
 		privacy_code: Option<String>,
 	},
 	DaveFailure(String),

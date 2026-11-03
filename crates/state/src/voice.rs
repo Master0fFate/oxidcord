@@ -65,10 +65,16 @@ pub struct VoiceCueEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct E2eeMember {
+	pub user_id: Snowflake,
+	pub signature_key: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct E2eeInfo {
 	pub epoch: u64,
 	pub privacy_code: Option<String>,
-	pub members: Vec<Snowflake>,
+	pub members: Vec<E2eeMember>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

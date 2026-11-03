@@ -79,11 +79,17 @@ fn binary(op: u8, parts: &[&[u8]]) -> Message {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DaveMember {
+	pub user_id: u64,
+	pub signature_key: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DaveEvent {
 	Epoch {
 		epoch: u64,
 		version: u8,
-		members: Vec<u64>,
+		members: Vec<DaveMember>,
 		privacy_code: Option<String>,
 	},
 	Failure(String),
@@ -94,7 +100,7 @@ struct Transition {
 	version: u8,
 	own: Option<KeyRatchet>,
 	epoch: u64,
-	members: Vec<u64>,
+	members: Vec<DaveMember>,
 	privacy_code: Option<String>,
 }
 
@@ -102,7 +108,7 @@ struct EpochKeys {
 	own: KeyRatchet,
 	senders: Vec<(u64, KeyRatchet)>,
 	epoch: u64,
-	members: Vec<u64>,
+	members: Vec<DaveMember>,
 	privacy_code: Option<String>,
 }
 
@@ -164,7 +170,7 @@ impl DaveSession {
 			.map(|group| group.epoch().as_u64())
 	}
 
-	pub fn members(&self) -> Vec<u64> {
+	pub fn members(&self) -> Vec<DaveMember> {
 		self.group
 			.as_ref()
 			.filter(|_| self.established)
@@ -548,7 +554,7 @@ impl DaveSession {
 		let members = roster(group)?;
 		let mut own = None;
 		let mut senders = Vec::with_capacity(members.len());
-		for &member in &members {
+		for member in members.iter().map(|member| member.user_id) {
 			let ratchet = self.ratchet_for(group, member)?;
 			if member == self.user_id {
 				own = Some(ratchet);
@@ -715,14 +721,17 @@ fn identity(credential: &Credential) -> Result<u64> {
 		.map_err(|_| VoiceError::Dave("credential identity is not a user id".to_owned()))
 }
 
-fn roster(group: &MlsGroup) -> Result<Vec<u64>> {
-	let mut members = Vec::new();
+fn roster(group: &MlsGroup) -> Result<Vec<DaveMember>> {
+	let mut members: Vec<DaveMember> = Vec::new();
 	for member in group.members() {
-		let identity = identity(&member.credential)?;
-		if members.contains(&identity) {
+		let user_id = identity(&member.credential)?;
+		if members.iter().any(|known| known.user_id == user_id) {
 			return Err(VoiceError::Dave("group lists a member twice".to_owned()));
 		}
-		members.push(identity);
+		members.push(DaveMember {
+			user_id,
+			signature_key: member.signature_key,
+		});
 	}
 	Ok(members)
 }

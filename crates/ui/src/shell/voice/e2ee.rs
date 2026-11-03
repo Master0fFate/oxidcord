@@ -35,13 +35,18 @@ impl E2eeView {
 				.map(code_rows)
 				.unwrap_or_default(),
 			members: info
-				.map(|info| info.members.iter().map(|member| name_of(*member)).collect())
+				.map(|info| {
+					info.members
+						.iter()
+						.map(|member| name_of(member.user_id))
+						.collect()
+				})
 				.unwrap_or_default(),
 		}))
 	}
 }
 
-fn code_rows(code: &str) -> Vec<String> {
+pub(super) fn code_rows(code: &str) -> Vec<String> {
 	let groups: Vec<&str> = code
 		.as_bytes()
 		.chunks(CODE_GROUP_DIGITS)
@@ -111,7 +116,7 @@ fn card(view: &E2eeView, cx: &App) -> AnyElement {
 		.into_any_element()
 }
 
-fn section(label: SharedString, theme: &Theme) -> impl IntoElement {
+pub(super) fn section(label: SharedString, theme: &Theme) -> impl IntoElement {
 	div()
 		.text_size(theme.font_tiny)
 		.font_weight(FontWeight::BOLD)

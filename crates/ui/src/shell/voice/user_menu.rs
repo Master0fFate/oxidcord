@@ -6,8 +6,10 @@ use gpui::{
 use gpui_component::slider::{Slider, SliderEvent, SliderState};
 use gpui_component::switch::Switch;
 use protocol::Snowflake;
-use state::State;
+use state::{E2eeInfo, E2eeMember, State};
+use voice::dave::{DaveMember, pairwise_code};
 
+use super::e2ee::{code_rows, section};
 use super::seat_change;
 use crate::data::Data;
 use crate::i18n::Translate as _;
@@ -21,6 +23,12 @@ pub enum UserMenuEvent {
 	Profile(Snowflake),
 }
 
+enum Verification {
+	Idle,
+	Computing,
+	Code(Vec<String>),
+}
+
 pub struct UserMenu {
 	data: Entity<Data>,
 	guild: Option<Snowflake>,
@@ -28,6 +36,7 @@ pub struct UserMenu {
 	name: SharedString,
 	volume: Entity<SliderState>,
 	stream_volume: Entity<SliderState>,
+	verification: Verification,
 	_subscriptions: Vec<Subscription>,
 }
 
@@ -75,9 +84,64 @@ impl UserMenu {
 			name,
 			volume,
 			stream_volume,
+			verification: Verification::Idle,
 			_subscriptions: vec![slider, stream_slider, observer],
 		}
 	}
+
+	fn verify(&mut self, cx: &mut Context<Self>) {
+		let user = self.user;
+		let pair = {
+			let data = self.data.read(cx);
+			let state = data.state();
+			data.me()
+				.zip(state.voice().and_then(|voice| voice.e2ee.as_ref()))
+				.and_then(|(me, info)| {
+					Some((
+						dave_member(member_of(info, me)?),
+						dave_member(member_of(info, user)?),
+					))
+				})
+		};
+		let Some((own, other)) = pair else {
+			return;
+		};
+		self.verification = Verification::Computing;
+		cx.notify();
+		cx.spawn(async move |this, cx| {
+			let code = cx
+				.background_executor()
+				.spawn(async move { pairwise_code(&own, &other) })
+				.await;
+			this.update(cx, |this, cx| {
+				this.verification =
+					code.map_or(Verification::Idle, |code| Verification::Code(code_rows(&code)));
+				cx.notify();
+			})
+			.ok();
+		})
+		.detach();
+	}
+}
+
+fn member_of(info: &E2eeInfo, user: Snowflake) -> Option<&E2eeMember> {
+	info.members.iter().find(|member| member.user_id == user)
+}
+
+fn dave_member(member: &E2eeMember) -> DaveMember {
+	DaveMember {
+		user_id: member.user_id.get(),
+		signature_key: member.signature_key.clone(),
+	}
+}
+
+fn verifiable(state: &State, me: Option<Snowflake>, user: Snowflake) -> bool {
+	state
+		.voice()
+		.and_then(|voice| voice.e2ee.as_ref())
+		.is_some_and(|info| {
+			me.is_some_and(|me| member_of(info, me).is_some()) && member_of(info, user).is_some()
+		})
 }
 
 fn volume_state(start: f32, cx: &mut Context<UserMenu>) -> Entity<SliderState> {
@@ -134,7 +198,7 @@ impl Render for UserMenu {
 	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
 		let user = self.user;
-		let (percent, stream_percent, silenced, is_me, watching, seat) = {
+		let (percent, stream_percent, silenced, is_me, watching, seat, can_verify) = {
 			let data = self.data.read(cx);
 			let state = data.state();
 			(
@@ -144,6 +208,7 @@ impl Render for UserMenu {
 				data.me() == Some(user),
 				watching_stream_of(&state, user),
 				self.guild.and_then(|guild| seat_change(&state, guild, user)),
+				data.me() != Some(user) && verifiable(&state, data.me(), user),
 			)
 		};
 		let data = self.data.clone();
@@ -211,6 +276,45 @@ impl Render for UserMenu {
 					)
 					.child(cx.t(seat.label))
 			}))
+			.when(can_verify, |menu| match &self.verification {
+				Verification::Code(rows) => menu.child(
+					div()
+						.flex()
+						.flex_col()
+						.gap(theme.space_8)
+						.child(section(cx.t("voice-user-verify-code"), &theme))
+						.children(rows.iter().map(|row| {
+							div()
+								.text_size(theme.font_md)
+								.font_weight(FontWeight::SEMIBOLD)
+								.text_color(theme.text_normal)
+								.child(row.clone())
+						})),
+				),
+				verification => menu.child(
+					div()
+						.id("voice-user-verify")
+						.flex()
+						.items_center()
+						.gap(theme.space_8)
+						.px(theme.space_8)
+						.h(theme.voice_button)
+						.rounded(theme.radius_sm)
+						.cursor_pointer()
+						.text_size(theme.font_sm)
+						.text_color(theme.text_normal)
+						.hover(|style| style.bg(theme.modifier_hover))
+						.when(matches!(verification, Verification::Idle), |row| {
+							row.on_click(cx.listener(|this, _, _, cx| this.verify(cx)))
+						})
+						.child(
+							Icon::new(IconKind::Shield)
+								.size(theme.voice_icon_sm)
+								.color(theme.interactive_normal),
+						)
+						.child(cx.t("voice-user-verify")),
+				),
+			})
 			.child(
 				div()
 					.id("voice-user-profile")
