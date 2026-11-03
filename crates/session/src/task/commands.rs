@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use activity::ActivityRules;
 use chrono::{DateTime, Utc};
 use protocol::rest::{ComponentInteraction, ComponentInteractionData};
@@ -1392,6 +1394,7 @@ impl Core {
 			}
 			Command::LoadScheduledEvents { guild_id } => {
 				self.spawn_load("events", move |rest| async move {
+					let requested = Instant::now();
 					let events = rest.scheduled_events(guild_id).await?.into_vec();
 					let interested = rest
 						.scheduled_event_rsvps(guild_id)
@@ -1409,6 +1412,7 @@ impl Core {
 						guild_id,
 						events,
 						interested,
+						requested,
 					})
 				});
 			}

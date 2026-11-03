@@ -1,12 +1,19 @@
+use std::time::Instant;
+
 use protocol::{ScheduledEvent, ScheduledEventStatus, ScheduledEventUser, Snowflake};
 
 use crate::changes::Changes;
 use crate::state::State;
 
-fn events_changed(guild_id: Snowflake) -> Changes {
+fn events_loaded(guild_id: Snowflake) -> Changes {
 	let mut changes = Changes::default();
-	changes.channel_lists.insert(guild_id);
 	changes.loaded.insert(guild_id);
+	changes
+}
+
+fn events_changed(guild_id: Snowflake) -> Changes {
+	let mut changes = events_loaded(guild_id);
+	changes.channel_lists.insert(guild_id);
 	changes
 }
 
@@ -65,7 +72,7 @@ impl State {
 			let count = event.user_count.unwrap_or(0);
 			event.user_count = Some(if joined { count + 1 } else { (count - 1).max(0) });
 		}
-		events_changed(change.guild_id)
+		events_loaded(change.guild_id)
 	}
 
 	pub(crate) fn scheduled_events_loaded(
@@ -73,13 +80,21 @@ impl State {
 		guild_id: Snowflake,
 		events: &[ScheduledEvent],
 		interested: Option<&[Snowflake]>,
+		requested: Instant,
 	) -> Changes {
 		let Some(guild) = self.guilds.get_mut(&guild_id) else {
 			return Changes::default();
 		};
-		guild.set_scheduled_events(events);
+		let stale = guild.events_touched.is_some_and(|touched| touched > requested);
+		if !stale {
+			guild.set_scheduled_events(events);
+		}
 		if let Some(interested) = interested {
-			guild.interested_events = interested.iter().copied().collect();
+			if stale {
+				guild.interested_events.extend(interested.iter().copied());
+			} else {
+				guild.interested_events = interested.iter().copied().collect();
+			}
 		}
 		events_changed(guild_id)
 	}

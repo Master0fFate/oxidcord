@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::time::Instant;
 
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
@@ -43,6 +44,7 @@ pub struct GuildState {
 	pub voice_states: HashMap<Snowflake, VoiceState>,
 	pub scheduled_events: Vec<ScheduledEvent>,
 	pub interested_events: HashSet<Snowflake>,
+	pub events_touched: Option<Instant>,
 	pub stage_instances: HashMap<Snowflake, StageInstance>,
 	pub member_list: MemberList,
 }
@@ -168,6 +170,7 @@ impl GuildState {
 			self.remove_scheduled_event(event.id);
 			return;
 		}
+		self.events_touched = Some(Instant::now());
 		self.scheduled_events.retain(|known| known.id != event.id);
 		let mut stored = event.clone();
 		stored.user_count = stored.user_count.or(known_count);
@@ -176,6 +179,7 @@ impl GuildState {
 	}
 
 	pub fn remove_scheduled_event(&mut self, id: Snowflake) {
+		self.events_touched = Some(Instant::now());
 		self.scheduled_events.retain(|known| known.id != id);
 		self.interested_events.remove(&id);
 	}

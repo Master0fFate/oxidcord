@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::time::Instant;
 
 use chrono::{DateTime, Utc};
 use protocol::lenient::{or_default, timestamp};
@@ -121,6 +122,7 @@ pub enum Loaded {
 		guild_id: Snowflake,
 		events: Vec<ScheduledEvent>,
 		interested: Option<Vec<Snowflake>>,
+		requested: Instant,
 	},
 	RecentEmoji(Vec<EmojiRef>),
 	RecentGifs(Vec<Gif>),
@@ -808,7 +810,8 @@ impl State {
 				guild_id,
 				events,
 				interested,
-			} => return self.scheduled_events_loaded(*guild_id, events, interested.as_deref()),
+				requested,
+			} => return self.scheduled_events_loaded(*guild_id, events, interested.as_deref(), *requested),
 			Loaded::RecentEmoji(emoji) => {
 				self.lazy.expressions.recent_emoji.clone_from(emoji);
 				changes.loaded.insert(EXPRESSIONS_KEY);
