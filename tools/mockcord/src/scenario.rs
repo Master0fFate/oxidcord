@@ -21,7 +21,34 @@ pub struct VoiceJoin {
 	pub channel_id: u64,
 }
 
+pub fn stream_create_event(key: &str, channel_id: u64, viewers: &[u64]) -> Value {
+	json!({
+		"stream_key": key,
+		"rtc_server_id": (channel_id + 1).to_string(),
+		"rtc_channel_id": channel_id.to_string(),
+		"region": "mock",
+		"viewer_ids": viewers.iter().map(u64::to_string).collect::<Vec<_>>(),
+		"paused": false,
+	})
+}
+
 impl Shared {
+	pub fn occupant_stream(&self, guild_id: Option<u64>, channel_id: u64) -> Option<Value> {
+		let guild = self.fixtures.guild(guild_id?)?;
+		if guild
+			.stage_instance
+			.as_ref()
+			.is_some_and(|stage| stage.channel_id.0 == channel_id)
+		{
+			return None;
+		}
+		let owner = guild.voice_states.iter().find(|state| {
+			state.channel_id.is_some_and(|id| id.0 == channel_id) && state.user_id.0 != CURRENT_USER_ID
+		})?;
+		let key = format!("guild:{}:{channel_id}:{}", guild.id, owner.user_id.0);
+		Some(stream_create_event(&key, channel_id, &[]))
+	}
+
 	pub fn voice_state_event(&self, session: &str, guild_id: Option<u64>, channel_id: Option<u64>) -> Value {
 		let member = guild_id
 			.and_then(|id| self.fixtures.guild(id))

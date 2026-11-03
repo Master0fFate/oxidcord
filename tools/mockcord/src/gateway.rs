@@ -21,6 +21,7 @@ use crate::hub::{Link, Outgoing};
 use crate::json::parse_id;
 use crate::member_list::{self, presence_json};
 use crate::ready;
+use crate::scenario::stream_create_event;
 use crate::state::Shared;
 use crate::voice::VOICE_TOKEN;
 
@@ -337,14 +338,7 @@ impl Connection {
 		hub.dispatch_to(
 			session,
 			"STREAM_CREATE",
-			&json!({
-				"stream_key": key,
-				"rtc_server_id": (channel_id + 1).to_string(),
-				"rtc_channel_id": channel_id.to_string(),
-				"region": "mock",
-				"viewer_ids": viewers.iter().map(u64::to_string).collect::<Vec<_>>(),
-				"paused": false,
-			}),
+			&stream_create_event(key, channel_id, viewers),
 		);
 		hub.dispatch_to(
 			session,
@@ -419,6 +413,9 @@ impl Connection {
 			self.shared
 				.hub
 				.dispatch_to(session, "VOICE_SERVER_UPDATE", &server);
+			if let Some(stream) = self.shared.occupant_stream(guild_id, channel_id) {
+				self.shared.hub.dispatch_to(session, "STREAM_CREATE", &stream);
+			}
 		}
 	}
 }
