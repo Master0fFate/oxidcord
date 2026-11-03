@@ -76,7 +76,10 @@ use self::timeline::{Timeline, TimelineEvent};
 use self::title_bar::{TitleBar, TitleContext};
 use self::top_bar::{TopBar, TopBarEvent, TopBarTitle};
 use self::user_panel::{UserPanel, UserPanelEvent};
-use self::voice::{CallToast, RoomEvent, UserMenu, UserMenuEvent, VoicePanel, VoiceRoom};
+use self::voice::{
+	CallToast, RoomEvent, StreamPip, StreamViewer, UserMenu, UserMenuEvent, ViewerEvent, VoicePanel,
+	VoiceRoom,
+};
 use crate::actions::{
 	CloseOverlay, MarkGuildRead, NextChannel, NextGuild, NextMentionChannel, NextUnreadChannel,
 	OpenQuickSwitcher, OpenSettings, PreviousChannel, PreviousGuild, PreviousMentionChannel,
@@ -138,6 +141,12 @@ enum Overlay {
 	},
 }
 
+struct FullscreenStream {
+	viewer: Entity<StreamViewer>,
+	entered_fullscreen: bool,
+	_ended: Subscription,
+}
+
 struct Described {
 	name: SharedString,
 	icon: IconKind,
@@ -175,6 +184,8 @@ pub struct Shell {
 	voice_panel: Entity<VoicePanel>,
 	voice_room: Entity<VoiceRoom>,
 	call_toast: Entity<CallToast>,
+	stream_pip: Entity<StreamPip>,
+	stream_fullscreen: Option<FullscreenStream>,
 	home_pages: HomePages,
 	account: Entity<AccountHub>,
 	groups: Groups,
@@ -533,6 +544,7 @@ impl Shell {
 				window,
 				|this, _, event: &RoomEvent, window, cx| match event {
 					RoomEvent::UserMenu { user, at } => this.open_voice_menu(*user, *at, cx),
+					RoomEvent::Fullscreen(user) => this.toggle_stream_fullscreen(*user, window, cx),
 					RoomEvent::OpenSettings => {
 						this.open_settings(window, cx);
 						if let Some(settings) = &this.settings {
@@ -543,6 +555,7 @@ impl Shell {
 			),
 		);
 		let call_toast = cx.new(|cx| CallToast::new(data.clone(), window, cx));
+		let stream_pip = cx.new(|cx| StreamPip::new(data.clone(), cx));
 		let home_pages = HomePages::new(data.clone(), window, cx);
 		let account = cx.new(|cx| AccountHub::new(data.clone(), backend.clone(), cx));
 		let groups = Groups::new(data.clone(), window, cx);
@@ -653,6 +666,8 @@ impl Shell {
 			voice_panel,
 			voice_room,
 			call_toast,
+			stream_pip,
+			stream_fullscreen: None,
 			home_pages,
 			account,
 			groups,
@@ -1464,7 +1479,71 @@ impl Shell {
 		cx.notify();
 	}
 
+	fn toggle_stream_fullscreen(&mut self, user: Snowflake, window: &mut Window, cx: &mut Context<Self>) {
+		if self.stream_fullscreen.is_some() {
+			self.exit_stream_fullscreen(window, cx);
+			return;
+		}
+		let data = self.data.clone();
+		let viewer = cx.new(|cx| StreamViewer::new(user, &data, cx));
+		let ended = cx.subscribe_in(&viewer, window, |this, _, _: &ViewerEvent, window, cx| {
+			this.exit_stream_fullscreen(window, cx)
+		});
+		let entered_fullscreen = !window.is_fullscreen();
+		if entered_fullscreen {
+			window.toggle_fullscreen();
+		}
+		window.focus(&self.focus, cx);
+		self.stream_fullscreen = Some(FullscreenStream {
+			viewer,
+			entered_fullscreen,
+			_ended: ended,
+		});
+		cx.notify();
+	}
+
+	fn exit_stream_fullscreen(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+		let Some(stream) = self.stream_fullscreen.take() else {
+			return;
+		};
+		if stream.entered_fullscreen && window.is_fullscreen() {
+			window.toggle_fullscreen();
+		}
+		window.focus(&self.focus, cx);
+		cx.notify();
+	}
+
+	fn stream_fullscreen_element(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
+		let stream = self.stream_fullscreen.as_ref()?;
+		Some(
+			div()
+				.absolute()
+				.inset_0()
+				.bg(gpui::black())
+				.occlude()
+				.child(stream.viewer.clone())
+				.child(
+					div().absolute().top(theme.space_16).right(theme.space_16).child(
+						IconButton::new("voice-fullscreen-exit", IconKind::Shrink)
+							.filled_hover()
+							.hit_size(rem(36.))
+							.icon_size(rem(22.))
+							.color(theme.interactive_active)
+							.tooltip(cx.t("voice-fullscreen-exit"))
+							.on_click(
+								cx.listener(|this, _, window, cx| this.exit_stream_fullscreen(window, cx)),
+							),
+					),
+				)
+				.into_any_element(),
+		)
+	}
+
 	fn close_overlay(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+		if self.stream_fullscreen.is_some() {
+			self.exit_stream_fullscreen(window, cx);
+			return;
+		}
 		if self.account.update(cx, |account, cx| account.dismiss(cx)) {
 			return;
 		}
@@ -1892,6 +1971,7 @@ impl Render for Shell {
 			self.dm_sidebar.clone().into_any_element()
 		};
 		let overlay = self.overlay_element(window, &theme, cx);
+		let stream_fullscreen = self.stream_fullscreen_element(&theme, cx);
 		let home = self.home_pages.element(&theme);
 		let plugin_page = plugins::open_page(cx).and_then(|page| plugins::main_view(&page, cx));
 		cx.global::<crate::playback::Playback>().set_shell_hidden(
@@ -2073,10 +2153,12 @@ impl Render for Shell {
 			)
 			.child(DebugPanel)
 			.child(self.call_toast.clone())
+			.child(self.stream_pip.clone())
 			.children(self.settings.clone())
 			.child(self.account.clone())
 			.children(overlay)
 			.child(self.community.clone())
 			.child(self.plugin_ui.clone())
+			.children(stream_fullscreen)
 	}
 }

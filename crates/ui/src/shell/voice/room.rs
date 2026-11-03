@@ -4,25 +4,27 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-	AnyElement, AnyView, Context, Entity, EventEmitter, FontWeight, InteractiveElement as _, IntoElement,
-	MouseButton, MouseDownEvent, ObjectFit, ParentElement as _, Pixels, Point, Rems, Render, SharedString,
-	Size, StatefulInteractiveElement as _, Styled as _, StyledImage as _, Subscription, Task, Window, canvas,
-	div, img, prelude::FluentBuilder as _, px, size,
+	AnyElement, AnyView, AppContext as _, Context, Entity, EventEmitter, FontWeight, InteractiveElement as _,
+	IntoElement, MouseButton, MouseDownEvent, ObjectFit, ParentElement as _, Pixels, Point, Rems, Render,
+	SharedString, Size, StatefulInteractiveElement as _, Styled as _, StyledImage as _, Subscription, Task,
+	Window, canvas, div, img, prelude::FluentBuilder as _, px, size,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::menu::DropdownMenu as _;
 use protocol::{ChannelType, Permissions, Snowflake};
 use session::Command;
-use state::{VideoKind, VoiceStatus};
+use state::VoiceStatus;
 
 use super::actions;
 use super::live::{LiveStream, PREVIEW_HINT, live_streams, viewer_stack};
 use super::participants::{Participant, participants};
 use super::picker;
+use super::popout;
 use super::quality::Preset;
 use super::stage::open_topic;
 use super::status;
-use super::video_sink::Textures;
+use super::video_sink::{follow_frames, video_image};
+use super::viewer::StreamViewer;
 use super::widgets::{ControlButton, live_badge, speaking_avatar, state_icons};
 use crate::components::{ContextMenuBuilder, IconButton};
 use crate::data::{Data, DataEvent};
@@ -43,6 +45,7 @@ const REQUEST_LIST_MAX_HEIGHT: f32 = 168.;
 pub enum RoomEvent {
 	UserMenu { user: Snowflake, at: Point<Pixels> },
 	OpenSettings,
+	Fullscreen(Snowflake),
 }
 
 pub struct VoiceRoom {
@@ -52,6 +55,7 @@ pub struct VoiceRoom {
 	composer: Entity<Composer>,
 	chat_open: bool,
 	focused: Option<Snowflake>,
+	viewer: Option<Entity<StreamViewer>>,
 	camera_pending: bool,
 	stage: Rc<Cell<Size<Pixels>>>,
 	last_render: Cell<Instant>,
@@ -185,28 +189,11 @@ impl VoiceRoom {
 			}
 		});
 		let local = cx.observe(&data, |_, _, cx| cx.notify());
-		let frames = match cx.try_global::<Textures>().cloned() {
-			Some(textures) => cx.spawn(async move |this, cx| {
-				loop {
-					textures.0.changed().await;
-					let retired = textures.0.take_retired();
-					let alive = this
-						.update(cx, |room, cx| {
-							for image in retired {
-								cx.drop_image(image, None);
-							}
-							if room.last_render.get().elapsed() < IDLE_REDRAW {
-								cx.notify();
-							}
-						})
-						.is_ok();
-					if !alive {
-						break;
-					}
-				}
-			}),
-			None => Task::ready(()),
-		};
+		let frames = follow_frames(cx, |room, cx| {
+			if room.last_render.get().elapsed() < IDLE_REDRAW {
+				cx.notify();
+			}
+		});
 		Self {
 			data,
 			backend,
@@ -214,6 +201,7 @@ impl VoiceRoom {
 			composer,
 			chat_open: false,
 			focused: None,
+			viewer: None,
 			camera_pending: false,
 			stage: Rc::new(Cell::new(size(px(0.), px(0.)))),
 			last_render: Cell::new(Instant::now()),
@@ -271,12 +259,55 @@ impl VoiceRoom {
 	}
 
 	fn toggle_focus(&mut self, user: Snowflake, cx: &mut Context<Self>) {
-		self.focused = if self.focused == Some(user) {
-			None
-		} else {
-			Some(user)
-		};
+		let focus = self.focused != Some(user);
+		self.focused = focus.then_some(user);
+		self.viewer = focus.then(|| {
+			let data = self.data.clone();
+			cx.new(|cx| StreamViewer::new(user, &data, cx))
+		});
 		cx.notify();
+	}
+
+	fn focus_controls(
+		&self,
+		user: Snowflake,
+		has_video: bool,
+		theme: &Theme,
+		cx: &mut Context<Self>,
+	) -> AnyElement {
+		let button = |id: &'static str, icon: IconKind, label: &str| {
+			IconButton::new((id, user.get()), icon)
+				.hit_size(rem(28.))
+				.icon_size(theme.voice_icon_sm)
+				.color(theme.interactive_active)
+				.tooltip(cx.t(label))
+		};
+		div()
+			.absolute()
+			.right(theme.space_8)
+			.top(theme.space_8)
+			.flex()
+			.gap(theme.space_4)
+			.p(theme.space_4)
+			.rounded(theme.radius_sm)
+			.bg(theme.overlay)
+			.on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+			.when(has_video, |controls| {
+				controls
+					.child(
+						button("voice-popout", IconKind::AppWindow, "voice-popout")
+							.on_click(cx.listener(move |this, _, _, cx| popout::open(&this.data, user, cx))),
+					)
+					.child(
+						button("voice-fullscreen", IconKind::Expand, "voice-fullscreen")
+							.on_click(cx.listener(move |_, _, _, cx| cx.emit(RoomEvent::Fullscreen(user)))),
+					)
+			})
+			.child(
+				button("voice-unfocus", IconKind::Shrink, "voice-unfocus")
+					.on_click(cx.listener(move |this, _, _, cx| this.toggle_focus(user, cx))),
+			)
+			.into_any_element()
 	}
 
 	fn stage_size(&self, window: &Window, theme: &Theme) -> Size<Pixels> {
@@ -299,12 +330,7 @@ impl VoiceRoom {
 		cx: &mut Context<Self>,
 	) -> AnyElement {
 		let user = person.user;
-		let image = cx.try_global::<Textures>().and_then(|textures| {
-			textures
-				.0
-				.image((user, VideoKind::Screen))
-				.or_else(|| textures.0.image((user, VideoKind::Camera)))
-		});
+		let image = video_image(cx, user);
 		let focused = self.focused == Some(user);
 		let border = if person.speaking {
 			theme.speaking_ring
@@ -333,7 +359,12 @@ impl VoiceRoom {
 			.and_then(|stream| stream.preview.as_ref())
 			.filter(|_| image.is_none())
 			.and_then(|url| cx.global::<Images>().get_still(url, PREVIEW_HINT));
+		let zoomable = self
+			.viewer
+			.clone()
+			.filter(|viewer| focused && image.is_some() && viewer.read(cx).user() == user);
 		let content = match (&image, preview) {
+			(Some(_), _) if zoomable.is_some() => div().size_full().children(zoomable),
 			(Some(image), _) => div()
 				.size_full()
 				.bg(theme.background_floating)
@@ -405,13 +436,7 @@ impl VoiceRoom {
 				)
 			})
 			.when(focused, |tile| {
-				tile.child(
-					div().absolute().right(theme.space_8).top(theme.space_8).child(
-						Icon::new(IconKind::Shrink)
-							.size(theme.voice_icon_sm)
-							.color(theme.interactive_active),
-					),
-				)
+				tile.child(self.focus_controls(user, image.is_some(), theme, cx))
 			})
 			.when_some(watched_key, |tile, key| {
 				tile.child(

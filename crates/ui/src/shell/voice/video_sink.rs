@@ -4,14 +4,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use gpui::{Global, RenderImage};
+use gpui::{App, Context, Global, RenderImage, Task};
 use image::{Frame, RgbaImage};
 use parking_lot::{Condvar, Mutex, RwLock};
 use protocol::Snowflake;
 use session::{CameraSource, ScreenSource, ScreenTarget, VideoFrame, VideoSink, VideoStream};
 use smallvec::smallvec;
 use state::VideoKind;
-use tokio::sync::Notify;
+use tokio::sync::watch;
 use voice::video::capture::VideoSource;
 use voice::video::scaled_bgra;
 
@@ -46,7 +46,7 @@ struct Shared {
 	wake: Condvar,
 	images: RwLock<HashMap<StreamKey, Arc<RenderImage>>>,
 	retired: Mutex<Vec<Arc<RenderImage>>>,
-	changed: Notify,
+	changed: watch::Sender<u64>,
 }
 
 struct Preview {
@@ -63,6 +63,40 @@ pub struct VideoTextures {
 pub struct Textures(pub Arc<VideoTextures>);
 
 impl Global for Textures {}
+
+pub fn video_image(cx: &App, user: Snowflake) -> Option<Arc<RenderImage>> {
+	let textures = cx.try_global::<Textures>()?;
+	textures
+		.0
+		.image((user, VideoKind::Screen))
+		.or_else(|| textures.0.image((user, VideoKind::Camera)))
+}
+
+pub fn follow_frames<T: 'static>(
+	cx: &mut Context<T>,
+	redraw: impl Fn(&mut T, &mut Context<T>) + 'static,
+) -> Task<()> {
+	let Some(textures) = cx.try_global::<Textures>().cloned() else {
+		return Task::ready(());
+	};
+	let mut frames = textures.0.frames();
+	cx.spawn(async move |this, cx| {
+		while frames.changed().await.is_ok() {
+			let retired = textures.0.take_retired();
+			let alive = this
+				.update(cx, |view, cx| {
+					for image in retired {
+						cx.drop_image(image, None);
+					}
+					redraw(view, cx);
+				})
+				.is_ok();
+			if !alive {
+				break;
+			}
+		}
+	})
+}
 
 fn ui_kind(kind: session::VideoKind) -> VideoKind {
 	match kind {
@@ -138,7 +172,9 @@ fn run_worker(shared: Arc<Shared>) {
 			}
 		}
 		if published {
-			shared.changed.notify_one();
+			shared
+				.changed
+				.send_modify(|version| *version = version.wrapping_add(1));
 		}
 	}
 }
@@ -189,7 +225,7 @@ impl VideoTextures {
 			wake: Condvar::new(),
 			images: RwLock::new(HashMap::new()),
 			retired: Mutex::new(Vec::new()),
-			changed: Notify::new(),
+			changed: watch::channel(0).0,
 		});
 		let worker_shared = shared.clone();
 		let worker = thread::Builder::new()
@@ -211,8 +247,8 @@ impl VideoTextures {
 		std::mem::take(&mut *self.shared.retired.lock())
 	}
 
-	pub async fn changed(&self) {
-		self.shared.changed.notified().await;
+	pub fn frames(&self) -> watch::Receiver<u64> {
+		self.shared.changed.subscribe()
 	}
 
 	pub fn start_preview(&self, key: StreamKey, source: PreviewSource) {

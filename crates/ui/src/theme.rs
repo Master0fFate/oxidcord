@@ -235,6 +235,7 @@ tokens! {
 		voice_picker_width = 760.,
 		voice_thumb_height = 120.,
 		voice_toast_width = 340.,
+		voice_pip_width = 320.,
 		voice_menu_width = 240.,
 		voice_field_width = 320.,
 		voice_meter_height = 8.,

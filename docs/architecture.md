@@ -71,3 +71,9 @@ The engine composes one activity list: Spotify is gated only by the connection's
 Videos, audio files and gifv loops stream through `crates/player` with ranged requests over the same host allowlist as images. Video decoding prefers the FFmpeg codec pack (`cargo xtask codecs` installs the pinned, checksummed LGPL build into `target/<profile>/codecs`), then Media Foundation on Windows, then OpenH264 for H.264. On macOS the pack is also looked up in the Homebrew and MacPorts library folders.
 
 Provider embeds (YouTube, Vimeo, Spotify, SoundCloud) are never loaded from the embed payload. `media::providers` rebuilds the player URL from a validated id against a fixed origin list, and the frame is a sandboxed iframe inside a local document with a CSP that only allows those origins. On Windows the frame is a WebView2 popup owned by the main window; on other platforms the play button opens the link in the browser.
+
+## Streams
+
+While sharing, the sender pipeline hands one captured frame to the session at the start and every five minutes; the session scales it to 512 px, encodes a JPEG and posts it to `/streams/{key}/preview`. Viewers read the preview URL with `LoadStreamPreview` and show it on the tile before Watch is pressed; `STREAM_UPDATE` viewer ids feed the viewer stack on live tiles.
+
+Video textures are shared by every view through `Textures`: the voice room, the zoom and pan viewer, the fullscreen overlay, the pop-out window and the picture-in-picture panel that appears while a watched stream is open and the room is not.

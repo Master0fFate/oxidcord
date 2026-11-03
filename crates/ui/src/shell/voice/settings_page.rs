@@ -19,7 +19,7 @@ use store::VoiceSettings;
 use voice::AudioDevices;
 
 use super::quality::Preset;
-use super::video_sink::{PREVIEW_USER, PreviewSource, Textures};
+use super::video_sink::{PREVIEW_USER, PreviewSource, Textures, follow_frames};
 use crate::data::Data;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
@@ -257,26 +257,7 @@ impl VoiceVideoPage {
 			})
 			.ok();
 		});
-		let frames = match cx.try_global::<Textures>().cloned() {
-			Some(textures) => cx.spawn(async move |this, cx| {
-				loop {
-					textures.0.changed().await;
-					let retired = textures.0.take_retired();
-					let alive = this
-						.update(cx, |_, cx| {
-							for image in retired {
-								cx.drop_image(image, None);
-							}
-							cx.notify();
-						})
-						.is_ok();
-					if !alive {
-						break;
-					}
-				}
-			}),
-			None => Task::ready(()),
-		};
+		let frames = follow_frames(cx, |_, cx| cx.notify());
 		cx.on_release(|_, cx| {
 			if let Some(textures) = cx.try_global::<Textures>().cloned() {
 				textures.0.stop_preview((PREVIEW_USER, VideoKind::Camera));
