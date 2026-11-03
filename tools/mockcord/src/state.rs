@@ -7,7 +7,8 @@ use parking_lot::Mutex;
 use protocol::{
 	AutoModRule, Channel, Emoji, FRIEND_SOURCE_MUTUAL_FRIENDS, FRIEND_SOURCE_MUTUAL_GUILDS, GuildProperties,
 	Member, Presence, ProtoCustomStatus, ProtoFrecencySettings, ProtoStatus, ReadState, Relationship, Role,
-	ScheduledEvent, Snowflake, StatusKind, User, UserGuildSettings, encode_status, privacy_with_friend_sources,
+	ScheduledEvent, Snowflake, StatusKind, User, UserGuildSettings, encode_status,
+	privacy_with_friend_sources,
 };
 use serde_json::Value;
 use tokio::sync::{broadcast, watch};

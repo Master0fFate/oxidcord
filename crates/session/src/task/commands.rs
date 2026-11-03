@@ -4,8 +4,7 @@ use protocol::rest::{ComponentInteraction, ComponentInteractionData};
 use protocol::{
 	ApplicationCommand, ChannelType, CreateMessage, DispatchEvent, MessageAck, MessageFlags,
 	MessageReference, MessageReferenceKind, Permissions, ProtoCustomStatus, SCHEDULED_EVENT_GUILD_ONLY,
-	Snowflake, StatusKind,
-	ThreadMember,
+	Snowflake, StatusKind, ThreadMember,
 };
 use rest::api::ArchivedScope;
 use rest::api::image_data_uri;

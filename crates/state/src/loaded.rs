@@ -6,8 +6,7 @@ use protocol::lenient::{or_default, timestamp};
 use protocol::{
 	ApplicationCommand, ApplicationCommandType, AutoModRule, Channel, CommandIndex, Gif, GifFavorites,
 	GifTrending, InteractionContext, LenientVec, Member, Message, Permissions, PinnedMessage, ScheduledEvent,
-	Snowflake,
-	Sticker, StickerPack, ThreadMember, User,
+	Snowflake, Sticker, StickerPack, ThreadMember, User,
 };
 use serde::Deserialize;
 use serde_json::Value;
