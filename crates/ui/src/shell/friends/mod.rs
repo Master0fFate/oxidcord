@@ -333,7 +333,12 @@ impl FriendsPage {
 					.ghost()
 					.label(cx.t("requests-ignore-all"))
 					.on_click(cx.listener(|this, _, _, cx| {
-						let channel_ids = this.requests.iter().map(|request| request.channel_id).collect();
+						let channel_ids = this
+							.requests
+							.iter()
+							.filter(|request| !request.spam && this.matches(&request.person))
+							.map(|request| request.channel_id)
+							.collect();
 						this.data
 							.read(cx)
 							.send(Command::RejectMessageRequests { channel_ids });
