@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use gpui::{
 	AnyElement, App, AppContext as _, Context, Entity, EventEmitter, Focusable as _, FontWeight,
 	InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
@@ -9,6 +11,7 @@ use protocol::{ChannelType, Snowflake};
 use session::Command;
 
 use super::modal::{self, Close};
+use crate::components::{ToggleHandler, switch_row};
 use crate::data::Data;
 use crate::i18n::Translate as _;
 use crate::icons::{Icon, IconKind, channel_icon};
@@ -34,6 +37,7 @@ pub struct ForwardPicker {
 	destinations: Vec<Destination>,
 	input: Entity<InputState>,
 	query: String,
+	silent: bool,
 	_subscription: Subscription,
 }
 
@@ -125,6 +129,7 @@ impl ForwardPicker {
 			destinations,
 			input,
 			query: String::new(),
+			silent: false,
 			_subscription: subscription,
 		}
 	}
@@ -152,6 +157,7 @@ impl ForwardPicker {
 			channel_id: self.source,
 			message_id: self.message,
 			to_channel_id,
+			silent: self.silent,
 		});
 		cx.emit(Close);
 	}
@@ -203,6 +209,14 @@ impl Render for ForwardPicker {
 			})
 			.collect();
 		let empty = rows.is_empty();
+		let weak = cx.weak_entity();
+		let silent: ToggleHandler = Rc::new(move |value, _, cx| {
+			weak.update(cx, |this, cx| {
+				this.silent = value;
+				cx.notify();
+			})
+			.ok();
+		});
 		div()
 			.flex()
 			.flex_col()
@@ -222,6 +236,14 @@ impl Render for ForwardPicker {
 				)
 			})
 			.child(Input::new(&self.input))
+			.child(switch_row(
+				"forward-silent",
+				cx.t("forward-silent"),
+				None,
+				self.silent,
+				&theme,
+				silent,
+			))
 			.child(
 				div()
 					.flex()

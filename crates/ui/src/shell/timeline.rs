@@ -24,7 +24,7 @@ use super::community::act;
 use super::inline_emoji::{self, EmojiTokens};
 use super::message::{
 	Dispatch, DocumentCache, Editing, FLASH_DURATION, GifFavoriteOverrides, ImageTarget, MessageAccess,
-	Prefs, RowAction, RowEnv, VideoFullscreenTarget, Welcome, render_row,
+	Prefs, RowAction, RowEnv, VideoFullscreenTarget, Welcome, can_edit, render_row,
 };
 use super::moderation;
 use super::plugins::{self, LinkOrigin, PluginBridge};
@@ -699,6 +699,7 @@ impl Timeline {
 				files: Vec::new(),
 				stickers: Vec::new(),
 				by_plugin: None,
+				silent: false,
 			}),
 			RowAction::OpenEmoji { message_id, at } => cx.emit(TimelineEvent::OpenEmoji { message_id, at }),
 			RowAction::OpenProfile { user, at } => cx.emit(TimelineEvent::OpenProfile { user, at }),
@@ -824,6 +825,28 @@ impl Timeline {
 		self.start_edit(message_id, window, cx);
 	}
 
+	pub fn edit_last(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+		let Some(channel) = self.channel else {
+			return;
+		};
+		let last = {
+			let data = self.data.read(cx);
+			let state = data.state();
+			let me = state.current_user_id();
+			state.messages(channel).and_then(|cache| {
+				cache
+					.ordered
+					.iter()
+					.rev()
+					.find(|message| can_edit(message, me))
+					.map(|message| message.id)
+			})
+		};
+		if let Some(message_id) = last {
+			self.start_edit(message_id, window, cx);
+		}
+	}
+
 	pub fn jump_to_top(&mut self, cx: &mut Context<Self>) {
 		self.drive(cx, |scroll, cx| {
 			scroll.scroll_to_item(0, cx);
@@ -890,6 +913,8 @@ impl Timeline {
 						message_id,
 						content: text,
 					});
+				} else if this.is_text_only(message_id, cx) {
+					this.confirm_delete(message_id, window, cx);
 				}
 				this.stop_editing(cx);
 			},
@@ -902,6 +927,18 @@ impl Timeline {
 		});
 		self.remeasure(message_id, cx);
 		cx.notify();
+	}
+
+	fn is_text_only(&self, message_id: Snowflake, cx: &Context<Self>) -> bool {
+		let Some(channel) = self.channel else {
+			return false;
+		};
+		let data = self.data.read(cx);
+		let state = data.state();
+		state
+			.messages(channel)
+			.and_then(|cache| cache.by_id.get(&message_id))
+			.is_some_and(|message| message.attachments.is_empty() && message.sticker_items.is_empty())
 	}
 
 	fn confirm_delete(&mut self, message_id: Snowflake, window: &mut Window, cx: &mut Context<Self>) {

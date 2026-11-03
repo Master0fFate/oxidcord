@@ -15,9 +15,9 @@ use std::time::Duration;
 
 use chrono::{DateTime, Local, Utc};
 use gpui::{
-	Animation, AnimationExt as _, AnyElement, App, ClickEvent, Entity, FontWeight, Global, Hsla,
+	Animation, AnimationExt as _, AnyElement, App, ClickEvent, Div, Entity, FontWeight, Global, Hsla,
 	InteractiveElement as _, IntoElement, MouseButton, ParentElement as _, Pixels, Point, SharedString,
-	StatefulInteractiveElement as _, Styled as _, Window, div, hsla, prelude::FluentBuilder as _,
+	Stateful, StatefulInteractiveElement as _, Styled as _, Window, div, hsla, prelude::FluentBuilder as _,
 	pulsating_between,
 };
 use gpui_component::Sizable as _;
@@ -34,7 +34,9 @@ use state::{ClientOptions, MessageRow, MessageView, RenderedMessage};
 pub use self::body::snippet;
 use self::body::{BodyEnv, render_body};
 use self::menu::{MenuSource, capabilities, capture_pointer};
-pub(in crate::shell) use self::menu::{point_link, point_media, with_attachment_menu, with_link_menu};
+pub(in crate::shell) use self::menu::{
+	can_edit, point_link, point_media, with_attachment_menu, with_link_menu,
+};
 pub use self::reaction_tip::ReactionRequests;
 use super::community;
 use super::incoming;
@@ -642,6 +644,23 @@ fn bot_tag(label: SharedString, theme: &Theme) -> impl IntoElement {
 		.font_weight(FontWeight::BOLD)
 		.text_color(theme.text_on_brand)
 		.child(label)
+}
+
+fn silent_mark(message: &Message, theme: &Theme, cx: &App) -> Option<Stateful<Div>> {
+	message
+		.flags
+		.contains(protocol::MessageFlags::SUPPRESS_NOTIFICATIONS)
+		.then(|| {
+			div()
+				.id(("message-silent", message.id.get()))
+				.flex_none()
+				.tooltip(tooltip(cx.t("message-silent")))
+				.child(
+					Icon::new(IconKind::BellOff)
+						.size(rem(12.))
+						.color(theme.text_muted),
+				)
+		})
 }
 
 fn author_color(view: &MessageView, theme: &Theme) -> Hsla {
@@ -1412,6 +1431,10 @@ fn message_row(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 					.group_hover(group.clone(), |style| style.visible())
 					.child(clock_text(sent_at(message), env.prefs.time_24h)),
 			)
+			.children(
+				silent_mark(message, theme, cx)
+					.map(|mark| div().absolute().left(rem(56.)).top(rem(5.)).child(mark)),
+			)
 			.children(content);
 		return interactive(row, view, group, env, cx);
 	}
@@ -1498,7 +1521,8 @@ fn message_row(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 						.text_color(theme.text_muted)
 						.tooltip(tooltip(full_time(sent_at(message), env.prefs.time_24h)))
 						.child(stamp(sent_at(message), env.prefs.time_24h, cx)),
-				),
+				)
+				.children(silent_mark(message, theme, cx)),
 		)
 		.children(content);
 	interactive(row, view, group, env, cx)
@@ -1548,7 +1572,10 @@ fn compact_message(view: &MessageView, env: &RowEnv, cx: &App) -> AnyElement {
 				.line_height(theme.compact_row)
 				.text_color(theme.text_muted)
 				.flex()
+				.items_center()
 				.justify_end()
+				.gap(theme.space_4)
+				.children(silent_mark(message, theme, cx))
 				.child(clock_text(sent_at(message), env.prefs.time_24h)),
 		)
 		.child(

@@ -111,6 +111,7 @@ pub enum Command {
 		files: Vec<UploadFile>,
 		stickers: Vec<Snowflake>,
 		by_plugin: Option<String>,
+		silent: bool,
 	},
 	SendAsUser {
 		plugin_id: String,
@@ -657,6 +658,7 @@ pub enum Command {
 		channel_id: Snowflake,
 		message_id: Snowflake,
 		to_channel_id: Snowflake,
+		silent: bool,
 	},
 	VotePoll {
 		channel_id: Snowflake,

@@ -181,6 +181,10 @@ impl Community {
 					let timeline = this.panel.read(cx).timeline().clone();
 					timeline.update(cx, |timeline, cx| timeline.scroll_to_end(cx));
 				}
+				ComposerEvent::EditLast => {
+					let timeline = this.panel.read(cx).timeline().clone();
+					timeline.update(cx, |timeline, cx| timeline.edit_last(window, cx));
+				}
 			},
 		));
 		let timeline = panel.read(cx).timeline().clone();

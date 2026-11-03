@@ -344,6 +344,7 @@ impl Harness {
 			channel_id: forward.channel_id,
 			message_id: source.id,
 			to_channel_id: forward.channel_id,
+			silent: false,
 		});
 		self.until("the forwarded copy to arrive", |state| {
 			state.messages(forward.channel_id).is_some_and(|cache| {

@@ -1,8 +1,8 @@
 use activity::ActivityRules;
 use protocol::rest::{ComponentInteraction, ComponentInteractionData};
 use protocol::{
-	ApplicationCommand, CreateMessage, DispatchEvent, MessageAck, MessageReference, MessageReferenceKind,
-	Permissions, ProtoCustomStatus, Snowflake, StatusKind, ThreadMember,
+	ApplicationCommand, CreateMessage, DispatchEvent, MessageAck, MessageFlags, MessageReference,
+	MessageReferenceKind, Permissions, ProtoCustomStatus, Snowflake, StatusKind, ThreadMember,
 };
 use rest::UploadFile;
 use rest::api::image_data_uri;
@@ -350,9 +350,11 @@ impl Core {
 				channel_id,
 				message_id,
 				to_channel_id,
+				silent,
 			} => {
 				let guild_id = self.state.read().channel_guild(channel_id);
 				let body = CreateMessage {
+					flags: silent.then_some(MessageFlags::SUPPRESS_NOTIFICATIONS),
 					message_reference: Some(MessageReference {
 						kind: Some(MessageReferenceKind::Forward),
 						message_id: Some(message_id),

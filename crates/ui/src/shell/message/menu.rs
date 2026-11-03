@@ -150,6 +150,13 @@ fn user_message(message: &Message) -> bool {
 	)
 }
 
+pub(in crate::shell) fn can_edit(message: &Message, me: Option<Snowflake>) -> bool {
+	Some(message.author.id) == me
+		&& matches!(message.kind, MessageType::Default | MessageType::Reply)
+		&& !message.is_forward()
+		&& message.poll.is_none()
+}
+
 pub(super) fn capabilities(message: &Message, access: MessageAccess, me: Option<Snowflake>) -> Capabilities {
 	let mine = Some(message.author.id) == me;
 	let ephemeral = message.flags.contains(MessageFlags::EPHEMERAL);
@@ -166,10 +173,7 @@ pub(super) fn capabilities(message: &Message, access: MessageAccess, me: Option<
 	let crossposted = message.flags.contains(MessageFlags::CROSSPOSTED);
 	Capabilities {
 		react: access.react && !ephemeral,
-		edit: mine
-			&& matches!(message.kind, MessageType::Default | MessageType::Reply)
-			&& !message.is_forward()
-			&& message.poll.is_none(),
+		edit: can_edit(message, me),
 		reply: access.send && access.read_history && replyable,
 		forward: user,
 		thread: access.create_threads

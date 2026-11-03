@@ -408,6 +408,9 @@ impl Shell {
 					ComposerEvent::Sent => this
 						.timeline
 						.update(cx, |timeline, cx| timeline.scroll_to_end(cx)),
+					ComposerEvent::EditLast => this
+						.timeline
+						.update(cx, |timeline, cx| timeline.edit_last(window, cx)),
 				}
 			},
 		));

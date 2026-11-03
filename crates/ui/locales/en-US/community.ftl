@@ -547,6 +547,7 @@ poll-end = End Poll
 menu-forward = Forward
 forward-title = Forward To
 forward-placeholder = Search channels and direct messages
+forward-silent = Send silently
 
 timeline-jump-present = Jump to present
 

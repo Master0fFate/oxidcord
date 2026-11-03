@@ -266,6 +266,7 @@ impl Harness {
 			files: Vec::new(),
 			stickers: Vec::new(),
 			by_plugin: None,
+			silent: false,
 		});
 		self.until("the sent message to replace its pending row", |state| {
 			state.messages(channel_id).is_some_and(|cache| {

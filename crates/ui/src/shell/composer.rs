@@ -44,18 +44,46 @@ const TYPING_PULSE: Duration = Duration::from_millis(1200);
 const MIN_EMOJI_QUERY: usize = 2;
 const MAX_FILES: usize = 10;
 const MAX_STICKERS: usize = 3;
+const SILENT_TAG: &str = "@silent";
+const SLOWMODE_TICK: Duration = Duration::from_secs(1);
 const AVATAR_PIXELS: u32 = 48;
 const EMOJI_PIXELS: u32 = 48;
 
 pub enum ComposerEvent {
 	OpenPicker { tab: PickerTab, at: Point<Pixels> },
 	Sent,
+	EditLast,
 }
 
 #[derive(Clone, Copy, PartialEq, Default)]
 struct SendAccess {
 	send: bool,
 	attach: bool,
+	slowmode: Option<Duration>,
+}
+
+fn strip_silent(text: &str) -> Option<&str> {
+	let rest = text.strip_prefix(SILENT_TAG)?;
+	rest.starts_with(char::is_whitespace).then(|| rest.trim_start())
+}
+
+fn silent_suggestion(cx: &Context<Composer>) -> Suggestion {
+	Suggestion {
+		label: SILENT_TAG.to_owned(),
+		detail: Some(cx.t("composer-silent-hint").to_string()),
+		insert: format!("{SILENT_TAG} "),
+		visual: Visual::Channel(IconKind::BellOff),
+		emoji: None,
+	}
+}
+
+fn countdown(remaining: Duration) -> String {
+	let seconds = remaining.as_secs() + u64::from(remaining.subsec_nanos() > 0);
+	match seconds {
+		0..60 => format!("{seconds}s"),
+		60..3600 => format!("{}:{:02}", seconds / 60, seconds % 60),
+		_ => format!("{}:{:02}:{:02}", seconds / 3600, seconds / 60 % 60, seconds % 60),
+	}
 }
 
 struct ReplyTo {
@@ -115,6 +143,7 @@ pub struct Composer {
 	emoji_requested: Instant,
 	emoji_tokens: EmojiTokens,
 	draft_task: Option<Task<()>>,
+	slowmode_task: Option<Task<()>>,
 	last_typing: Option<Instant>,
 	awaiting_draft: bool,
 	_subscriptions: Vec<Subscription>,
@@ -173,13 +202,21 @@ impl Composer {
 			}
 		});
 		let changes = cx.subscribe_in(&data, window, |this, _, event: &DataEvent, window, cx| {
-			if let DataEvent::Changed(changes) = event
-				&& (changes.guild_list
-					|| this
-						.guild
-						.is_some_and(|guild| changes.channel_lists.contains(guild)))
+			let DataEvent::Changed(changes) = event else {
+				return;
+			};
+			if changes.guild_list
+				|| this
+					.guild
+					.is_some_and(|guild| changes.channel_lists.contains(guild))
 			{
 				this.refresh_access(window, cx);
+			}
+			if this
+				.channel
+				.is_some_and(|channel| changes.slowmode.contains(channel))
+			{
+				this.watch_slowmode(cx);
 			}
 		});
 		Self {
@@ -201,6 +238,7 @@ impl Composer {
 			emoji_requested: Instant::now(),
 			emoji_tokens: EmojiTokens::default(),
 			draft_task: None,
+			slowmode_task: None,
 			last_typing: None,
 			awaiting_draft: false,
 			_subscriptions: vec![change, keys, changes],
@@ -228,6 +266,7 @@ impl Composer {
 		self.name = name;
 		self.direct = direct;
 		self.access = self.read_access(cx);
+		self.watch_slowmode(cx);
 		self.reply = None;
 		self.files.clear();
 		self.stickers.clear();
@@ -333,6 +372,7 @@ impl Composer {
 			return SendAccess {
 				send: true,
 				attach: true,
+				slowmode: None,
 			};
 		}
 		let data = self.data.read(cx);
@@ -340,7 +380,37 @@ impl Composer {
 		SendAccess {
 			send: state.can_send(channel),
 			attach: state.can_attach(channel),
+			slowmode: state.slowmode_interval(channel),
 		}
+	}
+
+	fn slowmode_remaining(&self, cx: &Context<Self>) -> Option<Duration> {
+		let channel = self.channel?;
+		self.data.read(cx).state().slowmode_remaining(channel)
+	}
+
+	fn watch_slowmode(&mut self, cx: &mut Context<Self>) {
+		if self.slowmode_task.is_some() || self.slowmode_remaining(cx).is_none() {
+			return;
+		}
+		self.slowmode_task = Some(cx.spawn(async move |this, cx| {
+			loop {
+				cx.background_executor().timer(SLOWMODE_TICK).await;
+				let finished = this
+					.update(cx, |this, cx| {
+						cx.notify();
+						let finished = this.slowmode_remaining(cx).is_none();
+						if finished {
+							this.slowmode_task = None;
+						}
+						finished
+					})
+					.unwrap_or(true);
+				if finished {
+					break;
+				}
+			}
+		}));
 	}
 
 	fn refresh_access(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -453,13 +523,21 @@ impl Composer {
 			self.apply(0, window, cx);
 			return;
 		}
-		let items = match trigger {
+		let mut items = match trigger {
 			Some(Trigger::Emoji) if usable && plugins::autocomplete_declared(cx) => {
 				self.plugin_emoji(&query.to_lowercase(), cx)
 			}
 			Some(trigger) if usable => self.suggestions(trigger, &query.to_lowercase(), MAX_SUGGESTIONS, cx),
 			_ => Vec::new(),
 		};
+		if trigger == Some(Trigger::Mention)
+			&& start == 0
+			&& !query.is_empty()
+			&& SILENT_TAG[1..].starts_with(&query.to_lowercase())
+		{
+			items.insert(0, silent_suggestion(cx));
+			items.truncate(MAX_SUGGESTIONS);
+		}
 		self.autocomplete = (!items.is_empty()).then_some(Autocomplete {
 			start,
 			cursor,
@@ -738,6 +816,14 @@ impl Composer {
 			cx.notify();
 			return true;
 		}
+		if key == "up"
+			&& self.input.read(cx).value().is_empty()
+			&& self.files.is_empty()
+			&& self.stickers.is_empty()
+		{
+			cx.emit(ComposerEvent::EditLast);
+			return true;
+		}
 		false
 	}
 
@@ -760,7 +846,14 @@ impl Composer {
 		let Some(channel) = self.channel.filter(|_| self.access.send) else {
 			return;
 		};
-		let text = self.input.read(cx).value().trim().to_owned();
+		if self.slowmode_remaining(cx).is_some() {
+			return;
+		}
+		let typed = self.input.read(cx).value().trim().to_owned();
+		let (silent, text) = match strip_silent(&typed) {
+			Some(rest) => (true, rest.to_owned()),
+			None => (false, typed),
+		};
 		if text.is_empty() && self.files.is_empty() && self.stickers.is_empty() {
 			return;
 		}
@@ -788,6 +881,7 @@ impl Composer {
 				files,
 				stickers,
 				by_plugin: None,
+				silent,
 			}),
 		}
 		data.send(Command::SetDraft {
@@ -1095,6 +1189,31 @@ impl Composer {
 		.detach();
 	}
 
+	fn slowmode_line(
+		&self,
+		remaining: Option<Duration>,
+		theme: &Theme,
+		cx: &Context<Self>,
+	) -> Option<AnyElement> {
+		let interval = self.access.slowmode?;
+		let time = countdown(remaining.unwrap_or(interval));
+		Some(
+			div()
+				.id("composer-slowmode")
+				.flex()
+				.items_center()
+				.gap(theme.space_4)
+				.text_color(if remaining.is_some() {
+					theme.warning
+				} else {
+					theme.text_muted
+				})
+				.child(Icon::new(IconKind::Timer).size(rem(12.)))
+				.child(cx.t_args("composer-slowmode", &[("time", ArgValue::from(time))]))
+				.into_any_element(),
+		)
+	}
+
 	fn reply_bar(&self, theme: &Theme, cx: &mut Context<Self>) -> Option<AnyElement> {
 		let reply = self.reply.as_ref()?;
 		Some(
@@ -1197,6 +1316,8 @@ impl Render for Composer {
 		let chips = self.file_cards(&theme, cx);
 		let popup = self.popup(&theme, cx);
 		let reply_bar = self.reply_bar(&theme, cx);
+		let remaining = self.slowmode_remaining(cx);
+		let slowmode = self.slowmode_line(remaining, &theme, cx);
 		let plugin_context = ViewContext {
 			guild_id: self.guild.map(Snowflake::get),
 			channel_id: self.channel.map(Snowflake::get),
@@ -1351,6 +1472,9 @@ impl Render for Composer {
 													.icon_size(rem(22.))
 													.hit_size(rem(32.))
 													.tooltip(cx.t("composer-send"))
+													.when(remaining.is_some(), |button| {
+														button.color(theme.interactive_muted)
+													})
 													.on_click(cx.listener(|this, _, window, cx| {
 														this.send(window, cx)
 													})),
@@ -1367,14 +1491,21 @@ impl Render for Composer {
 					.px(theme.space_4)
 					.flex()
 					.items_center()
+					.justify_between()
 					.text_size(theme.font_tiny)
 					.font_weight(FontWeight::SEMIBOLD)
 					.text_color(theme.text_normal)
-					.when_some(typing, |row, line| {
-						row.gap(theme.space_8)
-							.when(animated, |row| row.child(typing_dots(&theme)))
-							.child(line)
-					}),
+					.child(
+						div()
+							.flex()
+							.items_center()
+							.gap(theme.space_8)
+							.when_some(typing, |row, line| {
+								row.when(animated, |row| row.child(typing_dots(&theme)))
+									.child(line)
+							}),
+					)
+					.children(slowmode),
 			)
 	}
 }

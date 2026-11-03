@@ -111,6 +111,10 @@ pub(crate) enum Internal {
 	},
 	LoadFinished(Snowflake, Page),
 	SendFailed(Nonce),
+	SlowmodeHit {
+		channel_id: Snowflake,
+		retry_after: Option<Duration>,
+	},
 	Search(SearchResults),
 	DmOpened(Box<Channel>),
 	ThreadOpened(Box<Channel>),
@@ -789,6 +793,15 @@ impl Core {
 			Internal::SendFailed(nonce) => {
 				self.apply_local(LocalEvent::PendingFailed { nonce, reason: None })
 			}
+			Internal::SlowmodeHit {
+				channel_id,
+				retry_after,
+			} => {
+				let wait = retry_after.or_else(|| self.state.read().slowmode_interval(channel_id));
+				if let Some(wait) = wait {
+					self.apply_local(LocalEvent::SlowmodeStarted { channel_id, wait });
+				}
+			}
 			Internal::Search(results) => {
 				*self.search.lock() = Some(Arc::new(results));
 				self.notifier.push(Changes {
@@ -942,6 +955,7 @@ impl Core {
 				files,
 				stickers,
 				by_plugin,
+				silent,
 			} => self.send_message(
 				channel_id,
 				Outgoing {
@@ -949,7 +963,7 @@ impl Core {
 					reply_to,
 					files,
 					stickers,
-					silent: false,
+					silent,
 				},
 				by_plugin,
 				None,
@@ -1457,6 +1471,12 @@ impl Core {
 			};
 			if let Err(error) = sent {
 				tracing::warn!(%error, "message was not sent");
+				if let RestError::Slowmode { retry_after } = error {
+					let _ = internal.send(Internal::SlowmodeHit {
+						channel_id,
+						retry_after,
+					});
+				}
 				let _ = internal.send(Internal::SendFailed(nonce));
 			}
 		});
