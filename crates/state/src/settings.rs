@@ -127,8 +127,12 @@ impl State {
 	}
 
 	pub fn privacy_patch(&mut self, change: PrivacyChange) -> (String, LocalEvent) {
-		let undo = LocalEvent::RestorePrivacy(self.proto_privacy.clone());
+		let before = self.proto_privacy.clone();
 		self.proto_privacy = privacy_with(&self.proto_privacy, change);
+		let undo = LocalEvent::RestorePrivacy {
+			before,
+			applied: self.proto_privacy.clone(),
+		};
 		self.privacy = decode_privacy(&self.proto_privacy);
 		let patch = encode_settings(&ProtoSettings {
 			privacy_bytes: Some(self.proto_privacy.clone()),
@@ -142,9 +146,13 @@ impl State {
 		scope: MediaScope,
 		redaction: MediaRedaction,
 	) -> (String, LocalEvent) {
-		let undo = LocalEvent::RestoreSensitiveMedia(self.proto_text_and_images.clone());
+		let before = self.proto_text_and_images.clone();
 		self.proto_text_and_images =
 			text_and_images_with_explicit(&self.proto_text_and_images, scope, redaction);
+		let undo = LocalEvent::RestoreSensitiveMedia {
+			before,
+			applied: self.proto_text_and_images.clone(),
+		};
 		self.sensitive_media = merge_sensitive_media(self.sensitive_media, &self.proto_text_and_images);
 		let patch = encode_settings(&ProtoSettings {
 			text_and_images_bytes: Some(self.proto_text_and_images.clone()),
@@ -206,13 +214,13 @@ impl State {
 			return changes;
 		};
 		if status_bytes.is_some() || !partial {
-			changes.merge(self.replace_status_settings(status_bytes.unwrap_or_default()));
+			changes.merge(self.replace_status_settings(status_bytes.unwrap_or_default(), partial));
 		}
 		if text_and_images_bytes.is_some() || !partial {
 			changes.merge(self.replace_sensitive_media(&text_and_images_bytes.unwrap_or_default(), partial));
 		}
 		if privacy_bytes.is_some() || !partial {
-			changes.merge(self.replace_privacy_settings(privacy_bytes.unwrap_or_default()));
+			changes.merge(self.replace_privacy_settings(privacy_bytes.unwrap_or_default(), partial));
 		}
 		if let Some(ProtoGuildFolders { folders, positions }) = guild_folders {
 			self.guild_folders = folders.into_iter().map(GuildFolder::from).collect();
@@ -223,8 +231,12 @@ impl State {
 		changes
 	}
 
-	fn replace_status_settings(&mut self, bytes: Vec<u8>) -> Changes {
-		let mut bytes = bytes;
+	fn replace_status_settings(&mut self, bytes: Vec<u8>, partial: bool) -> Changes {
+		let mut bytes = if partial {
+			merge_fields(&self.proto_status, &bytes)
+		} else {
+			bytes
+		};
 		let mut status = decode_status(&bytes);
 		let now_ms = now_ms();
 		if status
@@ -268,7 +280,12 @@ impl State {
 		}
 	}
 
-	pub(crate) fn replace_privacy_settings(&mut self, bytes: Vec<u8>) -> Changes {
+	pub(crate) fn replace_privacy_settings(&mut self, bytes: Vec<u8>, partial: bool) -> Changes {
+		let bytes = if partial {
+			merge_fields(&self.proto_privacy, &bytes)
+		} else {
+			bytes
+		};
 		let privacy = decode_privacy(&bytes);
 		let changed = privacy != self.privacy;
 		self.proto_privacy = bytes;

@@ -665,8 +665,18 @@ impl State {
 			LocalEvent::VoiceE2ee(info) => return self.voice_e2ee(info.clone()),
 			LocalEvent::VoiceE2eeFailed => return self.voice_e2ee_failed(),
 			LocalEvent::SettingsEdited => changes.user_settings = true,
-			LocalEvent::RestorePrivacy(bytes) => return self.replace_privacy_settings(bytes.clone()),
-			LocalEvent::RestoreSensitiveMedia(bytes) => return self.replace_sensitive_media(bytes, false),
+			LocalEvent::RestorePrivacy { before, applied } => {
+				if self.proto_privacy != *applied {
+					return Changes::default();
+				}
+				return self.replace_privacy_settings(before.clone(), false);
+			}
+			LocalEvent::RestoreSensitiveMedia { before, applied } => {
+				if self.proto_text_and_images != *applied {
+					return Changes::default();
+				}
+				return self.replace_sensitive_media(before, false);
+			}
 			LocalEvent::CameraChanged(on) => return self.camera_changed(*on),
 			LocalEvent::ScreenShareChanged(info) => return self.screen_share_changed(info.clone()),
 			LocalEvent::Watching(stream_key) => return self.watching_changed(stream_key.clone()),
