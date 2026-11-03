@@ -52,6 +52,7 @@ struct Header {
 	facts: ThreadFacts,
 	members: i64,
 	can_invite: bool,
+	can_reopen: bool,
 }
 
 impl ThreadPanel {
@@ -150,6 +151,9 @@ impl ThreadPanel {
 		let can_invite = channel.kind == ChannelType::PrivateThread
 			&& !metadata.is_some_and(|metadata| metadata.archived)
 			&& (moderate || (channel.member.is_some() && invitable));
+		let locked = metadata.is_some_and(|metadata| metadata.locked);
+		let owner = me.is_some() && channel.owner_id == me;
+		let can_reopen = moderate || (!locked && (owner || state.can_send(thread)));
 		Some(Header {
 			facts: ThreadFacts {
 				thread,
@@ -159,13 +163,14 @@ impl ThreadPanel {
 				joined: channel.member.is_some(),
 				muted: state.thread_muted(thread),
 				archived: metadata.is_some_and(|metadata| metadata.archived),
-				locked: metadata.is_some_and(|metadata| metadata.locked),
-				can_edit: moderate || (me.is_some() && channel.owner_id == me),
+				locked,
+				can_edit: moderate || owner,
 				can_moderate: moderate,
 				full: self.full,
 			},
 			members: channel.member_count.unwrap_or(0),
 			can_invite,
+			can_reopen,
 		})
 	}
 
@@ -282,7 +287,7 @@ impl ThreadPanel {
 		if header.facts.archived {
 			return Some(
 				bar.child(div().flex_1().min_w_0().child(cx.t("thread-archived-notice")))
-					.when(header.facts.can_edit, |bar| {
+					.when(header.can_reopen, |bar| {
 						bar.child(
 							Button::new("thread-unarchive-notice")
 								.small()
