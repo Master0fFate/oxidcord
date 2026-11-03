@@ -114,7 +114,13 @@ impl SoundsPage {
 							IconButton::new(("sound-edit", id.get()), IconKind::Edit)
 								.tooltip(cx.t("sounds-edit"))
 								.on_click(cx.listener(move |this, _, window, cx| {
-									sound_edit::open(window, cx, this.data.clone(), this.guild, editing.clone())
+									sound_edit::open(
+										window,
+										cx,
+										this.data.clone(),
+										this.guild,
+										editing.clone(),
+									)
 								})),
 						)
 						.child(

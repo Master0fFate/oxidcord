@@ -93,7 +93,13 @@ fn cell(entry: &Entry<'_>, channel: Snowflake, data: &Entity<Data>, theme: &Them
 		.into_any_element()
 }
 
-fn section(group: &Group<'_>, channel: Snowflake, data: &Entity<Data>, theme: &Theme, cx: &App) -> AnyElement {
+fn section(
+	group: &Group<'_>,
+	channel: Snowflake,
+	data: &Entity<Data>,
+	theme: &Theme,
+	cx: &App,
+) -> AnyElement {
 	div()
 		.flex()
 		.flex_col()
