@@ -526,6 +526,9 @@ pub fn apply_poll_vote(message: &mut Message, answer_id: i64, delta: i64, mine: 
 			counts.len() - 1
 		});
 	let entry = &mut counts[position];
+	if mine && entry.me_voted == (delta > 0) {
+		return;
+	}
 	entry.count = (entry.count + delta).max(0);
 	if mine {
 		entry.me_voted = delta > 0;

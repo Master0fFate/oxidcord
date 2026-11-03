@@ -24,8 +24,8 @@ use state::{Changes, MessageRow, UnreadSince};
 use super::community::{act, save_file};
 use super::inline_emoji::{self, EmojiTokens};
 use super::message::{
-	Dispatch, DocumentCache, Editing, FLASH_DURATION, Gallery, GifFavoriteOverrides, MessageAccess, Prefs,
-	RowAction, RowEnv, VideoFullscreenTarget, Welcome, can_edit, render_row,
+	Dispatch, DocumentCache, Editing, FLASH_DURATION, Gallery, GifFavoriteOverrides, MessageAccess,
+	PollDraft, Prefs, RowAction, RowEnv, VideoFullscreenTarget, Welcome, can_edit, render_row,
 };
 use super::moderation;
 use super::plugins::{self, LinkOrigin, PluginBridge};
@@ -72,7 +72,7 @@ pub struct Timeline {
 	rows: Rc<Vec<MessageRow>>,
 	welcome: Rc<Welcome>,
 	revealed: Rc<RefCell<HashSet<(u64, usize)>>>,
-	poll_picks: Rc<RefCell<HashMap<Snowflake, Vec<i64>>>>,
+	poll_drafts: Rc<RefCell<HashMap<Snowflake, PollDraft>>>,
 	documents: Rc<DocumentCache>,
 	editing: Option<Editing>,
 	compact: bool,
@@ -169,7 +169,7 @@ impl Timeline {
 				direct: false,
 			}),
 			revealed: Rc::default(),
-			poll_picks: Rc::default(),
+			poll_drafts: Rc::default(),
 			documents: Rc::new(RefCell::new(LruCache::new(capacity))),
 			editing: None,
 			compact,
@@ -252,7 +252,7 @@ impl Timeline {
 		self.flash = None;
 		self.flash_reset = None;
 		self.revealed.borrow_mut().clear();
-		self.poll_picks.borrow_mut().clear();
+		self.poll_drafts.borrow_mut().clear();
 		self.read_anchor = None;
 		self.own_ack = None;
 		self.anchor_resolved = false;
@@ -736,7 +736,7 @@ impl Timeline {
 				message_id,
 				answer_ids,
 			} => {
-				self.poll_picks.borrow_mut().remove(&message_id);
+				self.poll_drafts.borrow_mut().entry(message_id).or_default().picks = None;
 				self.data.read(cx).send(Command::VotePoll {
 					channel_id,
 					message_id,
@@ -745,18 +745,16 @@ impl Timeline {
 				self.remeasure(message_id, cx);
 				cx.notify();
 			}
-			RowAction::PollToggle {
-				message_id,
-				answer_id,
-				mut current,
-			} => {
-				match current.iter().position(|id| *id == answer_id) {
-					Some(index) => {
-						current.remove(index);
-					}
-					None => current.push(answer_id),
-				}
-				self.poll_picks.borrow_mut().insert(message_id, current);
+			RowAction::PollPick { message_id, picks } => {
+				self.poll_drafts.borrow_mut().entry(message_id).or_default().picks = Some(picks);
+				self.remeasure(message_id, cx);
+				cx.notify();
+			}
+			RowAction::PollReveal(message_id) => {
+				let mut drafts = self.poll_drafts.borrow_mut();
+				let draft = drafts.entry(message_id).or_default();
+				draft.reveal = !draft.reveal;
+				drop(drafts);
 				self.remeasure(message_id, cx);
 				cx.notify();
 			}
@@ -1193,7 +1191,7 @@ impl Render for Timeline {
 		let rows = self.rows.clone();
 		let welcome = self.welcome.clone();
 		let revealed = self.revealed.clone();
-		let poll_picks = self.poll_picks.clone();
+		let poll_drafts = self.poll_drafts.clone();
 		let prefs = Prefs::load(cx);
 		let detached = self.detached;
 		let documents = self.documents.clone();
@@ -1222,13 +1220,13 @@ impl Render for Timeline {
 					let state = data.state();
 					let lookup = Lookup { state: &state, guild };
 					let revealed = revealed.borrow();
-					let poll_picks = poll_picks.borrow();
+					let poll_drafts = poll_drafts.borrow();
 					let env = RowEnv {
 						theme: &row_theme,
 						lookup: &lookup,
 						dispatch: &dispatch,
 						revealed: &revealed,
-						poll_picks: &poll_picks,
+						poll_drafts: &poll_drafts,
 						prefs,
 						documents: &documents,
 						me: state.current_user_id(),

@@ -26,8 +26,8 @@ use super::player::{self, AudioSource, FileInfo, LoopSource, VideoSource, VoiceS
 use super::provider;
 use super::reaction_tip;
 use super::{
-	Gallery, GifFavoriteOverrides, ImageTarget, RowAction, point_link, point_media, with_attachment_menu,
-	with_link_menu,
+	Gallery, GifFavoriteOverrides, ImageTarget, PollDraft, RowAction, point_link, point_media,
+	with_attachment_menu, with_link_menu,
 };
 use crate::components::{IconButton, StatusEmoji, tooltip, unicode_emoji};
 use crate::format;
@@ -1681,8 +1681,12 @@ pub fn reactions(message: &Message, env: &BodyEnv, cx: &App) -> Option<AnyElemen
 
 pub struct PollView<'a> {
 	pub message: &'a Message,
-	pub picks: Option<&'a Vec<i64>>,
+	pub draft: Option<&'a PollDraft>,
 	pub mine: bool,
+}
+
+fn same_answers(picks: &[i64], voted: &[i64]) -> bool {
+	picks.len() == voted.len() && picks.iter().all(|id| voted.contains(id))
 }
 
 fn poll_finished(poll: &Poll) -> bool {
@@ -1690,20 +1694,21 @@ fn poll_finished(poll: &Poll) -> bool {
 		|| poll.expiry.is_some_and(|expiry| expiry <= Utc::now())
 }
 
-fn poll_status(poll: &Poll, total: i64, finished: bool, unavailable: bool, cx: &App) -> SharedString {
+fn poll_status(poll: &Poll, total: Option<i64>, finished: bool, unavailable: bool, cx: &App) -> SharedString {
 	if unavailable {
 		return cx.t("poll-results-unavailable");
 	}
-	let votes: SharedString = cx.t_args("poll-votes", &[("count", ArgValue::from(total))]);
-	match poll.expiry.filter(|_| !finished) {
-		Some(expiry) => {
-			let ends = cx.t_args(
-				"poll-ends",
-				&[("time", ArgValue::from(format::relative(expiry, cx).to_string()))],
-			);
-			format!("{votes} · {ends}").into()
-		}
-		None => votes,
+	let votes: Option<SharedString> =
+		total.map(|total| cx.t_args("poll-votes", &[("count", ArgValue::from(total))]));
+	let ends: Option<SharedString> = poll.expiry.filter(|_| !finished).map(|expiry| {
+		cx.t_args(
+			"poll-ends",
+			&[("time", ArgValue::from(format::relative(expiry, cx).to_string()))],
+		)
+	});
+	match (votes, ends) {
+		(Some(votes), Some(ends)) => format!("{votes} · {ends}").into(),
+		(votes, ends) => votes.or(ends).unwrap_or_default(),
 	}
 }
 
@@ -1727,12 +1732,11 @@ pub fn poll(view: &PollView, env: &BodyEnv, cx: &App) -> AnyElement {
 		.iter()
 		.filter_map(|answer| Some((answer, answer.answer_id?)))
 		.collect();
-	let voted: Vec<i64> = answers
-		.iter()
-		.map(|(_, id)| *id)
-		.filter(|id| count_of(*id).1)
-		.collect();
-	let current: Vec<i64> = view.picks.cloned().unwrap_or_else(|| voted.clone());
+	let voted = poll.my_votes();
+	let picks = view.draft.and_then(|draft| draft.picks.as_ref());
+	let current: Vec<i64> = picks.cloned().unwrap_or_else(|| voted.clone());
+	let reveal = view.draft.is_some_and(|draft| draft.reveal);
+	let show_results = finished || !voted.is_empty() || reveal;
 	let unavailable = finished && poll.results.is_none();
 	let total: i64 = answers.iter().map(|(_, id)| count_of(*id).0).sum();
 	let rows = answers.iter().enumerate().map(|(index, (answer, answer_id))| {
@@ -1767,31 +1771,28 @@ pub fn poll(view: &PollView, env: &BodyEnv, cx: &App) -> AnyElement {
 				row.cursor_pointer()
 					.hover(|style| style.bg(theme.modifier_hover))
 					.on_click(move |_, window, cx| {
-						let action = if multi {
-							RowAction::PollToggle {
-								message_id,
-								answer_id,
-								current: current.clone(),
+						let mut picks = current.clone();
+						match picks.iter().position(|id| *id == answer_id) {
+							Some(position) => {
+								picks.remove(position);
 							}
-						} else {
-							RowAction::PollVote {
-								channel_id,
-								message_id,
-								answer_ids: if chosen { Vec::new() } else { vec![answer_id] },
-							}
-						};
-						dispatch(action, window, cx)
+							None if multi => picks.push(answer_id),
+							None => picks = vec![answer_id],
+						}
+						dispatch(RowAction::PollPick { message_id, picks }, window, cx)
 					})
 			})
-			.child(
-				div()
-					.absolute()
-					.left_0()
-					.top_0()
-					.bottom_0()
-					.w(gpui::relative(share))
-					.bg(with_alpha(fill, 0.45)),
-			)
+			.when(show_results, |row| {
+				row.child(
+					div()
+						.absolute()
+						.left_0()
+						.top_0()
+						.bottom_0()
+						.w(gpui::relative(share))
+						.bg(with_alpha(fill, 0.45)),
+				)
+			})
 			.child(
 				div()
 					.relative()
@@ -1834,7 +1835,7 @@ pub fn poll(view: &PollView, env: &BodyEnv, cx: &App) -> AnyElement {
 					.text_color(theme.header_primary)
 					.child(answer.poll_media.text.clone().unwrap_or_default()),
 			)
-			.when(!unavailable, |row| {
+			.when(show_results && !unavailable, |row| {
 				row.child(
 					div()
 						.relative()
@@ -1845,11 +1846,15 @@ pub fn poll(view: &PollView, env: &BodyEnv, cx: &App) -> AnyElement {
 				)
 			})
 	});
-	let status = poll_status(poll, total, finished, unavailable, cx);
+	let status = poll_status(poll, show_results.then_some(total), finished, unavailable, cx);
 	let submit_dispatch = env.dispatch.clone();
+	let reveal_dispatch = env.dispatch.clone();
 	let end_dispatch = env.dispatch.clone();
 	let submit_ids = current.clone();
-	let dirty = view.picks.is_some_and(|picks| *picks != voted);
+	let dirty = picks.is_some_and(|picks| !same_answers(picks, &voted));
+	let can_vote = dirty && !current.is_empty();
+	let can_retract = !voted.is_empty() && !can_vote;
+	let can_reveal = voted.is_empty() && !finished;
 	div()
 		.mt(theme.space_4)
 		.flex()
@@ -1894,18 +1899,38 @@ pub fn poll(view: &PollView, env: &BodyEnv, cx: &App) -> AnyElement {
 						.text_color(theme.text_muted)
 						.child(status),
 				)
-				.when(multi && !finished && dirty, |footer| {
+				.when(can_reveal, |footer| {
 					footer.child(
-						Button::new(SharedString::from(format!("poll-vote-{message_id}")))
+						Button::new(SharedString::from(format!("poll-reveal-{message_id}")))
 							.small()
-							.primary()
-							.label(cx.t("poll-vote"))
+							.outline()
+							.label(cx.t(if reveal {
+								"poll-hide-results"
+							} else {
+								"poll-show-results"
+							}))
+							.on_click(move |_, window, cx| {
+								reveal_dispatch(RowAction::PollReveal(message_id), window, cx)
+							}),
+					)
+				})
+				.when(!finished && (can_vote || can_retract), |footer| {
+					let answer_ids = if can_vote { submit_ids } else { Vec::new() };
+					let button = Button::new(SharedString::from(format!("poll-vote-{message_id}"))).small();
+					let button = if can_vote {
+						button.primary()
+					} else {
+						button.outline()
+					};
+					footer.child(
+						button
+							.label(cx.t(if can_vote { "poll-vote" } else { "poll-remove-vote" }))
 							.on_click(move |_, window, cx| {
 								submit_dispatch(
 									RowAction::PollVote {
 										channel_id,
 										message_id,
-										answer_ids: submit_ids.clone(),
+										answer_ids: answer_ids.clone(),
 									},
 									window,
 									cx,

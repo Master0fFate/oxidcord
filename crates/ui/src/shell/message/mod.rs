@@ -244,11 +244,11 @@ pub enum RowAction {
 		message_id: Snowflake,
 		answer_ids: Vec<i64>,
 	},
-	PollToggle {
+	PollPick {
 		message_id: Snowflake,
-		answer_id: i64,
-		current: Vec<i64>,
+		picks: Vec<i64>,
 	},
+	PollReveal(Snowflake),
 	PollEnd {
 		channel_id: Snowflake,
 		message_id: Snowflake,
@@ -287,12 +287,18 @@ pub struct Editing {
 	pub removed: HashSet<Snowflake>,
 }
 
+#[derive(Default)]
+pub struct PollDraft {
+	pub picks: Option<Vec<i64>>,
+	pub reveal: bool,
+}
+
 pub struct RowEnv<'a> {
 	pub theme: &'a Theme,
 	pub lookup: &'a Lookup<'a>,
 	pub dispatch: &'a Dispatch,
 	pub revealed: &'a HashSet<(u64, usize)>,
-	pub poll_picks: &'a HashMap<Snowflake, Vec<i64>>,
+	pub poll_drafts: &'a HashMap<Snowflake, PollDraft>,
 	pub prefs: Prefs,
 	pub documents: &'a DocumentCache,
 	pub me: Option<Snowflake>,
@@ -1414,7 +1420,7 @@ fn content_column(
 	if message.poll.is_some() {
 		let poll = media::PollView {
 			message,
-			picks: env.poll_picks.get(&message.id),
+			draft: env.poll_drafts.get(&message.id),
 			mine: Some(message.author.id) == env.me,
 		};
 		out.push(media::poll(&poll, &body_env, cx));

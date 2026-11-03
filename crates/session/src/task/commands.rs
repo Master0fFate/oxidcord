@@ -5,9 +5,9 @@ use chrono::{DateTime, Utc};
 use protocol::rest::{ComponentInteraction, ComponentInteractionData, ModalSubmission, ModalSubmissionData};
 use protocol::{
 	ApplicationCommand, Channel, ChannelFlags, ChannelPosition, ChannelType, CommandAutocomplete,
-	CreateMessage, DispatchEvent, InteractionOption, MessageAck, MessageFlags, MessageReference,
-	MessageReferenceKind, Nonce, PermissionOverwriteKind, Permissions, ProtoCustomStatus,
-	SCHEDULED_EVENT_GUILD_ONLY, Snowflake, StatusKind, ThreadMember,
+	CreateMessage, DispatchEvent, InteractionOption, MessageAck, MessageFlags, MessagePollVote,
+	MessageReference, MessageReferenceKind, Nonce, PermissionOverwriteKind, Permissions, Poll,
+	ProtoCustomStatus, SCHEDULED_EVENT_GUILD_ONLY, Snowflake, StatusKind, ThreadMember,
 };
 use rest::api::ArchivedScope;
 use rest::api::image_data_uri;
@@ -715,9 +715,7 @@ impl Core {
 				channel_id,
 				message_id,
 				answer_ids,
-			} => self.spawn_action("vote", move |rest| async move {
-				rest.vote_poll(channel_id, message_id, &answer_ids).await
-			}),
+			} => self.vote_poll(channel_id, message_id, answer_ids),
 			Command::EndPoll {
 				channel_id,
 				message_id,
@@ -1312,6 +1310,62 @@ impl Core {
 					Err(error) => tracing::debug!(%error, "app commands are not available here"),
 				}
 			});
+		}
+	}
+
+	fn vote_poll(&mut self, channel_id: Snowflake, message_id: Snowflake, answer_ids: Vec<i64>) {
+		let previous = {
+			let state = self.state.read();
+			state
+				.messages(channel_id)
+				.and_then(|cache| cache.by_id.get(&message_id))
+				.and_then(|message| message.poll.as_ref())
+				.map(Poll::my_votes)
+				.unwrap_or_default()
+		};
+		let added: Vec<i64> = answer_ids
+			.iter()
+			.copied()
+			.filter(|id| !previous.contains(id))
+			.collect();
+		let removed: Vec<i64> = previous
+			.into_iter()
+			.filter(|id| !answer_ids.contains(id))
+			.collect();
+		self.apply_poll_votes(channel_id, message_id, &added, &removed);
+		let failed = Internal::PollVoteFailed {
+			channel_id,
+			message_id,
+			added,
+			removed,
+		};
+		self.spawn_confirmed("vote", Some(failed), move |rest| async move {
+			rest.vote_poll(channel_id, message_id, &answer_ids).await
+		});
+	}
+
+	pub(super) fn apply_poll_votes(
+		&mut self,
+		channel_id: Snowflake,
+		message_id: Snowflake,
+		added: &[i64],
+		removed: &[i64],
+	) {
+		let Some(user_id) = self.state.read().current_user_id() else {
+			return;
+		};
+		let vote = |answer_id| MessagePollVote {
+			user_id,
+			channel_id,
+			message_id,
+			guild_id: None,
+			answer_id,
+		};
+		for &answer_id in removed {
+			self.apply_dispatch(&DispatchEvent::MessagePollVoteRemove(vote(answer_id)));
+		}
+		for &answer_id in added {
+			self.apply_dispatch(&DispatchEvent::MessagePollVoteAdd(vote(answer_id)));
 		}
 	}
 

@@ -373,6 +373,17 @@ pub struct Poll {
 	pub results: Option<PollResults>,
 }
 
+impl Poll {
+	pub fn my_votes(&self) -> Vec<i64> {
+		self.results
+			.iter()
+			.flat_map(|results| results.answer_counts.iter())
+			.filter(|entry| entry.me_voted)
+			.map(|entry| entry.id)
+			.collect()
+	}
+}
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PinnedMessage {
