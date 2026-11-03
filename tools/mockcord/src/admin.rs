@@ -4,6 +4,7 @@ use chrono::{DateTime, Duration, Utc};
 use protocol::{
 	Channel, ChannelFlags, ChannelType, Emoji, LenientVec, Member, MessageType, PermissionOverwrite,
 	PermissionOverwriteKind, Permissions, Relationship, RelationshipKind, Role, Snowflake, UserGuildSettings,
+	VideoQualityMode,
 };
 use serde_json::{Value, json};
 
@@ -622,6 +623,18 @@ impl Shared {
 		}
 		if let Some(position) = body["position"].as_i64() {
 			channel.position = Some(position);
+		}
+		if let Some(bitrate) = body["bitrate"].as_i64() {
+			channel.bitrate = Some(bitrate);
+		}
+		if let Some(limit) = body["user_limit"].as_i64() {
+			channel.user_limit = Some(limit);
+		}
+		if body.get("rtc_region").is_some() {
+			channel.rtc_region = body["rtc_region"].as_str().map(str::to_owned);
+		}
+		if let Some(mode) = body["video_quality_mode"].as_i64() {
+			channel.video_quality_mode = Some(VideoQualityMode::from(mode));
 		}
 		if body.get("parent_id").is_some() {
 			channel.parent_id = parse_id(&body["parent_id"]).map(Snowflake);

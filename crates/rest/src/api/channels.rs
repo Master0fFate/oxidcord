@@ -493,6 +493,10 @@ impl RestClient {
 		let request = Request::put(format!("/channels/{id}/voice-status")).json(&json!({ "status": status }));
 		self.send_empty(request).await
 	}
+
+	pub async fn voice_regions(&self) -> Result<Value> {
+		self.send(Request::get("/voice/regions")).await
+	}
 }
 
 impl RestClient {

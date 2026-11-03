@@ -397,6 +397,17 @@ pub async fn set_voice_status(
 	Ok(StatusCode::NO_CONTENT)
 }
 
+pub async fn voice_regions() -> Json<Value> {
+	Json(json!([
+		{ "id": "us-east", "name": "US East", "optimal": true, "deprecated": false, "custom": false },
+		{ "id": "us-west", "name": "US West", "optimal": false, "deprecated": false, "custom": false },
+		{ "id": "rotterdam", "name": "Rotterdam", "optimal": false, "deprecated": false, "custom": false },
+		{ "id": "japan", "name": "Japan", "optimal": false, "deprecated": false, "custom": false },
+		{ "id": "sydney", "name": "Sydney", "optimal": false, "deprecated": false, "custom": false },
+		{ "id": "vip-us-east", "name": "VIP US East", "optimal": false, "deprecated": true, "custom": false },
+	]))
+}
+
 pub async fn put_overwrite(
 	State(shared): Mock,
 	Path((id, target_id)): Path<(u64, u64)>,

@@ -164,6 +164,7 @@ pub fn router(shared: Arc<Shared>) -> Router {
 		)
 		.route("/channels/{id}/attachments", post(uploads::upload_slots))
 		.route("/channels/{id}/voice-status", put(admin::set_voice_status))
+		.route("/voice/regions", get(admin::voice_regions))
 		.route("/channels/{id}/messages/search", get(channels::search_messages))
 		.route("/channels/{id}/messages/bulk-delete", post(admin::bulk_delete))
 		.route("/channels/{id}/messages/{mid}/crosspost", post(channels::message))

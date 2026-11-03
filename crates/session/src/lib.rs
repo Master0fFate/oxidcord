@@ -16,7 +16,9 @@ mod views;
 
 pub use activity::{RpcEndpoints, ipc_socket_name};
 pub use broker::{BrokerSink, NoopSink};
-pub use command::{Command, ComponentUse, LoadResult, MEMBER_LIST_WINDOW, PluginLoad, Reply, ReplyTarget};
+pub use command::{
+	Command, ComponentUse, LoadResult, MEMBER_LIST_WINDOW, PluginLoad, Reply, ReplyTarget, VoiceChannelEdit,
+};
 pub use config::{NotifyFn, PluginOptions, SessionConfig, VoiceIo};
 pub use plugin_host::catalog::{Catalog, CatalogEntry, ThemeCatalog, ThemeEntry};
 pub use plugin_host::{

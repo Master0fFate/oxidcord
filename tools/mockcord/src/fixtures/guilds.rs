@@ -7,7 +7,8 @@ use protocol::{
 	ForumSortOrder, ForumTag, GuildProperties, LenientVec, Member, NsfwLevel, PartialEmoji,
 	PermissionOverwrite, PermissionOverwriteKind, Permissions, PremiumTier, Presence, Role, RoleColors,
 	ScheduledEvent, ScheduledEventKind, ScheduledEventMetadata, ScheduledEventStatus, Snowflake,
-	StageInstance, StagePrivacy, StatusKind, ThreadMetadata, User, VerificationLevel, VoiceState,
+	StageInstance, StagePrivacy, StatusKind, ThreadMetadata, User, VerificationLevel, VideoQualityMode,
+	VoiceState,
 };
 use rand::Rng;
 use rand::rngs::StdRng;
@@ -463,9 +464,9 @@ fn build_channels(builder: &mut Builder, guild_id: u64, roles: &RoleIds) -> Chan
 		None,
 	);
 	add_channel(builder, &mut layout.all, category);
-	for (name, limit, status) in [
-		("Lounge", 0, Some("movie night, bring snacks")),
-		("Gaming", 2, None),
+	for (name, limit, bitrate, status) in [
+		("Lounge", 0, 64_000, Some("movie night, bring snacks")),
+		("Gaming", 2, 96_000, None),
 	] {
 		let id = builder.ids.next();
 		let mut voice = guild_channel(
@@ -476,9 +477,10 @@ fn build_channels(builder: &mut Builder, guild_id: u64, roles: &RoleIds) -> Chan
 			next_position(),
 			Some(voice_category),
 		);
-		voice.bitrate = Some(64_000);
+		voice.bitrate = Some(bitrate);
 		voice.user_limit = Some(limit);
 		voice.status = status.map(str::to_owned);
+		voice.video_quality_mode = Some(VideoQualityMode::Auto);
 		if limit == 0 {
 			voice.permission_overwrites = LenientVec::from(vec![role_overwrite(
 				roles.members,

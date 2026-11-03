@@ -11,7 +11,7 @@ use plugin_host::{Navigation, Permission, PickedPath, ViewContext};
 use protocol::{
 	ApplicationCommand, AutoModRule, ChannelType, ComponentType, Gif, MessageFlags, Nonce, NotificationLevel,
 	PermissionOverwriteKind, Permissions, PollCreate, ScheduledEventKind, ScheduledEventStatus, Snowflake,
-	StatusKind,
+	StatusKind, VideoQualityMode,
 };
 use rest::UploadFile;
 use rest::api::SearchQuery;
@@ -32,6 +32,14 @@ pub struct ComponentUse {
 	pub component_type: ComponentType,
 	pub custom_id: String,
 	pub values: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct VoiceChannelEdit {
+	pub bitrate: Option<u32>,
+	pub user_limit: Option<u32>,
+	pub rtc_region: Option<Option<String>>,
+	pub video_quality_mode: Option<VideoQualityMode>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -541,11 +549,13 @@ pub enum Command {
 		slowmode: Option<u32>,
 		position: Option<i64>,
 		parent_id: Option<Snowflake>,
+		voice: VoiceChannelEdit,
 	},
 	SetVoiceStatus {
 		channel_id: Snowflake,
 		status: Option<String>,
 	},
+	LoadVoiceRegions,
 	DeleteChannel {
 		channel_id: Snowflake,
 	},

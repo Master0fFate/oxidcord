@@ -16,6 +16,7 @@ use crate::expressions::{EXPRESSIONS_KEY, EmojiRef, Expressions, stamped_sticker
 use crate::state::{State, intern_user};
 
 pub const INBOX_KEY: Snowflake = Snowflake(1);
+const VOICE_REGIONS_KEY: Snowflake = Snowflake(2);
 
 #[derive(Debug, Clone)]
 pub enum Loaded {
@@ -117,6 +118,7 @@ pub enum Loaded {
 	UserSettings(Value),
 	SettingsProto(String),
 	AuthSessions(Value),
+	VoiceRegions(Value),
 	User(Box<User>),
 }
 
@@ -223,6 +225,20 @@ pub struct BanEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VoiceRegion {
+	pub id: String,
+	pub name: String,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct RawVoiceRegion {
+	id: String,
+	name: String,
+	deprecated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthSession {
 	pub id_hash: String,
 	pub last_used: Option<DateTime<Utc>>,
@@ -294,6 +310,7 @@ pub(crate) struct Lazy {
 	pub(crate) bans: HashMap<Snowflake, Vec<BanEntry>>,
 	pub(crate) automod_rules: HashMap<Snowflake, Vec<AutoModRule>>,
 	pub(crate) auth_sessions: Option<Vec<AuthSession>>,
+	pub(crate) voice_regions: Option<Vec<VoiceRegion>>,
 	pub(crate) reaction_users: HashMap<(Snowflake, String, bool), Vec<User>>,
 	pub(crate) expressions: Expressions,
 	pub(crate) command_indexes: HashMap<Snowflake, CommandIndex>,
@@ -652,6 +669,20 @@ impl State {
 						.collect(),
 				);
 				changes.loaded.insert(self.current_user_id().unwrap_or_default());
+			}
+			Loaded::VoiceRegions(raw) => {
+				let regions = LenientVec::<RawVoiceRegion>::deserialize(raw).unwrap_or_default();
+				self.lazy.voice_regions = Some(
+					regions
+						.into_iter()
+						.filter(|region| !region.deprecated && !region.id.is_empty())
+						.map(|region| VoiceRegion {
+							id: region.id,
+							name: region.name,
+						})
+						.collect(),
+				);
+				changes.loaded.insert(VOICE_REGIONS_KEY);
 			}
 			Loaded::GuildInvites { guild_id, raw } => {
 				let invites = LenientVec::<RawInvite>::deserialize(raw).unwrap_or_default();
@@ -1012,6 +1043,10 @@ impl State {
 
 	pub fn auth_sessions(&self) -> Option<&[AuthSession]> {
 		self.lazy.auth_sessions.as_deref()
+	}
+
+	pub fn voice_regions(&self) -> Option<&[VoiceRegion]> {
+		self.lazy.voice_regions.as_deref()
 	}
 
 	pub fn current_auth_session(&self) -> Option<usize> {

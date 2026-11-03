@@ -975,6 +975,7 @@ impl Core {
 				slowmode,
 				position,
 				parent_id,
+				voice,
 			} => {
 				if self
 					.channel_guild_allows(channel_id, Permissions::MANAGE_CHANNELS, "Manage Channels")
@@ -987,6 +988,13 @@ impl Core {
 						("rate_limit_per_user", some(slowmode)),
 						("position", some(position)),
 						("parent_id", parent_id.map(|id| json!(id))),
+						("bitrate", some(voice.bitrate)),
+						("user_limit", some(voice.user_limit)),
+						("rtc_region", voice.rtc_region.map(|region| json!(region))),
+						(
+							"video_quality_mode",
+							voice.video_quality_mode.map(|mode| json!(i64::from(mode))),
+						),
 					]);
 					self.spawn_action("edit channel", move |rest| async move {
 						rest.modify_channel(channel_id, body).await.map(drop)
@@ -1002,6 +1010,9 @@ impl Core {
 					self.reject("You can't set the voice status");
 				}
 			}
+			Command::LoadVoiceRegions => self.spawn_load("voice regions", move |rest| async move {
+				Ok(Loaded::VoiceRegions(rest.voice_regions().await?))
+			}),
 			Command::DeleteChannel { channel_id } => {
 				if self
 					.channel_guild_allows(channel_id, Permissions::MANAGE_CHANNELS, "Manage Channels")

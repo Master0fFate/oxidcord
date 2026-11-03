@@ -32,7 +32,7 @@ pub use limits::PREMIUM_UPLOAD_BYTES;
 pub use loaded::{
 	AuditChange, AuditEntry, AuditLog, AuthSession, BanEntry, ConnectedAccount, GuildProfile, INBOX_KEY,
 	InviteInfo, InvitePreview, Loaded, MessageCommand, Pin, ProfileBadge, USER_COMMANDS, UserProfile,
-	audit_action_label,
+	VoiceRegion, audit_action_label,
 };
 pub use member_list::{MemberList, MemberSlot};
 pub use messages::{ChannelMessages, MESSAGE_CAP, PendingFile, PendingMessage, apply_update};

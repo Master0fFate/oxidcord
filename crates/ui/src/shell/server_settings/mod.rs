@@ -2,6 +2,7 @@ pub mod audit;
 pub mod automod;
 pub mod bans;
 pub mod channel;
+mod channel_voice;
 pub mod emoji;
 pub mod invites;
 pub mod kit;

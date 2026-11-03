@@ -11,8 +11,9 @@ use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::menu::DropdownMenu as _;
 use gpui_component::scroll::ScrollableElement as _;
 use protocol::{ChannelType, PermissionOverwriteKind, Permissions, Snowflake};
-use session::Command;
+use session::{Command, VoiceChannelEdit};
 
+use super::channel_voice::VoiceForm;
 use super::rights::GROUPS;
 use crate::components::{
 	ContextMenuBuilder, PickHandler, ToggleHandler, Tri, dialog_footer, field, hint, segmented, select,
@@ -141,7 +142,8 @@ pub struct EditChannel {
 	original: (String, String, usize, bool),
 	overwrites: Vec<Overwrite>,
 	selected: Option<Snowflake>,
-	_subscription: Subscription,
+	voice: Option<Entity<VoiceForm>>,
+	_subscriptions: Vec<Subscription>,
 }
 
 impl EventEmitter<Close> for EditChannel {}
@@ -213,6 +215,17 @@ impl EditChannel {
 			})
 			.collect();
 		let selected = overwrites.first().map(|overwrite| overwrite.id);
+		let voice = matches!(
+			channel.kind,
+			ChannelType::GuildVoice | ChannelType::GuildStageVoice
+		)
+		.then(|| cx.new(|cx| VoiceForm::new(data.clone(), guild, channel, cx)));
+		let mut subscriptions = vec![subscription];
+		subscriptions.extend(
+			voice
+				.as_ref()
+				.map(|voice| cx.observe(voice, |_, _, cx| cx.notify())),
+		);
 		Self {
 			data,
 			guild,
@@ -232,7 +245,8 @@ impl EditChannel {
 			original: (name_value, topic_value, slowmode, nsfw),
 			overwrites,
 			selected,
-			_subscription: subscription,
+			voice,
+			_subscriptions: subscriptions,
 		}
 	}
 
@@ -277,6 +291,10 @@ impl EditChannel {
 			} else {
 				None
 			},
+			voice: self
+				.voice
+				.as_ref()
+				.map_or_else(VoiceChannelEdit::default, |voice| voice.read(cx).edit(cx)),
 		});
 		cx.emit(Close);
 	}
@@ -312,6 +330,7 @@ impl EditChannel {
 			|| self.slowmode != *old_slowmode
 			|| self.nsfw != *old_nsfw
 			|| self.parent != self.original_parent
+			|| self.voice.as_ref().is_some_and(|voice| voice.read(cx).dirty(cx))
 	}
 
 	fn add_overwrite(&mut self, id: Snowflake, kind: PermissionOverwriteKind, cx: &mut Context<Self>) {
@@ -536,6 +555,7 @@ impl EditChannel {
 						nsfw,
 					))
 			})
+			.children(self.voice.clone())
 			.when(
 				!labels.is_empty() && self.kind != ChannelType::GuildCategory,
 				|form| {

@@ -38,6 +38,13 @@ int_enum! {
 }
 
 int_enum! {
+	pub enum VideoQualityMode {
+		Auto = 1,
+		Full = 2,
+	}
+}
+
+int_enum! {
 	pub enum ForumSortOrder {
 		LatestActivity = 0,
 		CreationDate = 1,
@@ -172,6 +179,7 @@ pub struct Channel {
 	#[serde(deserialize_with = "timestamp")]
 	pub last_pin_timestamp: Option<DateTime<Utc>>,
 	pub rtc_region: Option<String>,
+	pub video_quality_mode: Option<VideoQualityMode>,
 	pub status: Option<String>,
 	#[serde(deserialize_with = "timestamp_or_seconds")]
 	pub voice_start_time: Option<DateTime<Utc>>,
