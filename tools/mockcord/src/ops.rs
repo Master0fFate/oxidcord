@@ -403,13 +403,28 @@ impl Shared {
 		edit: EditMessage,
 	) -> Result<Value, ApiError> {
 		let mut store = self.store.lock();
-		Self::guild_of(&store, channel_id)?;
+		let guild_id = Self::guild_of(&store, channel_id)?;
+		let can_moderate = author == CURRENT_USER_ID
+			&& guild_id
+				.and_then(|guild_id| self.fixtures.guild(guild_id.0))
+				.is_some_and(|guild| {
+					guild
+						.permissions_for(guild.current_member())
+						.contains(Permissions::MANAGE_MESSAGES)
+				});
 		let message = store
 			.message_mut(channel_id, id)
 			.ok_or_else(ApiError::unknown_message)?;
 		let moderating = edit.content.is_none() && edit.attachments.is_none() && edit.flags.is_some();
-		if author_id(message) != author && !moderating {
-			return Err(ApiError::not_author());
+		if author_id(message) != author {
+			if !moderating {
+				return Err(ApiError::not_author());
+			}
+			let current: MessageFlags = serde_json::from_value(message["flags"].clone()).unwrap_or_default();
+			let changed = edit.flags.map_or(MessageFlags::empty(), |flags| current ^ flags);
+			if !can_moderate || !changed.difference(MessageFlags::SUPPRESS_EMBEDS).is_empty() {
+				return Err(ApiError::missing_permissions());
+			}
 		}
 		if let Some(content) = edit.content {
 			message["content"] = Value::String(content);
