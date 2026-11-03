@@ -131,7 +131,6 @@ pub struct ControlButton {
 	highlight: bool,
 	alert: bool,
 	danger: bool,
-	disabled: bool,
 	on_click: Option<ClickHandler>,
 }
 
@@ -144,7 +143,6 @@ impl ControlButton {
 			highlight: false,
 			alert: false,
 			danger: false,
-			disabled: false,
 			on_click: None,
 		}
 	}
@@ -161,11 +159,6 @@ impl ControlButton {
 
 	pub fn danger(mut self) -> Self {
 		self.danger = true;
-		self
-	}
-
-	pub fn disabled(mut self, disabled: bool) -> Self {
-		self.disabled = disabled;
 		self
 	}
 
@@ -204,12 +197,10 @@ impl RenderOnce for ControlButton {
 			.size(theme.voice_control)
 			.rounded_full()
 			.bg(background)
-			.when(self.disabled, |button| button.opacity(0.5).cursor_not_allowed())
-			.when(!self.disabled, |button| {
-				button.cursor_pointer().hover(move |style| style.bg(hover))
-			})
+			.cursor_pointer()
+			.hover(move |style| style.bg(hover))
 			.tooltip(tooltip(self.tooltip))
-			.when_some(self.on_click.filter(|_| !self.disabled), |button, handler| {
+			.when_some(self.on_click, |button, handler| {
 				button.on_click(move |event, window, cx| handler(event, window, cx))
 			})
 			.child(Icon::new(self.icon).size(theme.voice_icon_md).color(icon_color))

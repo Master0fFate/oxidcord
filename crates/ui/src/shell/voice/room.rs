@@ -119,8 +119,8 @@ fn snapshot(data: &Data, status_cache: &mut Option<SharedString>) -> Option<Snap
 		hand_raised: participants
 			.iter()
 			.any(|person| person.me && person.hand_raised.is_some()),
-		invited: state.speak_invited(),
-		server_muted: state.server_muted(),
+		invited: session.is_some() && state.speak_invited(),
+		server_muted: session.is_some() && state.server_muted(),
 		topic: selected
 			.guild_id
 			.and_then(|guild| state.stage_instance(guild, channel))
@@ -916,7 +916,6 @@ impl VoiceRoom {
 					mic_label,
 				)
 				.alert(mic_off)
-				.disabled(snapshot.server_muted)
 				.on_click({
 					let data = data.clone();
 					move |_, _, cx| data.update(cx, |data, cx| data.toggle_mute(cx))

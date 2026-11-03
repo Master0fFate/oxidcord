@@ -134,7 +134,7 @@ impl State {
 			.guild_id
 			.and_then(|guild_id| self.guild(guild_id))
 			.and_then(|guild| guild.voice_states.get(&me))
-			.is_some_and(|voice| voice.mute || voice.deaf || voice.suppress)
+			.is_some_and(|voice| voice.mute || voice.deaf)
 	}
 
 	pub fn calls(&self) -> impl Iterator<Item = &Call> {
