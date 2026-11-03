@@ -33,8 +33,6 @@ const UPLOAD_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 const WEB_ORIGIN: &str = "https://discord.com";
 const WEB_REFERER: &str = "https://discord.com/channels/@me";
 const CAPTCHA_MARKER: &[u8] = b"\"captcha_key\"";
-const MFA_REQUIRED_CODE: i64 = 60003;
-const MFA_MARKER: &[u8] = b"\"mfa\"";
 
 struct Throttle {
 	retry_after: Duration,
@@ -179,12 +177,12 @@ fn classify(status: StatusCode, body: &[u8]) -> RestError {
 	if status == StatusCode::BAD_REQUEST && contains(body, CAPTCHA_MARKER) {
 		return RestError::CaptchaRequired;
 	}
-	let api = serde_json::from_slice::<ApiError>(body).ok();
+	let value = serde_json::from_slice::<Value>(body).ok();
 	let gated = matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN);
-	if gated && (api.as_ref().is_some_and(|api| api.code == MFA_REQUIRED_CODE) || contains(body, MFA_MARKER))
-	{
+	if gated && value.as_ref().is_some_and(|value| value.get("mfa").is_some()) {
 		return RestError::MfaRequired;
 	}
+	let api = value.and_then(|value| serde_json::from_value::<ApiError>(value).ok());
 	match status {
 		StatusCode::UNAUTHORIZED => RestError::Unauthorized(api),
 		StatusCode::FORBIDDEN => RestError::Forbidden(api),
@@ -314,15 +312,19 @@ impl RestClient {
 
 	fn throttle(&self, route: &RouteKey, headers: &HeaderMap, body: &[u8]) -> Throttle {
 		let parsed = serde_json::from_slice::<RateLimitBody>(body).ok();
-		let structured = parsed.is_some();
+		let structured = parsed.as_ref().is_some_and(|parsed| parsed.retry_after > 0.0)
+			|| headers.contains_key("x-ratelimit-bucket");
 		let global =
 			!structured || header_global(headers) || parsed.as_ref().is_some_and(|parsed| parsed.global);
-		let retry_after = match parsed {
-			Some(parsed) => clamp_wait(parsed.retry_after)
-				.or_else(|| header_retry_after(headers))
-				.unwrap_or(FALLBACK_RETRY_AFTER),
-			None => header_retry_after(headers).unwrap_or(UNSTRUCTURED_RETRY_AFTER),
-		};
+		let retry_after = parsed
+			.filter(|parsed| parsed.retry_after > 0.0)
+			.and_then(|parsed| clamp_wait(parsed.retry_after))
+			.or_else(|| header_retry_after(headers))
+			.unwrap_or(if structured {
+				FALLBACK_RETRY_AFTER
+			} else {
+				UNSTRUCTURED_RETRY_AFTER
+			});
 		self.inner.limiter.limited(route, retry_after, global);
 		Throttle {
 			retry_after,
