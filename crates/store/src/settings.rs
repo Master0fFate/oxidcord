@@ -4,7 +4,7 @@ use std::io::ErrorKind;
 
 use protocol::Snowflake;
 use protocol::gateway::{CHROME_VERSION, FALLBACK_BUILD_NUMBER};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
 
 use crate::atomic::write_atomic;
@@ -107,6 +107,21 @@ pub struct StreamerModeSettings {
 	pub disable_sounds: bool,
 }
 
+fn lenient_volumes<'de, D: Deserializer<'de>>(
+	deserializer: D,
+) -> std::result::Result<BTreeMap<Snowflake, UserVolume>, D::Error> {
+	let entries = Map::<String, Value>::deserialize(deserializer)?;
+	Ok(entries
+		.into_iter()
+		.filter_map(|(user_id, volume)| {
+			Some((
+				Snowflake(user_id.parse().ok()?),
+				serde_json::from_value(volume).ok()?,
+			))
+		})
+		.collect())
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct VoiceSettings {
@@ -124,6 +139,7 @@ pub struct VoiceSettings {
 	pub video_preset: u8,
 	pub self_mute: bool,
 	pub self_deaf: bool,
+	#[serde(deserialize_with = "lenient_volumes")]
 	pub user_volumes: BTreeMap<Snowflake, UserVolume>,
 }
 
