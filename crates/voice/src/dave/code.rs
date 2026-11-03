@@ -6,8 +6,8 @@ pub(super) fn privacy_code(authenticator: &[u8]) -> Option<String> {
 	displayable_code(authenticator, PRIVACY_DIGITS)
 }
 
-pub(super) fn pairwise_display(fingerprint: &[u8]) -> Option<String> {
-	displayable_code(fingerprint, PAIRWISE_DIGITS)
+pub(super) fn pairwise_display(fingerprint: &[u8]) -> String {
+	displayable_code(fingerprint, PAIRWISE_DIGITS).expect("fingerprint is longer than the code")
 }
 
 fn displayable_code(bytes: &[u8], digits: usize) -> Option<String> {

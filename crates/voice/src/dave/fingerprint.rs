@@ -12,12 +12,13 @@ const BLOCK_SIZE: u32 = 8;
 const PARALLELISM: u32 = 2;
 const OUTPUT_BYTES: usize = 64;
 
-pub fn pairwise_code(own: &DaveMember, other: &DaveMember) -> Option<String> {
+pub fn pairwise_code(own: &DaveMember, other: &DaveMember) -> String {
 	let mut passphrase = [identity_buffer(own), identity_buffer(other)];
 	passphrase.sort_unstable();
-	let params = Params::new(LOG_N, BLOCK_SIZE, PARALLELISM).ok()?;
+	let params = Params::new(LOG_N, BLOCK_SIZE, PARALLELISM).expect("scrypt parameters are constants");
 	let mut fingerprint = [0u8; OUTPUT_BYTES];
-	scrypt::scrypt(&passphrase.concat(), &SALT, &params, &mut fingerprint).ok()?;
+	scrypt::scrypt(&passphrase.concat(), &SALT, &params, &mut fingerprint)
+		.expect("scrypt output length is constant");
 	pairwise_display(&fingerprint)
 }
 

@@ -1,12 +1,12 @@
 use gpui::{
-	AppContext as _, Context, Entity, EventEmitter, FontWeight, InteractiveElement as _, IntoElement,
+	App, AppContext as _, Context, Entity, EventEmitter, FontWeight, InteractiveElement as _, IntoElement,
 	ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Subscription,
 	Window, div, prelude::FluentBuilder as _,
 };
 use gpui_component::slider::{Slider, SliderEvent, SliderState};
 use gpui_component::switch::Switch;
 use protocol::Snowflake;
-use state::{E2eeInfo, E2eeMember, State};
+use state::{E2eeInfo, E2eeMember, State, VoiceStatus};
 use voice::dave::{DaveMember, pairwise_code};
 
 use super::e2ee::{code_rows, section};
@@ -23,10 +23,25 @@ pub enum UserMenuEvent {
 	Profile(Snowflake),
 }
 
+#[derive(Clone)]
+struct Keys {
+	own: Vec<u8>,
+	other: Vec<u8>,
+}
+
 enum Verification {
 	Idle,
-	Computing,
-	Code(Vec<String>),
+	Computing(Keys),
+	Code { rows: Vec<String>, keys: Keys },
+}
+
+impl Verification {
+	fn keys(&self) -> Option<&Keys> {
+		match self {
+			Self::Idle => None,
+			Self::Computing(keys) | Self::Code { keys, .. } => Some(keys),
+		}
+	}
 }
 
 pub struct UserMenu {
@@ -76,7 +91,16 @@ impl UserMenu {
 				cx.notify();
 			}
 		});
-		let observer = cx.observe(&data, |_, _, cx| cx.notify());
+		let observer = cx.observe(&data, |this, _, cx| {
+			if this
+				.verification
+				.keys()
+				.is_some_and(|keys| !this.keys_current(keys, cx))
+			{
+				this.verification = Verification::Idle;
+			}
+			cx.notify();
+		});
 		Self {
 			data,
 			guild,
@@ -106,7 +130,11 @@ impl UserMenu {
 		let Some((own, other)) = pair else {
 			return;
 		};
-		self.verification = Verification::Computing;
+		let keys = Keys {
+			own: own.signature_key.clone(),
+			other: other.signature_key.clone(),
+		};
+		self.verification = Verification::Computing(keys.clone());
 		cx.notify();
 		cx.spawn(async move |this, cx| {
 			let code = cx
@@ -114,13 +142,35 @@ impl UserMenu {
 				.spawn(async move { pairwise_code(&own, &other) })
 				.await;
 			this.update(cx, |this, cx| {
-				this.verification =
-					code.map_or(Verification::Idle, |code| Verification::Code(code_rows(&code)));
+				this.verification = if this.keys_current(&keys, cx) {
+					Verification::Code {
+						rows: code_rows(&code),
+						keys,
+					}
+				} else {
+					Verification::Idle
+				};
 				cx.notify();
 			})
 			.ok();
 		})
 		.detach();
+	}
+
+	fn keys_current(&self, keys: &Keys, cx: &App) -> bool {
+		let data = self.data.read(cx);
+		let state = data.state();
+		let Some(info) = state
+			.voice()
+			.filter(|voice| matches!(voice.status, VoiceStatus::Connected))
+			.and_then(|voice| voice.e2ee.as_ref())
+		else {
+			return false;
+		};
+		data.me()
+			.and_then(|me| member_of(info, me))
+			.is_some_and(|member| member.signature_key == keys.own)
+			&& member_of(info, self.user).is_some_and(|member| member.signature_key == keys.other)
 	}
 }
 
@@ -277,7 +327,7 @@ impl Render for UserMenu {
 					.child(cx.t(seat.label))
 			}))
 			.when(can_verify, |menu| match &self.verification {
-				Verification::Code(rows) => menu.child(
+				Verification::Code { rows, .. } => menu.child(
 					div()
 						.flex()
 						.flex_col()
