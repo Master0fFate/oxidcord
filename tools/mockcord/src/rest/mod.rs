@@ -21,7 +21,7 @@ use axum::extract::{DefaultBodyLimit, MatchedPath, Request, State};
 use axum::http::header::AUTHORIZATION;
 use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
 use axum::middleware::{self, Next};
-use axum::response::{IntoResponse, Response};
+use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{delete, get, patch, post, put};
 use axum::{Json, Router};
 use chrono::Utc;
@@ -39,6 +39,14 @@ const MAX_BODY_BYTES: usize = 64 * 1024 * 1024;
 const BUCKET_LIMIT: u32 = 5;
 const CHAOS_RATE_LIMIT_PERCENT: f64 = 0.05;
 const CHAOS_RETRY_AFTER: f64 = 0.5;
+const CHAOS_HTML_SHARE: f64 = 0.2;
+const CLOUDFLARE_BODY: &str = "<!DOCTYPE html><html><head><title>Error 1015</title></head><body><h1>Error 1015</h1><p>You are being rate limited.</p></body></html>";
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ChaosLimit {
+	Structured,
+	Html,
+}
 
 pub fn router(shared: Arc<Shared>) -> Router {
 	let api = Router::new()
@@ -313,8 +321,23 @@ async fn not_found() -> ApiError {
 	ApiError::not_found()
 }
 
-fn chaos_rate_limited() -> bool {
-	rand::rng().random_bool(CHAOS_RATE_LIMIT_PERCENT)
+fn chaos_limit() -> Option<ChaosLimit> {
+	let mut rng = rand::rng();
+	rng.random_bool(CHAOS_RATE_LIMIT_PERCENT).then(|| {
+		if rng.random_bool(CHAOS_HTML_SHARE) {
+			ChaosLimit::Html
+		} else {
+			ChaosLimit::Structured
+		}
+	})
+}
+
+fn html_rate_limit_response() -> Response {
+	let mut response = (StatusCode::TOO_MANY_REQUESTS, Html(CLOUDFLARE_BODY)).into_response();
+	response
+		.headers_mut()
+		.insert("retry-after", HeaderValue::from_static("1"));
+	response
 }
 
 fn rate_limit_response() -> Response {
@@ -371,14 +394,22 @@ async fn guard(State(shared): State<Arc<Shared>>, request: Request, next: Next) 
 			.and_then(|value| value.to_str().ok())
 			.is_some_and(|value| shared.account_for_token(value).is_some());
 	let snapshot = shared.touch_bucket(&key);
-	let limited = authorized && shared.config.chaos && chaos_rate_limited();
+	let limit = if authorized && shared.config.chaos {
+		chaos_limit()
+	} else {
+		None
+	};
 	let mut response = if !authorized {
 		ApiError::unauthorized().into_response()
-	} else if limited {
-		rate_limit_response()
 	} else {
-		next.run(request).await
+		match limit {
+			Some(ChaosLimit::Structured) => rate_limit_response(),
+			Some(ChaosLimit::Html) => html_rate_limit_response(),
+			None => next.run(request).await,
+		}
 	};
-	apply_rate_limit_headers(response.headers_mut(), &key, &snapshot, limited);
+	if limit != Some(ChaosLimit::Html) {
+		apply_rate_limit_headers(response.headers_mut(), &key, &snapshot, limit.is_some());
+	}
 	response
 }

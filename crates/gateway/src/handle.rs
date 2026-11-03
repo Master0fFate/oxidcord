@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use protocol::Snowflake;
 use protocol::gateway::Opcode;
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 use tokio::runtime::Handle;
 use tokio::sync::{Notify, mpsc, watch};
 
@@ -12,7 +12,9 @@ use crate::config::GatewayConfig;
 use crate::error::SendError;
 use crate::event::GatewayEvent;
 use crate::frames;
+use crate::outbox::Queued;
 use crate::session::Session;
+use crate::subscription::GuildSubscription;
 
 const EVENT_CAPACITY: usize = 1024;
 const COMMAND_CAPACITY: usize = 256;
@@ -46,7 +48,7 @@ impl Gateway {
 
 #[derive(Clone)]
 pub struct GatewayHandle {
-	commands: mpsc::Sender<String>,
+	commands: mpsc::Sender<Queued>,
 	reconnect: Arc<Notify>,
 	shutdown: Arc<watch::Sender<bool>>,
 	latency: Arc<AtomicU64>,
@@ -68,21 +70,15 @@ impl GatewayHandle {
 		threads: bool,
 		activities: bool,
 	) -> Result<(), SendError> {
-		let channels: Map<String, Value> = channels
-			.into_iter()
-			.map(|(channel_id, ranges)| (channel_id.to_string(), json!(ranges)))
-			.collect();
-		let subscription = json!({
-			"typing": typing,
-			"threads": threads,
-			"activities": activities,
-			"members": [],
-			"channels": channels,
-		});
-		self.queue(
-			Opcode::GuildSubscriptionsBulk,
-			json!({ "subscriptions": { guild_id.to_string(): subscription } }),
-		)
+		self.enqueue(Queued::Subscribe {
+			guild_id,
+			subscription: GuildSubscription {
+				typing,
+				threads,
+				activities,
+				channels: channels.into_iter().collect(),
+			},
+		})
 	}
 
 	pub fn request_members(
@@ -190,11 +186,13 @@ impl GatewayHandle {
 	}
 
 	fn queue(&self, opcode: Opcode, data: Value) -> Result<(), SendError> {
-		self.commands
-			.try_send(frames::command(opcode, data))
-			.map_err(|error| match error {
-				mpsc::error::TrySendError::Full(_) => SendError::Full,
-				mpsc::error::TrySendError::Closed(_) => SendError::Closed,
-			})
+		self.enqueue(Queued::Frame(frames::command(opcode, data)))
+	}
+
+	fn enqueue(&self, queued: Queued) -> Result<(), SendError> {
+		self.commands.try_send(queued).map_err(|error| match error {
+			mpsc::error::TrySendError::Full(_) => SendError::Full,
+			mpsc::error::TrySendError::Closed(_) => SendError::Closed,
+		})
 	}
 }

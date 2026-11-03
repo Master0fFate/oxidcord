@@ -12,6 +12,7 @@ use flate2::Compression;
 use flate2::write::ZlibEncoder;
 use protocol::gateway::capability::AUTH_TOKEN_REFRESH;
 use protocol::{GatewayPayload, Opcode, User};
+use rand::Rng;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
@@ -35,6 +36,7 @@ const CLOSE_TIMED_OUT: u16 = 4009;
 const CLOSE_GOING_AWAY: u16 = 1001;
 const FRAME_LIMIT: usize = 120;
 const FRAME_WINDOW: Duration = Duration::from_secs(60);
+const CHAOS_SKIPPED_ACK_ODDS: f64 = 0.1;
 
 #[derive(Deserialize)]
 pub struct GatewayQuery {
@@ -59,6 +61,7 @@ struct Connection {
 	rx: UnboundedReceiver<Outgoing>,
 	session: Option<String>,
 	received: VecDeque<Instant>,
+	subscription_frames: u64,
 }
 
 impl Connection {
@@ -74,6 +77,7 @@ impl Connection {
 			rx,
 			session: None,
 			received: VecDeque::with_capacity(FRAME_LIMIT + 1),
+			subscription_frames: 0,
 		}
 	}
 
@@ -189,7 +193,7 @@ impl Connection {
 			.and_then(|raw| serde_json::from_str::<Value>(raw.get()).ok())
 			.unwrap_or(Value::Null);
 		match payload.opcode() {
-			Opcode::Heartbeat => self.send_text(r#"{"op":11}"#).await,
+			Opcode::Heartbeat => self.acknowledge_heartbeat().await,
 			Opcode::Identify => self.identify(&data).await,
 			Opcode::Resume => self.resume(&data).await,
 			Opcode::QosHeartbeat => true,
@@ -202,6 +206,14 @@ impl Connection {
 				true
 			}
 		}
+	}
+
+	async fn acknowledge_heartbeat(&mut self) -> bool {
+		if self.shared.config.chaos && rand::rng().random_bool(CHAOS_SKIPPED_ACK_ODDS) {
+			tracing::info!("chaos: skipping a heartbeat ack");
+			return true;
+		}
+		self.send_text(r#"{"op":11}"#).await
 	}
 
 	fn account_for_token(&self, data: &Value) -> Option<User> {
@@ -261,10 +273,17 @@ impl Connection {
 		}
 	}
 
-	fn handle_session_op(&self, opcode: Opcode, session: &str, data: &Value) {
+	fn handle_session_op(&mut self, opcode: Opcode, session: &str, data: &Value) {
 		let hub = &self.shared.hub;
 		match opcode {
 			Opcode::GuildSubscriptionsBulk => {
+				self.subscription_frames += 1;
+				tracing::info!(
+					frame = self.subscription_frames,
+					guilds = member_list::bulk_guild_ids(data).count(),
+					channels = member_list::bulk_channel_count(data),
+					"guild subscription frame"
+				);
 				for guild_id in member_list::bulk_guild_ids(data) {
 					hub.subscribe(session, guild_id);
 				}

@@ -19,10 +19,10 @@ use crate::error::{FATAL_CLOSE_CODES, GatewayError};
 use crate::event::GatewayEvent;
 use crate::frames;
 use crate::limiter::SendWindow;
+use crate::outbox::{Outbox, Queued};
 use crate::transport::{self, Socket, ZlibStream};
 
 const SEND_PERMITS: usize = 120;
-const SEND_RESERVE: usize = 10;
 const MAX_READY_FAILURES: u32 = 3;
 const SEND_WINDOW: Duration = Duration::from_secs(60);
 const BACKOFF_CAP_SECS: f64 = 60.0;
@@ -73,21 +73,6 @@ impl Ended {
 	}
 }
 
-struct Outbox {
-	commands: mpsc::Receiver<String>,
-}
-
-impl Outbox {
-	async fn next(&mut self, window: &mut SendWindow) -> Option<String> {
-		window.room(SEND_RESERVE).await;
-		self.commands.recv().await
-	}
-
-	fn discard_queued(&mut self) {
-		while self.commands.try_recv().is_ok() {}
-	}
-}
-
 struct Connection {
 	socket: Socket,
 	zlib: ZlibStream,
@@ -132,7 +117,7 @@ impl Session {
 	pub fn new(
 		config: GatewayConfig,
 		events: mpsc::Sender<GatewayEvent>,
-		commands: mpsc::Receiver<String>,
+		commands: mpsc::Receiver<Queued>,
 		reconnect: Arc<Notify>,
 		shutdown: watch::Receiver<bool>,
 		latency: Arc<AtomicU64>,
@@ -140,7 +125,7 @@ impl Session {
 		Self {
 			config,
 			events,
-			outbox: Outbox { commands },
+			outbox: Outbox::new(commands),
 			reconnect,
 			shutdown,
 			latency,

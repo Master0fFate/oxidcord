@@ -177,6 +177,16 @@ pub fn bulk_guild_ids(data: &Value) -> impl Iterator<Item = u64> + '_ {
 		.filter_map(|(guild_key, _)| guild_key.parse().ok())
 }
 
+pub fn bulk_channel_count(data: &Value) -> usize {
+	data["subscriptions"]
+		.as_object()
+		.into_iter()
+		.flatten()
+		.filter_map(|(_, subscription)| subscription["channels"].as_object())
+		.map(Map::len)
+		.sum()
+}
+
 pub fn bulk_updates(shared: &Shared, data: &Value) -> Vec<Value> {
 	let empty = Map::new();
 	data["subscriptions"]
