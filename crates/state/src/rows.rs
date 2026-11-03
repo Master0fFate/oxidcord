@@ -56,7 +56,7 @@ fn top_role_icon(guild: &GuildState, roles: &[Snowflake]) -> Option<RoleIcon> {
 	roles
 		.iter()
 		.filter_map(|id| guild.roles.get(id))
-		.filter(|role| RoleIcon::of(role).is_some())
+		.filter(|role| RoleIcon::present(role))
 		.max_by_key(|role| role.position)
 		.and_then(RoleIcon::of)
 }
