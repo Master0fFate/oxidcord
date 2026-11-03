@@ -174,6 +174,9 @@ pub(crate) enum Internal {
 		stream_key: String,
 		url: String,
 	},
+	StreamPreviewEnded {
+		stream_key: String,
+	},
 	Draft {
 		channel_id: Snowflake,
 		content: String,
@@ -940,6 +943,7 @@ impl Core {
 			Internal::StreamPreview { stream_key, url } => {
 				self.apply_local(LocalEvent::StreamPreview { stream_key, url })
 			}
+			Internal::StreamPreviewEnded { stream_key } => self.on_stream_preview_ended(&stream_key),
 			Internal::Draft { channel_id, content } => {
 				if self.state.read().draft(channel_id).is_none() {
 					self.apply_local(LocalEvent::DraftChanged { channel_id, content });

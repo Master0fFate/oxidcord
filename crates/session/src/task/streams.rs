@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -19,6 +20,7 @@ use crate::config::VoiceIo;
 const STREAM_TIMEOUT: Duration = Duration::from_secs(15);
 const FULL_VOLUME: f32 = 1.0;
 const PREVIEW_INTERVAL: Duration = Duration::from_secs(300);
+const PREVIEW_RETRY: Duration = Duration::from_secs(30);
 const PREVIEW_SIDE: u32 = 512;
 const PREVIEW_JPEG_QUALITY: u8 = 70;
 const PREVIEW_MIME: &str = "image/jpeg";
@@ -70,6 +72,7 @@ pub(crate) struct StreamLink {
 	volume: f32,
 	share: Option<StreamSession>,
 	watch: Option<StreamSession>,
+	previews: HashSet<String>,
 }
 
 impl Default for StreamLink {
@@ -79,6 +82,7 @@ impl Default for StreamLink {
 			volume: FULL_VOLUME,
 			share: None,
 			watch: None,
+			previews: HashSet::new(),
 		}
 	}
 }
@@ -448,18 +452,44 @@ impl Core {
 		gain(self.store.settings.read().voice.output_volume)
 	}
 
-	pub(super) fn load_stream_preview(&self, stream_key: String) {
+	pub(super) fn load_stream_preview(&mut self, stream_key: String) {
+		if !self.streams.previews.insert(stream_key.clone()) {
+			return;
+		}
 		let rest = self.rest.clone();
+		let state = self.state.clone();
 		let internal = self.internal.clone();
 		self.runtime.spawn(async move {
-			match rest.stream_preview(&stream_key).await {
-				Ok(Some(url)) => {
-					let _ = internal.send(Internal::StreamPreview { stream_key, url });
+			loop {
+				let delay = match rest.stream_preview(&stream_key).await {
+					Ok(Some(url)) => {
+						let _ = internal.send(Internal::StreamPreview {
+							stream_key: stream_key.clone(),
+							url,
+						});
+						PREVIEW_INTERVAL
+					}
+					Ok(None) => PREVIEW_RETRY,
+					Err(error) => {
+						tracing::warn!(%error, "stream preview was not loaded");
+						PREVIEW_RETRY
+					}
+				};
+				sleep(delay).await;
+				if !state
+					.read()
+					.streams()
+					.any(|stream| stream.stream_key == stream_key)
+				{
+					break;
 				}
-				Ok(None) => {}
-				Err(error) => tracing::warn!(%error, "stream preview was not loaded"),
 			}
+			let _ = internal.send(Internal::StreamPreviewEnded { stream_key });
 		});
+	}
+
+	pub(super) fn on_stream_preview_ended(&mut self, stream_key: &str) {
+		self.streams.previews.remove(stream_key);
 	}
 
 	pub(super) fn on_stream_event(&mut self, generation: u64, event: VoiceEvent) {
