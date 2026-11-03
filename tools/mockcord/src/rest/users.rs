@@ -96,7 +96,7 @@ pub async fn profile(
 		"accent_color": null,
 		"pronouns": "",
 		"banner": null,
-		"theme_colors": null,
+		"theme_colors": extras["theme_colors"],
 	});
 	if id == CURRENT_USER_ID {
 		for (key, value) in shared.store.lock().profile.iter() {
@@ -116,7 +116,8 @@ pub async fn profile(
 		"premium_since": null,
 		"premium_type": null,
 		"badges": extras["badges"],
-		"legacy_username": null,
+		"legacy_username": extras["legacy_username"],
+		"private": extras["private"],
 	})))
 }
 

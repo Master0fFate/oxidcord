@@ -1,6 +1,8 @@
 use chrono::Duration;
 use protocol::{
-	Channel, ChannelType, LenientVec, PremiumType, Relationship, RelationshipKind, Snowflake, User, UserFlags,
+	AvatarDecorationData, Channel, ChannelType, Collectibles, DisplayNameEffect, DisplayNameStyles,
+	LenientVec, Nameplate, NameplatePalette, PremiumType, PrimaryGuild, Relationship, RelationshipKind,
+	Snowflake, User, UserFlags,
 };
 use rand::Rng;
 use rand::rngs::StdRng;
@@ -21,6 +23,15 @@ const IGNORED_FRIEND: usize = 2;
 const NICKNAME: &str = "Bestie";
 const GROUP_NAME: &str = "weekend crew";
 const REQUEST_MESSAGES: usize = 3;
+const DECORATED_USER: usize = 1;
+const TAGGED_USER: usize = 2;
+const DECORATED_TAGGED_USER: usize = 3;
+const DECORATION_ASSET: &str = "mockring";
+const TAG_GUILD_ID: u64 = 1;
+const TAG_TEXT: &str = "OXID";
+const TAG_BADGE: &str = "mockbadge";
+const GRADIENT_COLORS: [u32; 2] = [0xff5f6d, 0xffc371];
+const SOLID_COLORS: [u32; 1] = [0x38ef7d];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Standing {
@@ -77,7 +88,7 @@ fn pool_user(rng: &mut StdRng, ids: &mut EntityIds, index: usize) -> User {
 		format!("{adjective}{noun}{index}")
 	};
 	let global_name = format!("{} {}", capitalized(adjective), capitalized(noun));
-	User {
+	let user = User {
 		id: Snowflake(ids.next()),
 		username,
 		discriminator: Some("0".to_owned()),
@@ -90,7 +101,64 @@ fn pool_user(rng: &mut StdRng, ids: &mut EntityIds, index: usize) -> User {
 			UserFlags::empty()
 		},
 		..User::default()
+	};
+	adorned(user, index)
+}
+
+fn decoration() -> AvatarDecorationData {
+	AvatarDecorationData {
+		asset: Some(DECORATION_ASSET.to_owned()),
+		..AvatarDecorationData::default()
 	}
+}
+
+fn tag() -> PrimaryGuild {
+	PrimaryGuild {
+		identity_guild_id: Some(Snowflake(TAG_GUILD_ID)),
+		identity_enabled: Some(true),
+		tag: Some(TAG_TEXT.to_owned()),
+		badge: Some(TAG_BADGE.to_owned()),
+	}
+}
+
+fn collectibles(palette: NameplatePalette, folder: &str) -> Collectibles {
+	Collectibles {
+		nameplate: Some(Nameplate {
+			asset: format!("nameplates/mock/{folder}/"),
+			label: Some(format!("{folder} nameplate")),
+			palette,
+			..Nameplate::default()
+		}),
+	}
+}
+
+fn style(effect_id: DisplayNameEffect, colors: &[u32]) -> DisplayNameStyles {
+	DisplayNameStyles {
+		effect_id,
+		colors: colors.to_vec(),
+		..DisplayNameStyles::default()
+	}
+}
+
+fn adorned(mut user: User, index: usize) -> User {
+	match index {
+		DECORATED_USER => {
+			user.avatar_decoration_data = Some(decoration());
+			user.collectibles = Some(collectibles(NameplatePalette::Crimson, "crimson"));
+			user.display_name_styles = Some(style(DisplayNameEffect::Gradient, &GRADIENT_COLORS));
+		}
+		TAGGED_USER => {
+			user.primary_guild = Some(tag());
+			user.collectibles = Some(collectibles(NameplatePalette::Sky, "sky"));
+			user.display_name_styles = Some(style(DisplayNameEffect::Solid, &SOLID_COLORS));
+		}
+		DECORATED_TAGGED_USER => {
+			user.avatar_decoration_data = Some(decoration());
+			user.primary_guild = Some(tag());
+		}
+		_ => {}
+	}
+	user
 }
 
 fn capitalized(word: &str) -> String {

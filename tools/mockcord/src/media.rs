@@ -5,12 +5,22 @@ use axum::http::header::{ACCEPT_RANGES, CONTENT_RANGE, CONTENT_TYPE, RANGE};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use image::codecs::png::PngEncoder;
-use image::{ExtendedColorType, ImageEncoder, Rgb, RgbImage};
+use image::{ExtendedColorType, ImageEncoder, Rgb, RgbImage, Rgba, RgbaImage};
 
 const WIDTH: u32 = 400;
 const HEIGHT: u32 = 300;
 const GRID_STEP: u32 = 50;
 const GRID_LIFT: u8 = 28;
+const RING_SIZE: u32 = 128;
+const RING_INNER: f32 = 0.43;
+const RING_OUTER: f32 = 0.5;
+const BADGE_SIZE: u32 = 64;
+const BADGE_CORNER: f32 = 14.;
+const PLATE_WIDTH: u32 = 320;
+const PLATE_HEIGHT: u32 = 64;
+const RING_SUFFIX: &str = "-mockring.png";
+const BADGE_SUFFIX: &str = "-mockbadge.png";
+const PLATE_SUFFIX: &str = "-static.png";
 
 const ASSETS: [(&str, &str, &[u8]); 7] = [
 	("clip.mp4", "video/mp4", include_bytes!("../assets/clip.mp4")),
@@ -87,16 +97,73 @@ fn render(seed: u64) -> RgbImage {
 	})
 }
 
+fn tint_of(seed: u64) -> [u8; 3] {
+	let bytes = seed.to_le_bytes();
+	[bytes[0] | 0x40, bytes[1] | 0x40, bytes[2] | 0x40]
+}
+
+fn render_ring(seed: u64) -> RgbaImage {
+	let [red, green, blue] = tint_of(seed);
+	let center = RING_SIZE as f32 / 2.;
+	RgbaImage::from_fn(RING_SIZE, RING_SIZE, |x, y| {
+		let distance = ((x as f32 + 0.5 - center).hypot(y as f32 + 0.5 - center)) / RING_SIZE as f32;
+		let inside = (RING_INNER..=RING_OUTER).contains(&distance);
+		Rgba([red, green, blue, if inside { 255 } else { 0 }])
+	})
+}
+
+fn render_badge(seed: u64) -> RgbaImage {
+	let [red, green, blue] = tint_of(seed);
+	let far = BADGE_SIZE as f32 - BADGE_CORNER;
+	RgbaImage::from_fn(BADGE_SIZE, BADGE_SIZE, |x, y| {
+		let corner_x = (x as f32 + 0.5).clamp(BADGE_CORNER, far);
+		let corner_y = (y as f32 + 0.5).clamp(BADGE_CORNER, far);
+		let reach = (x as f32 + 0.5 - corner_x).hypot(y as f32 + 0.5 - corner_y);
+		Rgba([red, green, blue, if reach <= BADGE_CORNER { 255 } else { 0 }])
+	})
+}
+
+fn render_plate(seed: u64) -> RgbaImage {
+	let [red, green, blue] = tint_of(seed);
+	RgbaImage::from_fn(PLATE_WIDTH, PLATE_HEIGHT, |x, _| {
+		let fade = 1. - x as f32 / PLATE_WIDTH as f32;
+		Rgba([red, green, blue, (fade * 200.) as u8])
+	})
+}
+
+fn cosmetic(name: &str) -> Option<RgbaImage> {
+	let seed = seed_of(name);
+	if name.ends_with(RING_SUFFIX) {
+		Some(render_ring(seed))
+	} else if name.ends_with(BADGE_SUFFIX) {
+		Some(render_badge(seed))
+	} else if name.ends_with(PLATE_SUFFIX) {
+		Some(render_plate(seed))
+	} else {
+		None
+	}
+}
+
+fn png_response(raw: &[u8], width: u32, height: u32, color: ExtendedColorType) -> Response {
+	let mut encoded = Vec::new();
+	if let Err(error) = PngEncoder::new(&mut encoded).write_image(raw, width, height, color) {
+		tracing::warn!(%error, "could not encode the mock image");
+	}
+	([(CONTENT_TYPE, "image/png")], encoded).into_response()
+}
+
 pub async fn media(Path(name): Path<String>, headers: HeaderMap) -> Response {
 	if let Some((kind, bytes)) = asset(&name) {
 		return serve_asset(kind, bytes, &headers);
 	}
-	let image = render(seed_of(&name));
-	let mut encoded = Vec::new();
-	let written =
-		PngEncoder::new(&mut encoded).write_image(image.as_raw(), WIDTH, HEIGHT, ExtendedColorType::Rgb8);
-	if let Err(error) = written {
-		tracing::warn!(%error, "could not encode the mock image");
+	if let Some(image) = cosmetic(&name) {
+		return png_response(
+			image.as_raw(),
+			image.width(),
+			image.height(),
+			ExtendedColorType::Rgba8,
+		);
 	}
-	([(CONTENT_TYPE, "image/png")], encoded).into_response()
+	let image = render(seed_of(&name));
+	png_response(image.as_raw(), WIDTH, HEIGHT, ExtendedColorType::Rgb8)
 }

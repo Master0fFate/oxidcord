@@ -516,9 +516,17 @@ pub fn profile_extras(shared: &Shared, user_id: u64, guild_id: Option<u64>) -> V
 	} else {
 		json!([])
 	};
+	let theme_colors = user
+		.and_then(|user| user.display_name_styles.as_ref())
+		.and_then(|style| Some([*style.colors.first()?, *style.colors.last()?]));
+	let tagged = user.is_some_and(|user| user.primary_guild.is_some());
+	let decorated = user.is_some_and(|user| user.avatar_decoration_data.is_some());
 	json!({
 		"mutual_friends": friends,
 		"badges": badges,
+		"theme_colors": theme_colors,
+		"legacy_username": user.filter(|_| tagged).map(|user| format!("{}#1234", user.username)),
+		"private": tagged && decorated,
 		"connected_accounts": user.map_or_else(Vec::new, |user| {
 			vec![json!({ "type": "github", "id": user.id.to_string(), "name": user.username, "verified": true })]
 		}),
