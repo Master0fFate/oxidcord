@@ -172,7 +172,11 @@ impl Database {
 			}
 		}
 		tx.commit()?;
-		self.enforce_limit(&conn)
+		Ok(())
+	}
+
+	pub fn enforce_cache_limit(&self) -> Result<()> {
+		self.enforce_limit(&self.conn.lock())
 	}
 
 	pub fn keep_floor(&self, channel_id: u64, keep: u32) -> Result<Option<u64>> {
@@ -448,19 +452,24 @@ impl Database {
 }
 
 fn evict_stale_channels(conn: &Connection, target_bytes: u64) -> Result<()> {
-	while page_usage(conn)?.used_bytes > target_bytes {
-		let stalest: Option<i64> = conn
-			.query_row(
-				"SELECT channel_id FROM messages GROUP BY channel_id ORDER BY MAX(updated_at) LIMIT 1",
-				[],
-				|row| row.get(0),
-			)
-			.optional()?;
-		let Some(channel_id) = stalest else {
-			break;
-		};
-		conn.execute("DELETE FROM messages WHERE channel_id = ?1", [channel_id])?;
+	if page_usage(conn)?.used_bytes <= target_bytes {
+		return Ok(());
 	}
+	let stalest = conn
+		.prepare("SELECT channel_id FROM messages GROUP BY channel_id ORDER BY MAX(updated_at)")?
+		.query_map([], |row| row.get::<_, i64>(0))?
+		.collect::<rusqlite::Result<Vec<_>>>()?;
+	let tx = conn.unchecked_transaction()?;
+	{
+		let mut delete = tx.prepare_cached("DELETE FROM messages WHERE channel_id = ?1")?;
+		for channel_id in stalest {
+			delete.execute([channel_id])?;
+			if page_usage(&tx)?.used_bytes <= target_bytes {
+				break;
+			}
+		}
+	}
+	tx.commit()?;
 	Ok(())
 }
 

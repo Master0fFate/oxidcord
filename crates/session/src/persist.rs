@@ -192,7 +192,11 @@ fn write(db: &Database, job: Job) -> Result<()> {
 			}
 			let rows: Vec<(u64, &[u8])> = encoded.iter().map(|(id, json)| (*id, json.as_slice())).collect();
 			db.put_messages_batch(channel_id.get(), &rows)?;
-			Ok(db.trim_channel(channel_id.get(), KEPT_MESSAGES_PER_CHANNEL)?)
+			db.trim_channel(channel_id.get(), KEPT_MESSAGES_PER_CHANNEL)?;
+			if let Err(error) = db.enforce_cache_limit() {
+				tracing::warn!(%error, "cache limit check failed");
+			}
+			Ok(())
 		}
 		Job::DeleteMessages(ids) => {
 			for id in ids {
