@@ -5,6 +5,7 @@ mod events;
 mod expressions;
 mod guilds;
 mod rpc;
+mod soundboard;
 mod stage;
 mod streams;
 mod users;
@@ -279,10 +280,12 @@ pub fn router(shared: Arc<Shared>) -> Router {
 			get(admin::joined_archived_private_threads),
 		)
 		.merge(expressions::routes())
+		.merge(soundboard::routes())
 		.route_layer(middleware::from_fn_with_state(shared.clone(), guard));
 	Router::new()
 		.route("/gateway", get(gateway::upgrade))
 		.route("/media/{name}", get(media::media))
+		.route("/soundboard-sounds/{id}", get(soundboard::file))
 		.route("/mock/reconnect", post(reconnect::reconnect))
 		.route("/mock/send/{fault}", post(uploads::inject_send_fault))
 		.route("/mock/uploads/{pace}", post(uploads::upload_pace))

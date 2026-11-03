@@ -290,6 +290,18 @@ impl Connection {
 					hub.dispatch_to(session, "CHANNEL_INFO", &info);
 				}
 			}
+			Opcode::RequestSoundboardSounds => {
+				for guild_id in data["guild_ids"]
+					.as_array()
+					.into_iter()
+					.flatten()
+					.filter_map(parse_id)
+				{
+					if let Some(event) = self.shared.soundboard_event(guild_id) {
+						hub.dispatch_to(session, "SOUNDBOARD_SOUNDS", &event);
+					}
+				}
+			}
 			Opcode::PresenceUpdate => self.broadcast_presence(data),
 			Opcode::VoiceStateUpdate => self.broadcast_voice_state(session, data),
 			Opcode::StreamCreate => self.stream_create(session, data),

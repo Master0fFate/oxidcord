@@ -7,8 +7,8 @@ use parking_lot::Mutex;
 use protocol::{
 	AutoModRule, Channel, Emoji, FRIEND_SOURCE_MUTUAL_FRIENDS, FRIEND_SOURCE_MUTUAL_GUILDS, GuildProperties,
 	Member, Presence, ProtoCustomStatus, ProtoFrecencySettings, ProtoStatus, ReadState, Relationship, Role,
-	ScheduledEvent, Snowflake, StageInstance, StatusKind, User, UserGuildSettings, encode_status,
-	privacy_with_friend_sources,
+	ScheduledEvent, Snowflake, SoundboardSound, StageInstance, StatusKind, User, UserGuildSettings,
+	encode_status, privacy_with_friend_sources,
 };
 use serde_json::Value;
 use tokio::sync::{broadcast, watch};
@@ -83,6 +83,7 @@ pub struct Store {
 	pub nonces: HashMap<(u64, String), u64>,
 	pub stage_instances: HashMap<u64, StageInstance>,
 	pub seats: HashMap<u64, Seat>,
+	pub sounds: HashMap<u64, Vec<SoundboardSound>>,
 	last_id: u64,
 }
 
@@ -198,6 +199,7 @@ impl Store {
 				.map(|instance| (instance.channel_id.0, instance.clone()))
 				.collect(),
 			seats: HashMap::new(),
+			sounds: crate::soundboard::seed_sounds(fixtures),
 			last_id,
 		}
 	}

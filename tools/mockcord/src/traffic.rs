@@ -23,6 +23,7 @@ const MESSAGE_INTERVAL: Duration = Duration::from_secs(3);
 const TYPING_LEAD: Duration = Duration::from_secs(1);
 const PRESENCE_INTERVAL: Duration = Duration::from_secs(10);
 const EVENT_START_INTERVAL: Duration = Duration::from_secs(45);
+const SOUND_INTERVAL: Duration = Duration::from_secs(30);
 const RECENT_CAPACITY: usize = 6;
 const EDIT_EVERY: u64 = 3;
 const DELETE_EVERY: u64 = 4;
@@ -48,6 +49,7 @@ pub fn spawn(shared: &Arc<Shared>) -> Vec<JoinHandle<()>> {
 		tasks.push(tokio::spawn(message_loop(shared.clone())));
 		tasks.push(tokio::spawn(presence_loop(shared.clone())));
 		tasks.push(tokio::spawn(event_loop(shared.clone())));
+		tasks.push(tokio::spawn(sound_loop(shared.clone())));
 	}
 	tasks
 }
@@ -178,6 +180,13 @@ async fn event_loop(shared: Arc<Shared>) {
 		{
 			tracing::info!(guild_id, event_id, "live event start");
 		}
+	}
+}
+
+async fn sound_loop(shared: Arc<Shared>) {
+	let mut shutdown = shared.shutdown.clone();
+	while !interrupted(&mut shutdown, SOUND_INTERVAL).await {
+		shared.play_fixture_sound();
 	}
 }
 

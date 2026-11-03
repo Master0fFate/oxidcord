@@ -18,6 +18,7 @@ mod rest;
 mod scenario;
 mod screening;
 mod server;
+mod soundboard;
 mod stage;
 mod state;
 mod threads;

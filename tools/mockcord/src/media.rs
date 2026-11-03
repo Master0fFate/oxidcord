@@ -7,6 +7,8 @@ use axum::response::{IntoResponse, Response};
 use image::codecs::png::PngEncoder;
 use image::{ExtendedColorType, ImageEncoder, Rgb, RgbImage, Rgba, RgbaImage};
 
+use crate::soundboard;
+
 const WIDTH: u32 = 400;
 const HEIGHT: u32 = 300;
 const GRID_STEP: u32 = 50;
@@ -22,7 +24,7 @@ const RING_SUFFIX: &str = "-mockring.png";
 const BADGE_SUFFIX: &str = "-mockbadge.png";
 const PLATE_SUFFIX: &str = "-static.png";
 
-const ASSETS: [(&str, &str, &[u8]); 7] = [
+const ASSETS: [(&str, &str, &[u8]); 9] = [
 	("clip.mp4", "video/mp4", include_bytes!("../assets/clip.mp4")),
 	(
 		"clip-hevc.mp4",
@@ -34,6 +36,16 @@ const ASSETS: [(&str, &str, &[u8]); 7] = [
 	("loop.gif", "image/gif", include_bytes!("../assets/loop.gif")),
 	("song.mp3", "audio/mpeg", include_bytes!("../assets/song.mp3")),
 	("voice.ogg", "audio/ogg", include_bytes!("../assets/voice.ogg")),
+	(
+		soundboard::CHIME_FILE,
+		"audio/ogg",
+		include_bytes!("../assets/sound-chime.ogg"),
+	),
+	(
+		soundboard::BLIP_FILE,
+		"audio/ogg",
+		include_bytes!("../assets/sound-blip.ogg"),
+	),
 ];
 
 pub fn asset(name: &str) -> Option<(&'static str, &'static [u8])> {
@@ -51,7 +63,7 @@ fn requested_range(headers: &HeaderMap, len: usize) -> Option<(usize, usize)> {
 	(start <= end).then_some((start, end))
 }
 
-fn serve_asset(kind: &'static str, bytes: &'static [u8], headers: &HeaderMap) -> Response {
+pub fn serve_asset(kind: &'static str, bytes: &'static [u8], headers: &HeaderMap) -> Response {
 	match requested_range(headers, bytes.len()) {
 		Some((start, end)) => (
 			StatusCode::PARTIAL_CONTENT,
