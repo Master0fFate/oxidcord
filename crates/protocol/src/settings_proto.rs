@@ -127,7 +127,7 @@ impl MediaRedactions {
 			MediaScope::NonFriendDm => self.non_friend_dm,
 		};
 		match (chosen, scope) {
-			(MediaRedaction::Unset, MediaScope::NonFriendDm) => MediaRedaction::Block,
+			(MediaRedaction::Unset, MediaScope::NonFriendDm) => MediaRedaction::Blur,
 			(MediaRedaction::Unset, _) => MediaRedaction::Show,
 			(chosen, _) => chosen,
 		}
