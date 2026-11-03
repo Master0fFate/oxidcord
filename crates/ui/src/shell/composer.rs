@@ -283,7 +283,8 @@ impl Composer {
 		self.reply = None;
 		self.files.clear();
 		self.stickers.clear();
-		self.autocomplete = None;
+		self.dismiss_autocomplete();
+		self.member_query.clear();
 		self.last_typing = None;
 		let draft = channel
 			.and_then(|channel| self.data.read(cx).state().draft(channel).map(str::to_owned))
@@ -536,6 +537,9 @@ impl Composer {
 		};
 		if trigger == Some(Trigger::Mention) {
 			self.search_members(query, cx);
+		} else {
+			self.member_search = None;
+			self.awaiting_members = false;
 		}
 		if trigger == Some(Trigger::Emoji)
 			&& let Some(item) = self.shortcode(query, cx)
@@ -573,6 +577,12 @@ impl Composer {
 		cx.notify();
 	}
 
+	fn dismiss_autocomplete(&mut self) {
+		self.autocomplete = None;
+		self.member_search = None;
+		self.awaiting_members = false;
+	}
+
 	fn search_members(&mut self, query: &str, cx: &mut Context<Self>) {
 		let Some(guild) = self.guild else {
 			return;
@@ -606,7 +616,7 @@ impl Composer {
 	}
 
 	pub fn on_members(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-		if std::mem::take(&mut self.awaiting_members) {
+		if self.awaiting_members {
 			let text = self.input.read(cx).value();
 			self.update_autocomplete(&text, window, cx);
 		}
@@ -916,7 +926,7 @@ impl Composer {
 					self.apply(index, window, cx);
 					return true;
 				}
-				"escape" => self.autocomplete = None,
+				"escape" => self.dismiss_autocomplete(),
 				_ => return false,
 			}
 			cx.notify();
@@ -1005,7 +1015,7 @@ impl Composer {
 			content: String::new(),
 		});
 		self.draft_task = None;
-		self.autocomplete = None;
+		self.dismiss_autocomplete();
 		self.last_typing = None;
 		self.awaiting_draft = false;
 		self.input.update(cx, |state, cx| state.clean(window, cx));
