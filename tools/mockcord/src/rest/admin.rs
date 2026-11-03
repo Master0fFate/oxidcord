@@ -227,8 +227,14 @@ pub async fn audit_log(
 		.map(Json)
 }
 
-pub async fn bans(State(shared): Mock, Path(id): Path<u64>) -> ApiResult {
-	shared.bans_json(id).map(Json)
+#[derive(serde::Deserialize)]
+pub struct BanParams {
+	after: Option<u64>,
+	limit: Option<usize>,
+}
+
+pub async fn bans(State(shared): Mock, Path(id): Path<u64>, Query(params): Query<BanParams>) -> ApiResult {
+	shared.bans_json(id, params.after, params.limit).map(Json)
 }
 
 pub async fn automod_rules(State(shared): Mock, Path(id): Path<u64>) -> ApiResult {

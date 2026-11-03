@@ -5,8 +5,8 @@ use chrono::{DateTime, Utc};
 use protocol::lenient::{or_default, timestamp};
 use protocol::{
 	ApplicationCommand, ApplicationCommandType, AutoModRule, Channel, CommandIndex, Gif, GifFavorites,
-	GifTrending, InteractionContext, JoinRequestStatus, LenientVec, Member, MemberVerification, Message,
-	Permissions, PinnedMessage, ScheduledEvent, Snowflake, Sticker, StickerPack, ThreadMember, User,
+	GifTrending, GuildBan, InteractionContext, JoinRequestStatus, LenientVec, Member, MemberVerification,
+	Message, Permissions, PinnedMessage, ScheduledEvent, Snowflake, Sticker, StickerPack, ThreadMember, User,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -891,6 +891,34 @@ impl State {
 			premium_since: parsed.premium_since,
 			user,
 		})
+	}
+
+	pub(crate) fn ban_added(&mut self, ban: &GuildBan) -> Changes {
+		let mut changes = Changes::default();
+		intern_user(&mut self.users, &ban.user);
+		if let Some(entries) = self.lazy.bans.get_mut(&ban.guild_id)
+			&& !entries.iter().any(|entry| entry.user.id == ban.user.id)
+			&& let Some(user) = self.users.get(&ban.user.id)
+		{
+			entries.push(BanEntry {
+				user: user.clone(),
+				reason: None,
+			});
+			changes.loaded.insert(ban.guild_id);
+		}
+		changes
+	}
+
+	pub(crate) fn ban_removed(&mut self, ban: &GuildBan) -> Changes {
+		let mut changes = Changes::default();
+		if let Some(entries) = self.lazy.bans.get_mut(&ban.guild_id) {
+			let before = entries.len();
+			entries.retain(|entry| entry.user.id != ban.user.id);
+			if entries.len() != before {
+				changes.loaded.insert(ban.guild_id);
+			}
+		}
+		changes
 	}
 
 	fn store_role_counts(&mut self, guild_id: Snowflake, raw: &Value) {

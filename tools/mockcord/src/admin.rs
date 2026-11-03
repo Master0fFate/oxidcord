@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use chrono::{DateTime, Duration, Utc};
 use protocol::{
@@ -22,6 +22,9 @@ const VOICE_SESSION_AGE_SECONDS: i64 = 600;
 const SEED_AUDIT_ENTRIES: i64 = 3;
 const MINUTE_MS: i64 = 60_000;
 const MAX_TIMEOUT_DAYS: i64 = 28;
+const BAN_PAGE: usize = 1000;
+const SEED_BANS: u64 = 1100;
+const SEED_BAN_FIRST_ID: u64 = 90_000_000_000_000_000;
 const ACTION_CHANNEL_CREATE: i64 = 10;
 const ACTION_CHANNEL_UPDATE: i64 = 11;
 const ACTION_CHANNEL_DELETE: i64 = 12;
@@ -44,6 +47,25 @@ pub const ACTION_AUTOMOD_RULE_DELETE: i64 = 142;
 
 pub fn current_session_hash() -> String {
 	format!("mock-session-{CURRENT_USER_ID}")
+}
+
+pub fn seed_bans(fixtures: &Fixtures) -> HashMap<u64, BTreeMap<u64, Option<String>>> {
+	fixtures
+		.guilds
+		.get(1)
+		.map(|guild| {
+			let bans = (0..SEED_BANS)
+				.map(|offset| {
+					(
+						SEED_BAN_FIRST_ID + offset,
+						(offset % 3 == 0).then(|| "spam".to_owned()),
+					)
+				})
+				.collect();
+			(guild.id, bans)
+		})
+		.into_iter()
+		.collect()
 }
 
 pub fn seed_audit(fixtures: &Fixtures) -> HashMap<u64, Vec<Value>> {
@@ -1099,10 +1121,11 @@ impl Shared {
 		);
 		drop(store);
 		let user = self.fixtures.users.get(&user_id).map_or(Value::Null, to_json);
-		self.hub.broadcast(
-			"GUILD_MEMBER_REMOVE",
-			&json!({ "guild_id": guild_id.to_string(), "user": user }),
-		);
+		let change = json!({ "guild_id": guild_id.to_string(), "user": user });
+		self.hub.broadcast("GUILD_MEMBER_REMOVE", &change);
+		if ban {
+			self.hub.broadcast("GUILD_BAN_ADD", &change);
+		}
 		Ok(())
 	}
 
@@ -1120,10 +1143,27 @@ impl Shared {
 			.or_default()
 			.remove(&user_id);
 		store.push_audit(guild_id, ACTION_UNBAN, Some(user_id), json!([]), None);
+		drop(store);
+		self.hub.broadcast(
+			"GUILD_BAN_REMOVE",
+			&json!({ "guild_id": guild_id.to_string(), "user": self.ban_user(user_id) }),
+		);
 		Ok(())
 	}
 
-	pub fn bans_json(&self, guild_id: u64) -> Result<Value, ApiError> {
+	fn ban_user(&self, user_id: u64) -> Value {
+		self.fixtures.users.get(&user_id).map_or_else(
+			|| json!({ "id": user_id.to_string(), "username": format!("banned_{user_id}"), "discriminator": "0", "avatar": null }),
+			to_json,
+		)
+	}
+
+	pub fn bans_json(
+		&self,
+		guild_id: u64,
+		after: Option<u64>,
+		limit: Option<usize>,
+	) -> Result<Value, ApiError> {
 		let store = self.store.lock();
 		self.live_guild(&store, guild_id)?;
 		let bans: Vec<Value> = store
@@ -1131,9 +1171,9 @@ impl Shared {
 			.get(&guild_id)
 			.into_iter()
 			.flatten()
-			.map(|(user_id, reason)| {
-				json!({ "user": self.fixtures.users.get(user_id).map_or(Value::Null, to_json), "reason": reason })
-			})
+			.filter(|(user_id, _)| after.is_none_or(|after| **user_id > after))
+			.take(limit.unwrap_or(BAN_PAGE).min(BAN_PAGE))
+			.map(|(user_id, reason)| json!({ "user": self.ban_user(*user_id), "reason": reason }))
 			.collect();
 		Ok(Value::Array(bans))
 	}

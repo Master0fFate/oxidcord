@@ -8,7 +8,7 @@ use protocol::{
 };
 use rest::api::ArchivedScope;
 use rest::api::image_data_uri;
-use rest::{RestError, UploadFile};
+use rest::{RestClient, RestError, UploadFile};
 use serde_json::{Value, json};
 use state::{Loaded, LocalEvent, USER_COMMANDS, guild_folders_settings};
 
@@ -24,6 +24,7 @@ const GIF: &str = "image/gif";
 const DEFAULT_ARCHIVE_MINUTES: u32 = 1440;
 const REACTION_PAGE: u8 = 100;
 const ACK_BULK_LIMIT: usize = 100;
+const BAN_PAGE_LIMIT: usize = 1000;
 const ARCHIVED_PAGE: u8 = 50;
 const MENTIONS_PAGE: u8 = 25;
 const PINS_PAGE: u8 = 50;
@@ -59,6 +60,28 @@ fn forum_body(name: String, content: String, tags: Vec<Snowflake>, files: &[Uplo
 		"applied_tags": tags,
 		"message": message,
 	})
+}
+
+async fn every_ban(rest: &RestClient, guild_id: Snowflake) -> rest::Result<Value> {
+	let mut bans = Vec::new();
+	let mut after = None;
+	loop {
+		let Value::Array(page) = rest.guild_bans(guild_id, after, BAN_PAGE_LIMIT).await? else {
+			break;
+		};
+		let last = page
+			.last()
+			.and_then(|ban| ban["user"]["id"].as_str())
+			.and_then(|id| id.parse::<u64>().ok())
+			.map(Snowflake);
+		let full = page.len() >= BAN_PAGE_LIMIT;
+		bans.extend(page);
+		match last {
+			Some(last) if full && after != Some(last) => after = Some(last),
+			_ => break,
+		}
+	}
+	Ok(Value::Array(bans))
 }
 
 impl Core {
@@ -1181,7 +1204,7 @@ impl Core {
 			Command::LoadBans { guild_id } => {
 				if self.guild_allows(guild_id, Permissions::BAN_MEMBERS, "Ban Members") {
 					self.spawn_load("bans", move |rest| async move {
-						let raw = rest.guild_bans(guild_id).await?;
+						let raw = every_ban(&rest, guild_id).await?;
 						Ok(Loaded::Bans { guild_id, raw })
 					});
 				}

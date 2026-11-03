@@ -154,7 +154,7 @@ impl Store {
 				.collect(),
 			event_interest: BTreeSet::new(),
 			removed_members: HashMap::new(),
-			bans: HashMap::new(),
+			bans: crate::admin::seed_bans(fixtures),
 			automod_rules: crate::automod::seed_automod(fixtures),
 			member_edits: HashMap::new(),
 			invites: BTreeMap::new(),

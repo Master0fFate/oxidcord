@@ -142,8 +142,17 @@ impl RestClient {
 		.await
 	}
 
-	pub async fn guild_bans(&self, guild_id: Snowflake) -> Result<Value> {
-		let request = Request::get(format!("/guilds/{guild_id}/bans")).query(&[("limit", "1000")]);
+	pub async fn guild_bans(
+		&self,
+		guild_id: Snowflake,
+		after: Option<Snowflake>,
+		limit: usize,
+	) -> Result<Value> {
+		let mut request =
+			Request::get(format!("/guilds/{guild_id}/bans")).query(&[("limit", limit.to_string())]);
+		if let Some(after) = after {
+			request = request.query(&[("after", after.to_string())]);
+		}
 		self.send(request).await
 	}
 

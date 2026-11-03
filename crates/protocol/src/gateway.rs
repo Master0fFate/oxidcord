@@ -615,6 +615,13 @@ pub struct GuildMemberRemove {
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
+pub struct GuildBan {
+	pub guild_id: Snowflake,
+	pub user: User,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct GuildMembersChunk {
 	pub guild_id: Snowflake,
 	pub members: LenientVec<Member>,
@@ -776,6 +783,8 @@ pub enum DispatchEvent {
 	GuildMemberAdd(Box<Member>),
 	GuildMemberUpdate(Box<Member>),
 	GuildMemberRemove(Box<GuildMemberRemove>),
+	GuildBanAdd(Box<GuildBan>),
+	GuildBanRemove(Box<GuildBan>),
 	GuildMembersChunk(Box<GuildMembersChunk>),
 	GuildMemberListUpdate(Box<GuildMemberListUpdate>),
 	GuildRoleCreate(Box<GuildRoleChange>),
@@ -871,6 +880,8 @@ impl DispatchEvent {
 			"GUILD_MEMBER_ADD" => Self::GuildMemberAdd(decode(name, data)?),
 			"GUILD_MEMBER_UPDATE" => Self::GuildMemberUpdate(decode(name, data)?),
 			"GUILD_MEMBER_REMOVE" => Self::GuildMemberRemove(decode(name, data)?),
+			"GUILD_BAN_ADD" => Self::GuildBanAdd(decode(name, data)?),
+			"GUILD_BAN_REMOVE" => Self::GuildBanRemove(decode(name, data)?),
 			"GUILD_MEMBERS_CHUNK" => Self::GuildMembersChunk(decode(name, data)?),
 			"GUILD_MEMBER_LIST_UPDATE" => Self::GuildMemberListUpdate(decode(name, data)?),
 			"GUILD_ROLE_CREATE" => Self::GuildRoleCreate(decode(name, data)?),

@@ -153,6 +153,8 @@ impl State {
 				}
 				changes
 			}
+			DispatchEvent::GuildBanAdd(ban) => self.ban_added(ban),
+			DispatchEvent::GuildBanRemove(ban) => self.ban_removed(ban),
 			DispatchEvent::GuildMembersChunk(chunk) => self.members_chunk(chunk),
 			DispatchEvent::GuildMemberListUpdate(update) => self.member_list_update(update),
 			DispatchEvent::GuildRoleCreate(change) | DispatchEvent::GuildRoleUpdate(change) => {
