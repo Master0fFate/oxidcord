@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use protocol::{
 	Channel, ChannelLastMessage, ChannelPinsAck, ChannelPinsUpdate, ChannelRecipientChange, DispatchEvent,
 	GuildMemberListUpdate, GuildMembersChunk, GuildRoleChange, JoinRequestStatus, Member, MemberListGroup,
-	Message, MessageAck, MessagePollVote, MessageType, MessageUpdate, PassiveUpdate, Presence,
+	Message, MessageAck, MessageFlags, MessagePollVote, MessageType, MessageUpdate, PassiveUpdate, Presence,
 	RelationshipKind, Snowflake, ThreadDelete, ThreadListSync, TypingStart, UnavailableGuild,
 	UserGuildSettings, VoiceState,
 };
@@ -326,7 +326,8 @@ impl State {
 				}
 			}
 		}
-		if let Some(channel) = self.channel_mut(channel_id)
+		if !message.flags.contains(MessageFlags::EPHEMERAL)
+			&& let Some(channel) = self.channel_mut(channel_id)
 			&& channel.last_message_id < Some(message.id)
 		{
 			channel.last_message_id = Some(message.id);

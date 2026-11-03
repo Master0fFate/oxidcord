@@ -140,8 +140,9 @@ impl ChannelMessages {
 			self.gaps.clear();
 			self.stale = false;
 		}
+		let at_tail = channel_last.is_none_or(|last| messages.iter().any(|message| message.id >= last));
 		self.drop_confirmed_pending(&messages);
-		for message in messages.into_iter().chain(kept) {
+		for message in messages.into_iter().chain(kept.into_iter().filter(|_| at_tail)) {
 			self.insert(message);
 		}
 		match direction {
