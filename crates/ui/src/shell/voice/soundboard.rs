@@ -17,35 +17,35 @@ const PANEL_MAX_HEIGHT: f32 = 24.;
 const CELL_WIDTH: f32 = 9.;
 const LOCKED_OPACITY: f32 = 0.5;
 
-struct Entry {
-	sound: SoundboardSound,
+struct Entry<'a> {
+	sound: &'a SoundboardSound,
 	locked: bool,
 }
 
-struct Group {
+struct Group<'a> {
 	title: SharedString,
-	entries: Vec<Entry>,
+	entries: Vec<Entry<'a>>,
 }
 
-fn group(title: SharedString, sounds: &[SoundboardSound], state: &State) -> Option<Group> {
+fn group<'a>(title: SharedString, sounds: &'a [SoundboardSound], state: &State) -> Option<Group<'a>> {
 	let entries: Vec<Entry> = sounds
 		.iter()
 		.filter(|sound| sound.usable())
 		.map(|sound| Entry {
 			locked: state.sound_block(sound).is_some(),
-			sound: sound.clone(),
+			sound,
 		})
 		.collect();
 	(!entries.is_empty()).then_some(Group { title, entries })
 }
 
-fn groups(state: &State, guild: Snowflake, cx: &App) -> Vec<Group> {
+fn groups<'a>(state: &'a State, guild: Snowflake, cx: &App) -> Vec<Group<'a>> {
 	let own = state
 		.guild(guild)
 		.and_then(|found| group(found.name.clone().into(), state.guild_sounds(guild)?, state));
 	let others = state
 		.guilds()
-		.filter(|other| other.id != guild)
+		.filter(|other| other.id != guild && state.has_nitro())
 		.filter_map(|other| group(other.name.clone().into(), state.guild_sounds(other.id)?, state));
 	let defaults = state
 		.default_sounds()
@@ -53,7 +53,7 @@ fn groups(state: &State, guild: Snowflake, cx: &App) -> Vec<Group> {
 	own.into_iter().chain(others).chain(defaults).collect()
 }
 
-fn cell(entry: &Entry, channel: Snowflake, data: &Entity<Data>, theme: &Theme, cx: &App) -> AnyElement {
+fn cell(entry: &Entry<'_>, channel: Snowflake, data: &Entity<Data>, theme: &Theme, cx: &App) -> AnyElement {
 	let sound_id = entry.sound.sound_id;
 	let data = data.clone();
 	div()
@@ -74,7 +74,7 @@ fn cell(entry: &Entry, channel: Snowflake, data: &Entity<Data>, theme: &Theme, c
 				sound_id,
 			})
 		})
-		.child(match StatusEmoji::from_sound(&entry.sound) {
+		.child(match StatusEmoji::from_sound(entry.sound) {
 			Some(emoji) => emoji.element(theme.glyph_md, cx),
 			None => Icon::new(IconKind::Soundboard)
 				.size(theme.glyph_md)
@@ -93,7 +93,7 @@ fn cell(entry: &Entry, channel: Snowflake, data: &Entity<Data>, theme: &Theme, c
 		.into_any_element()
 }
 
-fn section(group: &Group, channel: Snowflake, data: &Entity<Data>, theme: &Theme, cx: &App) -> AnyElement {
+fn section(group: &Group<'_>, channel: Snowflake, data: &Entity<Data>, theme: &Theme, cx: &App) -> AnyElement {
 	div()
 		.flex()
 		.flex_col()
@@ -124,7 +124,8 @@ pub fn panel(
 	theme: &Theme,
 	cx: &App,
 ) -> AnyElement {
-	let groups = groups(&data.read(cx).state(), guild, cx);
+	let state = data.read(cx).state();
+	let groups = groups(&state, guild, cx);
 	div()
 		.absolute()
 		.left_0()
