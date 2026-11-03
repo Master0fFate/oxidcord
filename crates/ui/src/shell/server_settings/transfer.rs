@@ -45,7 +45,7 @@ fn candidates(data: &Data, guild: Snowflake) -> Vec<(Snowflake, SharedString)> {
 		.filter(|id| !state.user(*id).is_some_and(|user| user.bot == Some(true)))
 		.map(|id| (id, state.display_name(Some(guild), id).into()))
 		.collect();
-	people.sort_unstable_by_key(|(_, name)| name.to_lowercase());
+	people.sort_by_cached_key(|(_, name)| name.to_lowercase());
 	people.truncate(CANDIDATE_LIMIT);
 	people
 }

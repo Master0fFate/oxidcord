@@ -621,13 +621,10 @@ impl Core {
 					if !accepted.show_verification_form {
 						return Ok(());
 					}
-					if let Some(guild) = accepted.guild {
-						let _ = internal.send(Internal::Loaded(Loaded::Application {
-							guild_id,
-							name: guild.name.unwrap_or_default(),
-							icon: guild.icon,
-						}));
-					}
+					let (name, icon) = accepted
+						.guild
+						.map_or((String::new(), None), |guild| (guild.name.unwrap_or_default(), guild.icon));
+					let _ = internal.send(Internal::Loaded(Loaded::Application { guild_id, name, icon }));
 					if let Ok(form) = rest.member_verification(guild_id, Some(&code)).await {
 						let _ =
 							internal.send(Internal::Loaded(Loaded::MemberVerification { guild_id, form }));

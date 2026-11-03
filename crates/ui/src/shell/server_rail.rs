@@ -113,7 +113,7 @@ impl Target {
 			Self::Guild(id) => id.wrapping_mul(2).wrapping_add(8),
 			Self::Dm(id) => id.wrapping_mul(2).wrapping_add(1 << 62),
 			Self::Folder(id) => id.wrapping_mul(2).wrapping_add(9),
-			Self::Application(id) => id.wrapping_mul(2).wrapping_add(10),
+			Self::Application(id) => id.wrapping_mul(2).wrapping_add(1 << 61),
 		}
 	}
 }
@@ -490,6 +490,7 @@ impl ServerRail {
 		let status = cx.t(match application.status {
 			Some(JoinRequestStatus::Submitted) => "membership-bar-submitted",
 			Some(JoinRequestStatus::Rejected) => "membership-bar-rejected",
+			Some(JoinRequestStatus::Approved) => "membership-bar-approved",
 			_ => "rail-application-apply",
 		});
 		self.tile(

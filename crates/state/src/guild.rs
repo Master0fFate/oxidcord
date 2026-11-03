@@ -16,6 +16,7 @@ pub struct Application {
 	pub name: String,
 	pub icon: Option<String>,
 	pub status: Option<JoinRequestStatus>,
+	pub looked_up: bool,
 }
 
 pub const ENHANCED_ROLE_COLORS: &str = "ENHANCED_ROLE_COLORS";

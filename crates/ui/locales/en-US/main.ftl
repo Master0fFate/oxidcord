@@ -686,6 +686,7 @@ request-bar-spam = Possible Spam
 membership-bar-title = Membership Screening
 membership-bar-submitted = Application Pending
 membership-bar-rejected = Application Rejected
+membership-bar-approved = Application Approved
 membership-bar-complete = Complete
 rail-application-apply = Apply to join
 spoiler-gate-title = Spoiler Channel

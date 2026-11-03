@@ -977,16 +977,22 @@ impl State {
 			Loaded::Application { guild_id, name, icon } => {
 				if !self.guilds.contains_key(guild_id) {
 					let application = self.applications.entry(*guild_id).or_default();
-					application.name.clone_from(name);
+					if !name.is_empty() {
+						application.name.clone_from(name);
+					}
 					application.icon.clone_from(icon);
 					changes.guild_list = true;
 				}
 			}
 			Loaded::JoinRequestGuilds(guilds) => {
-				for guild in guilds.iter().filter(|guild| !self.guilds.contains_key(&guild.id)) {
-					let application = self.applications.entry(guild.id).or_default();
-					application.name = guild.name.clone().unwrap_or_default();
-					application.icon.clone_from(&guild.icon);
+				for application in self.applications.values_mut() {
+					application.looked_up = true;
+				}
+				for guild in guilds.iter() {
+					if let Some(application) = self.applications.get_mut(&guild.id) {
+						application.name = guild.name.clone().unwrap_or_default();
+						application.icon.clone_from(&guild.icon);
+					}
 				}
 				changes.guild_list = true;
 			}
@@ -1557,7 +1563,7 @@ impl State {
 	pub fn has_unnamed_application(&self) -> bool {
 		self.applications
 			.values()
-			.any(|application| application.name.is_empty())
+			.any(|application| application.name.is_empty() && !application.looked_up)
 	}
 
 	pub fn me_pending(&self, guild_id: Snowflake) -> bool {

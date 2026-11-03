@@ -751,8 +751,11 @@ impl Core {
 		self.forward_dispatch(&event);
 		self.forward_client_events(&event, probe);
 		match event {
-			DispatchEvent::GuildJoinRequestCreate(_) | DispatchEvent::GuildJoinRequestUpdate(_) => {
-				self.load_unnamed_applications();
+			DispatchEvent::GuildJoinRequestCreate(change) | DispatchEvent::GuildJoinRequestUpdate(change) => {
+				let me = self.state.read().current_user_id();
+				if change.user_id().is_none_or(|user_id| Some(user_id) == me) {
+					self.load_unnamed_applications();
+				}
 			}
 			DispatchEvent::MessageCreate(message) => {
 				self.deliver_join_request(&message);

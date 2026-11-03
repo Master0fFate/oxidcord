@@ -60,10 +60,14 @@ fn text_response(text: &str) -> Option<Value> {
 impl Screening {
 	fn new(data: Entity<Data>, guild_id: Snowflake, window: &mut Window, cx: &mut Context<Self>) -> Self {
 		let loads = cx.subscribe_in(&data, window, |this, _, event: &DataEvent, window, cx| {
-			if let DataEvent::Changed(changes) = event
-				&& changes.loaded.contains(this.guild_id)
-			{
+			let DataEvent::Changed(changes) = event else {
+				return;
+			};
+			if changes.loaded.contains(this.guild_id) {
 				this.adopt(window, cx);
+			}
+			if changes.guild_list && this.data.read(cx).state().application(this.guild_id).is_some() {
+				cx.notify();
 			}
 		});
 		let mut screening = Self {
@@ -74,15 +78,24 @@ impl Screening {
 			description: None,
 			_subscriptions: vec![loads],
 		};
-		if screening
-			.data
-			.read(cx)
-			.state()
-			.member_verification(guild_id)
-			.is_some()
-		{
+		let (loaded, decided) = {
+			let data = screening.data.read(cx);
+			let state = data.state();
+			(
+				state.member_verification(guild_id).is_some(),
+				state
+					.application(guild_id)
+					.is_some_and(|application| {
+						matches!(
+							application.status,
+							Some(JoinRequestStatus::Submitted | JoinRequestStatus::Rejected | JoinRequestStatus::Approved)
+						)
+					}),
+			)
+		};
+		if loaded {
 			screening.adopt(window, cx);
-		} else {
+		} else if !decided {
 			screening
 				.data
 				.read(cx)
@@ -396,6 +409,11 @@ impl Render for Screening {
 			Some(JoinRequestStatus::Rejected) => {
 				return self
 					.closed("membership-bar-rejected", &theme, cx)
+					.into_any_element();
+			}
+			Some(JoinRequestStatus::Approved) => {
+				return self
+					.closed("membership-bar-approved", &theme, cx)
 					.into_any_element();
 			}
 			_ => {}
