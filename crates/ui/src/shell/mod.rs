@@ -989,6 +989,9 @@ impl Shell {
 		{
 			self.member_list.update(cx, |list, cx| list.refresh(cx));
 		}
+		if changes.relationships {
+			self.member_list.update(cx, |_, cx| cx.notify());
+		}
 		self.timeline
 			.update(cx, |timeline, cx| timeline.on_changes(changes, window, cx));
 		self.community
