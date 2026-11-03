@@ -11,6 +11,7 @@ mod popout;
 mod quality;
 mod room;
 mod settings_page;
+mod soundboard;
 mod stage;
 pub mod status;
 mod user_menu;

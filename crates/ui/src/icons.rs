@@ -149,6 +149,7 @@ pub enum IconKind {
 	Code,
 	Id,
 	Poll,
+	Soundboard,
 }
 
 impl IconKind {
@@ -354,6 +355,7 @@ impl IconKind {
 			Self::Code => IconName::Code,
 			Self::Id => IconName::IdCard,
 			Self::Poll => IconName::ChartBar,
+			Self::Soundboard => IconName::Music,
 		}
 	}
 }

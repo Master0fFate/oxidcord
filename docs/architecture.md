@@ -77,3 +77,7 @@ Provider embeds (YouTube, Vimeo, Spotify, SoundCloud) are never loaded from the 
 While sharing, the sender pipeline hands one captured frame to the session at the start and every five minutes; the session scales it to 512 px, encodes a JPEG and posts it to `/streams/{key}/preview`. Viewers read the preview URL with `LoadStreamPreview` and show it on the tile before Watch is pressed; `STREAM_UPDATE` viewer ids feed the viewer stack on live tiles.
 
 Video textures are shared by every view through `Textures`: the voice room, the zoom and pan viewer, the fullscreen overlay, the pop-out window and the picture-in-picture panel that appears while a watched stream is open and the room is not.
+
+## Soundboard
+
+Sounds are listed per guild (`SOUNDBOARD_SOUNDS` after gateway op 31, or `GET /guilds/{id}/soundboard-sounds` for the server settings page) plus the default list from `GET /soundboard-default-sounds`. Sending a sound is `POST /channels/{id}/send-soundboard-sound`; Discord answers every client in the channel with `VOICE_CHANNEL_EFFECT_SEND`. The session downloads `cdn.discordapp.com/soundboard-sounds/{id}` through the media fetcher, decodes it to 48 kHz stereo with `voice::decode_sound` (symphonia for mp3 and vorbis, libopus for opus) and hands it to the voice connection, which mixes it into playback after the remote streams and drops it while deafened. The effect also lands in `VoiceSession::effects`, which the voice room draws on the sender tile for `VOICE_EFFECT_LIFETIME`. Uploads are checked for 512 KB and 5.2 s before the request is made.

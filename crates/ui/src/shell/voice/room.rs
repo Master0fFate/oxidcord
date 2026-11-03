@@ -13,7 +13,7 @@ use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::menu::DropdownMenu as _;
 use protocol::{ChannelType, Permissions, Snowflake};
 use session::Command;
-use state::VoiceStatus;
+use state::{VOICE_EFFECT_LIFETIME, VoiceSession, VoiceStatus};
 
 use super::actions;
 use super::live::{LiveStream, PREVIEW_HINT, live_streams, viewer_stack};
@@ -21,12 +21,13 @@ use super::participants::{Participant, participants};
 use super::picker;
 use super::popout;
 use super::quality::Preset;
+use super::soundboard;
 use super::stage::open_topic;
 use super::status;
 use super::video_sink::{follow_frames, video_image};
 use super::viewer::StreamViewer;
 use super::widgets::{ControlButton, live_badge, speaking_avatar, state_icons};
-use crate::components::{ContextMenuBuilder, IconButton};
+use crate::components::{ContextMenuBuilder, IconButton, StatusEmoji};
 use crate::data::{Data, DataEvent};
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
@@ -41,6 +42,7 @@ const IDLE_REDRAW: Duration = Duration::from_millis(500);
 const STAGE_SPEAKER_SHARE: f32 = 0.55;
 const AUDIENCE_ITEM_WIDTH: f32 = 88.;
 const REQUEST_LIST_MAX_HEIGHT: f32 = 168.;
+const EFFECT_SIZE: f32 = 3.;
 
 pub enum RoomEvent {
 	UserMenu { user: Snowflake, at: Point<Pixels> },
@@ -57,6 +59,8 @@ pub struct VoiceRoom {
 	focused: Option<Snowflake>,
 	viewer: Option<Entity<StreamViewer>>,
 	camera_pending: bool,
+	soundboard_open: bool,
+	effect_seen: Option<Instant>,
 	stage: Rc<Cell<Size<Pixels>>>,
 	last_render: Cell<Instant>,
 	status_cache: Option<SharedString>,
@@ -89,6 +93,7 @@ struct Snapshot {
 	can_chat: bool,
 	voice_status: Option<SharedString>,
 	can_edit_status: bool,
+	effects: HashMap<Snowflake, Option<StatusEmoji>>,
 }
 
 enum TileSize {
@@ -139,7 +144,17 @@ fn snapshot(data: &Data, status_cache: &mut Option<SharedString>) -> Option<Snap
 		can_chat: permissions.contains(Permissions::VIEW_CHANNEL | Permissions::READ_MESSAGE_HISTORY),
 		voice_status: status_cache.clone(),
 		can_edit_status: kind == Some(ChannelType::GuildVoice) && state.can_set_voice_status(channel),
+		effects: live_effects(session),
 	})
+}
+
+fn live_effects(session: Option<&VoiceSession>) -> HashMap<Snowflake, Option<StatusEmoji>> {
+	session
+		.into_iter()
+		.flat_map(|voice| voice.effects.iter())
+		.filter(|(_, effect)| effect.is_live())
+		.map(|(user, effect)| (*user, effect.emoji.as_ref().and_then(StatusEmoji::from_activity)))
+		.collect()
 }
 
 fn grid_layout(count: usize, width: Pixels, height: Pixels, gap: Pixels, rem_size: Pixels) -> (Rems, Rems) {
@@ -203,6 +218,8 @@ impl VoiceRoom {
 			focused: None,
 			viewer: None,
 			camera_pending: false,
+			soundboard_open: false,
+			effect_seen: None,
 			stage: Rc::new(Cell::new(size(px(0.), px(0.)))),
 			last_render: Cell::new(Instant::now()),
 			status_cache: None,
@@ -235,6 +252,35 @@ impl VoiceRoom {
 				let backend = self.backend.clone();
 				actions::toggle_camera(&self.data, &backend, cx);
 			}
+		}
+		self.expire_effects(cx);
+		cx.notify();
+	}
+
+	fn expire_effects(&mut self, cx: &mut Context<Self>) {
+		let latest = self
+			.data
+			.read(cx)
+			.state()
+			.voice()
+			.and_then(|voice| voice.effects.values().map(|effect| effect.sent_at).max());
+		if latest.is_none() || latest == self.effect_seen {
+			return;
+		}
+		self.effect_seen = latest;
+		cx.spawn(async move |this, cx| {
+			cx.background_executor().timer(VOICE_EFFECT_LIFETIME).await;
+			this.update(cx, |_, cx| cx.notify()).ok();
+		})
+		.detach();
+	}
+
+	fn toggle_soundboard(&mut self, guild: Snowflake, cx: &mut Context<Self>) {
+		self.soundboard_open = !self.soundboard_open;
+		if self.soundboard_open {
+			self.data
+				.read(cx)
+				.send(Command::LoadSoundboard { guild_id: guild });
 		}
 		cx.notify();
 	}
@@ -433,6 +479,23 @@ impl VoiceRoom {
 							row.child(live_badge(live_label.clone(), theme))
 						})
 						.children(viewers),
+				)
+			})
+			.when_some(snapshot.effects.get(&user), |tile, effect| {
+				tile.child(
+					div()
+						.absolute()
+						.inset_0()
+						.flex()
+						.items_center()
+						.justify_center()
+						.child(match effect {
+							Some(emoji) => emoji.element(rem(EFFECT_SIZE), cx),
+							None => Icon::new(IconKind::Soundboard)
+								.size(rem(EFFECT_SIZE))
+								.color(theme.interactive_active)
+								.into_any_element(),
+						}),
 				)
 			})
 			.when(focused, |tile| {
@@ -1035,6 +1098,20 @@ impl VoiceRoom {
 				snapshot.guild.filter(|_| snapshot.stage_channel),
 				|bar, guild_id| bar.child(self.stage_seat_button(snapshot, guild_id, cx)),
 			)
+			.when_some(
+				snapshot.guild.filter(|_| !snapshot.stage_channel),
+				|bar, guild_id| {
+					bar.child(
+						ControlButton::new(
+							"voice-bar-soundboard",
+							IconKind::Soundboard,
+							cx.t("voice-soundboard"),
+						)
+						.highlight(self.soundboard_open)
+						.on_click(cx.listener(move |this, _, _, cx| this.toggle_soundboard(guild_id, cx))),
+					)
+				},
+			)
 			.child(
 				ControlButton::new(
 					"voice-bar-disconnect",
@@ -1227,6 +1304,20 @@ impl Render for VoiceRoom {
 							.when(
 								snapshot.voice_status.is_some() || snapshot.can_edit_status,
 								|stage| stage.child(self.status_chip(&snapshot, &theme, cx)),
+							)
+							.when_some(
+								snapshot
+									.guild
+									.filter(|_| connected && self.soundboard_open && !snapshot.stage_channel),
+								|stage, guild| {
+									stage.child(soundboard::panel(
+										&self.data,
+										guild,
+										snapshot.channel,
+										&theme,
+										cx,
+									))
+								},
 							)
 							.when(snapshot.can_chat, |stage| {
 								stage.child(

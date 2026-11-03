@@ -1,5 +1,5 @@
 use gpui::{AnyElement, App, Rems, SharedString};
-use protocol::PartialEmoji;
+use protocol::{PartialEmoji, SoundboardSound};
 
 use super::emoji::{remote_icon, unicode_emoji};
 use crate::theme::rem_to_pixels;
@@ -21,6 +21,14 @@ impl StatusEmoji {
 
 	pub fn from_activity(emoji: &PartialEmoji) -> Option<Self> {
 		Self::new(emoji.id.map(|id| id.get()), emoji.name.as_deref(), emoji.animated)
+	}
+
+	pub fn from_sound(sound: &SoundboardSound) -> Option<Self> {
+		Self::new(
+			sound.emoji_id.map(|id| id.get()),
+			sound.emoji_name.as_deref(),
+			false,
+		)
 	}
 
 	pub fn element(&self, size: Rems, cx: &App) -> AnyElement {

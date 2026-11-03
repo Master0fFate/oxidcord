@@ -1,14 +1,17 @@
-use std::io::Cursor;
+use std::io::{Cursor, Read as _};
 use std::sync::Arc;
 
 use gpui::{Context, Image, ImageFormat};
 use image::AnimationDecoder as _;
 use image::codecs::gif::GifDecoder;
 use image::imageops::FilterType;
+use protocol::SOUND_MAX_BYTES;
 
 const MAX_ANIMATED_BYTES: usize = 256 * 1024;
+const SOUND_READ_LIMIT: u64 = SOUND_MAX_BYTES as u64 + 1;
 pub const IMAGE_TYPES: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "apng"];
 pub const STICKER_TYPES: &[&str] = &["png", "apng", "gif"];
+pub const SOUND_TYPES: &[&str] = &["mp3", "ogg"];
 
 pub struct Picked {
 	pub name: String,
@@ -65,6 +68,39 @@ fn fitted(raw: Vec<u8>, name: &str, fit: Fit) -> Option<(Vec<u8>, ImageFormat)> 
 fn animated_gif(bytes: &[u8]) -> bool {
 	bytes.len() <= MAX_ANIMATED_BYTES
 		&& GifDecoder::new(Cursor::new(bytes)).is_ok_and(|decoder| decoder.into_frames().take(2).count() == 2)
+}
+
+pub fn pick_sound<V: 'static>(
+	cx: &mut Context<V>,
+	on_picked: impl Fn(&mut V, String, Vec<u8>, &mut Context<V>) + 'static,
+) {
+	cx.spawn(async move |this, cx| {
+		let Some(handle) = rfd::AsyncFileDialog::new()
+			.add_filter("Sounds", SOUND_TYPES)
+			.pick_file()
+			.await
+		else {
+			return;
+		};
+		let name = handle.file_name();
+		let path = handle.path().to_path_buf();
+		let read = cx
+			.background_executor()
+			.spawn(async move {
+				let mut bytes = Vec::new();
+				std::fs::File::open(path)
+					.and_then(|file| file.take(SOUND_READ_LIMIT).read_to_end(&mut bytes))
+					.inspect_err(|error| tracing::warn!(%error, "could not read the picked sound"))
+					.ok()?;
+				Some(bytes)
+			})
+			.await;
+		let Some(bytes) = read else {
+			return;
+		};
+		this.update(cx, |this, cx| on_picked(this, name, bytes, cx)).ok();
+	})
+	.detach();
 }
 
 pub fn pick_image<V: 'static>(

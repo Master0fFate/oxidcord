@@ -11,6 +11,8 @@ pub mod members;
 pub mod overview;
 pub mod rights;
 pub mod roles;
+pub mod sound_edit;
+pub mod sounds;
 pub mod sticker_edit;
 pub mod stickers;
 
@@ -29,6 +31,7 @@ use self::invites::InvitesPage;
 use self::members::MembersPage;
 use self::overview::OverviewPage;
 use self::roles::RolesPage;
+use self::sounds::SoundsPage;
 use self::stickers::StickersPage;
 use super::community::access::GuildAccess;
 use crate::data::{Data, DataEvent};
@@ -46,6 +49,7 @@ pub enum Page {
 	Roles,
 	Emoji,
 	Stickers,
+	Soundboard,
 	Members,
 	Invites,
 	Bans,
@@ -65,7 +69,7 @@ const GROUPS: &[NavGroup] = &[
 	},
 	NavGroup {
 		title: "server-settings-group-expression",
-		pages: &[Page::Emoji, Page::Stickers],
+		pages: &[Page::Emoji, Page::Stickers, Page::Soundboard],
 	},
 	NavGroup {
 		title: "server-settings-group-people",
@@ -84,6 +88,7 @@ impl Page {
 			Self::Roles => "server-settings-roles",
 			Self::Emoji => "server-settings-emoji",
 			Self::Stickers => "server-settings-stickers",
+			Self::Soundboard => "server-settings-soundboard",
 			Self::Members => "server-settings-members",
 			Self::Invites => "server-settings-invites",
 			Self::Bans => "server-settings-bans",
@@ -98,6 +103,7 @@ impl Page {
 			Self::Roles => IconKind::Shield,
 			Self::Emoji => IconKind::Emoji,
 			Self::Stickers => IconKind::Sticker,
+			Self::Soundboard => IconKind::Soundboard,
 			Self::Members => IconKind::Members,
 			Self::Invites => IconKind::Mail,
 			Self::Bans => IconKind::Ban,
@@ -110,7 +116,7 @@ impl Page {
 		match self {
 			Self::Overview | Self::Invites | Self::AutoMod => access.has(Permissions::MANAGE_GUILD),
 			Self::Roles => access.has(Permissions::MANAGE_ROLES),
-			Self::Emoji | Self::Stickers => {
+			Self::Emoji | Self::Stickers | Self::Soundboard => {
 				access.has_any(Permissions::MANAGE_GUILD_EXPRESSIONS | Permissions::CREATE_GUILD_EXPRESSIONS)
 			}
 			Self::Members => access.has_any(
@@ -132,6 +138,7 @@ enum Body {
 	Roles(Entity<RolesPage>),
 	Emoji(Entity<EmojiPage>),
 	Stickers(Entity<StickersPage>),
+	Sounds(Entity<SoundsPage>),
 	Members(Entity<MembersPage>),
 	Invites(Entity<InvitesPage>),
 	Bans(Entity<BansPage>),
@@ -202,6 +209,7 @@ impl ServerSettings {
 			Page::Roles => Body::Roles(cx.new(|cx| RolesPage::new(data, guild, window, cx))),
 			Page::Emoji => Body::Emoji(cx.new(|cx| EmojiPage::new(data, guild, window, cx))),
 			Page::Stickers => Body::Stickers(cx.new(|cx| StickersPage::new(data, guild, window, cx))),
+			Page::Soundboard => Body::Sounds(cx.new(|cx| SoundsPage::new(data, guild, cx))),
 			Page::Members => Body::Members(cx.new(|cx| MembersPage::new(data, guild, window, cx))),
 			Page::Invites => Body::Invites(cx.new(|cx| InvitesPage::new(data, guild, cx))),
 			Page::Bans => Body::Bans(cx.new(|cx| BansPage::new(data, guild, window, cx))),
@@ -306,6 +314,7 @@ impl ServerSettings {
 			Some(Body::Roles(page)) => page.clone().into_any_element(),
 			Some(Body::Emoji(page)) => page.clone().into_any_element(),
 			Some(Body::Stickers(page)) => page.clone().into_any_element(),
+			Some(Body::Sounds(page)) => page.clone().into_any_element(),
 			Some(Body::Members(page)) => page.clone().into_any_element(),
 			Some(Body::Invites(page)) => page.clone().into_any_element(),
 			Some(Body::Bans(page)) => page.clone().into_any_element(),
