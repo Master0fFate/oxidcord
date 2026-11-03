@@ -24,7 +24,7 @@ use crate::settings::{
 use crate::snowflake::Snowflake;
 use crate::token::Token;
 use crate::user::User;
-use crate::voice::VoiceState;
+use crate::voice::{StageInstance, VoiceState};
 
 int_enum! {
 	pub enum Opcode {
@@ -763,6 +763,9 @@ pub enum DispatchEvent {
 	RelationshipRemove(RelationshipRemove),
 	VoiceStateUpdate(Box<VoiceState>),
 	VoiceServerUpdate(VoiceServerUpdate),
+	StageInstanceCreate(Box<StageInstance>),
+	StageInstanceUpdate(Box<StageInstance>),
+	StageInstanceDelete(Box<StageInstance>),
 	StreamCreate(Box<StreamState>),
 	StreamUpdate(Box<StreamState>),
 	StreamServerUpdate(StreamServerUpdate),
@@ -849,6 +852,9 @@ impl DispatchEvent {
 			"RELATIONSHIP_REMOVE" => Self::RelationshipRemove(decode(name, data)?),
 			"VOICE_STATE_UPDATE" => Self::VoiceStateUpdate(decode(name, data)?),
 			"VOICE_SERVER_UPDATE" => Self::VoiceServerUpdate(decode(name, data)?),
+			"STAGE_INSTANCE_CREATE" => Self::StageInstanceCreate(decode(name, data)?),
+			"STAGE_INSTANCE_UPDATE" => Self::StageInstanceUpdate(decode(name, data)?),
+			"STAGE_INSTANCE_DELETE" => Self::StageInstanceDelete(decode(name, data)?),
 			"STREAM_CREATE" => Self::StreamCreate(decode(name, data)?),
 			"STREAM_UPDATE" => Self::StreamUpdate(decode(name, data)?),
 			"STREAM_SERVER_UPDATE" => Self::StreamServerUpdate(decode(name, data)?),

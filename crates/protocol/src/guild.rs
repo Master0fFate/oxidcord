@@ -9,7 +9,7 @@ use crate::member::Member;
 use crate::presence::Presence;
 use crate::role::Role;
 use crate::snowflake::Snowflake;
-use crate::voice::VoiceState;
+use crate::voice::{StageInstance, VoiceState};
 
 int_enum! {
 	pub enum VerificationLevel {
@@ -203,6 +203,7 @@ pub struct Guild {
 	pub threads: LenientVec<Channel>,
 	pub members: LenientVec<Member>,
 	pub voice_states: LenientVec<VoiceState>,
+	pub stage_instances: LenientVec<StageInstance>,
 	pub presences: LenientVec<Presence>,
 	pub guild_scheduled_events: LenientVec<ScheduledEvent>,
 	pub member_count: Option<i64>,

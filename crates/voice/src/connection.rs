@@ -135,6 +135,10 @@ impl VoiceConnection {
 		self.shared.deafened.store(deafened, Ordering::Relaxed);
 	}
 
+	pub fn set_server_muted(&self, muted: bool) {
+		self.shared.server_muted.store(muted, Ordering::Relaxed);
+	}
+
 	pub fn set_input_device(&self, id: Option<String>) {
 		if let Some(engine) = self.shared.engine.lock().as_ref() {
 			engine.set_input(id);

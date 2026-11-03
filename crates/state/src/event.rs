@@ -118,6 +118,7 @@ pub enum LocalEvent {
 		input: f32,
 		output: f32,
 	},
+	HandRequested(bool),
 	CameraChanged(bool),
 	ScreenShareChanged(Option<StreamInfo>),
 	Watching(Option<String>),

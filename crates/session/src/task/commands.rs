@@ -1384,6 +1384,39 @@ impl Core {
 					self.modify_member(guild_id, user_id, json!({ "mute": muted }), "server mute");
 				}
 			}
+			Command::StartStage { channel_id, topic } => {
+				if self.stage_moderator(channel_id) {
+					self.spawn_action("start stage", move |rest| async move {
+						rest.create_stage_instance(channel_id, &topic).await.map(drop)
+					});
+				}
+			}
+			Command::EditStageTopic { channel_id, topic } => {
+				if self.stage_moderator(channel_id) {
+					self.spawn_action("edit stage topic", move |rest| async move {
+						rest.modify_stage_instance(channel_id, &topic).await.map(drop)
+					});
+				}
+			}
+			Command::EndStage { channel_id } => {
+				if self.stage_moderator(channel_id) {
+					self.spawn_action("end stage", move |rest| async move {
+						rest.delete_stage_instance(channel_id).await
+					});
+				}
+			}
+			Command::SetSpeaker {
+				guild_id,
+				channel_id,
+				user_id,
+				speaker,
+			} => self.set_speaker(guild_id, channel_id, user_id, speaker),
+			Command::AcceptSpeakInvite { guild_id, channel_id } => self.patch_voice_state(
+				guild_id,
+				None,
+				json!({ "channel_id": channel_id, "suppress": false, "request_to_speak_timestamp": null }),
+				"accept speak invite",
+			),
 			Command::ServerDeafenMember {
 				guild_id,
 				user_id,
@@ -1396,6 +1429,32 @@ impl Core {
 			}
 			_ => {}
 		}
+	}
+
+	fn stage_moderator(&mut self, channel_id: Snowflake) -> bool {
+		let needed = Permissions::MANAGE_CHANNELS | Permissions::MUTE_MEMBERS | Permissions::MOVE_MEMBERS;
+		self.channel_allows(channel_id, needed, "Stage Moderator")
+	}
+
+	fn set_speaker(&mut self, guild_id: Snowflake, channel_id: Snowflake, user_id: Snowflake, speaker: bool) {
+		let own = self.state.read().current_user_id() == Some(user_id);
+		if (speaker || !own) && !self.guild_allows(guild_id, Permissions::MUTE_MEMBERS, "Mute Members") {
+			return;
+		}
+		let body = json!({ "channel_id": channel_id, "suppress": !speaker });
+		self.patch_voice_state(guild_id, (!own).then_some(user_id), body, "set speaker");
+	}
+
+	fn patch_voice_state(
+		&self,
+		guild_id: Snowflake,
+		user_id: Option<Snowflake>,
+		body: Value,
+		what: &'static str,
+	) {
+		self.spawn_action(what, move |rest| async move {
+			rest.modify_voice_state(guild_id, user_id, body).await
+		});
 	}
 
 	fn modify_member(&self, guild_id: Snowflake, user_id: Snowflake, body: Value, what: &'static str) {

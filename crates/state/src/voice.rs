@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Utc};
-use protocol::{LenientVec, Snowflake, StreamDelete, StreamState, VoiceState};
+use protocol::{LenientVec, Snowflake, StageInstance, StreamDelete, StreamState, VoiceState};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -47,6 +47,7 @@ pub struct VoiceSession {
 	pub levels: VoiceLevels,
 	pub self_mute: bool,
 	pub self_deaf: bool,
+	pub hand_requested: bool,
 	pub camera_on: bool,
 	pub screen_share: Option<StreamInfo>,
 	pub watching: Option<String>,
@@ -106,6 +107,33 @@ impl State {
 		self.calls.get(&channel_id)
 	}
 
+	pub fn stage_instance(&self, guild_id: Snowflake, channel_id: Snowflake) -> Option<&StageInstance> {
+		self.guild(guild_id)?.stage_instances.get(&channel_id)
+	}
+
+	pub fn speak_invited(&self) -> bool {
+		let (Some(me), Some(session)) = (self.current_user_id(), self.voice()) else {
+			return false;
+		};
+		!session.hand_requested
+			&& session
+				.guild_id
+				.and_then(|guild_id| self.guild(guild_id))
+				.and_then(|guild| guild.voice_states.get(&me))
+				.is_some_and(|voice| voice.suppress && voice.request_to_speak_timestamp.is_some())
+	}
+
+	pub fn server_muted(&self) -> bool {
+		let (Some(me), Some(session)) = (self.current_user_id(), self.voice()) else {
+			return false;
+		};
+		session
+			.guild_id
+			.and_then(|guild_id| self.guild(guild_id))
+			.and_then(|guild| guild.voice_states.get(&me))
+			.is_some_and(|voice| voice.mute || voice.deaf || voice.suppress)
+	}
+
 	pub fn calls(&self) -> impl Iterator<Item = &Call> {
 		self.calls.values()
 	}
@@ -153,6 +181,7 @@ impl State {
 					levels: VoiceLevels::default(),
 					self_mute: false,
 					self_deaf: false,
+					hand_requested: false,
 					camera_on: false,
 					screen_share: None,
 					watching: None,
@@ -209,6 +238,24 @@ impl State {
 			changed
 		});
 		voice_session_changes(changed)
+	}
+
+	pub(crate) fn stage_instance_changed(&mut self, instance: &StageInstance, live: bool) -> Changes {
+		let guild_id = instance.guild_id;
+		let Some(guild) = self.guilds.get_mut(&guild_id) else {
+			return Changes::default();
+		};
+		if live {
+			guild
+				.stage_instances
+				.insert(instance.channel_id, instance.clone());
+		} else {
+			guild.stage_instances.remove(&instance.channel_id);
+		}
+		let mut changes = Changes::default();
+		changes.voice.insert(guild_id);
+		changes.channel_lists.insert(guild_id);
+		changes
 	}
 
 	pub(crate) fn call_changed(&mut self, payload: &Value) -> Changes {
@@ -346,6 +393,10 @@ impl State {
 		} else {
 			Changes::default()
 		}
+	}
+
+	pub(crate) fn hand_requested_changed(&mut self, requested: bool) -> Changes {
+		self.edit_voice(|session| std::mem::replace(&mut session.hand_requested, requested) != requested)
 	}
 
 	pub(crate) fn camera_changed(&mut self, on: bool) -> Changes {

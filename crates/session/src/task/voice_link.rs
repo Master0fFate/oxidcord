@@ -52,6 +52,7 @@ pub(crate) struct VoiceLink {
 	pub(super) camera: bool,
 	self_mute: bool,
 	self_deaf: bool,
+	server_muted: bool,
 	transmitting: bool,
 	user_volumes: HashMap<Snowflake, f32>,
 	pub(super) camera_device: Option<String>,
@@ -75,6 +76,7 @@ impl VoiceLink {
 			camera: false,
 			self_mute: false,
 			self_deaf: false,
+			server_muted: false,
 			transmitting: false,
 			user_volumes: HashMap::new(),
 			camera_device: None,
@@ -240,7 +242,8 @@ impl Core {
 		});
 	}
 
-	pub(super) fn request_to_speak(&self, guild_id: Snowflake, channel_id: Snowflake, request: bool) {
+	pub(super) fn request_to_speak(&mut self, guild_id: Snowflake, channel_id: Snowflake, request: bool) {
+		self.apply_local(LocalEvent::HandRequested(request));
 		if let Err(error) = self.gateway.voice_state_request_to_speak(
 			Some(guild_id),
 			Some(channel_id),
@@ -298,6 +301,7 @@ impl Core {
 		if update.guild_id != target.guild_id {
 			return;
 		}
+		self.apply_server_mute(update);
 		match update.channel_id {
 			Some(channel_id) => {
 				if let Some(session_id) = &update.session_id {
@@ -323,6 +327,14 @@ impl Core {
 				self.end_voice(Some("disconnected from the channel".to_owned()), false);
 			}
 			None => {}
+		}
+	}
+
+	fn apply_server_mute(&mut self, update: &VoiceState) {
+		let muted = update.mute || update.deaf || update.suppress;
+		self.voice.server_muted = muted;
+		if let Some(connection) = &self.voice.connection {
+			connection.set_server_muted(muted);
 		}
 	}
 
@@ -522,6 +534,7 @@ impl Core {
 		self.drop_connection();
 		self.voice.session_id = None;
 		self.voice.server = None;
+		self.voice.server_muted = false;
 		if notify_gateway && let Err(error) = self.send_voice_state(target.guild_id, None) {
 			tracing::warn!(%error, "voice state was not sent");
 		}
@@ -606,6 +619,7 @@ impl Core {
 		connection.set_transmitting(self.voice.transmitting);
 		connection.set_mute(self.voice.self_mute);
 		connection.set_deaf(self.voice.self_deaf);
+		connection.set_server_muted(self.voice.server_muted);
 		for (user_id, volume) in &self.voice.user_volumes {
 			connection.set_user_volume(*user_id, *volume);
 		}

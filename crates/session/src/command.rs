@@ -242,6 +242,27 @@ pub enum Command {
 		channel_id: Snowflake,
 		request: bool,
 	},
+	StartStage {
+		channel_id: Snowflake,
+		topic: String,
+	},
+	EditStageTopic {
+		channel_id: Snowflake,
+		topic: String,
+	},
+	EndStage {
+		channel_id: Snowflake,
+	},
+	SetSpeaker {
+		guild_id: Snowflake,
+		channel_id: Snowflake,
+		user_id: Snowflake,
+		speaker: bool,
+	},
+	AcceptSpeakInvite {
+		guild_id: Snowflake,
+		channel_id: Snowflake,
+	},
 	StartCall {
 		channel_id: Snowflake,
 	},

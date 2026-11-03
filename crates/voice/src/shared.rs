@@ -108,6 +108,7 @@ impl Counters {
 pub(crate) struct Shared {
 	pub muted: AtomicBool,
 	pub deafened: AtomicBool,
+	pub server_muted: AtomicBool,
 	pub transmitting: AtomicBool,
 	pub noise_suppression: AtomicBool,
 	input_mode: AtomicU8,
@@ -134,6 +135,7 @@ impl Shared {
 		Self {
 			muted: AtomicBool::new(false),
 			deafened: AtomicBool::new(false),
+			server_muted: AtomicBool::new(false),
 			transmitting: AtomicBool::new(false),
 			noise_suppression: AtomicBool::new(denoise::AVAILABLE),
 			input_mode: AtomicU8::new(InputMode::VoiceActivity as u8),

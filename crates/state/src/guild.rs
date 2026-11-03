@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use protocol::{
 	Channel, ChannelType, DefaultMessageNotifications, Emoji, Guild, Member, Role, ScheduledEvent, Snowflake,
+	StageInstance,
 	VoiceState,
 };
 
@@ -34,6 +35,7 @@ pub struct GuildState {
 	pub voice_states: HashMap<Snowflake, VoiceState>,
 	pub scheduled_events: Vec<ScheduledEvent>,
 	pub interested_events: HashSet<Snowflake>,
+	pub stage_instances: HashMap<Snowflake, StageInstance>,
 	pub member_list: MemberList,
 }
 
@@ -87,6 +89,11 @@ impl GuildState {
 		state.set_info(guild);
 		state.set_roles_and_emojis(guild);
 		state.set_scheduled_events(&guild.guild_scheduled_events);
+		state.stage_instances = guild
+			.stage_instances
+			.iter()
+			.map(|instance| (instance.channel_id, instance.clone()))
+			.collect();
 		state
 	}
 

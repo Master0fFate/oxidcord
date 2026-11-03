@@ -231,6 +231,10 @@ impl State {
 				changes
 			}
 			DispatchEvent::VoiceStateUpdate(voice) => self.voice_state_update(voice),
+			DispatchEvent::StageInstanceCreate(instance) | DispatchEvent::StageInstanceUpdate(instance) => {
+				self.stage_instance_changed(instance, true)
+			}
+			DispatchEvent::StageInstanceDelete(instance) => self.stage_instance_changed(instance, false),
 			DispatchEvent::CallCreate(payload) | DispatchEvent::CallUpdate(payload) => {
 				self.call_changed(payload)
 			}
@@ -728,7 +732,11 @@ impl State {
 		let Some(guild_id) = voice.guild_id else {
 			return self.call_voice_state(voice);
 		};
-		self.guild_voice_state(guild_id, voice)
+		let mut changes = self.guild_voice_state(guild_id, voice);
+		if voice.request_to_speak_timestamp.is_none() && self.current_user_id() == Some(voice.user_id) {
+			changes.merge(self.hand_requested_changed(false));
+		}
+		changes
 	}
 
 	fn guild_voice_state(&mut self, guild_id: Snowflake, voice: &VoiceState) -> Changes {

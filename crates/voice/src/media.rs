@@ -243,7 +243,10 @@ impl Media {
 	}
 
 	fn should_transmit(&mut self, level_db: f32) -> bool {
-		if self.shared.muted.load(Ordering::Relaxed) || self.shared.deafened.load(Ordering::Relaxed) {
+		if self.shared.muted.load(Ordering::Relaxed)
+			|| self.shared.deafened.load(Ordering::Relaxed)
+			|| self.shared.server_muted.load(Ordering::Relaxed)
+		{
 			self.gate.reset();
 			return false;
 		}

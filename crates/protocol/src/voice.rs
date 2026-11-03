@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::lenient::timestamp;
+use crate::lenient::{int_enum, timestamp};
 use crate::member::Member;
 use crate::snowflake::Snowflake;
 
@@ -22,4 +22,22 @@ pub struct VoiceState {
 	pub suppress: bool,
 	#[serde(deserialize_with = "timestamp")]
 	pub request_to_speak_timestamp: Option<DateTime<Utc>>,
+}
+
+int_enum! {
+	pub enum StagePrivacy {
+		GuildOnly = 2,
+		Public = 1,
+	}
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct StageInstance {
+	pub id: Snowflake,
+	pub guild_id: Snowflake,
+	pub channel_id: Snowflake,
+	pub topic: String,
+	pub privacy_level: StagePrivacy,
+	pub guild_scheduled_event_id: Option<Snowflake>,
 }

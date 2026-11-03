@@ -2,6 +2,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use protocol::{
 	AutoModRule, AutoModTriggerType, Channel, LenientVec, Role, ScheduledEvent, ScheduledEventRsvp, Snowflake,
+	StageInstance,
 };
 use serde_json::{Value, json};
 
@@ -234,6 +235,37 @@ impl RestClient {
 	pub async fn modify_current_member(&self, guild_id: Snowflake, changes: Value) -> Result<Value> {
 		self.send(Request::patch(format!("/guilds/{guild_id}/members/@me")).json(&changes))
 			.await
+	}
+
+	pub async fn create_stage_instance(&self, channel_id: Snowflake, topic: &str) -> Result<StageInstance> {
+		let request = Request::post("/stage-instances").json(&json!({
+			"channel_id": channel_id,
+			"topic": topic,
+			"privacy_level": 2,
+		}));
+		self.send(request).await
+	}
+
+	pub async fn modify_stage_instance(&self, channel_id: Snowflake, topic: &str) -> Result<StageInstance> {
+		let request =
+			Request::patch(format!("/stage-instances/{channel_id}")).json(&json!({ "topic": topic }));
+		self.send(request).await
+	}
+
+	pub async fn delete_stage_instance(&self, channel_id: Snowflake) -> Result<()> {
+		self.send_empty(Request::delete(format!("/stage-instances/{channel_id}")))
+			.await
+	}
+
+	pub async fn modify_voice_state(
+		&self,
+		guild_id: Snowflake,
+		user_id: Option<Snowflake>,
+		body: Value,
+	) -> Result<()> {
+		let target = user_id.map_or_else(|| "@me".to_owned(), |user_id| user_id.to_string());
+		let request = Request::patch(format!("/guilds/{guild_id}/voice-states/{target}")).json(&body);
+		self.send_empty(request).await
 	}
 
 	pub async fn add_member_role(
