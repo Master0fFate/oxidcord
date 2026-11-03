@@ -59,5 +59,5 @@ pub use views::{
 };
 pub use voice::{
 	Call, E2eeInfo, MicTest, SoundBlock, StreamInfo, StreamSummary, VOICE_EFFECT_LIFETIME, VideoKind,
-	VoiceCue, VoiceCueEntry, VoiceEffect, VoiceLevels, VoiceSession, VoiceStats, VoiceStatus,
+	VoiceCue, VoiceCueEntry, VoiceEffect, VoiceLevels, VoiceSession, VoiceStats, VoiceStatus, stream_user,
 };

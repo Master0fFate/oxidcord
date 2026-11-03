@@ -7,7 +7,7 @@ use image::{ExtendedColorType, ImageEncoder as _};
 use protocol::{Snowflake, StreamDelete, StreamServerUpdate, StreamState, Token};
 use rest::RestClient;
 use rest::api::image_data_uri;
-use state::{LocalEvent, StreamInfo, VideoKind};
+use state::{LocalEvent, StreamInfo, VideoKind, stream_user};
 use tokio::time::sleep;
 use voice::video::capture::ScreenTarget;
 use voice::video::{VideoFrame, VideoQuality, scaled_bgra};
@@ -618,14 +618,9 @@ impl Core {
 		match session.role {
 			Role::Share { .. } => self.apply_local(LocalEvent::ScreenShareChanged(None::<StreamInfo>)),
 			Role::Watch => {
-				let streamer = session
-					.key
-					.as_deref()
-					.and_then(|key| key.rsplit(':').next())
-					.and_then(|id| id.parse::<u64>().ok());
-				if let Some(user_id) = streamer {
+				if let Some(user_id) = session.key.as_deref().and_then(stream_user) {
 					self.apply_local(LocalEvent::RemoteVideo {
-						user_id: Snowflake::from(user_id),
+						user_id,
 						kind: VideoKind::Screen,
 						active: false,
 					});

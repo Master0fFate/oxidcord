@@ -570,6 +570,10 @@ fn calls_changed_if(changed: bool) -> Changes {
 	}
 }
 
+pub fn stream_user(key: &str) -> Option<Snowflake> {
+	parse_stream_key(key).map(|(_, _, user_id)| user_id)
+}
+
 fn parse_stream_key(key: &str) -> Option<(Option<Snowflake>, Snowflake, Snowflake)> {
 	let mut parts = key.split(':');
 	let kind = parts.next()?;
