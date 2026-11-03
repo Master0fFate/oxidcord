@@ -13,9 +13,10 @@ use gpui_component::input::{Input, InputEvent, InputState, Textarea, TextareaSta
 use protocol::{ChannelFlags, ForumTag, Snowflake};
 use rest::UploadFile;
 use session::Command;
+use state::Changes;
 
 use crate::components::{IconButton, dialog_footer, field};
-use crate::data::Data;
+use crate::data::{Data, DataEvent};
 use crate::format;
 use crate::i18n::Translate as _;
 use crate::icons::{Icon, IconKind};
@@ -40,7 +41,8 @@ pub struct NewPost {
 	title: Entity<InputState>,
 	body: Entity<TextareaState>,
 	files: Vec<Attached>,
-	_subscription: gpui::Subscription,
+	sending: Option<u64>,
+	_subscriptions: Vec<gpui::Subscription>,
 }
 
 impl EventEmitter<Close> for NewPost {}
@@ -76,11 +78,23 @@ impl NewPost {
 				.auto_grow(4, 10)
 				.placeholder(body_placeholder)
 		});
-		let subscription = cx.subscribe_in(&title, window, |_, _, event: &InputEvent, _, cx| {
-			if matches!(event, InputEvent::Change) {
-				cx.notify();
-			}
-		});
+		let subscriptions = vec![
+			cx.subscribe_in(&title, window, |_, _, event: &InputEvent, _, cx| {
+				if matches!(event, InputEvent::Change) {
+					cx.notify();
+				}
+			}),
+			cx.subscribe_in(&body, window, |_, _, event: &InputEvent, _, cx| {
+				if matches!(event, InputEvent::Change) {
+					cx.notify();
+				}
+			}),
+			cx.subscribe(&data, |this, _, event: &DataEvent, cx| {
+				if let DataEvent::Changed(changes) = event {
+					this.on_changes(changes, cx);
+				}
+			}),
+		];
 		Self {
 			data,
 			channel,
@@ -90,7 +104,32 @@ impl NewPost {
 			title,
 			body,
 			files: Vec::new(),
-			_subscription: subscription,
+			sending: None,
+			_subscriptions: subscriptions,
+		}
+	}
+
+	fn on_changes(&mut self, changes: &Changes, cx: &mut Context<Self>) {
+		let Some(baseline) = self.sending else {
+			return;
+		};
+		let data = self.data.read(cx);
+		let state = data.state();
+		let created = changes.selection
+			&& state
+				.selected()
+				.and_then(|selection| state.channel(selection.channel_id))
+				.is_some_and(|thread| thread.parent_id == Some(self.channel));
+		let rejected = changes.rejected
+			&& state
+				.last_rejection()
+				.is_some_and(|rejection| rejection.id > baseline);
+		drop(state);
+		if created {
+			cx.emit(Close);
+		} else if rejected {
+			self.sending = None;
+			cx.notify();
 		}
 	}
 
@@ -108,8 +147,15 @@ impl NewPost {
 		self.data.read(cx).state().can_attach(self.channel)
 	}
 
+	fn has_starter(&self, cx: &App) -> bool {
+		!self.files.is_empty() || !self.body.read(cx).value().trim().is_empty()
+	}
+
 	fn can_post(&self, cx: &App) -> bool {
-		!self.title_text(cx).is_empty() && (!self.require_tag || !self.chosen.is_empty())
+		self.sending.is_none()
+			&& !self.title_text(cx).is_empty()
+			&& self.has_starter(cx)
+			&& (!self.require_tag || !self.chosen.is_empty())
 	}
 
 	fn pick_files(&mut self, cx: &mut Context<Self>) {
@@ -172,25 +218,28 @@ impl NewPost {
 		if !self.can_post(cx) {
 			return;
 		}
-		let files = std::mem::take(&mut self.files)
-			.into_iter()
+		let files = self
+			.files
+			.iter()
 			.map(|file| UploadFile {
 				content_type: rest::content_type_for(&file.name).to_owned(),
-				name: file.name,
-				bytes: file.bytes,
+				name: file.name.clone(),
+				bytes: file.bytes.clone(),
 				description: None,
 			})
 			.collect();
 		let mut tags: Vec<Snowflake> = self.chosen.iter().copied().collect();
 		tags.sort_unstable();
-		self.data.read(cx).send(Command::CreateForumPost {
+		let data = self.data.read(cx);
+		self.sending = Some(data.state().last_rejection().map_or(0, |rejection| rejection.id));
+		data.send(Command::CreateForumPost {
 			channel_id: self.channel,
 			name: self.title_text(cx),
 			content: self.body.read(cx).value().trim().to_owned(),
 			tags,
 			files,
 		});
-		cx.emit(Close);
+		cx.notify();
 	}
 }
 

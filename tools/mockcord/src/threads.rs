@@ -50,6 +50,9 @@ impl Shared {
 			(guild_id, parent_kind, thread_id)
 		};
 		let is_forum = matches!(parent_kind, ChannelType::GuildForum | ChannelType::GuildMedia);
+		if is_forum && request.starter.as_ref().is_none_or(Draft::is_blank) {
+			return Err(ApiError::empty_message());
+		}
 		let kind = if is_forum || from_message.is_some() {
 			if parent_kind == ChannelType::GuildAnnouncement {
 				ChannelType::AnnouncementThread

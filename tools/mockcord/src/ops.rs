@@ -51,6 +51,10 @@ impl Draft {
 		}
 	}
 
+	pub fn is_blank(&self) -> bool {
+		self.content.is_empty() && self.files.is_empty() && self.sticker_ids.is_empty() && self.poll.is_none()
+	}
+
 	pub fn from_create(create: CreateMessage, files: Vec<UploadedFile>) -> Self {
 		Self {
 			id: None,
@@ -232,13 +236,7 @@ impl Shared {
 			.reference
 			.as_ref()
 			.is_some_and(|reference| reference.kind == Some(MessageReferenceKind::Forward));
-		if draft.content.is_empty()
-			&& draft.files.is_empty()
-			&& draft.sticker_ids.is_empty()
-			&& draft.poll.is_none()
-			&& !forwarding
-			&& draft.kind.is_none()
-		{
+		if draft.is_blank() && !forwarding && draft.kind.is_none() {
 			return Err(ApiError::empty_message());
 		}
 		let mut store = self.store.lock();
