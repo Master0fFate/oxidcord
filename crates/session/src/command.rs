@@ -9,9 +9,9 @@ use plugin_host::api::model::{
 use plugin_host::api::{HostError, User as PluginUser};
 use plugin_host::{Navigation, Permission, PickedPath, ViewContext};
 use protocol::{
-	ApplicationCommand, AutoModRule, ChannelType, ComponentType, Gif, MemberVerification, MessageFlags, Nonce,
-	NotificationLevel, PermissionOverwriteKind, Permissions, PollCreate, ScheduledEventKind, ScheduledEventStatus,
-	Snowflake, StatusKind, VideoQualityMode,
+	ApplicationCommand, AutoModRule, ChannelType, ComponentType, Gif, MemberVerification, MessageFlags,
+	Nonce, NotificationLevel, PermissionOverwriteKind, Permissions, PollCreate, ScheduledEventKind,
+	ScheduledEventStatus, Snowflake, StatusKind, VideoQualityMode,
 };
 use rest::UploadFile;
 use rest::api::SearchQuery;

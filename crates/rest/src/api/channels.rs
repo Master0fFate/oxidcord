@@ -5,8 +5,8 @@ use protocol::rest::{
 	CreateMessage, EditMessage, MessagesQuery,
 };
 use protocol::{
-	BURST_REACTION, Channel, ChannelType, CommandIndex, InviteAccepted, LenientVec, Message, PinnedPage, Snowflake,
-	ThreadMember, User,
+	BURST_REACTION, Channel, ChannelType, CommandIndex, InviteAccepted, LenientVec, Message, PinnedPage,
+	Snowflake, ThreadMember, User,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};

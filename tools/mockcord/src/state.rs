@@ -197,7 +197,8 @@ impl Store {
 			stage_instances: fixtures
 				.guilds
 				.iter()
-				.map(|guild| (guild.stage_instance.channel_id.0, guild.stage_instance.clone()))
+				.filter_map(|guild| guild.stage_instance.as_ref())
+				.map(|instance| (instance.channel_id.0, instance.clone()))
 				.collect(),
 			seats: HashMap::new(),
 			last_id,
