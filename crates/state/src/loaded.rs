@@ -324,11 +324,13 @@ pub(crate) struct CommandChoices {
 	choices: Vec<CommandChoice>,
 }
 
-fn context_allows(command: &ApplicationCommand, in_guild: bool) -> bool {
+fn context_allows(command: &ApplicationCommand, in_guild: bool, dm_recipient: Option<Snowflake>) -> bool {
+	let in_bot_dm = dm_recipient == Some(command.application_id);
 	command.contexts.as_ref().is_none_or(|contexts| {
 		contexts.iter().any(|context| match context {
 			InteractionContext::Guild => in_guild,
-			InteractionContext::BotDm | InteractionContext::PrivateChannel => !in_guild,
+			InteractionContext::BotDm => in_bot_dm,
+			InteractionContext::PrivateChannel => !in_guild && !in_bot_dm,
 			InteractionContext::Unknown(_) => false,
 		})
 	})
@@ -1117,8 +1119,12 @@ impl State {
 				guild_id.unwrap_or(channel_id),
 				Permissions::USE_APPLICATION_COMMANDS,
 			),
-			(USER_COMMANDS, Permissions::USE_EXTERNAL_APPS),
+			(USER_COMMANDS, Permissions::USE_APPLICATION_COMMANDS),
 		];
+		let dm_recipient = self
+			.channel(channel_id)
+			.filter(|channel| channel.recipient_ids.len() == 1)
+			.map(|channel| channel.recipient_ids[0]);
 		let mut found: Vec<AppCommand> = Vec::new();
 		for (scope, needed) in scopes {
 			if guild_id.is_some() && !permissions.contains(needed) {
@@ -1130,7 +1136,7 @@ impl State {
 			for command in index.application_commands.iter() {
 				let usable = command.kind == kind
 					&& !found.iter().any(|known| known.command.id == command.id)
-					&& context_allows(command, guild_id.is_some())
+					&& context_allows(command, guild_id.is_some(), dm_recipient)
 					&& guild_id.is_none_or(|_| member_allows(command, permissions));
 				if !usable {
 					continue;
