@@ -157,6 +157,7 @@ pub struct Shell {
 	members_visible: bool,
 	pending_jump: Option<Snowflake>,
 	seen_alert: u64,
+	seen_friend_notice: u64,
 	seen_intent: u64,
 	notification_clicks: UnboundedSender<Notified>,
 	title_mentions: u32,
@@ -568,10 +569,14 @@ impl Shell {
 				}
 			}
 		});
-		let (seen_alert, seen_intent) = {
+		let (seen_alert, seen_intent, seen_friend_notice) = {
 			let data = data.read(cx);
 			let state = data.state();
-			(state.last_alert_id(), state.last_intent_id())
+			(
+				state.last_alert_id(),
+				state.last_intent_id(),
+				state.last_friend_notice().map_or(0, |notice| notice.id),
+			)
 		};
 
 		let mut shell = Self {
@@ -591,6 +596,7 @@ impl Shell {
 			members_visible: true,
 			pending_jump: None,
 			seen_alert,
+			seen_friend_notice,
 			seen_intent,
 			notification_clicks,
 			title_mentions: 0,
@@ -1197,12 +1203,16 @@ impl Shell {
 		let name = {
 			let data = self.data.read(cx);
 			let state = data.state();
-			if state.own_status() == StatusKind::Dnd || !(settings.enabled || settings.sounds) {
-				return;
-			}
 			let Some(notice) = state.last_friend_notice() else {
 				return;
 			};
+			if notice.id <= self.seen_friend_notice {
+				return;
+			}
+			self.seen_friend_notice = notice.id;
+			if state.own_status() == StatusKind::Dnd || !(settings.enabled || settings.sounds) {
+				return;
+			}
 			state.display_name(None, notice.user_id)
 		};
 		if settings.sounds && !crate::data::streamer_mode(cx).mutes_sounds() {
