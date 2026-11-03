@@ -1478,7 +1478,12 @@ impl Shared {
 		store.messages.iter().find_map(|(channel_id, messages)| {
 			messages.iter().find_map(|(message_id, message)| {
 				let poll = &message["poll"];
-				let open = poll.is_object() && poll["results"]["is_finalized"].as_bool() != Some(true);
+				let live = poll["expiry"]
+					.as_str()
+					.and_then(|expiry| DateTime::parse_from_rfc3339(expiry).ok())
+					.is_none_or(|expiry| expiry > Utc::now());
+				let open =
+					poll.is_object() && poll["results"]["is_finalized"].as_bool() != Some(true) && live;
 				open.then(|| {
 					let answers = poll["answers"]
 						.as_array()
