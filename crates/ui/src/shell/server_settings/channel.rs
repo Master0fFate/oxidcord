@@ -45,11 +45,12 @@ pub const SLOWMODES: [(&str, u32); 14] = [
 	("slowmode-2h", 7200),
 	("slowmode-6h", 21_600),
 ];
-const KINDS: [(&str, ChannelType); 5] = [
+const KINDS: [(&str, ChannelType); 6] = [
 	("channel-kind-text", ChannelType::GuildText),
 	("channel-kind-voice", ChannelType::GuildVoice),
 	("channel-kind-announcement", ChannelType::GuildAnnouncement),
 	("channel-kind-forum", ChannelType::GuildForum),
+	("channel-kind-media", ChannelType::GuildMedia),
 	("channel-kind-stage", ChannelType::GuildStageVoice),
 ];
 const NAME_LIMIT: usize = 100;
@@ -814,6 +815,8 @@ pub struct CreateChannel {
 	data: Entity<Data>,
 	guild: Snowflake,
 	parent: Option<Snowflake>,
+	category: bool,
+	private: bool,
 	kind: usize,
 	name: Entity<InputState>,
 	_subscription: Subscription,
@@ -822,8 +825,26 @@ pub struct CreateChannel {
 impl EventEmitter<Close> for CreateChannel {}
 
 pub fn open_create(window: &mut Window, cx: &mut App, guild: Snowflake, parent: Option<Snowflake>) {
+	open_create_dialog(window, cx, guild, parent, false);
+}
+
+pub fn open_create_category(window: &mut Window, cx: &mut App, guild: Snowflake) {
+	open_create_dialog(window, cx, guild, None, true);
+}
+
+fn open_create_dialog(
+	window: &mut Window,
+	cx: &mut App,
+	guild: Snowflake,
+	parent: Option<Snowflake>,
+	category: bool,
+) {
 	let data = data_handle(cx);
-	let placeholder = cx.t("channel-create-name-placeholder");
+	let placeholder = cx.t(if category {
+		"channel-create-category-placeholder"
+	} else {
+		"channel-create-name-placeholder"
+	});
 	let view = cx.new(|cx| {
 		let name = cx.new(|cx| InputState::new(window, cx).placeholder(placeholder));
 		let subscription = cx.subscribe_in(
@@ -839,20 +860,29 @@ pub fn open_create(window: &mut Window, cx: &mut App, guild: Snowflake, parent: 
 			data,
 			guild,
 			parent,
+			category,
+			private: false,
 			kind: 0,
 			name,
 			_subscription: subscription,
 		}
 	});
 	let focus = view.read(cx).name.read(cx).focus_handle(cx);
-	let title = cx.t("channel-create-title");
+	let title = cx.t(if category {
+		"channel-create-category-title"
+	} else {
+		"channel-create-title"
+	});
 	let width = cx.global::<Theme>().modal_width_sm;
 	modal::open(window, cx, title, width, &view, Some(focus));
 }
 
 fn normalize(name: &str, kind: ChannelType) -> String {
 	let trimmed = name.trim();
-	if matches!(kind, ChannelType::GuildVoice | ChannelType::GuildStageVoice) {
+	if matches!(
+		kind,
+		ChannelType::GuildVoice | ChannelType::GuildStageVoice | ChannelType::GuildCategory
+	) {
 		return trimmed.chars().take(NAME_LIMIT).collect();
 	}
 	trimmed
@@ -866,8 +896,16 @@ fn normalize(name: &str, kind: ChannelType) -> String {
 }
 
 impl CreateChannel {
+	fn chosen_kind(&self) -> ChannelType {
+		if self.category {
+			ChannelType::GuildCategory
+		} else {
+			KINDS[self.kind].1
+		}
+	}
+
 	fn create(&mut self, cx: &mut Context<Self>) {
-		let kind = KINDS[self.kind].1;
+		let kind = self.chosen_kind();
 		let name = normalize(&self.name.read(cx).value(), kind);
 		if name.is_empty() {
 			return;
@@ -877,75 +915,113 @@ impl CreateChannel {
 			name,
 			kind,
 			parent_id: self.parent,
+			private: self.private,
 		});
 		cx.emit(Close);
+	}
+
+	fn kind_picker(&self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+		let labels: Vec<SharedString> = KINDS.iter().map(|(key, _)| cx.t(key)).collect();
+		field(
+			cx.t("channel-kind"),
+			theme,
+			div()
+				.flex()
+				.flex_wrap()
+				.gap(theme.space_8)
+				.children(KINDS.iter().enumerate().map(|(index, (_, kind))| {
+					let active = index == self.kind;
+					let weak = cx.weak_entity();
+					div()
+						.id(("channel-kind", index))
+						.flex()
+						.items_center()
+						.gap(theme.space_8)
+						.h(theme.control_height)
+						.px(theme.space_12)
+						.rounded(theme.radius_sm)
+						.cursor_pointer()
+						.border_1()
+						.border_color(if active { theme.brand } else { theme.divider })
+						.bg(if active {
+							theme.modifier_selected
+						} else {
+							theme.background_secondary
+						})
+						.on_click(move |_, _, cx| {
+							weak.update(cx, |this, cx| {
+								this.kind = index;
+								cx.notify();
+							})
+							.ok();
+						})
+						.child(
+							Icon::new(channel_icon(*kind))
+								.size(theme.glyph_sm)
+								.color(theme.interactive_normal),
+						)
+						.child(
+							div()
+								.text_size(theme.font_sm)
+								.font_weight(FontWeight::MEDIUM)
+								.text_color(theme.header_primary)
+								.child(labels[index].clone()),
+						)
+				})),
+		)
 	}
 }
 
 impl Render for CreateChannel {
 	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
-		let labels: Vec<SharedString> = KINDS.iter().map(|(key, _)| cx.t(key)).collect();
-		let kind = KINDS[self.kind].1;
+		let kind = self.chosen_kind();
 		let enabled = !normalize(&self.name.read(cx).value(), kind).is_empty();
 		let weak_cancel = cx.weak_entity();
 		let weak_create = cx.weak_entity();
+		let weak_private = cx.weak_entity();
+		let private: ToggleHandler = Rc::new(move |value, _, cx| {
+			weak_private
+				.update(cx, |this, cx| {
+					this.private = value;
+					cx.notify();
+				})
+				.ok();
+		});
 		div()
 			.flex()
 			.flex_col()
 			.gap(theme.space_16)
 			.pt(theme.space_8)
+			.when(!self.category, |form| form.child(self.kind_picker(&theme, cx)))
 			.child(field(
-				cx.t("channel-kind"),
+				cx.t(if self.category {
+					"channel-category-name"
+				} else {
+					"channel-name"
+				}),
 				&theme,
-				div()
-					.flex()
-					.flex_wrap()
-					.gap(theme.space_8)
-					.children(KINDS.iter().enumerate().map(|(index, (_, kind))| {
-						let active = index == self.kind;
-						let weak = cx.weak_entity();
-						div()
-							.id(("channel-kind", index))
-							.flex()
-							.items_center()
-							.gap(theme.space_8)
-							.h(theme.control_height)
-							.px(theme.space_12)
-							.rounded(theme.radius_sm)
-							.cursor_pointer()
-							.border_1()
-							.border_color(if active { theme.brand } else { theme.divider })
-							.bg(if active {
-								theme.modifier_selected
-							} else {
-								theme.background_secondary
-							})
-							.on_click(move |_, _, cx| {
-								weak.update(cx, |this, cx| {
-									this.kind = index;
-									cx.notify();
-								})
-								.ok();
-							})
-							.child(
-								Icon::new(channel_icon(*kind))
-									.size(theme.glyph_sm)
-									.color(theme.interactive_normal),
-							)
-							.child(
-								div()
-									.text_size(theme.font_sm)
-									.font_weight(FontWeight::MEDIUM)
-									.text_color(theme.header_primary)
-									.child(labels[index].clone()),
-							)
-					})),
+				Input::new(&self.name),
 			))
-			.child(field(cx.t("channel-name"), &theme, Input::new(&self.name)))
+			.child(switch_row(
+				"channel-private",
+				cx.t(if self.category {
+					"channel-private-category"
+				} else {
+					"channel-private"
+				}),
+				Some(cx.t("channel-private-hint")),
+				self.private,
+				&theme,
+				private,
+			))
 			.child(dialog_footer(
 				cx.t("action-cancel"),
-				cx.t("channel-create-confirm"),
+				cx.t(if self.category {
+					"channel-create-category-confirm"
+				} else {
+					"channel-create-confirm"
+				}),
 				false,
 				enabled,
 				&theme,

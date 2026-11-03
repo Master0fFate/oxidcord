@@ -601,6 +601,7 @@ pub enum Command {
 		name: String,
 		kind: ChannelType,
 		parent_id: Option<Snowflake>,
+		private: bool,
 	},
 	EditChannel {
 		channel_id: Snowflake,

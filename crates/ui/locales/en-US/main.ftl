@@ -22,6 +22,7 @@ menu-server-settings = Server Settings
 menu-notification-settings = Notification Settings
 menu-invite-people = Invite People
 menu-create-channel = Create Channel
+menu-create-category = Create Category
 menu-copy-id = Copy ID
 menu-copy-link = Copy Link
 activity-playing = Playing

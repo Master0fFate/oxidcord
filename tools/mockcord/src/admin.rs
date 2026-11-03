@@ -257,6 +257,10 @@ fn permissions_of(value: &Value) -> Permissions {
 	serde_json::from_value(value.clone()).unwrap_or_else(|_| Permissions::empty())
 }
 
+fn overwrites_of(value: &Value) -> LenientVec<PermissionOverwrite> {
+	serde_json::from_value(value.clone()).unwrap_or_default()
+}
+
 fn poll_results(message: &mut Value) -> Result<&mut Value, ApiError> {
 	if message["poll"].is_null() {
 		return Err(ApiError::invalid_body("This message has no poll"));
@@ -654,6 +658,7 @@ impl Shared {
 			name: Some(name.to_owned()),
 			parent_id: parse_id(&body["parent_id"]).map(Snowflake),
 			position: Some(position),
+			permission_overwrites: overwrites_of(&body["permission_overwrites"]),
 			..Channel::default()
 		};
 		let value = to_json(&channel);

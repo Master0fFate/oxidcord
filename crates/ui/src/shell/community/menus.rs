@@ -204,13 +204,21 @@ pub fn guild_menu(
 		);
 	}
 	if access.has(Permissions::MANAGE_CHANNELS) {
-		menu = menu.item(
-			cx.t("menu-create-channel"),
-			Some(IconKind::Plus),
-			move |window, cx| {
-				channel::open_create(window, cx, guild, None);
-			},
-		);
+		menu = menu
+			.item(
+				cx.t("menu-create-channel"),
+				Some(IconKind::Plus),
+				move |window, cx| {
+					channel::open_create(window, cx, guild, None);
+				},
+			)
+			.item(
+				cx.t("menu-create-category"),
+				Some(IconKind::Plus),
+				move |window, cx| {
+					channel::open_create_category(window, cx, guild);
+				},
+			);
 	}
 	if access.has_any(CREATE_PERMISSIONS) {
 		menu = menu.item(

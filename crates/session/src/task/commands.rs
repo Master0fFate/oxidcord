@@ -3,8 +3,8 @@ use chrono::{DateTime, Utc};
 use protocol::rest::{ComponentInteraction, ComponentInteractionData};
 use protocol::{
 	ApplicationCommand, ChannelType, CreateMessage, DispatchEvent, MessageAck, MessageFlags,
-	MessageReference, MessageReferenceKind, Permissions, ProtoCustomStatus, SCHEDULED_EVENT_GUILD_ONLY,
-	Snowflake, StatusKind, ThreadMember,
+	MessageReference, MessageReferenceKind, PermissionOverwriteKind, Permissions, ProtoCustomStatus,
+	SCHEDULED_EVENT_GUILD_ONLY, Snowflake, StatusKind, ThreadMember,
 };
 use rest::api::ArchivedScope;
 use rest::api::image_data_uri;
@@ -42,6 +42,15 @@ pub(super) fn image_mime(bytes: &[u8]) -> &'static str {
 
 fn png(bytes: &[u8]) -> Value {
 	Value::String(image_data_uri(PNG, bytes))
+}
+
+fn private_overwrites(guild_id: Snowflake) -> Value {
+	json!([{
+		"id": guild_id,
+		"type": i64::from(PermissionOverwriteKind::Role),
+		"allow": Permissions::empty(),
+		"deny": Permissions::VIEW_CHANNEL,
+	}])
 }
 
 fn forum_body(name: String, content: String, tags: Vec<Snowflake>, files: &[UploadFile]) -> Value {
@@ -1032,12 +1041,17 @@ impl Core {
 				name,
 				kind,
 				parent_id,
+				private,
 			} => {
 				if self.guild_allows(guild_id, Permissions::MANAGE_CHANNELS, "Manage Channels") {
 					let body = object([
 						("name", Some(json!(name))),
 						("type", Some(json!(i64::from(kind)))),
 						("parent_id", parent_id.map(|id| json!(id))),
+						(
+							"permission_overwrites",
+							private.then(|| private_overwrites(guild_id)),
+						),
 					]);
 					self.spawn_action("create channel", move |rest| async move {
 						rest.create_guild_channel(guild_id, body).await.map(drop)
