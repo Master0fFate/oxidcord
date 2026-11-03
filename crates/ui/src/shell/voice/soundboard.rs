@@ -4,7 +4,7 @@ use gpui::{
 };
 use protocol::{Snowflake, SoundboardSound};
 use session::Command;
-use state::State;
+use state::{SoundLocks, State};
 
 use crate::components::StatusEmoji;
 use crate::data::Data;
@@ -31,6 +31,7 @@ struct Group {
 
 pub struct Board {
 	groups: Vec<Group>,
+	locks: SoundLocks,
 }
 
 fn group(title: &str, sounds: &[SoundboardSound], state: &State) -> Option<Group> {
@@ -64,7 +65,12 @@ impl Board {
 			.and_then(|sounds| group(&cx.t("soundboard-default"), sounds, state));
 		Self {
 			groups: own.into_iter().chain(others).chain(defaults).collect(),
+			locks: state.sound_locks(),
 		}
+	}
+
+	pub fn locked_like(&self, state: &State) -> bool {
+		self.locks == state.sound_locks()
 	}
 }
 

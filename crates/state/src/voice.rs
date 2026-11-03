@@ -122,6 +122,15 @@ impl VoiceEffect {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SoundLocks {
+	channel: Option<Snowflake>,
+	guild: Option<Snowflake>,
+	permissions: Permissions,
+	nitro: bool,
+	silenced: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SoundBlock {
 	NotConnected,
 	NoPermission,
@@ -256,6 +265,20 @@ impl State {
 			return Some(SoundBlock::ExternalLocked);
 		}
 		self.silenced(session).then_some(SoundBlock::Silenced)
+	}
+
+	pub fn sound_locks(&self) -> SoundLocks {
+		let session = self
+			.voice()
+			.filter(|voice| voice.status == VoiceStatus::Connected);
+		SoundLocks {
+			channel: session.map(|voice| voice.channel_id),
+			guild: session.and_then(|voice| voice.guild_id),
+			permissions: session
+				.map_or_else(Permissions::empty, |voice| self.my_permissions(voice.channel_id)),
+			nitro: self.has_nitro(),
+			silenced: session.is_some_and(|voice| self.silenced(voice)),
+		}
 	}
 
 	pub fn effect_block(&self) -> Option<SoundBlock> {

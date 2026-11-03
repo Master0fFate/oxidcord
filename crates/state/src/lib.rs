@@ -58,7 +58,7 @@ pub use views::{
 	UnreadSince, UserOverride,
 };
 pub use voice::{
-	Call, DisconnectReason, E2eeInfo, E2eeMember, MicTest, SoundBlock, StreamInfo, StreamSummary,
-	VOICE_EFFECT_LIFETIME, VideoKind, VoiceCue, VoiceCueEntry, VoiceEffect, VoiceLevels, VoiceSession,
-	VoiceStats, VoiceStatus, stream_user,
+	Call, DisconnectReason, E2eeInfo, E2eeMember, MicTest, SoundBlock, SoundLocks, StreamInfo,
+	StreamSummary, VOICE_EFFECT_LIFETIME, VideoKind, VoiceCue, VoiceCueEntry, VoiceEffect, VoiceLevels,
+	VoiceSession, VoiceStats, VoiceStatus, stream_user,
 };

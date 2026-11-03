@@ -197,17 +197,17 @@ impl VoiceRoom {
 		let changes = cx.subscribe_in(&data, window, |this, _, event: &DataEvent, _, cx| {
 			if let DataEvent::Changed(changes) = event
 				&& this.soundboard.is_some()
-				&& (changes.voice_session
-					|| !changes.voice.is_empty()
-					|| changes.selection
+			{
+				let sounds_changed = changes.selection
 					|| changes.guild_list
 					|| changes.user_settings
 					|| changes.current_user
 					|| !changes.channel_lists.is_empty()
 					|| !changes.members.is_empty()
-					|| !changes.loaded.is_empty())
-			{
-				this.refresh_soundboard(cx);
+					|| !changes.loaded.is_empty();
+				if sounds_changed || changes.voice_session || !changes.voice.is_empty() {
+					this.refresh_soundboard(sounds_changed, cx);
+				}
 				if changes.selection {
 					this.reload_soundboard(cx);
 				}
@@ -367,13 +367,19 @@ impl VoiceRoom {
 		}
 	}
 
-	fn refresh_soundboard(&mut self, cx: &Context<Self>) {
-		let guild = self
-			.data
-			.read(cx)
-			.state()
-			.selected()
-			.and_then(|selected| selected.guild_id);
+	fn refresh_soundboard(&mut self, sounds_changed: bool, cx: &Context<Self>) {
+		let (guild, unchanged) = {
+			let state = self.data.read(cx).state();
+			(
+				state.selected().and_then(|selected| selected.guild_id),
+				self.soundboard
+					.as_ref()
+					.is_some_and(|board| board.locked_like(&state)),
+			)
+		};
+		if guild.is_some() && unchanged && !sounds_changed {
+			return;
+		}
 		self.soundboard = guild.map(|guild| self.build_soundboard(guild, cx));
 	}
 
