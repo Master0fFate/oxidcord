@@ -27,12 +27,19 @@ pub async fn me(State(shared): State<Arc<Shared>>, headers: HeaderMap) -> ApiRes
 		.ok_or_else(ApiError::unauthorized)
 }
 
-fn mentions_me(message: &Value, include_everyone: bool) -> bool {
+fn mentions_me(message: &Value, include_everyone: bool, my_roles: Option<&[String]>) -> bool {
 	let me = CURRENT_USER_ID.to_string();
 	let direct = message["mentions"]
 		.as_array()
 		.is_some_and(|users| users.iter().any(|user| user["id"].as_str() == Some(&me)));
-	direct || (include_everyone && message["mention_everyone"].as_bool() == Some(true))
+	let by_role = my_roles.is_some_and(|roles| {
+		message["mention_roles"].as_array().is_some_and(|mentioned| {
+			mentioned
+				.iter()
+				.any(|role| roles.iter().any(|mine| role.as_str() == Some(mine)))
+		})
+	});
+	direct || by_role || (include_everyone && message["mention_everyone"].as_bool() == Some(true))
 }
 
 pub async fn my_mentions(
@@ -45,6 +52,14 @@ pub async fn my_mentions(
 		.unwrap_or(25)
 		.min(100);
 	let include_everyone = params.get("everyone").is_none_or(|value| value != "false");
+	let my_roles: Vec<String> = shared
+		.fixtures
+		.guilds
+		.iter()
+		.flat_map(|guild| guild.current_member().roles.iter().map(ToString::to_string))
+		.collect();
+	let include_roles = params.get("roles").is_none_or(|value| value != "false");
+	let role_filter = include_roles.then_some(my_roles.as_slice());
 	let store = shared.store.lock();
 	let mut found: Vec<(&u64, &Value)> = store
 		.messages
@@ -53,7 +68,7 @@ pub async fn my_mentions(
 		.filter(|(id, message)| {
 			!store.dismissed_mentions.contains(id)
 				&& message["author"]["id"].as_str() != Some(&CURRENT_USER_ID.to_string())
-				&& mentions_me(message, include_everyone)
+				&& mentions_me(message, include_everyone, role_filter)
 		})
 		.collect();
 	found.sort_unstable_by_key(|(id, _)| std::cmp::Reverse(**id));
