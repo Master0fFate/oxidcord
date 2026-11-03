@@ -180,21 +180,6 @@ impl Focusable for Shell {
 	}
 }
 
-fn default_channel(state: &State, guild: Snowflake) -> Option<Snowflake> {
-	state
-		.guild_channel_tree(guild)
-		.iter()
-		.flat_map(|node| node.children.iter())
-		.find(|channel| {
-			!channel.locked
-				&& matches!(
-					channel.kind,
-					ChannelType::GuildText | ChannelType::GuildAnnouncement
-				)
-		})
-		.map(|channel| channel.id)
-}
-
 fn selectable_channels(state: &State, guild: Snowflake) -> Vec<Snowflake> {
 	state
 		.guild_channel_tree(guild)
@@ -695,7 +680,7 @@ impl Shell {
 				.get(&guild)
 				.copied()
 				.filter(|channel| selectable_channels(&state, guild).contains(channel));
-			remembered.or_else(|| default_channel(&state, guild))
+			remembered.or_else(|| state.default_channel(guild))
 		};
 		match target {
 			Some(channel) => self.select(Some(guild), channel, cx),

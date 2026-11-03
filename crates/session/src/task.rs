@@ -638,12 +638,16 @@ impl Core {
 		)
 		.then(|| self.state.read().selected())
 		.flatten();
+		let deleted_parent = match &event {
+			DispatchEvent::ThreadDelete(delete) => delete.parent_id,
+			_ => None,
+		};
 		self.apply_dispatch(&event);
 		if !dropped.is_empty() {
 			self.persist.submit(Job::DropChannels(dropped));
 		}
 		if let Some(selected) = selected {
-			self.reselect_after_delete(selected);
+			self.reselect_after_delete(selected, deleted_parent);
 		}
 		self.forward_dispatch(&event);
 		self.forward_client_events(&event, probe);
@@ -696,13 +700,20 @@ impl Core {
 		}
 	}
 
-	fn reselect_after_delete(&mut self, previous: Selection) {
-		if self.state.read().selected().is_some() {
-			return;
-		}
-		let fallback = previous
-			.guild_id
-			.and_then(|guild_id| self.subscription_channel(guild_id));
+	fn reselect_after_delete(&mut self, previous: Selection, parent: Option<Snowflake>) {
+		let fallback = {
+			let state = self.state.read();
+			if state.selected().is_some() {
+				return;
+			}
+			parent
+				.filter(|parent| state.channel(*parent).is_some() && state.can_view(*parent))
+				.or_else(|| {
+					previous
+						.guild_id
+						.and_then(|guild_id| state.default_channel(guild_id))
+				})
+		};
 		match fallback {
 			Some(channel_id) => self.select_channel(previous.guild_id, channel_id),
 			None => self.selected_guild = None,

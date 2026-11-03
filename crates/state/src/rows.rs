@@ -183,6 +183,20 @@ impl State {
 		}
 	}
 
+	pub fn default_channel(&self, guild_id: Snowflake) -> Option<Snowflake> {
+		self.guild_channel_tree(guild_id)
+			.iter()
+			.flat_map(|node| node.children.iter())
+			.find(|channel| {
+				!channel.locked
+					&& matches!(
+						channel.kind,
+						ChannelType::GuildText | ChannelType::GuildAnnouncement
+					)
+			})
+			.map(|channel| channel.id)
+	}
+
 	pub fn guild_channel_tree(&self, guild_id: Snowflake) -> Vec<ChannelTreeNode> {
 		let Some(guild) = self.guilds.get(&guild_id) else {
 			return Vec::new();
