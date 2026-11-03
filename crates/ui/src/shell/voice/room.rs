@@ -201,9 +201,15 @@ impl VoiceRoom {
 					|| changes.selection
 					|| changes.guild_list
 					|| changes.user_settings
+					|| changes.current_user
+					|| !changes.channel_lists.is_empty()
+					|| !changes.members.is_empty()
 					|| !changes.loaded.is_empty())
 			{
 				this.refresh_soundboard(cx);
+				if changes.guild_list {
+					this.reload_soundboard(cx);
+				}
 			}
 			if let DataEvent::Changed(changes) = event
 				&& (changes.voice_session
@@ -334,6 +340,16 @@ impl VoiceRoom {
 
 	fn build_soundboard(&self, guild: Snowflake, cx: &Context<Self>) -> soundboard::Board {
 		soundboard::Board::new(&self.data.read(cx).state(), guild, cx)
+	}
+
+	fn reload_soundboard(&self, cx: &Context<Self>) {
+		let data = self.data.read(cx);
+		let state = data.state();
+		if let Some(guild) = state.selected().and_then(|selected| selected.guild_id)
+			&& state.guild_sounds(guild).is_none()
+		{
+			data.send(Command::LoadSoundboard { guild_id: guild });
+		}
 	}
 
 	fn refresh_soundboard(&mut self, cx: &Context<Self>) {
