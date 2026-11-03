@@ -65,8 +65,16 @@ pub fn router(shared: Arc<Shared>) -> Router {
 		)
 		.route(
 			"/users/@me/relationships/{id}",
-			put(admin::put_relationship).delete(admin::delete_relationship),
+			put(admin::put_relationship)
+				.patch(admin::patch_relationship)
+				.delete(admin::delete_relationship),
 		)
+		.route(
+			"/users/@me/relationships/{id}/ignore",
+			put(admin::ignore_user).delete(admin::unignore_user),
+		)
+		.route("/users/@me/notes/{id}", get(admin::get_note).put(admin::put_note))
+		.route("/mock/relationships/incoming", post(admin::incoming_request))
 		.route("/users/@me/channels", post(users::create_dm))
 		.route("/users/{id}", get(users::user))
 		.route("/users/{id}/profile", get(users::profile))

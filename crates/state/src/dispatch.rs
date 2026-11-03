@@ -4,8 +4,8 @@ use std::time::Instant;
 use protocol::{
 	Channel, ChannelLastMessage, ChannelRecipientChange, DispatchEvent, GuildMemberListUpdate,
 	GuildMembersChunk, GuildRoleChange, Member, MemberListGroup, Message, MessageAck, MessageUpdate,
-	PassiveUpdate, Presence, Snowflake, ThreadDelete, ThreadListSync, TypingStart, UnavailableGuild,
-	UserGuildSettings, VoiceState,
+	PassiveUpdate, Presence, RelationshipKind, Snowflake, ThreadDelete, ThreadListSync, TypingStart,
+	UnavailableGuild, UserGuildSettings, VoiceState,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -181,11 +181,30 @@ impl State {
 			DispatchEvent::UserSettingsProtoUpdate(update) => self.apply_settings_proto_update(update),
 			DispatchEvent::UserGuildSettingsUpdate(settings) => self.guild_settings_update(settings),
 			DispatchEvent::RelationshipAdd(relationship) => {
+				let notify = relationship.should_notify
+					&& relationship.kind == RelationshipKind::IncomingRequest
+					&& self
+						.relationship(relationship.id)
+						.is_none_or(|stored| stored.kind != RelationshipKind::IncomingRequest);
 				self.store_relationship(relationship);
+				if notify {
+					self.note_friend_notice(relationship.id);
+				}
 				Changes {
 					relationships: true,
+					friend_notice: notify,
 					..Changes::default()
 				}
+			}
+			DispatchEvent::RelationshipUpdate(update) => Changes {
+				relationships: self.update_relationship(update),
+				..Changes::default()
+			},
+			DispatchEvent::UserNoteUpdate(update) => {
+				self.set_note(update.id, update.note.as_deref().unwrap_or_default());
+				let mut changes = Changes::default();
+				changes.loaded.insert(update.id);
+				changes
 			}
 			DispatchEvent::RelationshipRemove(remove) => Changes {
 				relationships: self.relationships.shift_remove(&remove.id).is_some(),
@@ -283,7 +302,10 @@ impl State {
 			if let Some(interval) = self.slowmode_interval(channel_id) {
 				changes.merge(self.start_slowmode(channel_id, interval));
 			}
-		} else if !is_selected && (guild_id.is_none() || self.mentions_me(message, guild_id)) {
+		} else if !is_selected
+			&& !self.is_ignored(message.author.id)
+			&& (guild_id.is_none() || self.mentions_me(message, guild_id))
+		{
 			self.bump_mentions(channel_id);
 		}
 		if alert {

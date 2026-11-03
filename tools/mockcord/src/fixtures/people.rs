@@ -16,6 +16,9 @@ pub struct People {
 }
 
 const FRIEND_COUNT: usize = 8;
+const NICKNAMED_FRIEND: usize = 1;
+const IGNORED_FRIEND: usize = 2;
+const NICKNAME: &str = "Bestie";
 const GROUP_NAME: &str = "weekend crew";
 
 pub fn generate(rng: &mut StdRng, ids: &mut EntityIds, size: usize) -> People {
@@ -139,6 +142,7 @@ pub fn build_relationships(builder: &Builder) -> Vec<Relationship> {
 			(FRIEND_COUNT, RelationshipKind::IncomingRequest),
 			(FRIEND_COUNT + 1, RelationshipKind::OutgoingRequest),
 			(FRIEND_COUNT + 2, RelationshipKind::Blocked),
+			(FRIEND_COUNT + 3, RelationshipKind::IncomingRequest),
 		]);
 	kinds
 		.map(|(index, kind)| Relationship {
@@ -146,8 +150,12 @@ pub fn build_relationships(builder: &Builder) -> Vec<Relationship> {
 			kind,
 			user: Some(pool[index].clone()),
 			user_id: None,
-			nickname: None,
+			nickname: (index == NICKNAMED_FRIEND).then(|| NICKNAME.to_owned()),
 			since: Some(builder.anchor - Duration::days(30 + index as i64 * 17)),
+			user_ignored: index == IGNORED_FRIEND,
+			is_spam_request: index == FRIEND_COUNT + 3,
+			stranger_request: index == FRIEND_COUNT,
+			should_notify: false,
 		})
 		.collect()
 }

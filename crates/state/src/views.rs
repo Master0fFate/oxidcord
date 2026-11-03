@@ -141,6 +141,7 @@ pub struct DmRow {
 	pub recipients: Vec<Snowflake>,
 	pub unread: bool,
 	pub mentions: u32,
+	pub muted: bool,
 	pub last_message_id: Option<Snowflake>,
 }
 
@@ -154,4 +155,7 @@ pub struct RelationshipRow {
 	pub status: StatusKind,
 	pub activity: Option<String>,
 	pub since: Option<DateTime<Utc>>,
+	pub ignored: bool,
+	pub spam: bool,
+	pub stranger: bool,
 }

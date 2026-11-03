@@ -71,6 +71,7 @@ pub struct Changes {
 	pub user_settings: bool,
 	pub relationships: bool,
 	pub friend_request: bool,
+	pub friend_notice: bool,
 	pub read_state: bool,
 	pub alerts: bool,
 	pub session: bool,
@@ -107,6 +108,7 @@ impl Changes {
 			user_settings: true,
 			relationships: true,
 			friend_request: true,
+			friend_notice: true,
 			read_state: true,
 			alerts: true,
 			session: true,
@@ -142,6 +144,7 @@ impl Changes {
 			|| self.user_settings
 			|| self.relationships
 			|| self.friend_request
+			|| self.friend_notice
 			|| self.read_state
 			|| self.alerts
 			|| self.session
@@ -176,6 +179,7 @@ impl Changes {
 		self.user_settings |= other.user_settings;
 		self.relationships |= other.relationships;
 		self.friend_request |= other.friend_request;
+		self.friend_notice |= other.friend_notice;
 		self.read_state |= other.read_state;
 		self.alerts |= other.alerts;
 		self.session |= other.session;

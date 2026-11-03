@@ -41,7 +41,8 @@ pub use relationships::shared_members;
 pub use rows::set_names_masked;
 pub use settings::{GuildFolder, RailEntry, guild_folders_settings};
 pub use state::{
-	Rejection, RequestOutcome, Selection, SentRequest, SessionInfo, SharedState, State, TYPING_TIMEOUT,
+	FriendNotice, Rejection, RequestOutcome, Selection, SentRequest, SessionInfo, SharedState, State,
+	TYPING_TIMEOUT,
 };
 pub use threads::ForumPost;
 pub use views::{

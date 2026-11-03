@@ -208,6 +208,10 @@ impl State {
 		if let Some(user) = &relationship.user {
 			intern_user(&mut self.users, user);
 		}
+		if relationship.kind == protocol::RelationshipKind::None && !relationship.user_ignored {
+			self.relationships.shift_remove(&relationship.id);
+			return;
+		}
 		self.relationships.insert(
 			relationship.id,
 			protocol::Relationship {
@@ -217,8 +221,37 @@ impl State {
 				user_id: Some(relationship.id),
 				nickname: relationship.nickname.clone(),
 				since: relationship.since,
+				user_ignored: relationship.user_ignored,
+				is_spam_request: relationship.is_spam_request,
+				stranger_request: relationship.stranger_request,
+				should_notify: false,
 			},
 		);
+	}
+
+	pub(crate) fn update_relationship(&mut self, update: &protocol::RelationshipUpdate) -> bool {
+		let Some(stored) = self.relationships.get_mut(&update.id) else {
+			return false;
+		};
+		if let Some(kind) = update.kind {
+			stored.kind = kind;
+		}
+		if let Some(nickname) = &update.nickname {
+			stored.nickname.clone_from(nickname);
+		}
+		if update.since.is_some() {
+			stored.since = update.since;
+		}
+		if let Some(ignored) = update.user_ignored {
+			stored.user_ignored = ignored;
+		}
+		if let Some(stranger) = update.stranger_request {
+			stored.stranger_request = stranger;
+		}
+		if stored.kind == protocol::RelationshipKind::None && !stored.user_ignored {
+			self.relationships.shift_remove(&update.id);
+		}
+		true
 	}
 
 	pub(crate) fn apply_presence(&mut self, presence: &Presence) -> Option<Snowflake> {

@@ -165,6 +165,16 @@ impl Core {
 					self.client_event(ClientEvent::RelationshipChanged(view), false);
 				}
 			}
+			DispatchEvent::RelationshipUpdate(update) => {
+				let state = self.state.read();
+				let view = state
+					.relationship(update.id)
+					.and_then(|relationship| views::relationship(&state, relationship));
+				drop(state);
+				if let Some(view) = view {
+					self.client_event(ClientEvent::RelationshipChanged(view), false);
+				}
+			}
 			DispatchEvent::RelationshipRemove(remove) => {
 				self.client_event(ClientEvent::RelationshipRemoved(remove.id.get()), false);
 			}

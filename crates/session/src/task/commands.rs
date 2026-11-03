@@ -120,6 +120,10 @@ impl Core {
 			| Command::AcceptFriend { .. }
 			| Command::RemoveRelationship { .. }
 			| Command::BlockUser { .. }
+			| Command::IgnoreUser { .. }
+			| Command::UnignoreUser { .. }
+			| Command::SetFriendNickname { .. }
+			| Command::SetNote { .. }
 			| Command::LeaveGuild { .. }
 			| Command::CreateGroupDm { .. }
 			| Command::AddGroupRecipient { .. }
@@ -303,6 +307,12 @@ impl Core {
 					let raw = rest.user_profile(user_id, guild_id).await?;
 					Ok(Loaded::Profile { user_id, raw })
 				});
+				if self.state.read().current_user_id() != Some(user_id) {
+					self.spawn_load("note", move |rest| async move {
+						let note = rest.user_note(user_id).await?;
+						Ok(Loaded::Note { user_id, note })
+					});
+				}
 			}
 			Command::CreateInvite {
 				channel_id,
@@ -455,6 +465,20 @@ impl Core {
 					move |rest| async move { rest.block_user(user_id).await },
 				)
 			}
+			Command::IgnoreUser { user_id } => self.spawn_action("ignore user", move |rest| async move {
+				rest.set_ignored(user_id, true).await
+			}),
+			Command::UnignoreUser { user_id } => self.spawn_action("unignore user", move |rest| async move {
+				rest.set_ignored(user_id, false).await
+			}),
+			Command::SetFriendNickname { user_id, nickname } => {
+				self.spawn_action("friend nickname", move |rest| async move {
+					rest.set_friend_nickname(user_id, nickname.as_deref()).await
+				});
+			}
+			Command::SetNote { user_id, note } => self.spawn_action("save note", move |rest| async move {
+				rest.set_user_note(user_id, &note).await
+			}),
 			Command::LeaveGuild { guild_id } => self.spawn_action("leave server", move |rest| async move {
 				rest.leave_guild(guild_id).await
 			}),

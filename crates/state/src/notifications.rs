@@ -238,7 +238,10 @@ impl State {
 		let Some(me) = self.current_user_id() else {
 			return false;
 		};
-		if message.author.id == me || message.flags.contains(MessageFlags::SUPPRESS_NOTIFICATIONS) {
+		if message.author.id == me
+			|| message.flags.contains(MessageFlags::SUPPRESS_NOTIFICATIONS)
+			|| self.is_ignored(message.author.id)
+		{
 			return false;
 		}
 		let settings = self.guild_settings(guild_id);

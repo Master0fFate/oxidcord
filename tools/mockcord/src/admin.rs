@@ -263,10 +263,142 @@ impl Shared {
 			user_id: None,
 			nickname: None,
 			since: Some(Utc::now()),
+			user_ignored: false,
+			is_spam_request: false,
+			stranger_request: false,
+			should_notify: false,
 		};
 		let event = to_json(&relationship);
 		self.store.lock().relationships.insert(user_id, relationship);
 		self.hub.broadcast("RELATIONSHIP_ADD", &event);
+		Ok(())
+	}
+
+	pub fn incoming_request(&self) -> Result<(), ApiError> {
+		let user = {
+			let store = self.store.lock();
+			self.fixtures
+				.users
+				.values()
+				.find(|user| {
+					user.id.0 != CURRENT_USER_ID
+						&& !user.bot.unwrap_or(false)
+						&& !store.relationships.contains_key(&user.id.0)
+				})
+				.cloned()
+				.ok_or_else(ApiError::unknown_user)?
+		};
+		let relationship = Relationship {
+			id: user.id,
+			kind: RelationshipKind::IncomingRequest,
+			user: Some(user),
+			since: Some(Utc::now()),
+			should_notify: true,
+			..Relationship::default()
+		};
+		let event = to_json(&relationship);
+		self.store
+			.lock()
+			.relationships
+			.insert(relationship.id.0, relationship);
+		self.hub.broadcast("RELATIONSHIP_ADD", &event);
+		Ok(())
+	}
+
+	pub fn set_ignored(&self, user_id: u64, ignored: bool) -> Result<(), ApiError> {
+		let mut store = self.store.lock();
+		let Some(relationship) = store.relationships.get_mut(&user_id) else {
+			drop(store);
+			return self.ignore_stranger(user_id, ignored);
+		};
+		relationship.user_ignored = ignored;
+		let kind = relationship.kind;
+		if kind == RelationshipKind::None && !ignored {
+			store.relationships.remove(&user_id);
+			drop(store);
+			self.hub.broadcast(
+				"RELATIONSHIP_REMOVE",
+				&json!({ "id": user_id.to_string(), "type": 0 }),
+			);
+			return Ok(());
+		}
+		drop(store);
+		self.hub.broadcast(
+			"RELATIONSHIP_UPDATE",
+			&json!({ "id": user_id.to_string(), "type": i64::from(kind), "user_ignored": ignored }),
+		);
+		Ok(())
+	}
+
+	fn ignore_stranger(&self, user_id: u64, ignored: bool) -> Result<(), ApiError> {
+		let user = self
+			.fixtures
+			.users
+			.get(&user_id)
+			.cloned()
+			.ok_or_else(ApiError::unknown_user)?;
+		if !ignored {
+			return Ok(());
+		}
+		let relationship = Relationship {
+			id: user.id,
+			user: Some(user),
+			user_ignored: true,
+			..Relationship::default()
+		};
+		let event = to_json(&relationship);
+		self.store.lock().relationships.insert(user_id, relationship);
+		self.hub.broadcast("RELATIONSHIP_ADD", &event);
+		Ok(())
+	}
+
+	pub fn set_friend_nickname(&self, user_id: u64, nickname: Option<String>) -> Result<(), ApiError> {
+		let mut store = self.store.lock();
+		let relationship = store
+			.relationships
+			.get_mut(&user_id)
+			.filter(|relationship| relationship.kind == RelationshipKind::Friend)
+			.ok_or_else(ApiError::unknown_user)?;
+		relationship.nickname.clone_from(&nickname);
+		drop(store);
+		self.hub.broadcast(
+			"RELATIONSHIP_UPDATE",
+			&json!({ "id": user_id.to_string(), "type": 1, "nickname": nickname }),
+		);
+		Ok(())
+	}
+
+	pub fn note(&self, user_id: u64) -> Result<Value, ApiError> {
+		let note = self
+			.store
+			.lock()
+			.notes
+			.get(&user_id)
+			.cloned()
+			.ok_or_else(ApiError::not_found)?;
+		Ok(json!({
+			"user_id": CURRENT_USER_ID.to_string(),
+			"note_user_id": user_id.to_string(),
+			"note": note,
+		}))
+	}
+
+	pub fn set_note(&self, user_id: u64, note: &str) -> Result<(), ApiError> {
+		if !self.fixtures.users.contains_key(&user_id) {
+			return Err(ApiError::unknown_user());
+		}
+		{
+			let mut store = self.store.lock();
+			if note.is_empty() {
+				store.notes.remove(&user_id);
+			} else {
+				store.notes.insert(user_id, note.to_owned());
+			}
+		}
+		self.hub.broadcast(
+			"USER_NOTE_UPDATE",
+			&json!({ "id": user_id.to_string(), "note": note }),
+		);
 		Ok(())
 	}
 

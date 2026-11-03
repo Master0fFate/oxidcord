@@ -5,8 +5,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::{DateTime, Local, NaiveDate, TimeDelta, Utc};
 use protocol::{
-	ActivityKind, Channel, ChannelType, Message, MessageType, Permissions, Presence, Snowflake, StatusKind,
-	User, UserGuildSettings,
+	ActivityKind, Channel, ChannelType, Message, MessageType, Permissions, Presence, RelationshipKind,
+	Snowflake, StatusKind, User, UserGuildSettings,
 };
 use smallvec::SmallVec;
 
@@ -135,10 +135,23 @@ impl State {
 		if let Some(nick) = nick {
 			return nick.to_owned();
 		}
+		if guild_id.is_none()
+			&& let Some(nick) = self.friend_nickname(user_id)
+		{
+			return nick.to_owned();
+		}
 		match self.users.get(&user_id) {
 			Some(user) => user_display(user),
 			None => user_id.to_string(),
 		}
+	}
+
+	pub fn friend_nickname(&self, user_id: Snowflake) -> Option<&str> {
+		self.relationships
+			.get(&user_id)
+			.filter(|relationship| relationship.kind == RelationshipKind::Friend)
+			.and_then(|relationship| relationship.nickname.as_deref())
+			.filter(|nick| !nick.is_empty())
 	}
 
 	pub fn role_color(&self, guild_id: Snowflake, user_id: Snowflake) -> Option<u32> {
@@ -338,6 +351,7 @@ impl State {
 					recipients: channel.recipient_ids.clone(),
 					unread: status.unread,
 					mentions: status.mentions,
+					muted: status.muted,
 					last_message_id: channel.last_message_id,
 				}
 			})

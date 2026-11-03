@@ -365,6 +365,14 @@ pub fn present<'de, D: Deserializer<'de>>(deserializer: D) -> Result<bool, D::Er
 	IgnoredAny::deserialize(deserializer).map(|_| true)
 }
 
+pub fn nullable<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+	D: Deserializer<'de>,
+	T: Deserialize<'de>,
+{
+	Option::<T>::deserialize(deserializer).map(Some)
+}
+
 pub fn or_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
 where
 	D: Deserializer<'de>,

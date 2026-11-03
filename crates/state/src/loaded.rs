@@ -45,6 +45,10 @@ pub enum Loaded {
 		user_id: Snowflake,
 		raw: Value,
 	},
+	Note {
+		user_id: Snowflake,
+		note: String,
+	},
 	ApplicationIcon {
 		application_id: Snowflake,
 		icon: Option<String>,
@@ -248,6 +252,7 @@ pub(crate) struct Lazy {
 	pub(crate) pins: HashMap<Snowflake, Vec<Arc<Message>>>,
 	pub(crate) archived: HashMap<Snowflake, ArchivedThreads>,
 	pub(crate) profiles: HashMap<Snowflake, UserProfile>,
+	pub(crate) notes: HashMap<Snowflake, String>,
 	pub(crate) application_icons: HashMap<Snowflake, Option<String>>,
 	pub(crate) invites_created: HashMap<Snowflake, InviteInfo>,
 	pub(crate) invite_previews: HashMap<String, InvitePreview>,
@@ -516,6 +521,10 @@ impl State {
 					self.lazy.profiles.insert(*user_id, profile);
 					changes.loaded.insert(*user_id);
 				}
+			}
+			Loaded::Note { user_id, note } => {
+				self.set_note(*user_id, note);
+				changes.loaded.insert(*user_id);
 			}
 			Loaded::InviteCreated { channel_id, raw } => {
 				if let Ok(invite) = RawInvite::deserialize(raw) {
@@ -840,6 +849,18 @@ impl State {
 
 	pub fn profile(&self, user_id: Snowflake) -> Option<&UserProfile> {
 		self.lazy.profiles.get(&user_id)
+	}
+
+	pub fn note(&self, user_id: Snowflake) -> Option<&str> {
+		self.lazy.notes.get(&user_id).map(String::as_str)
+	}
+
+	pub(crate) fn set_note(&mut self, user_id: Snowflake, note: &str) {
+		if note.is_empty() {
+			self.lazy.notes.remove(&user_id);
+		} else {
+			self.lazy.notes.insert(user_id, note.to_owned());
+		}
 	}
 
 	pub fn application_icon(&self, application_id: Snowflake) -> Option<Option<&str>> {

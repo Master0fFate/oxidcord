@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use protocol::{RelationshipKind, Snowflake, StatusKind};
+use protocol::{Relationship, RelationshipKind, Snowflake, StatusKind};
 
 use crate::state::State;
 use crate::views::RelationshipRow;
@@ -28,10 +28,33 @@ impl State {
 		self.relationship_rows(RelationshipKind::Blocked)
 	}
 
-	fn relationship_rows(&self, kind: RelationshipKind) -> Vec<RelationshipRow> {
+	pub fn ignored(&self) -> Vec<RelationshipRow> {
+		self.rows_where(|relationship| relationship.user_ignored)
+	}
+
+	pub fn pending_incoming_count(&self) -> usize {
 		self.relationships
 			.values()
-			.filter(|relationship| relationship.kind == kind)
+			.filter(|relationship| {
+				relationship.kind == RelationshipKind::IncomingRequest && !relationship.is_spam_request
+			})
+			.count()
+	}
+
+	pub fn is_ignored(&self, user_id: Snowflake) -> bool {
+		self.relationships
+			.get(&user_id)
+			.is_some_and(|relationship| relationship.user_ignored)
+	}
+
+	fn relationship_rows(&self, kind: RelationshipKind) -> Vec<RelationshipRow> {
+		self.rows_where(|relationship| relationship.kind == kind)
+	}
+
+	fn rows_where(&self, keep: impl Fn(&Relationship) -> bool) -> Vec<RelationshipRow> {
+		self.relationships
+			.values()
+			.filter(|relationship| keep(relationship))
 			.map(|relationship| {
 				let user = self.users.get(&relationship.id);
 				RelationshipRow {
@@ -46,6 +69,9 @@ impl State {
 						.map_or(StatusKind::Offline, |presence| presence.status.clone()),
 					activity: self.activity_summary(relationship.id),
 					since: relationship.since,
+					ignored: relationship.user_ignored,
+					spam: relationship.is_spam_request,
+					stranger: relationship.stranger_request,
 				}
 			})
 			.collect()

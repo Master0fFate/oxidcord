@@ -401,6 +401,20 @@ pub enum Command {
 	BlockUser {
 		user_id: Snowflake,
 	},
+	IgnoreUser {
+		user_id: Snowflake,
+	},
+	UnignoreUser {
+		user_id: Snowflake,
+	},
+	SetFriendNickname {
+		user_id: Snowflake,
+		nickname: Option<String>,
+	},
+	SetNote {
+		user_id: Snowflake,
+		note: String,
+	},
 	LoadProfile {
 		user_id: Snowflake,
 		guild_id: Option<Snowflake>,

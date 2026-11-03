@@ -2,7 +2,7 @@ use protocol::{Connection, Guild, LenientVec, Message, Relationship, Snowflake, 
 use serde_json::{Value, json};
 
 use crate::client::RestClient;
-use crate::error::Result;
+use crate::error::{RestError, Result};
 use crate::request::{Request, encode_component};
 
 impl RestClient {
@@ -75,6 +75,38 @@ impl RestClient {
 	pub async fn remove_relationship(&self, user_id: Snowflake) -> Result<()> {
 		self.send_empty(Request::delete(format!("/users/@me/relationships/{user_id}")))
 			.await
+	}
+
+	pub async fn set_ignored(&self, user_id: Snowflake, ignored: bool) -> Result<()> {
+		let path = format!("/users/@me/relationships/{user_id}/ignore");
+		let request = if ignored {
+			Request::put(path).json(&json!({}))
+		} else {
+			Request::delete(path)
+		};
+		self.send_empty(request).await
+	}
+
+	pub async fn set_friend_nickname(&self, user_id: Snowflake, nickname: Option<&str>) -> Result<()> {
+		let request = Request::patch(format!("/users/@me/relationships/{user_id}"))
+			.json(&json!({ "nickname": nickname }));
+		self.send_empty(request).await
+	}
+
+	pub async fn user_note(&self, user_id: Snowflake) -> Result<String> {
+		match self
+			.send::<Value>(Request::get(format!("/users/@me/notes/{user_id}")))
+			.await
+		{
+			Ok(found) => Ok(found["note"].as_str().unwrap_or_default().to_owned()),
+			Err(RestError::NotFound(_)) => Ok(String::new()),
+			Err(error) => Err(error),
+		}
+	}
+
+	pub async fn set_user_note(&self, user_id: Snowflake, note: &str) -> Result<()> {
+		let request = Request::put(format!("/users/@me/notes/{user_id}")).json(&json!({ "note": note }));
+		self.send_empty(request).await
 	}
 
 	pub async fn current_user_guilds(&self) -> Result<LenientVec<Guild>> {

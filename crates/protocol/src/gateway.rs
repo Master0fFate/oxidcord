@@ -18,7 +18,8 @@ use crate::message::{BURST_REACTION, Message, MessageUpdate};
 use crate::presence::Presence;
 use crate::role::Role;
 use crate::settings::{
-	ReadStateContainer, Relationship, RelationshipKind, UserGuildSettings, UserGuildSettingsContainer,
+	ReadStateContainer, Relationship, RelationshipKind, RelationshipUpdate, UserGuildSettings,
+	UserGuildSettingsContainer, UserNoteUpdate,
 };
 use crate::snowflake::Snowflake;
 use crate::token::Token;
@@ -722,6 +723,8 @@ pub enum DispatchEvent {
 	UserConnectionsUpdate(Value),
 	UserGuildSettingsUpdate(Box<UserGuildSettings>),
 	RelationshipAdd(Box<Relationship>),
+	RelationshipUpdate(Box<RelationshipUpdate>),
+	UserNoteUpdate(UserNoteUpdate),
 	RelationshipRemove(RelationshipRemove),
 	VoiceStateUpdate(Box<VoiceState>),
 	VoiceServerUpdate(VoiceServerUpdate),
@@ -797,7 +800,9 @@ impl DispatchEvent {
 			"USER_SETTINGS_PROTO_UPDATE" => Self::UserSettingsProtoUpdate(decode(name, data)?),
 			"USER_CONNECTIONS_UPDATE" => Self::UserConnectionsUpdate(decode(name, data)?),
 			"USER_GUILD_SETTINGS_UPDATE" => Self::UserGuildSettingsUpdate(decode(name, data)?),
-			"RELATIONSHIP_ADD" | "RELATIONSHIP_UPDATE" => Self::RelationshipAdd(decode(name, data)?),
+			"RELATIONSHIP_ADD" => Self::RelationshipAdd(decode(name, data)?),
+			"RELATIONSHIP_UPDATE" => Self::RelationshipUpdate(decode(name, data)?),
+			"USER_NOTE_UPDATE" => Self::UserNoteUpdate(decode(name, data)?),
 			"RELATIONSHIP_REMOVE" => Self::RelationshipRemove(decode(name, data)?),
 			"VOICE_STATE_UPDATE" => Self::VoiceStateUpdate(decode(name, data)?),
 			"VOICE_SERVER_UPDATE" => Self::VoiceServerUpdate(decode(name, data)?),

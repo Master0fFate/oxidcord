@@ -1,12 +1,13 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::lenient::{EntryContainer, LenientVec, int_enum, timestamp};
+use crate::lenient::{EntryContainer, LenientVec, int_enum, nullable, or_default, timestamp};
 use crate::snowflake::Snowflake;
 use crate::user::User;
 
 int_enum! {
 	pub enum RelationshipKind {
+		None = 0,
 		Friend = 1,
 		Blocked = 2,
 		IncomingRequest = 3,
@@ -95,6 +96,35 @@ pub struct Relationship {
 	pub nickname: Option<String>,
 	#[serde(deserialize_with = "timestamp")]
 	pub since: Option<DateTime<Utc>>,
+	#[serde(deserialize_with = "or_default")]
+	pub user_ignored: bool,
+	#[serde(deserialize_with = "or_default")]
+	pub is_spam_request: bool,
+	#[serde(deserialize_with = "or_default")]
+	pub stranger_request: bool,
+	#[serde(deserialize_with = "or_default")]
+	pub should_notify: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RelationshipUpdate {
+	pub id: Snowflake,
+	#[serde(rename = "type")]
+	pub kind: Option<RelationshipKind>,
+	#[serde(deserialize_with = "nullable")]
+	pub nickname: Option<Option<String>>,
+	#[serde(deserialize_with = "timestamp")]
+	pub since: Option<DateTime<Utc>>,
+	pub user_ignored: Option<bool>,
+	pub stranger_request: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct UserNoteUpdate {
+	pub id: Snowflake,
+	pub note: Option<String>,
 }
 
 pub type ReadStateContainer = EntryContainer<ReadState>;

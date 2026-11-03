@@ -83,6 +83,8 @@ pub struct State {
 	pub(crate) rejection_count: u64,
 	pub(crate) friend_request: Option<SentRequest>,
 	pub(crate) friend_request_count: u64,
+	pub(crate) friend_notice: Option<FriendNotice>,
+	pub(crate) friend_notice_count: u64,
 	pub(crate) chosen_status: Option<StatusKind>,
 	pub(crate) afk: bool,
 	pub(crate) alerts: VecDeque<Alert>,
@@ -101,6 +103,12 @@ pub struct SentRequest {
 	pub id: u64,
 	pub username: String,
 	pub outcome: RequestOutcome,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FriendNotice {
+	pub id: u64,
+	pub user_id: Snowflake,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -274,6 +282,18 @@ impl State {
 
 	pub fn last_friend_request(&self) -> Option<&SentRequest> {
 		self.friend_request.as_ref()
+	}
+
+	pub(crate) fn note_friend_notice(&mut self, user_id: Snowflake) {
+		self.friend_notice_count += 1;
+		self.friend_notice = Some(FriendNotice {
+			id: self.friend_notice_count,
+			user_id,
+		});
+	}
+
+	pub fn last_friend_notice(&self) -> Option<FriendNotice> {
+		self.friend_notice
 	}
 
 	pub fn selected(&self) -> Option<Selection> {

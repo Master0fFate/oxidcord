@@ -51,6 +51,7 @@ pub struct Store {
 	pub current_user: User,
 	pub profile: serde_json::Map<String, Value>,
 	pub relationships: BTreeMap<u64, Relationship>,
+	pub notes: BTreeMap<u64, String>,
 	pub settings: BTreeMap<u64, UserGuildSettings>,
 	pub properties: HashMap<u64, GuildProperties>,
 	pub roles: HashMap<u64, Vec<Role>>,
@@ -113,6 +114,7 @@ impl Store {
 				.iter()
 				.map(|relationship| (relationship.id.0, relationship.clone()))
 				.collect(),
+			notes: BTreeMap::new(),
 			settings: fixtures
 				.user_guild_settings
 				.iter()

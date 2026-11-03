@@ -71,6 +71,43 @@ pub async fn delete_relationship(State(shared): Mock, Path(id): Path<u64>) -> No
 	Ok(StatusCode::NO_CONTENT)
 }
 
+pub async fn ignore_user(State(shared): Mock, Path(id): Path<u64>) -> NoContent {
+	shared.set_ignored(id, true)?;
+	Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn unignore_user(State(shared): Mock, Path(id): Path<u64>) -> NoContent {
+	shared.set_ignored(id, false)?;
+	Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn patch_relationship(
+	State(shared): Mock,
+	Path(id): Path<u64>,
+	Json(body): Json<Value>,
+) -> NoContent {
+	let nickname = body["nickname"]
+		.as_str()
+		.filter(|nickname| !nickname.is_empty())
+		.map(str::to_owned);
+	shared.set_friend_nickname(id, nickname)?;
+	Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn incoming_request(State(shared): Mock) -> NoContent {
+	shared.incoming_request()?;
+	Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn get_note(State(shared): Mock, Path(id): Path<u64>) -> ApiResult {
+	Ok(Json(shared.note(id)?))
+}
+
+pub async fn put_note(State(shared): Mock, Path(id): Path<u64>, Json(body): Json<Value>) -> NoContent {
+	shared.set_note(id, body["note"].as_str().unwrap_or_default())?;
+	Ok(StatusCode::NO_CONTENT)
+}
+
 pub async fn patch_me(State(shared): Mock, Json(body): Json<Value>) -> ApiResult {
 	Ok(Json(shared.patch_current_user(&body)))
 }
