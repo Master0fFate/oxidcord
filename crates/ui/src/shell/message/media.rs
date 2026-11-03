@@ -317,14 +317,18 @@ fn image_target(attachment: &Attachment) -> ImageTarget {
 	}
 }
 
-fn attachment_gallery(items: &[Attachment], inline: bool, env: &BodyEnv) -> (Rc<[ImageTarget]>, Vec<usize>) {
+fn attachment_gallery(
+	items: &[Attachment],
+	inline: bool,
+	covers: &[Option<Cover>],
+) -> (Rc<[ImageTarget]>, Vec<usize>) {
 	let mut targets = Vec::new();
 	let positions = items
 		.iter()
-		.enumerate()
-		.map(|(index, attachment)| {
+		.zip(covers)
+		.map(|(attachment, cover)| {
 			let position = targets.len();
-			if inline && is_image(attachment) && cover_of(attachment, index, env).is_none() {
+			if inline && is_image(attachment) && cover.is_none() {
 				targets.push(image_target(attachment));
 			}
 			position
@@ -338,7 +342,12 @@ pub fn attachments(items: &[Attachment], env: &BodyEnv, inline: bool, cx: &App) 
 	let look = Look {
 		stacked: layout == Some(AttachmentLayout::Stacked),
 	};
-	let (targets, positions) = attachment_gallery(items, inline, env);
+	let covers: Vec<Option<Cover>> = items
+		.iter()
+		.enumerate()
+		.map(|(index, attachment)| cover_of(attachment, index, env))
+		.collect();
+	let (targets, positions) = attachment_gallery(items, inline, &covers);
 	items
 		.iter()
 		.enumerate()
@@ -347,14 +356,16 @@ pub fn attachments(items: &[Attachment], env: &BodyEnv, inline: bool, cx: &App) 
 			let inline_media = inline;
 			let inline =
 				inline || (layout == Some(AttachmentLayout::InlineVideo) && kind == Some(Playable::Video));
-			let cover = cover_of(attachment, index, env);
+			let cover = covers[index];
 			let gallery = Gallery {
 				items: targets.clone(),
 				start: positions[index],
 			};
 			let content = match (inline, kind) {
 				_ if cover == Some(Cover::Blocked) => blocked(attachment, env, cx),
-				(true, _) if is_image(attachment) => image_attachment(attachment, look, gallery, env, cx),
+				(true, _) if is_image(attachment) => {
+					image_attachment(attachment, look, gallery, cover.is_none(), env, cx)
+				}
 				(true, Some(Playable::Video)) => video_attachment(attachment, look, env, cx),
 				(true, Some(Playable::Audio)) => audio_attachment(attachment, env, cx),
 				_ => file_card(attachment, kind == Some(Playable::Video), env, cx),
@@ -612,15 +623,22 @@ fn image_attachment(
 	attachment: &Attachment,
 	look: Look,
 	gallery: Gallery,
+	in_gallery: bool,
 	env: &BodyEnv,
 	cx: &App,
 ) -> AnyElement {
 	let theme = env.theme;
 	let (native_width, native_height) = dimensions(attachment.width, attachment.height);
 	let (width, height) = sized(look, native_width, native_height);
-	let target = image_target(attachment);
+	let own_target;
+	let target = if in_gallery {
+		&gallery.items[gallery.start]
+	} else {
+		own_target = image_target(attachment);
+		&own_target
+	};
 	let shown = proxied_media(&target.url, attachment_animated(attachment), width, height);
-	let pointed = point_media(&target, Some(attachment.id.get()));
+	let pointed = point_media(target, Some(attachment.id.get()));
 	let dispatch = env.dispatch.clone();
 	let at = env.message_at();
 	let attachment_id = attachment.id.get();
