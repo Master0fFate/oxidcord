@@ -4,6 +4,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use protocol::{ChannelType, Message, Snowflake, StatusKind};
 use smallvec::SmallVec;
 
+use crate::interactions::InteractionPhase;
 use crate::messages::PendingFile;
 use crate::plugin_shell::PluginBadge;
 
@@ -124,6 +125,7 @@ pub struct MessageView {
 	pub author_role_icon: Option<Arc<RoleIcon>>,
 	pub member_roles: SmallVec<[Snowflake; 4]>,
 	pub mentions_me: bool,
+	pub interaction: Option<InteractionPhase>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

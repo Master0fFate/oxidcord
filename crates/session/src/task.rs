@@ -298,6 +298,7 @@ pub(crate) struct Core {
 	command_scopes: HashSet<Snowflake>,
 	completion: Option<(Nonce, u64)>,
 	typing_expiry: Option<Instant>,
+	interaction_due: Option<Instant>,
 	nonce_sequence: u64,
 	voice: VoiceLink,
 	video: SharedVideo,
@@ -395,6 +396,7 @@ impl Core {
 			command_scopes: HashSet::new(),
 			completion: None,
 			typing_expiry: None,
+			interaction_due: None,
 			nonce_sequence: 0,
 			voice,
 			video: parts.video,
@@ -447,6 +449,7 @@ impl Core {
 		loop {
 			let flush_at = self.notifier.deadline();
 			let expire_at = self.typing_expiry;
+			let interactions_at = self.interaction_due;
 			let overrides_at = self.overrides_due;
 			let custom_status_at = self.custom_status_due;
 			let hooks_at = self.hooks.next_deadline();
@@ -469,6 +472,9 @@ impl Core {
 				}
 				() = sleep_until(expire_at.unwrap_or_else(Instant::now)), if expire_at.is_some() => {
 					self.expire_typing();
+				}
+				() = sleep_until(interactions_at.unwrap_or_else(Instant::now)), if interactions_at.is_some() => {
+					self.expire_interactions();
 				}
 				() = sleep_until(custom_status_at.unwrap_or_else(Instant::now)), if custom_status_at.is_some() => {
 					self.expire_custom_status();
@@ -573,6 +579,9 @@ impl Core {
 		if !changes.typing.is_empty() {
 			self.typing_expiry = Some(Instant::now() + TYPING_TIMEOUT + TYPING_EXPIRY_SLACK);
 		}
+		if changes.interactions {
+			self.schedule_interaction_expiry();
+		}
 		if changes.own_status {
 			self.schedule_custom_status_expiry();
 			self.publish_presence();
@@ -610,6 +619,17 @@ impl Core {
 		self.custom_status_due = None;
 		self.apply_local(LocalEvent::CustomStatusExpired);
 		self.schedule_custom_status_expiry();
+	}
+
+	fn schedule_interaction_expiry(&mut self) {
+		let wait = self.state.read().interaction_wait(StdInstant::now());
+		self.interaction_due = wait.map(|wait| Instant::now() + wait);
+	}
+
+	fn expire_interactions(&mut self) {
+		let changes = self.state.write().expire_interactions(StdInstant::now());
+		self.schedule_interaction_expiry();
+		self.notifier.push(changes);
 	}
 
 	fn expire_typing(&mut self) {
@@ -826,7 +846,8 @@ impl Core {
 			.state
 			.read()
 			.messages(channel_id)
-			.and_then(|cache| cache.by_id.get(&message_id).cloned());
+			.and_then(|cache| cache.by_id.get(&message_id).cloned())
+			.filter(|message| !message.flags.contains(MessageFlags::EPHEMERAL));
 		if let Some(message) = message {
 			self.persist.submit(Job::Messages {
 				channel_id,

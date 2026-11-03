@@ -95,6 +95,65 @@ pub struct ComponentInteractionData {
 	pub values: Option<Vec<String>>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ModalSubmission {
+	#[serde(rename = "type")]
+	pub kind: u8,
+	pub nonce: String,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub guild_id: Option<Snowflake>,
+	pub channel_id: Snowflake,
+	pub application_id: Snowflake,
+	pub session_id: String,
+	pub data: ModalSubmissionData,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ModalSubmissionData {
+	pub id: Snowflake,
+	pub custom_id: String,
+	pub components: Vec<ModalAnswer>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum ModalValue {
+	Text(Option<String>),
+	Flag(bool),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ModalAnswer {
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub id: Option<i64>,
+	#[serde(rename = "type")]
+	pub kind: ComponentType,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub custom_id: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub value: Option<ModalValue>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub values: Option<Vec<String>>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub component: Option<Box<ModalAnswer>>,
+	#[serde(skip_serializing_if = "Vec::is_empty")]
+	pub components: Vec<ModalAnswer>,
+}
+
+impl ModalAnswer {
+	pub fn new(kind: ComponentType, id: Option<i64>) -> Self {
+		Self {
+			id,
+			kind,
+			custom_id: None,
+			value: None,
+			values: None,
+			component: None,
+			components: Vec::new(),
+		}
+	}
+}
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CreateMessage {

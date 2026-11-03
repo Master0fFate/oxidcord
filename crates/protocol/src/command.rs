@@ -2,8 +2,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Number, Value};
 
 use crate::channel::ChannelType;
+use crate::component::Component;
 use crate::lenient::{LenientVec, int_enum};
-use crate::message::Nonce;
+use crate::message::{MessageApplication, Nonce};
 use crate::snowflake::Snowflake;
 
 int_enum! {
@@ -90,6 +91,33 @@ pub struct InteractionOption {
 pub struct CommandAutocomplete {
 	pub nonce: Option<Nonce>,
 	pub choices: LenientVec<CommandChoice>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Deserialize)]
+#[serde(default)]
+pub struct InteractionAck {
+	pub id: Snowflake,
+	pub nonce: Option<Nonce>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Deserialize)]
+#[serde(default)]
+pub struct InteractionFailure {
+	pub id: Snowflake,
+	pub nonce: Option<Nonce>,
+	pub reason_code: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Deserialize)]
+#[serde(default)]
+pub struct InteractionModal {
+	pub id: Snowflake,
+	pub nonce: Option<Nonce>,
+	pub channel_id: Snowflake,
+	pub custom_id: String,
+	pub title: String,
+	pub application: MessageApplication,
+	pub components: LenientVec<Component>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]

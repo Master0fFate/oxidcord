@@ -41,6 +41,9 @@ impl State {
 			DispatchEvent::Resumed => self.set_connected(true),
 			DispatchEvent::MessageCreate(message) => self.message_create(message),
 			DispatchEvent::MessageUpdate(update) => self.message_update(update),
+			DispatchEvent::InteractionSuccess(ack) => self.interaction_succeeded(ack),
+			DispatchEvent::InteractionFailure(failure) => self.interaction_failed(failure),
+			DispatchEvent::InteractionModalCreate(modal) => self.interaction_modal_created(modal),
 			DispatchEvent::MessageDelete(delete) => self.messages_delete(delete.channel_id, &[delete.id]),
 			DispatchEvent::MessageDeleteBulk(delete) => self.messages_delete(delete.channel_id, &delete.ids),
 			DispatchEvent::MessageReactionAdd(add) => {

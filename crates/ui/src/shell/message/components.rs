@@ -262,7 +262,7 @@ impl Builder<'_> {
 
 	fn button(&self, component: &Component) -> AnyElement {
 		let theme = self.theme;
-		let style = component.style.unwrap_or(ButtonStyle::Secondary);
+		let style = component.button_style();
 		let (background, hover, foreground) = button_colors(style, theme);
 		let action = match style {
 			ButtonStyle::Link => component.url.clone().map(RowAction::OpenLink),

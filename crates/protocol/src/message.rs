@@ -4,9 +4,9 @@ use bitflags::bitflags;
 use chrono::{DateTime, Utc};
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde_json::Value;
 
 use crate::channel::{Channel, ChannelType};
+use crate::command::ApplicationCommandType;
 use crate::component::Component;
 use crate::emoji::{PartialEmoji, StickerItem};
 use crate::lenient::{LenientVec, flags_serde, int_enum, or_default, str_enum, timestamp};
@@ -396,6 +396,29 @@ pub struct CallInfo {
 	pub ended_timestamp: Option<DateTime<Utc>>,
 }
 
+int_enum! {
+	pub enum InteractionType {
+		Ping = 1,
+		ApplicationCommand = 2,
+		MessageComponent = 3,
+		ApplicationCommandAutocomplete = 4,
+		ModalSubmit = 5,
+	}
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct InteractionMetadata {
+	pub id: Snowflake,
+	#[serde(rename = "type")]
+	pub kind: InteractionType,
+	pub name: Option<String>,
+	pub command_type: Option<ApplicationCommandType>,
+	pub user: User,
+	pub target_user: Option<User>,
+	pub target_message_id: Option<Snowflake>,
+}
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PartialMessage {
@@ -465,7 +488,10 @@ pub struct Message {
 	pub message_reference: Option<MessageReference>,
 	pub referenced_message: Option<Box<Message>>,
 	pub message_snapshots: LenientVec<MessageSnapshot>,
-	pub interaction_metadata: Value,
+	#[serde(deserialize_with = "or_default")]
+	pub interaction_metadata: Option<InteractionMetadata>,
+	#[serde(deserialize_with = "or_default")]
+	pub interaction: Option<InteractionMetadata>,
 	pub thread: Option<Box<Channel>>,
 	pub components: LenientVec<Component>,
 	pub sticker_items: LenientVec<StickerItem>,
@@ -477,6 +503,26 @@ pub struct Message {
 }
 
 impl Message {
+	pub fn invoked_command(&self) -> Option<(&User, String)> {
+		let interaction = self
+			.interaction_metadata
+			.as_ref()
+			.or(self.interaction.as_ref())
+			.filter(|interaction| interaction.kind == InteractionType::ApplicationCommand)?;
+		let name = interaction.name.as_deref().filter(|name| !name.is_empty())?;
+		let context_menu = self.kind == MessageType::ContextMenuCommand
+			|| matches!(
+				interaction.command_type,
+				Some(ApplicationCommandType::User | ApplicationCommandType::Message)
+			);
+		let label = if context_menu {
+			name.to_owned()
+		} else {
+			format!("/{name}")
+		};
+		Some((&interaction.user, label))
+	}
+
 	pub fn is_forward(&self) -> bool {
 		self.message_reference
 			.as_ref()
@@ -524,7 +570,10 @@ pub struct MessageUpdate {
 	pub application: Option<MessageApplication>,
 	pub application_id: Option<Snowflake>,
 	pub message_snapshots: Option<LenientVec<MessageSnapshot>>,
-	pub interaction_metadata: Option<Value>,
+	#[serde(deserialize_with = "or_default")]
+	pub interaction_metadata: Option<InteractionMetadata>,
+	#[serde(deserialize_with = "or_default")]
+	pub interaction: Option<InteractionMetadata>,
 	pub thread: Option<Box<Channel>>,
 	pub position: Option<i64>,
 	pub call: Option<CallInfo>,

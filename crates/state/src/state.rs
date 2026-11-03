@@ -6,14 +6,15 @@ use chrono::Utc;
 use indexmap::IndexMap;
 use parking_lot::RwLock;
 use protocol::{
-	Channel, Message, MessageFlags, Presence, ProtoStatus, ReadState, Relationship, Snowflake, StatusKind,
-	User, UserGuildSettings,
+	Channel, Message, MessageFlags, Nonce, Presence, ProtoStatus, ReadState, Relationship, Snowflake,
+	StatusKind, User, UserGuildSettings,
 };
 use smallvec::SmallVec;
 
 use crate::changes::Changes;
 use crate::event::{Event, LoadDirection, LocalEvent};
 use crate::guild::GuildState;
+use crate::interactions::{ModalPrompt, PendingInteraction};
 use crate::loaded::Lazy;
 use crate::messages::ChannelMessages;
 use crate::notifications::Alert;
@@ -84,6 +85,9 @@ pub struct State {
 	pub(crate) streams: HashMap<String, StreamSummary>,
 	pub(crate) rejection: Option<Rejection>,
 	pub(crate) rejection_count: u64,
+	pub(crate) interactions: HashMap<Nonce, PendingInteraction>,
+	pub(crate) modal: Option<ModalPrompt>,
+	pub(crate) modal_count: u64,
 	pub(crate) friend_request: Option<SentRequest>,
 	pub(crate) friend_request_count: u64,
 	pub(crate) friend_notice: Option<FriendNotice>,
@@ -276,6 +280,14 @@ impl State {
 			})
 			.cloned()
 			.collect()
+	}
+
+	pub(crate) fn note_rejection(&mut self, reason: String) {
+		self.rejection_count += 1;
+		self.rejection = Some(Rejection {
+			id: self.rejection_count,
+			reason,
+		});
 	}
 
 	pub fn last_rejection(&self) -> Option<&Rejection> {
@@ -670,13 +682,18 @@ impl State {
 			}
 			LocalEvent::Loaded(loaded) => return self.apply_loaded(loaded),
 			LocalEvent::CommandRejected { reason } => {
-				self.rejection_count += 1;
-				self.rejection = Some(Rejection {
-					id: self.rejection_count,
-					reason: reason.clone(),
-				});
+				self.note_rejection(reason.clone());
 				changes.rejected = true;
 			}
+			LocalEvent::InteractionStarted {
+				nonce,
+				channel_id,
+				message_id,
+			} => return self.interaction_started(nonce, *channel_id, *message_id),
+			LocalEvent::EphemeralDismissed {
+				channel_id,
+				message_id,
+			} => return self.ephemeral_dismissed(*channel_id, *message_id),
 			LocalEvent::FriendRequestSent { username } => {
 				self.note_friend_request(username.clone(), RequestOutcome::Sent);
 				changes.friend_request = true;

@@ -9,6 +9,7 @@ use plugin_host::api::model::{
 };
 use plugin_host::api::{HostError, User as PluginUser};
 use plugin_host::{Navigation, Permission, PickedPath, ViewContext};
+use protocol::rest::ModalAnswer;
 use protocol::{
 	ApplicationCommand, AutoModRule, ChannelPosition, ChannelType, ComponentType,
 	DefaultMessageNotifications, DefaultReaction, ForumLayout, ForumSortOrder, Gif, InteractionOption,
@@ -35,6 +36,15 @@ pub struct ComponentUse {
 	pub component_type: ComponentType,
 	pub custom_id: String,
 	pub values: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ModalSubmit {
+	pub interaction_id: Snowflake,
+	pub application_id: Snowflake,
+	pub channel_id: Snowflake,
+	pub custom_id: String,
+	pub components: Vec<ModalAnswer>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -957,6 +967,11 @@ pub enum Command {
 		poll: Box<PollCreate>,
 	},
 	UseComponent(ComponentUse),
+	SubmitModal(ModalSubmit),
+	DismissEphemeral {
+		channel_id: Snowflake,
+		message_id: Snowflake,
+	},
 	RunMessageCommand {
 		guild_id: Option<Snowflake>,
 		channel_id: Snowflake,

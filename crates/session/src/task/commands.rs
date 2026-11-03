@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use activity::ActivityRules;
 use chrono::{DateTime, Utc};
-use protocol::rest::{ComponentInteraction, ComponentInteractionData};
+use protocol::rest::{ComponentInteraction, ComponentInteractionData, ModalSubmission, ModalSubmissionData};
 use protocol::{
 	ApplicationCommand, Channel, ChannelFlags, ChannelPosition, ChannelType, CommandAutocomplete,
 	CreateMessage, DispatchEvent, InteractionOption, MessageAck, MessageFlags, MessageReference,
@@ -17,11 +17,15 @@ use state::{Loaded, LocalEvent, USER_COMMANDS, guild_folders_settings};
 
 use super::actions::{mute_config, object, rest_failure, some, timestamp};
 use super::{Command, Core, Internal, ReadSnapshot};
-use crate::command::{ComponentUse, ForumEdit, ForumTagEdit, GuildEdit, RoleColorsEdit, RoleIconEdit};
+use crate::command::{
+	ComponentUse, ForumEdit, ForumTagEdit, GuildEdit, ModalSubmit, RoleColorsEdit, RoleIconEdit,
+};
+use crate::persist::Job;
 
 const COMPONENT_INTERACTION: u8 = 3;
 const APPLICATION_COMMAND_INTERACTION: u8 = 2;
 const AUTOCOMPLETE_INTERACTION: u8 = 4;
+const MODAL_SUBMIT_INTERACTION: u8 = 5;
 
 const PNG: &str = "image/png";
 const GIF: &str = "image/gif";
@@ -259,6 +263,8 @@ impl Core {
 			| Command::EndPoll { .. }
 			| Command::SendPoll { .. }
 			| Command::UseComponent(_)
+			| Command::SubmitModal(_)
+			| Command::DismissEphemeral { .. }
 			| Command::RunMessageCommand { .. }
 			| Command::RunChatCommand { .. }
 			| Command::CompleteCommandOption { .. }
@@ -668,6 +674,17 @@ impl Core {
 				}
 			}
 			Command::UseComponent(used) => self.use_component(used),
+			Command::SubmitModal(submit) => self.submit_modal(submit),
+			Command::DismissEphemeral {
+				channel_id,
+				message_id,
+			} => {
+				self.apply_local(LocalEvent::EphemeralDismissed {
+					channel_id,
+					message_id,
+				});
+				self.persist.submit(Job::DeleteMessages(vec![message_id]));
+			}
 			Command::RunMessageCommand {
 				guild_id,
 				channel_id,
@@ -1067,6 +1084,7 @@ impl Core {
 		command: ApplicationCommand,
 	) {
 		let nonce = self.next_nonce();
+		self.track_interaction(&nonce, channel_id, None);
 		let body = self.command_body(CommandCall {
 			kind: APPLICATION_COMMAND_INTERACTION,
 			guild_id,
@@ -1090,6 +1108,7 @@ impl Core {
 		files: Vec<UploadFile>,
 	) {
 		let nonce = self.next_nonce();
+		self.track_interaction(&nonce, channel_id, None);
 		let body = self.command_body(CommandCall {
 			kind: APPLICATION_COMMAND_INTERACTION,
 			guild_id,
@@ -1169,10 +1188,41 @@ impl Core {
 		}
 	}
 
+	fn track_interaction(&mut self, nonce: &Nonce, channel_id: Snowflake, message_id: Option<Snowflake>) {
+		self.apply_local(LocalEvent::InteractionStarted {
+			nonce: nonce.clone(),
+			channel_id,
+			message_id,
+		});
+	}
+
+	fn submit_modal(&mut self, submit: ModalSubmit) {
+		let nonce = self.next_nonce();
+		self.track_interaction(&nonce, submit.channel_id, None);
+		let body = ModalSubmission {
+			kind: MODAL_SUBMIT_INTERACTION,
+			nonce: nonce.0,
+			guild_id: self.state.read().channel_guild(submit.channel_id),
+			channel_id: submit.channel_id,
+			application_id: submit.application_id,
+			session_id: self.state.read().session().session_id.clone(),
+			data: ModalSubmissionData {
+				id: submit.interaction_id,
+				custom_id: submit.custom_id,
+				components: submit.components,
+			},
+		};
+		self.spawn_action("submit modal", move |rest| async move {
+			rest.submit_modal(&body).await
+		});
+	}
+
 	fn use_component(&mut self, used: ComponentUse) {
+		let nonce = self.next_nonce();
+		self.track_interaction(&nonce, used.channel_id, Some(used.message_id));
 		let body = ComponentInteraction {
 			kind: COMPONENT_INTERACTION,
-			nonce: self.next_nonce().0,
+			nonce: nonce.0,
 			guild_id: used.guild_id,
 			channel_id: used.channel_id,
 			message_flags: used.message_flags,

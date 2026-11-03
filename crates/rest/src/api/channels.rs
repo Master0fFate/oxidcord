@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use protocol::rest::{
 	AttachmentDescriptor, CloudUploadRequest, CloudUploadSlot, CloudUploadSlots, ComponentInteraction,
-	CreateMessage, EditMessage, MessagesQuery,
+	CreateMessage, EditMessage, MessagesQuery, ModalSubmission,
 };
 use protocol::{
 	BURST_REACTION, Channel, ChannelType, CommandIndex, InviteAccepted, LenientVec, Message, PinnedPage,
@@ -578,6 +578,10 @@ impl RestClient {
 	}
 
 	pub async fn component_interaction(&self, body: &ComponentInteraction) -> Result<()> {
+		self.send_empty(Request::post("/interactions").json(body)).await
+	}
+
+	pub async fn submit_modal(&self, body: &ModalSubmission) -> Result<()> {
 		self.send_empty(Request::post("/interactions").json(body)).await
 	}
 

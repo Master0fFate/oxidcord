@@ -140,6 +140,15 @@ pub enum LocalEvent {
 	CommandRejected {
 		reason: String,
 	},
+	InteractionStarted {
+		nonce: Nonce,
+		channel_id: Snowflake,
+		message_id: Option<Snowflake>,
+	},
+	EphemeralDismissed {
+		channel_id: Snowflake,
+		message_id: Snowflake,
+	},
 	FriendRequestSent {
 		username: String,
 	},

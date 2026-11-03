@@ -9,7 +9,7 @@ use serde_json::Value;
 use serde_json::value::RawValue;
 
 use crate::channel::{Channel, ChannelType, ThreadMember};
-use crate::command::CommandAutocomplete;
+use crate::command::{CommandAutocomplete, InteractionAck, InteractionFailure, InteractionModal};
 use crate::emoji::{Emoji, PartialEmoji, Sticker};
 use crate::error::DecodeError;
 use crate::guild::{Guild, ScheduledEvent, UnavailableGuild};
@@ -831,9 +831,10 @@ pub enum DispatchEvent {
 	CallUpdate(Value),
 	CallDelete(Value),
 	SessionsReplace(Vec<Value>),
-	InteractionCreate(Value),
-	InteractionSuccess(Value),
-	InteractionFailure(Value),
+	InteractionCreate(InteractionAck),
+	InteractionSuccess(InteractionAck),
+	InteractionFailure(InteractionFailure),
+	InteractionModalCreate(Box<InteractionModal>),
 	ApplicationCommandAutocompleteResponse(CommandAutocomplete),
 	Unknown { name: String, data: Box<RawValue> },
 }
@@ -939,6 +940,7 @@ impl DispatchEvent {
 			"INTERACTION_CREATE" => Self::InteractionCreate(decode(name, data)?),
 			"INTERACTION_SUCCESS" => Self::InteractionSuccess(decode(name, data)?),
 			"INTERACTION_FAILURE" => Self::InteractionFailure(decode(name, data)?),
+			"INTERACTION_MODAL_CREATE" => Self::InteractionModalCreate(decode(name, data)?),
 			"APPLICATION_COMMAND_AUTOCOMPLETE_RESPONSE" => {
 				Self::ApplicationCommandAutocompleteResponse(decode(name, data)?)
 			}

@@ -418,8 +418,13 @@ pub fn apply_update(message: &mut Message, update: &MessageUpdate) {
 	if let Some(snapshots) = &update.message_snapshots {
 		message.message_snapshots = snapshots.clone();
 	}
-	if let Some(metadata) = &update.interaction_metadata {
-		message.interaction_metadata.clone_from(metadata);
+	if update.interaction_metadata.is_some() {
+		message
+			.interaction_metadata
+			.clone_from(&update.interaction_metadata);
+	}
+	if update.interaction.is_some() {
+		message.interaction.clone_from(&update.interaction);
 	}
 	if let Some(thread) = &update.thread {
 		message.thread = Some(thread.clone());

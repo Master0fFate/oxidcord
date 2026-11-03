@@ -22,6 +22,10 @@ int_enum! {
 		Separator = 14,
 		Container = 17,
 		Label = 18,
+		FileUpload = 19,
+		RadioGroup = 21,
+		CheckboxGroup = 22,
+		Checkbox = 23,
 	}
 }
 
@@ -46,6 +50,13 @@ int_enum! {
 		Danger = 4,
 		Link = 5,
 		Premium = 6,
+	}
+}
+
+int_enum! {
+	pub enum TextInputStyle {
+		Short = 1,
+		Paragraph = 2,
 	}
 }
 
@@ -95,7 +106,7 @@ pub struct Component {
 	pub components: LenientVec<Component>,
 	pub accessory: Option<Box<Component>>,
 	pub content: Option<String>,
-	pub style: Option<ButtonStyle>,
+	pub style: Option<i64>,
 	pub label: Option<String>,
 	pub emoji: Option<PartialEmoji>,
 	pub url: Option<String>,
@@ -115,4 +126,24 @@ pub struct Component {
 	pub divider: Option<bool>,
 	pub spacing: Option<SeparatorSpacing>,
 	pub accent_color: Option<u32>,
+	pub component: Option<Box<Component>>,
+	pub value: Option<String>,
+	pub min_length: Option<u32>,
+	pub max_length: Option<u32>,
+	pub required: Option<bool>,
+	pub default: bool,
+}
+
+impl Component {
+	pub fn button_style(&self) -> ButtonStyle {
+		self.style.map_or(ButtonStyle::Secondary, ButtonStyle::from)
+	}
+
+	pub fn text_input_style(&self) -> TextInputStyle {
+		self.style.map_or(TextInputStyle::Short, TextInputStyle::from)
+	}
+
+	pub fn is_required(&self) -> bool {
+		self.required.unwrap_or(true)
+	}
 }

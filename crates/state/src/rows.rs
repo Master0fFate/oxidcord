@@ -686,6 +686,7 @@ impl State {
 				.map(Arc::new),
 			member_roles,
 			mentions_me: self.mentions_me(message, guild.map(|guild| guild.id)),
+			interaction: self.message_interaction(message.id),
 		}
 	}
 

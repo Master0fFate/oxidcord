@@ -5,6 +5,7 @@ mod event;
 mod events;
 mod expressions;
 mod guild;
+mod interactions;
 mod limits;
 mod loaded;
 mod member_list;
@@ -28,6 +29,7 @@ pub use expressions::{
 	CatalogEmoji, EXPRESSIONS_KEY, EmojiCatalog, EmojiRef, GuildEmojis, RECENT_CAP, UnicodeSection,
 };
 pub use guild::{ENHANCED_ROLE_COLORS, GuildState, ROLE_ICONS};
+pub use interactions::{INTERACTION_TTL, InteractionPhase, ModalPrompt};
 pub use limits::{ExpressionLimits, PREMIUM_UPLOAD_BYTES};
 pub use loaded::{
 	AppCommand, AuditChange, AuditEntry, AuditLog, AuthSession, BanEntry, COMMAND_CHOICES_KEY,
