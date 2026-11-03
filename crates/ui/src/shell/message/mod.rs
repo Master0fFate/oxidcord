@@ -1,5 +1,6 @@
 mod body;
 mod components;
+mod game_invite;
 mod media;
 mod menu;
 pub mod player;
@@ -1373,6 +1374,7 @@ fn content_column(
 		}
 	}
 	out.extend(components::render(media_message, &body_env, cx));
+	out.extend(game_invite::card(message, env.me, theme, cx));
 	if let Some(effects) = effects {
 		out.extend(effects.cards(message.embeds.len(), message.id, theme));
 	}

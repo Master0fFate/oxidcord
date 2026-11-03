@@ -5,7 +5,9 @@ use gpui::{
 	SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, prelude::FluentBuilder as _,
 	relative,
 };
+use gpui_component::button::{Button, ButtonVariants as _};
 use protocol::{Activity, ActivityKind, Snowflake};
+use session::{Command, SecretKind};
 use state::State;
 
 use super::parts::section_label;
@@ -13,6 +15,7 @@ use crate::format;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
 use crate::shell::community::art::cover;
+use crate::shell::community::data_handle;
 use crate::theme::{Theme, rem};
 
 const ART_SIZE: f32 = 64.;
@@ -27,6 +30,16 @@ const PROGRESS_HEIGHT: f32 = 4.;
 pub type OpenLink = Rc<dyn Fn(&str, &mut Window, &mut App)>;
 
 #[derive(Clone, PartialEq)]
+struct Invite {
+	user: Snowflake,
+	application: Snowflake,
+	party: String,
+	session: Option<String>,
+	join: bool,
+	spectate: bool,
+}
+
+#[derive(Clone, PartialEq)]
 pub struct ActivityView {
 	kind: ActivityKind,
 	name: SharedString,
@@ -39,6 +52,7 @@ pub struct ActivityView {
 	art_url: Option<String>,
 	badge: Option<String>,
 	badge_url: Option<String>,
+	invite: Option<Invite>,
 	start: Option<i64>,
 	end: Option<i64>,
 	pub missing_icon: Option<Snowflake>,
@@ -75,7 +89,22 @@ fn link(value: &Option<String>) -> Option<String> {
 		.map(str::to_owned)
 }
 
-fn view(activity: &Activity, state: &State) -> ActivityView {
+fn invite(activity: &Activity, user: Snowflake, state: &State) -> Option<Invite> {
+	if state.current_user_id() == Some(user) {
+		return None;
+	}
+	let session = activity.session_id.clone().filter(|session| !session.is_empty());
+	Some(Invite {
+		user,
+		application: activity.application_id?,
+		party: activity.party_id()?.to_owned(),
+		join: session.is_some() && activity.has_flag(Activity::FLAG_JOIN),
+		spectate: session.is_some() && activity.has_flag(Activity::FLAG_SPECTATE),
+		session,
+	})
+}
+
+fn view(activity: &Activity, user: Snowflake, state: &State) -> ActivityView {
 	let application = activity.application_id;
 	let assets = activity.assets.as_ref();
 	let asset = |pick: fn(&protocol::ActivityAssets) -> &Option<String>| {
@@ -105,6 +134,7 @@ fn view(activity: &Activity, state: &State) -> ActivityView {
 		art_url: assets.and_then(|assets| link(&assets.large_url)),
 		badge: asset(|assets| &assets.small_image),
 		badge_url: assets.and_then(|assets| link(&assets.small_url)),
+		invite: invite(activity, user, state),
 		start: timestamps.and_then(|timestamps| timestamps.start),
 		end: timestamps.and_then(|timestamps| timestamps.end),
 		missing_icon,
@@ -119,7 +149,7 @@ pub fn activities(state: &State, user: Snowflake) -> Vec<ActivityView> {
 				.activities
 				.iter()
 				.filter(|activity| shown(activity.kind))
-				.map(|activity| view(activity, state))
+				.map(|activity| view(activity, user, state))
 				.collect()
 		})
 		.unwrap_or_default()
@@ -319,6 +349,53 @@ fn progress(activity: &ActivityView, now: i64, theme: &Theme) -> Option<AnyEleme
 	)
 }
 
+fn join_button(index: usize, label: &'static str, invite: &Invite, kind: SecretKind, cx: &App) -> Button {
+	let (user_id, application_id) = (invite.user, invite.application);
+	let session_id = invite.session.clone().unwrap_or_default();
+	Button::new((label, index))
+		.success()
+		.label(cx.t(label))
+		.on_click(move |_, _, cx| {
+			data_handle(cx).read(cx).send(Command::JoinActivity {
+				user_id,
+				session_id: session_id.clone(),
+				application_id,
+				kind,
+				invite: None,
+			});
+		})
+}
+
+fn invite_buttons(index: usize, invite: &Invite, theme: &Theme, cx: &App) -> Option<AnyElement> {
+	let ask = (!invite.join).then(|| {
+		let (user_id, application_id, party_id) = (invite.user, invite.application, invite.party.clone());
+		Button::new(("activity-ask-to-join", index))
+			.outline()
+			.label(cx.t("activity-ask-to-join"))
+			.on_click(move |_, _, cx| {
+				data_handle(cx).read(cx).send(Command::AskToJoin {
+					user_id,
+					application_id,
+					party_id: party_id.clone(),
+				});
+			})
+	});
+	let join = invite
+		.join
+		.then(|| join_button(index, "activity-join", invite, SecretKind::Join, cx));
+	let spectate = invite
+		.spectate
+		.then(|| join_button(index, "activity-spectate", invite, SecretKind::Spectate, cx));
+	let buttons: Vec<Button> = join.into_iter().chain(spectate).chain(ask).collect();
+	(!buttons.is_empty()).then(|| {
+		div()
+			.flex()
+			.gap(theme.space_8)
+			.children(buttons)
+			.into_any_element()
+	})
+}
+
 pub fn activity_card_full(
 	activity: &ActivityView,
 	index: usize,
@@ -379,6 +456,12 @@ pub fn activity_card_full(
 							column.child(div().pt(theme.space_4).child(progress))
 						}),
 				),
+		)
+		.children(
+			activity
+				.invite
+				.as_ref()
+				.and_then(|invite| invite_buttons(index, invite, theme, cx)),
 		)
 		.into_any_element()
 }
