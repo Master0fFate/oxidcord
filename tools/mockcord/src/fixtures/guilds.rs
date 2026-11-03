@@ -2,11 +2,11 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, Duration, Utc};
 use protocol::{
-	Activity, ActivityAssets, ActivityKind, ActivityTimestamps, Channel, ChannelType, ClientStatus,
-	DefaultMessageNotifications, DefaultReaction, Emoji, ExplicitContentFilter, ForumLayout, ForumSortOrder,
-	ForumTag, GuildProperties, LenientVec, Member, NsfwLevel, PartialEmoji, PermissionOverwrite,
-	PermissionOverwriteKind, Permissions, PremiumTier, Presence, Role, RoleColors, Snowflake, StatusKind,
-	ThreadMetadata, User, VerificationLevel, VoiceState,
+	Activity, ActivityAssets, ActivityKind, ActivityTimestamps, Channel, ChannelFlags, ChannelType,
+	ClientStatus, DefaultMessageNotifications, DefaultReaction, Emoji, ExplicitContentFilter, ForumLayout,
+	ForumSortOrder, ForumTag, GuildProperties, LenientVec, Member, NsfwLevel, PartialEmoji,
+	PermissionOverwrite, PermissionOverwriteKind, Permissions, PremiumTier, Presence, Role, RoleColors,
+	Snowflake, StatusKind, ThreadMetadata, User, VerificationLevel, VoiceState,
 };
 use rand::Rng;
 use rand::rngs::StdRng;
@@ -391,6 +391,7 @@ fn build_channels(builder: &mut Builder, guild_id: u64, roles: &RoleIds) -> Chan
 		Some(text_category),
 	);
 	announcement.topic = Some("news and releases".to_owned());
+	announcement.flags = ChannelFlags::IS_SPOILER_CHANNEL;
 	announcement.permission_overwrites = LenientVec::from(vec![
 		muted_overwrite(roles.muted),
 		role_overwrite(
@@ -424,6 +425,17 @@ fn build_channels(builder: &mut Builder, guild_id: u64, roles: &RoleIds) -> Chan
 	forum.default_sort_order = Some(ForumSortOrder::LatestActivity);
 	forum.default_forum_layout = Some(ForumLayout::ListView);
 	add_channel(builder, &mut layout.all, forum);
+
+	let mut obfuscated = guild_channel(
+		builder.ids.next(),
+		guild_id,
+		ChannelType::GuildText,
+		"___hidden___",
+		next_position(),
+		Some(text_category),
+	);
+	obfuscated.flags = ChannelFlags::CHANNEL_OBFUSCATED;
+	add_channel(builder, &mut layout.all, obfuscated);
 
 	let category = guild_channel(
 		voice_category,

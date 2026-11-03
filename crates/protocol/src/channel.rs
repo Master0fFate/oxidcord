@@ -187,3 +187,11 @@ pub struct Channel {
 	pub is_message_request: Option<bool>,
 	pub is_spam: Option<bool>,
 }
+
+impl Channel {
+	pub fn is_request(&self) -> bool {
+		self.is_message_request == Some(true)
+			|| self.is_spam == Some(true)
+			|| self.flags.contains(ChannelFlags::IS_SPAM)
+	}
+}

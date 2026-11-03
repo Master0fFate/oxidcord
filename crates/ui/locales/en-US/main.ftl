@@ -52,6 +52,7 @@ dm-friends = Friends
 dm-nitro = Nitro
 dm-shop = Shop
 dm-direct-messages = Direct Messages
+dm-requests = Message Requests
 dm-group-members = { $count ->
     [one] { $count } Member
    *[other] { $count } Members

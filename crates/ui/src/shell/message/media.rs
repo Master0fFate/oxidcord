@@ -215,6 +215,7 @@ pub fn attachments(items: &[Attachment], env: &BodyEnv, inline: bool, cx: &App) 
 	let look = Look {
 		stacked: layout == Some(AttachmentLayout::Stacked),
 	};
+	let spoiler_channel = env.in_spoiler_channel();
 	items
 		.iter()
 		.enumerate()
@@ -235,7 +236,8 @@ pub fn attachments(items: &[Attachment], env: &BodyEnv, inline: bool, cx: &App) 
 				Some(over) => customized(content, attachment, over, look, env, cx),
 				None => content,
 			};
-			let hidden = is_spoiler(attachment) && !env.is_revealed(SPOILER_ITEM | index);
+			let hidden =
+				(spoiler_channel || is_spoiler(attachment)) && !env.is_revealed(SPOILER_ITEM | index);
 			let content = if hidden {
 				veiled(content, index, env, cx)
 			} else {

@@ -12,7 +12,7 @@ use markdown::highlight::{TokenKind, highlight};
 use markdown::{Color, Document, GuildNavKind, Node, TimestampStyle};
 use media::SizeHint;
 use plugin_host::api::model::{CodeBlockNode, EmojiRef};
-use protocol::Snowflake;
+use protocol::{ChannelFlags, Snowflake};
 
 use super::selectable::SelectableRun;
 use super::{Dispatch, Prefs, RowAction};
@@ -95,6 +95,12 @@ impl<'a> BodyEnv<'a> {
 
 	pub(super) fn channel_id(&self) -> Option<u64> {
 		self.channel_id
+	}
+
+	pub(super) fn in_spoiler_channel(&self) -> bool {
+		self.channel()
+			.and_then(|channel| self.lookup.state.channel(channel))
+			.is_some_and(|channel| channel.flags.contains(ChannelFlags::IS_SPOILER_CHANNEL))
 	}
 
 	pub(super) fn channel(&self) -> Option<Snowflake> {

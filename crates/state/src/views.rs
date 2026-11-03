@@ -150,6 +150,7 @@ pub struct DmRow {
 	pub unread: bool,
 	pub muted: bool,
 	pub mentions: u32,
+	pub request: bool,
 	pub last_message_id: Option<Snowflake>,
 }
 

@@ -132,6 +132,7 @@ pub fn build_private_channels(builder: &mut Builder) -> Vec<u64> {
 			last_message_id: messages.keys().next_back().copied().map(Snowflake),
 			recipient_ids: recipients.iter().map(|user| user.id).collect(),
 			recipients: LenientVec::from(recipients),
+			is_message_request: (variant == 2).then_some(true),
 			..Channel::default()
 		};
 		builder.channels.insert(channel_id, channel);

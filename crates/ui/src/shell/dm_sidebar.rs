@@ -46,6 +46,7 @@ struct DmItem {
 	unread: bool,
 	mentions: u32,
 	muted: bool,
+	request: bool,
 	over: Option<UserOverride>,
 	badges: Vec<PluginBadge>,
 }
@@ -64,6 +65,7 @@ pub struct DmSidebar {
 	sections: Vec<DmSectionView>,
 	pending: u32,
 	folded: HashSet<(String, String)>,
+	requests_open: bool,
 	selected: Option<Selection>,
 }
 
@@ -77,6 +79,7 @@ impl DmSidebar {
 			sections: Vec::new(),
 			pending: 0,
 			folded: HashSet::new(),
+			requests_open: false,
 			selected: None,
 		};
 		sidebar.refresh(cx);
@@ -116,6 +119,7 @@ impl DmSidebar {
 					unread: row.unread,
 					mentions: row.mentions,
 					muted: row.muted,
+					request: row.request,
 					over,
 					badges: state
 						.channel_decorations(row.channel_id)
@@ -418,6 +422,29 @@ impl DmSidebar {
 }
 
 impl DmSidebar {
+	fn request_rows(&self, theme: &Theme, cx: &mut Context<Self>) -> Vec<AnyElement> {
+		let requests: Vec<&DmItem> = self.dms.iter().filter(|dm| dm.request).collect();
+		if requests.is_empty() {
+			return Vec::new();
+		}
+		let header = div()
+			.pt(theme.space_16)
+			.child(
+				SectionHeader::new("dm-requests", cx.t("dm-requests"))
+					.collapsible(!self.requests_open)
+					.on_click(cx.listener(|this, _, _, cx| {
+						this.requests_open = !this.requests_open;
+						cx.notify();
+					})),
+			)
+			.into_any_element();
+		let rows = requests
+			.into_iter()
+			.filter(|_| self.requests_open)
+			.map(|dm| self.dm_row(dm, theme, cx));
+		std::iter::once(header).chain(rows).collect()
+	}
+
 	fn section_rows(&self, theme: &Theme, cx: &mut Context<Self>) -> (Vec<AnyElement>, HashSet<Snowflake>) {
 		let mut placed: HashSet<Snowflake> = HashSet::new();
 		let mut out: Vec<AnyElement> = Vec::new();
@@ -466,9 +493,10 @@ impl Render for DmSidebar {
 		let rows: Vec<AnyElement> = self
 			.dms
 			.iter()
-			.filter(|dm| !placed.contains(&dm.id))
+			.filter(|dm| !dm.request && !placed.contains(&dm.id))
 			.map(|dm| self.dm_row(dm, &theme, cx))
 			.collect();
+		let requests = self.request_rows(&theme, cx);
 		let top = plugins::mount_column("channel-list-top", cx);
 		let friends = self.nav_row(
 			"dm-friends",
@@ -560,6 +588,7 @@ impl Render for DmSidebar {
 						),
 					)
 					.children(rows)
+					.children(requests)
 					.overflow_y_scrollbar()
 					.id("dm-list")
 					.flex_1()

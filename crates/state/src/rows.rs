@@ -5,8 +5,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::{DateTime, Local, NaiveDate, TimeDelta, Utc};
 use protocol::{
-	ActivityKind, Channel, ChannelType, Message, MessageType, Permissions, Presence, RelationshipKind,
-	Snowflake, StatusKind, User, UserGuildSettings,
+	ActivityKind, Channel, ChannelFlags, ChannelType, Message, MessageType, Permissions, Presence,
+	RelationshipKind, Snowflake, StatusKind, User, UserGuildSettings,
 };
 use smallvec::SmallVec;
 
@@ -83,6 +83,10 @@ fn channel_sort_key(channel: &Channel) -> (bool, i64, Snowflake) {
 
 fn count_of(value: i64) -> u32 {
 	u32::try_from(value).unwrap_or(0)
+}
+
+fn is_obfuscated(channel: &Channel) -> bool {
+	channel.flags.contains(ChannelFlags::CHANNEL_OBFUSCATED)
 }
 
 fn voice_members(guild: &GuildState, channel: &Channel) -> Vec<Snowflake> {
@@ -249,14 +253,14 @@ impl State {
 		let mut categories: Vec<&Channel> = guild
 			.channels
 			.values()
-			.filter(|channel| channel.kind == ChannelType::GuildCategory)
+			.filter(|channel| channel.kind == ChannelType::GuildCategory && !is_obfuscated(channel))
 			.collect();
 		categories.sort_by_key(|channel| (channel.position.unwrap_or(0), channel.id));
 		let mut grouped: HashMap<Option<Snowflake>, Vec<&Channel>> = HashMap::new();
 		for channel in guild
 			.channels
 			.values()
-			.filter(|channel| channel.kind != ChannelType::GuildCategory)
+			.filter(|channel| channel.kind != ChannelType::GuildCategory && !is_obfuscated(channel))
 		{
 			let parent = channel.parent_id.filter(|id| {
 				guild
@@ -391,6 +395,7 @@ impl State {
 					unread: status.unread,
 					muted: status.muted,
 					mentions: status.mentions,
+					request: channel.is_request(),
 					last_message_id: channel.last_message_id,
 				}
 			})
