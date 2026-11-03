@@ -171,6 +171,18 @@ impl AudioLane {
 		self.output.push(&self.resampled);
 		Ok(())
 	}
+
+	fn finish(&mut self) -> Result<()> {
+		if !self.stretch.active() {
+			return Ok(());
+		}
+		self.stretched.clear();
+		self.stretch.finish(&mut self.stretched);
+		self.resampled.clear();
+		self.resampler.process(&self.stretched, &mut self.resampled)?;
+		self.output.push(&self.resampled);
+		Ok(())
+	}
 }
 
 struct VideoLane {
@@ -415,6 +427,9 @@ impl<'a> Engine<'a> {
 		lane.stretch.set_speed(speed);
 		if self.state != State::Ended {
 			self.seek(at)?;
+			if self.state != State::Playing {
+				self.preroll()?;
+			}
 		}
 		Ok(())
 	}
@@ -588,6 +603,9 @@ impl<'a> Engine<'a> {
 
 	fn finish_stream(&mut self) -> Result<()> {
 		self.eof = true;
+		if let Some(lane) = &mut self.audio {
+			lane.finish()?;
+		}
 		if let Some(lane) = &mut self.video {
 			let frames = &mut self.frames;
 			let max_size = self.max_size;

@@ -68,6 +68,11 @@ impl Stretch {
 		self.discard(nominal);
 	}
 
+	pub fn finish(&mut self, output: &mut Vec<f32>) {
+		output.extend_from_slice(&self.input[self.follow * OUTPUT_CHANNELS..]);
+		self.reset();
+	}
+
 	fn start(&mut self, output: &mut Vec<f32>) {
 		output.extend_from_slice(&self.input[..HOP * OUTPUT_CHANNELS]);
 		self.fall_into_tail(0);

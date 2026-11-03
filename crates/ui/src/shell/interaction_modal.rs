@@ -89,7 +89,7 @@ impl Upload {
 				.map_or(usize::from(component.is_required()), |min| min as usize),
 			max: component
 				.max_values
-				.map_or(1, |max| (max as usize).min(UPLOAD_LIMIT)),
+				.map_or(UPLOAD_LIMIT, |max| (max as usize).min(UPLOAD_LIMIT)),
 		}
 	}
 
