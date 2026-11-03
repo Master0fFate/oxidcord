@@ -3,7 +3,7 @@ use gpui::{
 	SharedString, StatefulInteractiveElement as _, Styled as _, div, prelude::FluentBuilder as _,
 };
 use gpui_component::scroll::ScrollableElement as _;
-use protocol::{Snowflake, Sticker};
+use protocol::{Permissions, Snowflake, Sticker};
 use session::Command;
 
 use super::{Picker, PickerEvent};
@@ -13,8 +13,6 @@ use crate::icons::{Icon, IconKind};
 use crate::shell::community::art::{cover, cover_still, sticker_url};
 use crate::shell::plugins::{MenuTarget, plugin_menu};
 use crate::theme::{Theme, rem};
-
-const OTHER_GUILD_LOADS: usize = 5;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Section {
@@ -38,25 +36,32 @@ struct SectionView {
 
 impl Picker {
 	pub(super) fn load_stickers(&mut self, cx: &mut Context<Self>) {
-		let (need_packs, guilds): (bool, Vec<Snowflake>) = {
+		let (need_packs, guild) = {
 			let data = self.data.read(cx);
 			let state = data.state();
-			let mut guilds: Vec<Snowflake> = self.guild.into_iter().collect();
-			guilds.extend(
-				state
-					.guilds()
-					.map(|guild| guild.id)
-					.filter(|id| Some(*id) != self.guild)
-					.take(OTHER_GUILD_LOADS),
-			);
-			guilds.retain(|id| state.guild_stickers(*id).is_none());
-			(state.sticker_packs().is_none(), guilds)
+			let guild = self.guild.filter(|id| state.guild_stickers(*id).is_none());
+			(state.sticker_packs().is_none(), guild)
 		};
 		if need_packs {
 			self.send(Command::LoadStickerPacks, cx);
 		}
-		for guild_id in guilds {
+		if let Some(guild_id) = guild {
 			self.send(Command::LoadGuildStickers { guild_id }, cx);
+		}
+	}
+
+	fn external_lock(&self, cx: &Context<Self>) -> Option<&'static str> {
+		let data = self.data.read(cx);
+		let state = data.state();
+		if !state.has_nitro() {
+			Some("picker-sticker-nitro")
+		} else if !state
+			.my_permissions(self.channel)
+			.contains(Permissions::USE_EXTERNAL_STICKERS)
+		{
+			Some("picker-sticker-denied")
+		} else {
+			None
 		}
 	}
 
@@ -117,8 +122,15 @@ impl Picker {
 		cx.emit(PickerEvent::Sent);
 	}
 
-	fn sticker_cell(&self, sticker: &Sticker, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+	fn sticker_cell(
+		&self,
+		sticker: &Sticker,
+		lock: Option<&'static str>,
+		theme: &Theme,
+		cx: &mut Context<Self>,
+	) -> AnyElement {
 		let id = sticker.id;
+		let lock = lock.filter(|_| sticker.guild_id.is_some() && sticker.guild_id != self.guild);
 		let hovered = self.sticker.hovered == Some(id);
 		let picked = sticker.clone();
 		let url = sticker_url(sticker);
@@ -130,8 +142,9 @@ impl Picker {
 			.justify_center()
 			.size(theme.picker_sticker)
 			.rounded(theme.radius_md)
-			.when(hovered, |cell| cell.bg(theme.modifier_selected))
-			.cursor_pointer()
+			.when(hovered && lock.is_none(), |cell| cell.bg(theme.modifier_selected))
+			.when(lock.is_none(), |cell| cell.cursor_pointer())
+			.when(lock.is_some(), |cell| cell.cursor_not_allowed())
 			.on_hover(cx.listener(move |this, over: &bool, _, cx| {
 				if *over {
 					this.sticker.hovered = Some(id);
@@ -140,17 +153,33 @@ impl Picker {
 				}
 				cx.notify();
 			}))
-			.on_click(cx.listener(move |this, _, _, cx| this.pick_sticker(&picked, cx)));
+			.when(lock.is_none(), |cell| {
+				cell.on_click(cx.listener(move |this, _, _, cx| this.pick_sticker(&picked, cx)))
+			})
+			.when_some(lock, |cell, key| {
+				cell.tooltip(tooltip(cx.t(key))).child(
+					div().absolute().right(rem(2.)).bottom(rem(2.)).child(
+						Icon::new(IconKind::Lock)
+							.size(theme.glyph_sm - rem(4.))
+							.color(theme.header_primary),
+					),
+				)
+			});
 		let element = match url {
 			Some(url) => {
 				let art = if hovered { cover } else { cover_still };
-				cell.child(div().size(theme.picker_sticker - theme.space_8).child(art(
-					&url,
-					theme.picker_sticker,
-					theme.picker_sticker,
-					ObjectFit::Contain,
-					cx,
-				)))
+				cell.child(
+					div()
+						.size(theme.picker_sticker - theme.space_8)
+						.when(lock.is_some(), |art| art.opacity(0.35))
+						.child(art(
+							&url,
+							theme.picker_sticker,
+							theme.picker_sticker,
+							ObjectFit::Contain,
+							cx,
+						)),
+				)
 				.into_any_element()
 			}
 			None => cell
@@ -273,12 +302,13 @@ impl Picker {
 				SharedString::from(sticker.tags.clone().unwrap_or_default()),
 			)
 		});
+		let lock = self.external_lock(cx);
 		let groups: Vec<AnyElement> = shown
 			.iter()
 			.map(|(title, stickers)| {
 				let cells: Vec<AnyElement> = stickers
 					.iter()
-					.map(|sticker| self.sticker_cell(sticker, theme, cx))
+					.map(|sticker| self.sticker_cell(sticker, lock, theme, cx))
 					.collect();
 				div()
 					.flex()

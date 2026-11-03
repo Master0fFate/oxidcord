@@ -393,7 +393,11 @@ fn build_channels(builder: &mut Builder, guild_id: u64, roles: &RoleIds) -> Chan
 	announcement.topic = Some("news and releases".to_owned());
 	announcement.permission_overwrites = LenientVec::from(vec![
 		muted_overwrite(roles.muted),
-		role_overwrite(roles.members, Permissions::MANAGE_CHANNELS, Permissions::empty()),
+		role_overwrite(
+			roles.members,
+			Permissions::MANAGE_CHANNELS,
+			Permissions::USE_EXTERNAL_EMOJIS | Permissions::USE_EXTERNAL_STICKERS,
+		),
 	]);
 	add_channel(builder, &mut layout.all, announcement);
 	layout.message.push(announcement_id);

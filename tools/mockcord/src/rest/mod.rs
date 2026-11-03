@@ -6,6 +6,7 @@ mod guilds;
 mod rpc;
 mod users;
 
+pub use expressions::guild_stickers_snapshot;
 pub use rpc::{RPC_APP_ID, RPC_APP_NAME, RPC_ASSET_ID, RPC_ASSET_NAME};
 
 use std::collections::hash_map::DefaultHasher;

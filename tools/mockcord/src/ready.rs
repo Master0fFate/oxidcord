@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 
 use crate::fixtures::{Fixtures, GuildFixture};
 use crate::json::to_json;
+use crate::rest::guild_stickers_snapshot;
 use crate::state::{Shared, Store};
 
 const API_VERSION: i64 = 10;
@@ -38,7 +39,7 @@ pub fn guild_threads(store: &Store, guild_id: u64) -> Vec<&Channel> {
 	threads
 }
 
-fn ready_guild(store: &Store, guild: &GuildFixture) -> Value {
+fn ready_guild(shared: &Shared, store: &Store, guild: &GuildFixture) -> Value {
 	let threads: Vec<Value> = guild_threads(store, guild.id)
 		.into_iter()
 		.map(|thread| store.thread_json(thread))
@@ -49,7 +50,7 @@ fn ready_guild(store: &Store, guild: &GuildFixture) -> Value {
 		"channels": store.guild_channels(guild),
 		"roles": store.roles[&guild.id],
 		"emojis": store.emojis[&guild.id],
-		"stickers": [],
+		"stickers": guild_stickers_snapshot(shared, &store.current_user, guild.id),
 		"threads": threads,
 		"members": [],
 		"voice_states": guild.voice_states,
@@ -171,7 +172,7 @@ pub fn build(shared: &Shared, session_id: &str, user: &User, capabilities: u64) 
 	let fixtures = &shared.fixtures;
 	let store = shared.store.lock();
 	let guilds: Vec<Value> = live_guilds(fixtures, &store)
-		.map(|guild| ready_guild(&store, guild))
+		.map(|guild| ready_guild(shared, &store, guild))
 		.collect();
 	let (settings_proto, settings) = if capabilities & USER_SETTINGS_PROTO_CAPABILITY != 0 {
 		(json!(user_settings_proto(fixtures, &store)), Value::Null)

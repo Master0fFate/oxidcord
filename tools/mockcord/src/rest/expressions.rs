@@ -7,7 +7,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use parking_lot::Mutex;
 use protocol::{
-	LenientVec, Snowflake, Sticker, StickerFormat, StickerKind, StickerPack, decode_frecency_settings,
+	LenientVec, Snowflake, Sticker, StickerFormat, StickerKind, StickerPack, User, decode_frecency_settings,
 	encode_frecency_settings,
 };
 use serde::Deserialize;
@@ -288,8 +288,8 @@ async fn sticker_pack(Path(id): Path<u64>) -> ApiResult {
 		.ok_or_else(ApiError::not_found)
 }
 
-fn store_key(shared: &Arc<Shared>, guild_id: u64) -> (usize, u64) {
-	(Arc::as_ptr(shared) as usize, guild_id)
+fn store_key(shared: &Shared, guild_id: u64) -> (usize, u64) {
+	(std::ptr::from_ref(shared) as usize, guild_id)
 }
 
 fn live_guild_index(shared: &Shared, id: u64) -> Result<usize, ApiError> {
@@ -305,8 +305,7 @@ fn live_guild_index(shared: &Shared, id: u64) -> Result<usize, ApiError> {
 	Ok(index)
 }
 
-fn seeded_stickers(shared: &Shared, guild_index: usize, guild_id: u64) -> Vec<Sticker> {
-	let user = shared.store.lock().current_user.clone();
+fn seeded_stickers(user: &User, guild_index: usize, guild_id: u64) -> Vec<Sticker> {
 	GUILD_STICKERS
 		.iter()
 		.enumerate()
@@ -328,13 +327,30 @@ fn seeded_stickers(shared: &Shared, guild_index: usize, guild_id: u64) -> Vec<St
 		.collect()
 }
 
+pub fn guild_stickers_snapshot(shared: &Shared, user: &User, guild_id: u64) -> Vec<Sticker> {
+	let Some(index) = shared
+		.fixtures
+		.guilds
+		.iter()
+		.position(|guild| guild.id == guild_id)
+	else {
+		return Vec::new();
+	};
+	GUILD_STICKER_STORE
+		.lock()
+		.get(&store_key(shared, guild_id))
+		.cloned()
+		.unwrap_or_else(|| seeded_stickers(user, index, guild_id))
+}
+
 fn with_stickers<R>(
 	shared: &Arc<Shared>,
 	guild_id: u64,
 	apply: impl FnOnce(&mut Vec<Sticker>) -> Result<R, ApiError>,
 ) -> Result<R, ApiError> {
 	let index = live_guild_index(shared, guild_id)?;
-	let seeded = seeded_stickers(shared, index, guild_id);
+	let user = shared.store.lock().current_user.clone();
+	let seeded = seeded_stickers(&user, index, guild_id);
 	let mut stores = GUILD_STICKER_STORE.lock();
 	apply(stores.entry(store_key(shared, guild_id)).or_insert(seeded))
 }

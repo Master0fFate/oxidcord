@@ -570,9 +570,8 @@ impl HostBroker for SessionBroker {
 		let channel = channel_id
 			.map(Snowflake)
 			.or_else(|| state.selected().map(|selected| selected.channel_id));
-		let guild = channel.and_then(|channel| state.channel_guild(channel));
 		Ok(state
-			.catalog_emojis(guild)
+			.catalog_emojis(channel)
 			.take(limit as usize)
 			.map(|emoji| EmojiInfo {
 				emoji: EmojiRef {

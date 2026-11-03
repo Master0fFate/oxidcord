@@ -722,7 +722,7 @@ impl Composer {
 			}
 			Trigger::Emoji => {
 				let unlocked = data.session().plugins().has_emoji_pick();
-				for section in state.emoji_catalog(self.guild).guilds {
+				for section in state.emoji_catalog(self.channel).guilds {
 					let detail = (Some(section.guild_id) != self.guild).then_some(section.name);
 					for custom in section.emojis.iter().filter(|custom| custom.usable || unlocked) {
 						let Some(hit) = rank(&custom.name) else {

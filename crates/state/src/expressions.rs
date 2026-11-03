@@ -246,17 +246,15 @@ impl State {
 		current.into_iter().chain(others)
 	}
 
-	fn emoji_permissions(&self, guild_id: Option<Snowflake>) -> Permissions {
-		guild_id
-			.zip(self.current_user_id())
-			.map_or(DM_PERMISSIONS, |(guild_id, me)| {
-				self.guild_permissions(guild_id, me)
-			})
+	fn emoji_context(&self, channel_id: Option<Snowflake>) -> (Option<Snowflake>, Permissions) {
+		channel_id.map_or((None, DM_PERMISSIONS), |channel_id| {
+			(self.channel_guild(channel_id), self.my_permissions(channel_id))
+		})
 	}
 
-	pub fn emoji_catalog(&self, guild_id: Option<Snowflake>) -> EmojiCatalog {
+	pub fn emoji_catalog(&self, channel_id: Option<Snowflake>) -> EmojiCatalog {
 		let nitro = self.has_nitro();
-		let permissions = self.emoji_permissions(guild_id);
+		let (guild_id, permissions) = self.emoji_context(channel_id);
 		let guilds = self
 			.emoji_guilds(guild_id)
 			.map(|guild| GuildEmojis {
@@ -277,9 +275,9 @@ impl State {
 		}
 	}
 
-	pub fn catalog_emojis(&self, guild_id: Option<Snowflake>) -> impl Iterator<Item = CatalogEmoji> {
+	pub fn catalog_emojis(&self, channel_id: Option<Snowflake>) -> impl Iterator<Item = CatalogEmoji> {
 		let nitro = self.has_nitro();
-		let permissions = self.emoji_permissions(guild_id);
+		let (guild_id, permissions) = self.emoji_context(channel_id);
 		self.emoji_guilds(guild_id).flat_map(move |guild| {
 			guild
 				.emojis

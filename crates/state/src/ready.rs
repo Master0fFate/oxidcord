@@ -129,6 +129,12 @@ impl State {
 	pub(crate) fn ingest_guild(&mut self, guild: &Guild) {
 		let id = guild.id;
 		let mut state = GuildState::from_guild(guild);
+		if !guild.stickers.is_empty() {
+			self.lazy
+				.expressions
+				.guild_stickers
+				.insert(id, guild.stickers.to_vec());
+		}
 		for channel in guild.channels.iter().chain(guild.threads.iter()) {
 			let mut stored = channel.clone();
 			stored.guild_id = Some(id);

@@ -365,7 +365,7 @@ impl Picker {
 	}
 
 	pub(super) fn emoji_body(&self, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
-		let catalog = self.data.read(cx).state().emoji_catalog(self.guild);
+		let catalog = self.data.read(cx).state().emoji_catalog(Some(self.channel));
 		let has_recent = !self.data.read(cx).state().recent_emoji().is_empty();
 		let default = if has_recent {
 			Section::Recent
