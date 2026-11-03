@@ -27,15 +27,12 @@ enum ClearAfter {
 	OneHour,
 	FourHours,
 	Today,
+	Keep(u64),
 }
 
 impl ClearAfter {
 	fn kept(expires_at_ms: Option<u64>) -> Self {
-		if expires_at_ms.is_some() {
-			Self::Today
-		} else {
-			Self::Never
-		}
+		expires_at_ms.map_or(Self::Never, Self::Keep)
 	}
 
 	const ALL: [ClearAfter; 5] = [
@@ -52,7 +49,7 @@ impl ClearAfter {
 			Self::ThirtyMinutes => "custom-status-30-minutes",
 			Self::OneHour => "custom-status-1-hour",
 			Self::FourHours => "custom-status-4-hours",
-			Self::Today => "custom-status-today",
+			Self::Today | Self::Keep(_) => "custom-status-today",
 		}
 	}
 
@@ -63,6 +60,7 @@ impl ClearAfter {
 			Self::ThirtyMinutes => Some(now + Duration::minutes(30)),
 			Self::OneHour => Some(now + Duration::hours(1)),
 			Self::FourHours => Some(now + Duration::hours(4)),
+			Self::Keep(at_ms) => DateTime::from_timestamp_millis(i64::try_from(at_ms).ok()?),
 			Self::Today => {
 				let tomorrow = Local::now().date_naive().succ_opt()?;
 				let midnight = tomorrow.and_hms_opt(0, 0, 0)?;
