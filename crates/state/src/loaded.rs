@@ -5,10 +5,10 @@ use std::time::Instant;
 use chrono::{DateTime, Utc};
 use protocol::lenient::{or_default, timestamp};
 use protocol::{
-	ApplicationCommand, ApplicationCommandType, AutoModRule, Channel, ChannelType, CommandChoice, CommandIndex,
-	Connection, Gif, GifFavorites, GifTrending, GuildBan, InteractionContext, JoinRequestStatus, LenientVec,
-	Member, MemberVerification, Message, Permissions, PinnedMessage, ScheduledEvent, Snowflake,
-	SoundboardSound, Sticker, StickerPack, ThreadMember, User,
+	ApplicationCommand, ApplicationCommandType, AutoModRule, Channel, ChannelType, CommandChoice,
+	CommandIndex, Connection, Gif, GifFavorites, GifTrending, GuildBan, InteractionContext,
+	JoinRequestStatus, LenientVec, Member, MemberVerification, Message, Permissions, PinnedMessage,
+	ScheduledEvent, Snowflake, SoundboardSound, Sticker, StickerPack, ThreadMember, User,
 };
 use serde::Deserialize;
 use serde_json::Value;
