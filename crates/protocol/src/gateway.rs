@@ -300,6 +300,7 @@ pub mod capability {
 	pub const USER_SETTINGS_PROTO: u64 = 1 << 9;
 	pub const CLIENT_STATE_V2: u64 = 1 << 10;
 	pub const PASSIVE_GUILD_UPDATE: u64 = 1 << 11;
+	pub const AUTO_CALL_CONNECT: u64 = 1 << 12;
 	pub const DEBOUNCE_MESSAGE_REACTIONS: u64 = 1 << 13;
 	pub const PASSIVE_GUILD_UPDATE_V2: u64 = 1 << 14;
 }
