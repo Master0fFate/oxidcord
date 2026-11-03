@@ -12,6 +12,7 @@ use tokio::task::JoinHandle;
 const QUEUE_CAPACITY: usize = 1024;
 const BATCH_LIMIT: usize = 256;
 const READY_KEY: &str = "session.ready";
+const LAZY_CHANNELS_KEY: &str = "ready.lazy_private_channels";
 pub(crate) const CACHED_MESSAGES: u32 = 50;
 const KEPT_MESSAGES_PER_CHANNEL: u32 = 200;
 pub(crate) const RECENT_EMOJI_KEY: &str = "expressions.recent.emoji";
@@ -127,7 +128,10 @@ async fn write_loop(mut jobs: mpsc::Receiver<Queued>) {
 
 fn write(db: &Database, job: Job) -> Result<()> {
 	match job {
-		Job::Ready(ready) => write_ready(db, &ready),
+		Job::Ready(mut ready) => {
+			ready.align_merged_members();
+			write_ready(db, &ready)
+		}
 		Job::PrivateChannels(channels) => write_private_channels(db, channels),
 		Job::Messages { channel_id, messages } => {
 			let encoded = messages
@@ -183,6 +187,7 @@ fn write_ready(db: &Database, ready: &Ready) -> Result<()> {
 		db.set_read_state(&stored_read_state(read_state))?;
 	}
 	db.kv_set(READY_KEY, &serde_json::to_vec(ready)?)?;
+	db.kv_delete(LAZY_CHANNELS_KEY)?;
 	Ok(())
 }
 
@@ -196,16 +201,14 @@ fn put_private_channel(db: &Database, channel: &Channel) -> Result<()> {
 }
 
 fn write_private_channels(db: &Database, channels: Vec<Channel>) -> Result<()> {
-	let Some(mut ready) = load_ready(db) else {
-		return Ok(());
-	};
+	let mut lazy = load_lazy_channels(db);
 	for channel in channels {
 		put_private_channel(db, &channel)?;
-		if !ready.private_channels.iter().any(|known| known.id == channel.id) {
-			ready.private_channels.push(channel);
+		if !lazy.iter().any(|known| known.id == channel.id) {
+			lazy.push(channel);
 		}
 	}
-	db.kv_set(READY_KEY, &serde_json::to_vec(&ready)?)?;
+	db.kv_set(LAZY_CHANNELS_KEY, &serde_json::to_vec(&lazy)?)?;
 	Ok(())
 }
 
@@ -220,6 +223,15 @@ pub(crate) fn stored_read_state(read_state: &protocol::ReadState) -> ReadState {
 	}
 }
 
+fn load_lazy_channels(db: &Database) -> Vec<Channel> {
+	db.kv_get(LAZY_CHANNELS_KEY)
+		.ok()
+		.flatten()
+		.and_then(|bytes| serde_json::from_slice::<LenientVec<Channel>>(&bytes).ok())
+		.map(LenientVec::into_vec)
+		.unwrap_or_default()
+}
+
 pub(crate) fn load_ready(db: &Database) -> Option<Ready> {
 	let bytes = db
 		.kv_get(READY_KEY)
@@ -229,6 +241,11 @@ pub(crate) fn load_ready(db: &Database) -> Option<Ready> {
 	match serde_json::from_slice::<Ready>(&bytes) {
 		Ok(mut ready) => {
 			ready.normalize_guilds();
+			for channel in load_lazy_channels(db) {
+				if !ready.private_channels.iter().any(|known| known.id == channel.id) {
+					ready.private_channels.push(channel);
+				}
+			}
 			Some(ready)
 		}
 		Err(error) => {

@@ -1,3 +1,5 @@
+use std::mem;
+
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use chrono::{DateTime, Utc};
@@ -333,6 +335,18 @@ pub struct Ready {
 }
 
 impl Ready {
+	pub fn align_merged_members(&mut self) {
+		if self.guilds.dropped() == 0 {
+			return;
+		}
+		let mut merged = mem::take(&mut self.merged_members);
+		self.merged_members = self
+			.guilds
+			.iter_with_source()
+			.map(|(source, _)| merged.get_mut(source).map(mem::take).unwrap_or_default())
+			.collect();
+	}
+
 	pub fn normalize_guilds(&mut self) {
 		for guild in self.guilds.iter_mut() {
 			*guild = std::mem::take(guild).normalized();
