@@ -371,11 +371,7 @@ impl Core {
 			parts.internal.clone(),
 			INITIAL_EPOCH,
 		);
-		let voice = VoiceLink::new(
-			parts.voice_io,
-			parts.shared_voice,
-			&parts.store.settings.read().voice,
-		);
+		let voice = VoiceLink::new(parts.voice_io, parts.shared_voice, &parts.store, &parts.runtime);
 		Self {
 			state: parts.state,
 			rest: parts.rest,

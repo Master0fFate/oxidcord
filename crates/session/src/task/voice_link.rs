@@ -8,7 +8,9 @@ use parking_lot::Mutex;
 use protocol::{Permissions, Snowflake, Token, VoiceChannelEffect, VoiceServerUpdate, VoiceState};
 use serde_json::json;
 use state::{E2eeInfo, JoinBlock, LocalEvent, VoiceStatus};
-use store::{UserVolume, VoiceSettings};
+use store::{Store, UserVolume, VoiceSettings};
+use tokio::runtime::Handle;
+use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use tokio::task::JoinHandle;
 use tokio::time::{MissedTickBehavior, interval, sleep};
 use voice::close;
@@ -41,7 +43,35 @@ struct Server {
 	endpoint: String,
 }
 
+type VoiceEdit = Box<dyn FnOnce(&mut VoiceSettings) + Send>;
+
+fn spawn_saver(store: Arc<Store>, runtime: &Handle) -> UnboundedSender<VoiceEdit> {
+	let (edits, mut queue) = unbounded_channel::<VoiceEdit>();
+	runtime.spawn(async move {
+		while let Some(first) = queue.recv().await {
+			let mut burst = vec![first];
+			while let Ok(next) = queue.try_recv() {
+				burst.push(next);
+			}
+			let store = Arc::clone(&store);
+			let saved = tokio::task::spawn_blocking(move || {
+				store.update_settings(|settings| {
+					for edit in burst {
+						edit(&mut settings.voice);
+					}
+				})
+			})
+			.await;
+			if let Ok(Err(error)) = saved {
+				tracing::warn!(%error, "voice settings were not saved");
+			}
+		}
+	});
+	edits
+}
+
 pub(crate) struct VoiceLink {
+	saver: UnboundedSender<VoiceEdit>,
 	io: VoiceIo,
 	shared: SharedVoice,
 	target: Option<Target>,
@@ -69,8 +99,11 @@ pub(crate) struct VoiceLink {
 }
 
 impl VoiceLink {
-	pub(crate) fn new(io: VoiceIo, shared: SharedVoice, saved: &VoiceSettings) -> Self {
+	pub(crate) fn new(io: VoiceIo, shared: SharedVoice, store: &Arc<Store>, runtime: &Handle) -> Self {
+		let settings = store.settings.read();
+		let saved = &settings.voice;
 		Self {
+			saver: spawn_saver(Arc::clone(store), runtime),
 			io,
 			shared,
 			target: None,
@@ -917,11 +950,6 @@ impl Core {
 	}
 
 	fn update_voice_settings(&self, apply: impl FnOnce(&mut VoiceSettings) + Send + 'static) {
-		let store = self.store.clone();
-		self.runtime.spawn_blocking(move || {
-			if let Err(error) = store.update_settings(|settings| apply(&mut settings.voice)) {
-				tracing::warn!(%error, "voice settings were not saved");
-			}
-		});
+		let _ = self.voice.saver.send(Box::new(apply));
 	}
 }
