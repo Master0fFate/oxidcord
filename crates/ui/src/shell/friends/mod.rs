@@ -168,7 +168,9 @@ impl FriendsPage {
 			.requests
 			.iter()
 			.map(|request| request.channel_id)
-			.filter(|channel_id| !state.request_preview_loaded(*channel_id) && self.previews_asked.insert(*channel_id))
+			.filter(|channel_id| {
+				!state.request_preview_loaded(*channel_id) && self.previews_asked.insert(*channel_id)
+			})
 			.collect();
 		drop(state);
 		if !missing.is_empty() {

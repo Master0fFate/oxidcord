@@ -104,7 +104,8 @@ impl UnfurledMedia {
 		.into_iter()
 		.filter(|(bit, _)| scanned & bit != 0)
 		.fold(AttachmentFlags::empty(), |all, (_, flag)| all | flag)
-			| (AttachmentFlags::from_bits_truncate(self.flags.unwrap_or_default()) & AttachmentFlags::SENSITIVE)
+			| (AttachmentFlags::from_bits_truncate(self.flags.unwrap_or_default())
+				& AttachmentFlags::SENSITIVE)
 	}
 }
 

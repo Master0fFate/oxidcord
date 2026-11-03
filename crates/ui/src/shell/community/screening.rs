@@ -83,14 +83,16 @@ impl Screening {
 			let state = data.state();
 			(
 				state.member_verification(guild_id).is_some(),
-				state
-					.application(guild_id)
-					.is_some_and(|application| {
-						matches!(
-							application.status,
-							Some(JoinRequestStatus::Submitted | JoinRequestStatus::Rejected | JoinRequestStatus::Approved)
+				state.application(guild_id).is_some_and(|application| {
+					matches!(
+						application.status,
+						Some(
+							JoinRequestStatus::Submitted
+								| JoinRequestStatus::Rejected
+								| JoinRequestStatus::Approved
 						)
-					}),
+					)
+				}),
 			)
 		};
 		if loaded {

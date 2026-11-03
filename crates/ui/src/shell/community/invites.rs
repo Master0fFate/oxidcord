@@ -21,8 +21,10 @@ const MAX_CARDS: usize = 2;
 const CODE_MIN: usize = 2;
 const CODE_MAX: usize = 32;
 
+type RequestKey = (String, Option<Snowflake>);
+
 #[derive(Default, Clone)]
-pub struct InviteRequests(pub Rc<RefCell<HashSet<(String, Option<Snowflake>)>>>);
+pub struct InviteRequests(pub Rc<RefCell<HashSet<RequestKey>>>);
 
 impl Global for InviteRequests {}
 

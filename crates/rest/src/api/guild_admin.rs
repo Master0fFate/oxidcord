@@ -249,7 +249,10 @@ impl RestClient {
 		self.send(request).await
 	}
 
-	pub async fn scheduled_event_rsvps(&self, guild_ids: &[Snowflake]) -> Result<LenientVec<ScheduledEventRsvp>> {
+	pub async fn scheduled_event_rsvps(
+		&self,
+		guild_ids: &[Snowflake],
+	) -> Result<LenientVec<ScheduledEventRsvp>> {
 		let joined = guild_ids
 			.iter()
 			.map(ToString::to_string)

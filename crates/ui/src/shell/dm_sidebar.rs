@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use gpui::{
 	AnyElement, ClickEvent, Context, Entity, EventEmitter, FontWeight, InteractiveElement as _, IntoElement,
-	MouseButton, ParentElement as _, Pixels, Point, Render, SharedString, StatefulInteractiveElement as _, Styled as _,
-	Window, div, prelude::FluentBuilder as _,
+	MouseButton, ParentElement as _, Pixels, Point, Render, SharedString, StatefulInteractiveElement as _,
+	Styled as _, Window, div, prelude::FluentBuilder as _,
 };
 use gpui_component::menu::ContextMenuExt as _;
 use gpui_component::scroll::ScrollableElement as _;

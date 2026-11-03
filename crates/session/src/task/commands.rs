@@ -648,9 +648,9 @@ impl Core {
 					if !accepted.show_verification_form {
 						return Ok(());
 					}
-					let (name, icon) = accepted
-						.guild
-						.map_or((String::new(), None), |guild| (guild.name.unwrap_or_default(), guild.icon));
+					let (name, icon) = accepted.guild.map_or((String::new(), None), |guild| {
+						(guild.name.unwrap_or_default(), guild.icon)
+					});
 					let _ = internal.send(Internal::Loaded(Loaded::Application { guild_id, name, icon }));
 					if let Ok(form) = rest.member_verification(guild_id, Some(&code)).await {
 						let _ =
@@ -1166,9 +1166,12 @@ impl Core {
 				let Some(user_id) = self.state.read().current_user_id() else {
 					return;
 				};
-				self.spawn_profile_save("server profile", user_id, Some(guild_id), move |rest| async move {
-					rest.modify_current_member(guild_id, body).await.map(drop)
-				});
+				self.spawn_profile_save(
+					"server profile",
+					user_id,
+					Some(guild_id),
+					move |rest| async move { rest.modify_current_member(guild_id, body).await.map(drop) },
+				);
 			}
 			_ => {}
 		}

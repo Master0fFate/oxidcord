@@ -778,7 +778,8 @@ impl<'a> Generator<'a, '_> {
 		};
 		let scanned = |index: usize, attachment: &Attachment| {
 			let mut value = media(attachment);
-			value["content_scan_metadata"] = json!({ "flags": GALLERY_SCANS.get(index).copied().unwrap_or_default() });
+			value["content_scan_metadata"] =
+				json!({ "flags": GALLERY_SCANS.get(index).copied().unwrap_or_default() });
 			value
 		};
 		let components = json!([{

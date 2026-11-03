@@ -737,7 +737,12 @@ impl State {
 			.members
 			.iter()
 			.filter(|(_, member)| role_id == guild_id || member.roles.contains(&role_id))
-			.map(|(user_id, _)| (self.display_name(Some(guild_id), *user_id).to_lowercase(), *user_id))
+			.map(|(user_id, _)| {
+				(
+					self.display_name(Some(guild_id), *user_id).to_lowercase(),
+					*user_id,
+				)
+			})
 			.collect();
 		let known = keyed.len();
 		keyed.sort_unstable();

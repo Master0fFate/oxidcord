@@ -1459,7 +1459,11 @@ impl Shell {
 	}
 
 	fn raise_event_notice(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-		let pending = self.data.read(cx).state().event_notices_since(self.seen_event_notice);
+		let pending = self
+			.data
+			.read(cx)
+			.state()
+			.event_notices_since(self.seen_event_notice);
 		for notice in pending {
 			self.seen_event_notice = notice.id;
 			self.show_event_notice(notice, window, cx);
@@ -1657,13 +1661,11 @@ impl Shell {
 		}
 		let data = self.data.clone();
 		let card = cx.new(|cx| RolePopover::new(data, guild, role, cx));
-		let subscription = cx.subscribe(&card, |this, _, event: &RolePopoverEvent, cx| {
-			match event {
-				RolePopoverEvent::OpenProfile { user, at } => this.open_profile(*user, *at, Anchor::TopLeft, cx),
-				RolePopoverEvent::Close => {
-					this.overlay = None;
-					cx.notify();
-				}
+		let subscription = cx.subscribe(&card, |this, _, event: &RolePopoverEvent, cx| match event {
+			RolePopoverEvent::OpenProfile { user, at } => this.open_profile(*user, *at, Anchor::TopLeft, cx),
+			RolePopoverEvent::Close => {
+				this.overlay = None;
+				cx.notify();
 			}
 		});
 		self.overlay = Some(Overlay::Role {
@@ -2095,7 +2097,9 @@ impl Shell {
 			Overlay::VoiceUser { menu, at, .. } => {
 				floating(menu.clone().into_any_element(), *at, Anchor::TopLeft, cx)
 			}
-			Overlay::Role { card, at, .. } => floating(card.clone().into_any_element(), *at, Anchor::TopLeft, cx),
+			Overlay::Role { card, at, .. } => {
+				floating(card.clone().into_any_element(), *at, Anchor::TopLeft, cx)
+			}
 		})
 	}
 }

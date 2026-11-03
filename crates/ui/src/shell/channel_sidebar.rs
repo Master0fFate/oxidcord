@@ -49,10 +49,7 @@ impl VoiceClock {
 				}
 			}
 		});
-		Self {
-			started,
-			_tick: tick,
-		}
+		Self { started, _tick: tick }
 	}
 }
 
@@ -303,7 +300,11 @@ impl ChannelSidebar {
 		};
 		self.clocks.retain(|id, _| started.contains_key(id));
 		for (id, at) in started {
-			if self.clocks.get(&id).is_none_or(|clock| clock.read(cx).started != at) {
+			if self
+				.clocks
+				.get(&id)
+				.is_none_or(|clock| clock.read(cx).started != at)
+			{
 				self.clocks.insert(id, cx.new(|cx| VoiceClock::new(at, cx)));
 			}
 		}
@@ -824,12 +825,7 @@ impl ChannelSidebar {
 				)
 			})
 			.when_some(self.clocks.get(&id), |row, clock| {
-				row.child(
-					div()
-						.flex_none()
-						.text_size(theme.font_tiny)
-						.child(clock.clone()),
-				)
+				row.child(div().flex_none().text_size(theme.font_tiny).child(clock.clone()))
 			})
 			.when(channel.event_live, |row| {
 				row.child(badge(cx.t("voice-live"), theme.danger, theme))

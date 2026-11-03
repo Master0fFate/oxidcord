@@ -350,7 +350,8 @@ impl Core {
 					let _ = internal.send(message);
 				}
 				Err(error) => {
-					if let (Some(parent_id), RestError::Slowmode { retry_after }) = (slowmode_parent, &error) {
+					if let (Some(parent_id), RestError::Slowmode { retry_after }) = (slowmode_parent, &error)
+					{
 						let _ = internal.send(Internal::ThreadCooldownHit {
 							parent_id,
 							retry_after: *retry_after,
