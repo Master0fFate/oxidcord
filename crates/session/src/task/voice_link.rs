@@ -86,6 +86,7 @@ pub(crate) struct VoiceLink {
 	self_mute: bool,
 	pub(super) self_deaf: bool,
 	server_muted: bool,
+	server_deaf: bool,
 	transmitting: bool,
 	push_muted: bool,
 	priority: bool,
@@ -99,6 +100,10 @@ pub(crate) struct VoiceLink {
 }
 
 impl VoiceLink {
+	pub(super) fn deafened(&self) -> bool {
+		self.self_deaf || self.server_deaf
+	}
+
 	pub(crate) fn new(io: VoiceIo, shared: SharedVoice, store: &Arc<Store>, runtime: &Handle) -> Self {
 		let settings = store.settings.read();
 		let saved = &settings.voice;
@@ -118,6 +123,7 @@ impl VoiceLink {
 			self_mute: saved.self_mute,
 			self_deaf: saved.self_deaf,
 			server_muted: false,
+			server_deaf: false,
 			transmitting: false,
 			push_muted: false,
 			priority: false,
@@ -234,10 +240,7 @@ impl Core {
 
 	pub(super) fn set_self_deaf(&mut self, deafened: bool) {
 		self.voice.self_deaf = deafened;
-		if let Some(connection) = &self.voice.connection {
-			connection.set_deaf(deafened);
-		}
-		self.streams.set_deaf(deafened);
+		self.apply_deafened();
 		self.update_voice_settings(move |settings| settings.self_deaf = deafened);
 		self.publish_self_state();
 	}
@@ -555,9 +558,19 @@ impl Core {
 	fn apply_server_mute(&mut self, update: &VoiceState) {
 		let muted = update.mute || update.deaf || update.suppress;
 		self.voice.server_muted = muted;
+		self.voice.server_deaf = update.deaf;
 		if let Some(connection) = &self.voice.connection {
 			connection.set_server_muted(muted);
 		}
+		self.apply_deafened();
+	}
+
+	fn apply_deafened(&self) {
+		let deafened = self.voice.deafened();
+		if let Some(connection) = &self.voice.connection {
+			connection.set_deaf(deafened);
+		}
+		self.streams.set_deaf(deafened);
 	}
 
 	pub(super) fn voice_channel_updated(&self, channel_id: Snowflake) {
@@ -798,6 +811,7 @@ impl Core {
 		self.voice.session_id = None;
 		self.voice.server = None;
 		self.voice.server_muted = false;
+		self.voice.server_deaf = false;
 		if notify_gateway && let Err(error) = self.send_voice_state(target.guild_id, None) {
 			tracing::warn!(%error, "voice state was not sent");
 		}
@@ -893,7 +907,7 @@ impl Core {
 		connection.set_push_muted(self.voice.push_muted);
 		connection.set_priority(self.voice.priority);
 		connection.set_mute(self.voice.self_mute);
-		connection.set_deaf(self.voice.self_deaf);
+		connection.set_deaf(self.voice.deafened());
 		connection.set_server_muted(self.voice.server_muted);
 		for (user_id, volume) in &self.voice.user_volumes {
 			connection.set_user_volume(*user_id, *volume);

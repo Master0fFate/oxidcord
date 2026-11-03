@@ -564,7 +564,7 @@ impl Core {
 			audio: audio_route(self.voice.io(), &session.role),
 			output_device: self.store.settings.read().voice.output_device.clone(),
 			stream: true,
-			deafened: self.voice.self_deaf,
+			deafened: self.voice.deafened(),
 			output_volume: self.streams.volume * self.master_volume(),
 			identity: Some(self.identity.clone()),
 			..VoiceOptions::default()
