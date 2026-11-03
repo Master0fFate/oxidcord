@@ -1053,8 +1053,12 @@ impl Core {
 	}
 
 	fn live_session_id(&mut self) -> Option<String> {
-		let session_id = self.state.read().session().session_id.clone();
-		if session_id.is_empty() {
+		let (session_id, connected) = {
+			let state = self.state.read();
+			let session = state.session();
+			(session.session_id.clone(), session.connected)
+		};
+		if session_id.is_empty() || !connected {
 			self.reject("Still connecting, try again shortly");
 			return None;
 		}
