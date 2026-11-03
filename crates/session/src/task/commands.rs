@@ -479,7 +479,11 @@ impl Core {
 			Command::LoadMentions { roles, everyone } => {
 				self.spawn_load("mentions", move |rest| async move {
 					let messages = rest.mentions(MENTIONS_PAGE, roles, everyone).await?;
-					Ok(Loaded::Mentions(messages.into_vec()))
+					Ok(Loaded::Mentions {
+						roles,
+						everyone,
+						messages: messages.into_vec(),
+					})
 				})
 			}
 			Command::DismissMention { message_id } => {

@@ -24,7 +24,11 @@ pub const COMMAND_CHOICES_KEY: Snowflake = Snowflake(3);
 
 #[derive(Debug, Clone)]
 pub enum Loaded {
-	Mentions(Vec<Message>),
+	Mentions {
+		roles: bool,
+		everyone: bool,
+		messages: Vec<Message>,
+	},
 	MentionDismissed(Snowflake),
 	CommandIndex {
 		scope: Snowflake,
@@ -337,7 +341,7 @@ fn member_allows(command: &ApplicationCommand, permissions: Permissions) -> bool
 }
 #[derive(Debug, Default)]
 pub(crate) struct Lazy {
-	pub(crate) mentions: Option<Vec<Arc<Message>>>,
+	pub(crate) mentions: HashMap<(bool, bool), Vec<Arc<Message>>>,
 	pub(crate) pins: HashMap<Snowflake, PinList>,
 	pub(crate) archived: HashMap<Snowflake, ArchivedThreads>,
 	pub(crate) profiles: HashMap<Snowflake, UserProfile>,
@@ -567,7 +571,11 @@ impl State {
 	pub(crate) fn apply_loaded(&mut self, loaded: &Loaded) -> Changes {
 		let mut changes = Changes::default();
 		match loaded {
-			Loaded::Mentions(messages) => {
+			Loaded::Mentions {
+				roles,
+				everyone,
+				messages,
+			} => {
 				let shared = messages
 					.iter()
 					.map(|message| {
@@ -576,14 +584,14 @@ impl State {
 						Arc::new(message.clone())
 					})
 					.collect();
-				self.lazy.mentions = Some(shared);
+				self.lazy.mentions.insert((*roles, *everyone), shared);
 				changes.loaded.insert(INBOX_KEY);
 			}
 			Loaded::MentionDismissed(message_id) => {
-				if let Some(mentions) = &mut self.lazy.mentions {
+				for mentions in self.lazy.mentions.values_mut() {
 					mentions.retain(|message| message.id != *message_id);
-					changes.loaded.insert(INBOX_KEY);
 				}
+				changes.loaded.insert(INBOX_KEY);
 			}
 			Loaded::CommandIndex { scope, index } => {
 				self.lazy.command_indexes.insert(*scope, index.clone());
@@ -1058,8 +1066,8 @@ impl State {
 			.collect()
 	}
 
-	pub fn mentions(&self) -> Option<&[Arc<Message>]> {
-		self.lazy.mentions.as_deref()
+	pub fn mentions(&self, roles: bool, everyone: bool) -> Option<&[Arc<Message>]> {
+		self.lazy.mentions.get(&(roles, everyone)).map(Vec::as_slice)
 	}
 
 	pub fn command_choices(&self, generation: u64) -> Option<&[CommandChoice]> {

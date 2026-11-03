@@ -346,11 +346,12 @@ impl InboxPanel {
 				(cards, status)
 			}
 			Tab::Mentions => {
+				let (_, roles, everyone) = MENTION_FILTERS[self.filter];
 				let messages: Option<Vec<Arc<Message>>> = self
 					.data
 					.read(cx)
 					.state()
-					.mentions()
+					.mentions(roles, everyone)
 					.map(|mentions| mentions.to_vec());
 				let status = match &messages {
 					None => Some("inbox-loading"),
