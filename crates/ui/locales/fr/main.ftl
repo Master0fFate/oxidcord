@@ -82,6 +82,7 @@ message-more = Plus
 composer-placeholder = Envoyer un message dans #{ $name }
 composer-placeholder-direct = Envoyer un message à @{ $name }
 composer-no-permission = Tu n'as pas la permission d'envoyer des messages dans ce salon.
+composer-thread-locked = Ce fil est verrouillé.
 composer-attach = Envoyer un fichier
 composer-gift = Envoyer un cadeau
 composer-gif = Ouvrir le sélecteur de GIF

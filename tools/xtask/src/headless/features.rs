@@ -97,6 +97,8 @@ impl Harness {
 			message_id: Some(message_id),
 			name: THREAD_NAME.to_owned(),
 			auto_archive_minutes: ARCHIVE_MINUTES,
+			private: false,
+			invitable: false,
 		});
 		self.until("the thread to appear under its channel", |state| {
 			state

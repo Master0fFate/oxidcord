@@ -65,6 +65,7 @@ struct SendAccess {
 	attach: bool,
 	slowmode: Option<Duration>,
 	poll: bool,
+	locked: bool,
 }
 
 fn strip_silent(text: &str) -> Option<&str> {
@@ -393,6 +394,7 @@ impl Composer {
 				attach: true,
 				slowmode: None,
 				poll: true,
+				locked: false,
 			};
 		}
 		let data = self.data.read(cx);
@@ -402,6 +404,7 @@ impl Composer {
 			attach: state.can_attach(channel),
 			slowmode: state.slowmode_interval(channel),
 			poll: state.can_poll(channel),
+			locked: state.thread_locked(channel),
 		}
 	}
 
@@ -455,6 +458,9 @@ impl Composer {
 	}
 
 	fn placeholder(&self, cx: &Context<Self>) -> SharedString {
+		if self.access.locked {
+			return cx.t("composer-thread-locked");
+		}
 		if !self.access.send {
 			return cx.t("composer-no-permission");
 		}

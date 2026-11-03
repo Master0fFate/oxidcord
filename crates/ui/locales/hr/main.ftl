@@ -83,6 +83,7 @@ message-more = Više
 composer-placeholder = Poruka u #{ $name }
 composer-placeholder-direct = Poruka za @{ $name }
 composer-no-permission = Nemate dopuštenje za slanje poruka u ovom kanalu.
+composer-thread-locked = Ova je nit zaključana.
 composer-attach = Učitaj datoteku
 composer-gift = Pošalji dar
 composer-gif = Otvori GIF-ove

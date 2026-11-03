@@ -80,6 +80,7 @@ message-more = 更多
 composer-placeholder = 给 #{ $name } 发消息
 composer-placeholder-direct = 给 @{ $name } 发消息
 composer-no-permission = 你没有在此频道发送消息的权限。
+composer-thread-locked = 此子区已锁定。
 composer-attach = 上传文件
 composer-gift = 赠送礼物
 composer-gif = 打开 GIF 选择器

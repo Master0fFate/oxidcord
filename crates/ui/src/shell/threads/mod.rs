@@ -2,6 +2,7 @@ pub mod create;
 pub mod edit;
 pub mod forum;
 pub mod inbox;
+pub mod invite;
 pub mod list;
 pub mod menu;
 pub mod panel;

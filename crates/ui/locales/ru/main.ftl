@@ -85,6 +85,7 @@ message-more = Ещё
 composer-placeholder = Написать в #{ $name }
 composer-placeholder-direct = Написать @{ $name }
 composer-no-permission = У вас нет прав на отправку сообщений в этом канале.
+composer-thread-locked = Эта ветка заблокирована.
 composer-attach = Загрузить файл
 composer-gift = Отправить подарок
 composer-gif = Открыть выбор GIF

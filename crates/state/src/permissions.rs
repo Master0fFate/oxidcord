@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use protocol::{Channel, PermissionOverwriteKind, Permissions, Snowflake};
+use protocol::{Channel, ChannelType, PermissionOverwriteKind, Permissions, Snowflake};
 
 use crate::guild::{GuildState, is_thread};
 use crate::state::State;
@@ -132,8 +132,18 @@ impl State {
 	}
 
 	pub fn can_view(&self, channel_id: Snowflake) -> bool {
-		self.my_permissions(channel_id)
-			.contains(Permissions::VIEW_CHANNEL)
+		let permissions = self.my_permissions(channel_id);
+		permissions.contains(Permissions::VIEW_CHANNEL)
+			&& (permissions.contains(Permissions::MANAGE_THREADS) || self.in_private_thread(channel_id))
+	}
+
+	fn in_private_thread(&self, channel_id: Snowflake) -> bool {
+		match self.channel(channel_id) {
+			Some(channel) if channel.kind == ChannelType::PrivateThread => {
+				channel.member.is_some() || channel.owner_id == self.current_user_id()
+			}
+			_ => true,
+		}
 	}
 
 	pub fn can_send(&self, channel_id: Snowflake) -> bool {
@@ -143,6 +153,7 @@ impl State {
 		};
 		self.my_permissions(channel_id)
 			.contains(Permissions::VIEW_CHANNEL | needed)
+			&& !self.thread_locked(channel_id)
 	}
 
 	pub fn slowmode_interval(&self, channel_id: Snowflake) -> Option<Duration> {

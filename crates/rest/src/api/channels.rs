@@ -5,7 +5,8 @@ use protocol::rest::{
 	CreateMessage, EditMessage, MessagesQuery,
 };
 use protocol::{
-	BURST_REACTION, Channel, CommandIndex, LenientVec, Message, PinnedPage, Snowflake, ThreadMember, User,
+	BURST_REACTION, Channel, ChannelType, CommandIndex, LenientVec, Message, PinnedPage, Snowflake,
+	ThreadMember, User,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -15,7 +16,6 @@ use crate::client::RestClient;
 use crate::error::{RestError, Result};
 use crate::request::{Request, UploadFile, UploadProgress, encode_component};
 
-const PUBLIC_THREAD: i64 = 11;
 const CONSENT_ACCEPTED: i64 = 2;
 const MESSAGE_REQUEST_BATCH: usize = 50;
 const CLOUD_UPLOAD_MIN_BYTES: usize = 8 * 1024 * 1024;
@@ -43,6 +43,23 @@ pub struct SearchQuery {
 	pub channel_ids: Vec<Snowflake>,
 	pub pinned: Option<bool>,
 	pub author_types: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArchivedScope {
+	Public,
+	Private,
+	JoinedPrivate,
+}
+
+impl ArchivedScope {
+	fn path(self, channel_id: Snowflake) -> String {
+		match self {
+			Self::Public => format!("/channels/{channel_id}/threads/archived/public"),
+			Self::Private => format!("/channels/{channel_id}/threads/archived/private"),
+			Self::JoinedPrivate => format!("/channels/{channel_id}/users/@me/threads/archived/private"),
+		}
+	}
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -373,10 +390,11 @@ impl RestClient {
 	pub async fn threads_archived(
 		&self,
 		channel_id: Snowflake,
+		scope: ArchivedScope,
 		before: Option<&str>,
 		limit: Option<u8>,
 	) -> Result<ThreadList> {
-		let mut request = Request::get(format!("/channels/{channel_id}/threads/archived/public"));
+		let mut request = Request::get(scope.path(channel_id));
 		if let Some(before) = before {
 			request = request.query(&[("before", before.to_owned())]);
 		}
@@ -392,14 +410,21 @@ impl RestClient {
 		message_id: Option<Snowflake>,
 		name: &str,
 		auto_archive: u32,
+		kind: ChannelType,
+		invitable: Option<bool>,
 	) -> Result<Channel> {
 		let request = match message_id {
 			Some(message_id) => {
 				Request::post(format!("/channels/{channel_id}/messages/{message_id}/threads"))
 					.json(&json!({ "name": name, "auto_archive_duration": auto_archive }))
 			}
-			None => Request::post(format!("/channels/{channel_id}/threads"))
-				.json(&json!({ "name": name, "auto_archive_duration": auto_archive, "type": PUBLIC_THREAD })),
+			None => {
+				let mut body = json!({ "name": name, "auto_archive_duration": auto_archive, "type": kind });
+				if let Some(invitable) = invitable {
+					body["invitable"] = json!(invitable);
+				}
+				Request::post(format!("/channels/{channel_id}/threads")).json(&body)
+			}
 		};
 		self.send(request).await
 	}
@@ -407,6 +432,13 @@ impl RestClient {
 	pub async fn join_thread(&self, channel_id: Snowflake) -> Result<()> {
 		self.send_empty(Request::put(format!("/channels/{channel_id}/thread-members/@me")))
 			.await
+	}
+
+	pub async fn add_thread_member(&self, channel_id: Snowflake, user_id: Snowflake) -> Result<()> {
+		self.send_empty(Request::put(format!(
+			"/channels/{channel_id}/thread-members/{user_id}"
+		)))
+		.await
 	}
 
 	pub async fn update_thread_settings(

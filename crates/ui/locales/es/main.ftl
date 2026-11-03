@@ -82,6 +82,7 @@ message-more = Más
 composer-placeholder = Enviar mensaje a #{ $name }
 composer-placeholder-direct = Enviar mensaje a @{ $name }
 composer-no-permission = No tienes permiso para enviar mensajes en este canal.
+composer-thread-locked = Este hilo está bloqueado.
 composer-attach = Subir un archivo
 composer-gift = Enviar un regalo
 composer-gif = Abrir selector de GIF

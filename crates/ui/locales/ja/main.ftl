@@ -80,6 +80,7 @@ message-more = その他
 composer-placeholder = #{ $name } へメッセージを送信
 composer-placeholder-direct = @{ $name } へメッセージを送信
 composer-no-permission = このチャンネルでメッセージを送信する権限がありません。
+composer-thread-locked = このスレッドはロックされています。
 composer-attach = ファイルをアップロード
 composer-gift = ギフトを贈る
 composer-gif = GIFを選ぶ

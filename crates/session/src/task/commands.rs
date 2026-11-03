@@ -2,9 +2,11 @@ use activity::ActivityRules;
 use chrono::{DateTime, Utc};
 use protocol::rest::{ComponentInteraction, ComponentInteractionData};
 use protocol::{
-	ApplicationCommand, CreateMessage, DispatchEvent, MessageAck, MessageFlags, MessageReference,
-	MessageReferenceKind, Permissions, ProtoCustomStatus, Snowflake, StatusKind, ThreadMember,
+	ApplicationCommand, ChannelType, CreateMessage, DispatchEvent, MessageAck, MessageFlags,
+	MessageReference, MessageReferenceKind, Permissions, ProtoCustomStatus, Snowflake, StatusKind,
+	ThreadMember,
 };
+use rest::api::ArchivedScope;
 use rest::api::image_data_uri;
 use rest::{RestError, UploadFile};
 use serde_json::{Value, json};
@@ -76,6 +78,7 @@ impl Core {
 			Command::StopWatchingStream { stream_key } => self.stop_watching_stream(&stream_key),
 			command @ (Command::CreateThread { .. }
 			| Command::JoinThread { .. }
+			| Command::AddThreadMember { .. }
 			| Command::LeaveThread { .. }
 			| Command::ArchiveThread { .. }
 			| Command::LockThread { .. }
@@ -168,17 +171,29 @@ impl Core {
 				message_id,
 				name,
 				auto_archive_minutes,
+				private,
+				invitable,
 			} => {
-				if self.channel_allows(
-					channel_id,
-					Permissions::CREATE_PUBLIC_THREADS,
-					"Create Public Threads",
-				) {
+				let (kind, needed, what) = self.thread_start(channel_id, message_id.is_none() && private);
+				if self.channel_allows(channel_id, needed, what) {
+					let invitable = (kind == ChannelType::PrivateThread).then_some(invitable);
 					self.spawn_open("create thread", move |rest| async move {
-						rest.start_thread(channel_id, message_id, &name, auto_archive_minutes)
-							.await
+						rest.start_thread(
+							channel_id,
+							message_id,
+							&name,
+							auto_archive_minutes,
+							kind,
+							invitable,
+						)
+						.await
 					});
 				}
+			}
+			Command::AddThreadMember { thread_id, user_id } => {
+				self.spawn_action("add thread member", move |rest| async move {
+					rest.add_thread_member(thread_id, user_id).await
+				});
 			}
 			Command::JoinThread { thread_id } => self.spawn_action("join thread", move |rest| async move {
 				rest.join_thread(thread_id).await
@@ -233,31 +248,29 @@ impl Core {
 				self.patch_thread_settings(thread_id, json!({ "flags": ThreadMember::level_flag(level) }))
 			}
 			Command::LoadArchivedThreads { channel_id } => {
-				let before = {
+				let (before, private_scope) = {
 					let state = self.state.read();
-					state
-						.archived_threads_has_more(channel_id)
-						.then(|| {
-							state
-								.archived_threads(channel_id)
-								.last()
-								.and_then(|thread| thread.thread_metadata.as_ref()?.archive_timestamp)
-								.map(timestamp)
-						})
-						.flatten()
+					let before = state.archived_threads_cursor(channel_id).map(timestamp);
+					let private_scope = (before.is_none()
+						&& state
+							.channel(channel_id)
+							.is_some_and(|channel| channel.kind == ChannelType::GuildText))
+					.then(|| {
+						if state
+							.my_permissions(channel_id)
+							.contains(Permissions::MANAGE_THREADS)
+						{
+							ArchivedScope::Private
+						} else {
+							ArchivedScope::JoinedPrivate
+						}
+					});
+					(before, private_scope)
 				};
-				self.spawn_load("archived threads", move |rest| async move {
-					let list = rest
-						.threads_archived(channel_id, before.as_deref(), Some(ARCHIVED_PAGE))
-						.await?;
-					Ok(Loaded::ArchivedThreads {
-						channel_id,
-						threads: list.threads.into_vec(),
-						members: list.members.into_vec(),
-						has_more: list.has_more,
-						append: before.is_some(),
-					})
-				});
+				self.load_archived_threads(channel_id, ArchivedScope::Public, before);
+				if let Some(scope) = private_scope {
+					self.load_archived_threads(channel_id, scope, None);
+				}
 			}
 			Command::LoadActiveThreads { guild_id } => {
 				self.spawn_load("active threads", move |rest| async move {
@@ -476,6 +489,43 @@ impl Core {
 		if self.state.read().pins(channel_id).is_some() {
 			self.load_pins(channel_id, None);
 		}
+	}
+
+	fn thread_start(&self, channel_id: Snowflake, private: bool) -> (ChannelType, Permissions, &'static str) {
+		if private {
+			return (
+				ChannelType::PrivateThread,
+				Permissions::CREATE_PRIVATE_THREADS,
+				"Create Private Threads",
+			);
+		}
+		let announcement = self
+			.state
+			.read()
+			.channel(channel_id)
+			.is_some_and(|channel| channel.kind == ChannelType::GuildAnnouncement);
+		let kind = if announcement {
+			ChannelType::AnnouncementThread
+		} else {
+			ChannelType::PublicThread
+		};
+		(kind, Permissions::CREATE_PUBLIC_THREADS, "Create Public Threads")
+	}
+
+	fn load_archived_threads(&self, channel_id: Snowflake, scope: ArchivedScope, before: Option<String>) {
+		self.spawn_load("archived threads", move |rest| async move {
+			let list = rest
+				.threads_archived(channel_id, scope, before.as_deref(), Some(ARCHIVED_PAGE))
+				.await?;
+			Ok(Loaded::ArchivedThreads {
+				channel_id,
+				threads: list.threads.into_vec(),
+				members: list.members.into_vec(),
+				has_more: list.has_more,
+				append: before.is_some(),
+				private: scope != ArchivedScope::Public,
+			})
+		});
 	}
 
 	fn load_pins(&self, channel_id: Snowflake, before: Option<DateTime<Utc>>) {

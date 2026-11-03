@@ -9,6 +9,7 @@ use gpui_component::menu::DropdownMenu as _;
 use protocol::{ChannelType, Permissions, Snowflake};
 use session::Command;
 
+use super::invite;
 use super::menu::{ThreadFacts, thread_menu};
 use crate::components::IconButton;
 use crate::data::Data;
@@ -50,6 +51,7 @@ impl EventEmitter<ThreadPanelEvent> for ThreadPanel {}
 struct Header {
 	facts: ThreadFacts,
 	members: i64,
+	can_invite: bool,
 }
 
 impl ThreadPanel {
@@ -144,6 +146,10 @@ impl ThreadPanel {
 			.parent_id
 			.and_then(|parent| state.channel(parent))
 			.is_some_and(|parent| matches!(parent.kind, ChannelType::GuildForum | ChannelType::GuildMedia));
+		let invitable = metadata.is_none_or(|metadata| metadata.invitable != Some(false));
+		let can_invite = channel.kind == ChannelType::PrivateThread
+			&& !metadata.is_some_and(|metadata| metadata.archived)
+			&& (moderate || (channel.member.is_some() && invitable));
 		Some(Header {
 			facts: ThreadFacts {
 				thread,
@@ -159,6 +165,7 @@ impl ThreadPanel {
 				full: self.full,
 			},
 			members: channel.member_count.unwrap_or(0),
+			can_invite,
 		})
 	}
 
@@ -181,6 +188,8 @@ impl ThreadPanel {
 		} else {
 			(IconKind::Expand, "thread-open-full-view")
 		};
+		let thread = header.facts.thread;
+		let guild = header.facts.guild;
 		div()
 			.flex()
 			.flex_none()
@@ -216,6 +225,15 @@ impl ThreadPanel {
 					)
 					.child(header.members.to_string()),
 			)
+			.when_some(guild.filter(|_| header.can_invite), |bar, guild| {
+				bar.child(
+					IconButton::new("thread-add-members", IconKind::FriendRequests)
+						.tooltip(cx.t("thread-add-members"))
+						.on_click(cx.listener(move |this, _, window, cx| {
+							invite::open(window, cx, this.data.clone(), guild, thread);
+						})),
+				)
+			})
 			.child(
 				div()
 					.flex()
@@ -281,6 +299,12 @@ impl ThreadPanel {
 								})),
 						)
 					})
+					.into_any_element(),
+			);
+		}
+		if header.facts.locked && !header.facts.can_moderate {
+			return Some(
+				bar.child(div().flex_1().min_w_0().child(cx.t("thread-locked-notice")))
 					.into_any_element(),
 			);
 		}

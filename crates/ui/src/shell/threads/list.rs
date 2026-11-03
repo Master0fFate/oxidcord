@@ -6,7 +6,7 @@ use gpui::{
 use gpui_component::Sizable as _;
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::scroll::ScrollableElement as _;
-use protocol::{Channel, Permissions, Snowflake};
+use protocol::{Channel, ChannelType, Permissions, Snowflake};
 use session::Command;
 
 use crate::components::{IconButton, PickHandler, segmented};
@@ -34,6 +34,7 @@ struct Entry {
 	detail: SharedString,
 	joined: bool,
 	archived: bool,
+	private: bool,
 }
 
 pub struct ThreadList {
@@ -96,6 +97,7 @@ impl ThreadList {
 				.thread_metadata
 				.as_ref()
 				.is_some_and(|metadata| metadata.archived),
+			private: thread.kind == ChannelType::PrivateThread,
 		}
 	}
 
@@ -131,17 +133,26 @@ impl ThreadList {
 	}
 
 	fn can_create(&self, cx: &Context<Self>) -> bool {
-		self.data
-			.read(cx)
-			.state()
-			.my_permissions(self.channel)
-			.contains(Permissions::CREATE_PUBLIC_THREADS)
+		let data = self.data.read(cx);
+		let state = data.state();
+		let permissions = state.my_permissions(self.channel);
+		permissions.contains(Permissions::CREATE_PUBLIC_THREADS)
+			|| (permissions.contains(Permissions::CREATE_PRIVATE_THREADS)
+				&& state
+					.channel(self.channel)
+					.is_some_and(|channel| channel.kind == ChannelType::GuildText))
 	}
 
 	fn row(&self, entry: &Entry, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
 		let id = entry.id;
 		let joined = entry.joined;
-		let archived = entry.archived;
+		let icon = if entry.archived {
+			IconKind::Archive
+		} else if entry.private {
+			IconKind::Lock
+		} else {
+			IconKind::Thread
+		};
 		div()
 			.id(("thread-entry", id.get()))
 			.flex()
@@ -155,13 +166,9 @@ impl ThreadList {
 			.hover(|style| style.bg(theme.modifier_hover))
 			.on_click(cx.listener(move |_, _, _, cx| cx.emit(ThreadListEvent::Open(id))))
 			.child(
-				Icon::new(if archived {
-					IconKind::Archive
-				} else {
-					IconKind::Thread
-				})
-				.size(theme.glyph_lg)
-				.color(theme.interactive_normal),
+				Icon::new(icon)
+					.size(theme.glyph_lg)
+					.color(theme.interactive_normal),
 			)
 			.child(
 				div()

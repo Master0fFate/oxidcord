@@ -6,5 +6,5 @@ mod guild_admin;
 mod guilds;
 mod users;
 
-pub use channels::{SearchQuery, ThreadList};
+pub use channels::{ArchivedScope, SearchQuery, ThreadList};
 pub use guild_admin::image_data_uri;

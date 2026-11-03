@@ -2,7 +2,7 @@ use std::cmp::Reverse;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
-use protocol::{Channel, ChannelFlags, ForumSortOrder, Message, Snowflake, ThreadMember};
+use protocol::{Channel, ChannelFlags, ForumSortOrder, Message, Permissions, Snowflake, ThreadMember};
 
 use crate::changes::Changes;
 use crate::guild::is_thread;
@@ -57,6 +57,15 @@ impl State {
 	pub fn forum_starter(&self, post_id: Snowflake) -> Option<&Arc<Message>> {
 		let cache = self.messages.get(&post_id)?;
 		cache.by_id.get(&post_id).or_else(|| cache.ordered.first())
+	}
+
+	pub fn thread_locked(&self, channel_id: Snowflake) -> bool {
+		self.channel(channel_id)
+			.and_then(|thread| thread.thread_metadata.as_ref())
+			.is_some_and(|metadata| metadata.locked)
+			&& !self
+				.my_permissions(channel_id)
+				.contains(Permissions::MANAGE_THREADS)
 	}
 
 	pub fn forum_posts(&self, channel_id: Snowflake) -> Vec<ForumPost> {

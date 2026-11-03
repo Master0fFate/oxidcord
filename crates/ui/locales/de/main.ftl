@@ -82,6 +82,7 @@ message-more = Mehr
 composer-placeholder = Nachricht an #{ $name }
 composer-placeholder-direct = Nachricht an @{ $name }
 composer-no-permission = Du darfst in diesem Kanal keine Nachrichten senden.
+composer-thread-locked = Dieser Thread ist gesperrt.
 composer-attach = Datei hochladen
 composer-gift = Geschenk senden
 composer-gif = GIF-Auswahl öffnen

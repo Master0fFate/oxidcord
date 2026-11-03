@@ -108,6 +108,7 @@ message-more = More
 composer-placeholder = Message #{ $name }
 composer-placeholder-direct = Message @{ $name }
 composer-no-permission = You do not have permission to send messages in this channel.
+composer-thread-locked = This thread is locked.
 composer-attach = Upload a File
 mention-role = Role
 mention-everyone = Notify everyone

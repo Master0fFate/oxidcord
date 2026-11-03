@@ -3,12 +3,13 @@ use std::rc::Rc;
 use gpui::{
 	AnyElement, App, AppContext as _, Context, Entity, EventEmitter, Focusable as _, IntoElement,
 	ParentElement as _, Render, SharedString, Styled as _, Subscription, Window, div,
+	prelude::FluentBuilder as _,
 };
 use gpui_component::input::{Input, InputEvent, InputState};
-use protocol::Snowflake;
+use protocol::{ChannelType, Permissions, Snowflake};
 use session::Command;
 
-use crate::components::{PickHandler, dialog_footer, field, select};
+use crate::components::{PickHandler, ToggleHandler, dialog_footer, field, select, switch_row};
 use crate::data::Data;
 use crate::i18n::Translate as _;
 use crate::shell::community::modal::{self, Close};
@@ -24,6 +25,13 @@ pub(super) const ARCHIVE_KEYS: [&str; 4] = [
 ];
 const DEFAULT_ARCHIVE: usize = 1;
 
+#[derive(Clone, Copy)]
+struct Options {
+	private: bool,
+	offer_private: bool,
+	moderator: bool,
+}
+
 pub struct CreateThread {
 	data: Entity<Data>,
 	channel: Snowflake,
@@ -31,6 +39,8 @@ pub struct CreateThread {
 	preview: Option<SharedString>,
 	name: Entity<InputState>,
 	archive: usize,
+	invitable: bool,
+	options: Options,
 	_subscription: Subscription,
 }
 
@@ -54,12 +64,28 @@ pub fn open(
 				SharedString::from(content)
 			})
 	});
-	let initial = preview.clone().unwrap_or_default();
-	let view = cx.new(|cx| CreateThread::new(data, channel, message, preview, &initial, window, cx));
+	let options = thread_options(&data, channel, message, cx);
+	let view = cx.new(|cx| CreateThread::new(data, channel, message, preview, options, window, cx));
 	let focus = view.read(cx).name.read(cx).focus_handle(cx);
 	let title = cx.t("thread-create-title");
 	let width = cx.global::<Theme>().modal_width_sm;
 	modal::open(window, cx, title, width, &view, Some(focus));
+}
+
+fn thread_options(data: &Entity<Data>, channel: Snowflake, message: Option<Snowflake>, cx: &App) -> Options {
+	let data = data.read(cx);
+	let state = data.state();
+	let permissions = state.my_permissions(channel);
+	let text = state
+		.channel(channel)
+		.is_some_and(|parent| parent.kind == ChannelType::GuildText);
+	let can_private = message.is_none() && text && permissions.contains(Permissions::CREATE_PRIVATE_THREADS);
+	let can_public = permissions.contains(Permissions::CREATE_PUBLIC_THREADS);
+	Options {
+		private: can_private && !can_public,
+		offer_private: can_private && can_public,
+		moderator: permissions.contains(Permissions::MANAGE_THREADS),
+	}
 }
 
 impl CreateThread {
@@ -68,14 +94,15 @@ impl CreateThread {
 		channel: Snowflake,
 		message: Option<Snowflake>,
 		preview: Option<SharedString>,
-		initial: &str,
+		options: Options,
 		window: &mut Window,
 		cx: &mut Context<Self>,
 	) -> Self {
 		let placeholder = cx.t("thread-name-placeholder");
+		let initial = preview.clone().unwrap_or_default();
 		let name = cx.new(|cx| {
 			let mut state = InputState::new(window, cx).placeholder(placeholder);
-			state.set_value(initial.to_owned(), window, cx);
+			state.set_value(initial, window, cx);
 			state
 		});
 		let subscription =
@@ -95,6 +122,8 @@ impl CreateThread {
 			preview,
 			name,
 			archive: DEFAULT_ARCHIVE,
+			invitable: true,
+			options,
 			_subscription: subscription,
 		}
 	}
@@ -119,6 +148,8 @@ impl CreateThread {
 			message_id: self.message,
 			name,
 			auto_archive_minutes: ARCHIVE_MINUTES[self.archive],
+			private: self.options.private,
+			invitable: self.invitable,
 		});
 		cx.emit(Close);
 	}
@@ -132,6 +163,22 @@ impl Render for CreateThread {
 		let pick: PickHandler = Rc::new(move |index, _, cx| {
 			weak.update(cx, |this, cx| {
 				this.archive = index;
+				cx.notify();
+			})
+			.ok();
+		});
+		let weak = cx.weak_entity();
+		let private: ToggleHandler = Rc::new(move |value, _, cx| {
+			weak.update(cx, |this, cx| {
+				this.options.private = value;
+				cx.notify();
+			})
+			.ok();
+		});
+		let weak = cx.weak_entity();
+		let invitable: ToggleHandler = Rc::new(move |value, _, cx| {
+			weak.update(cx, |this, cx| {
+				this.invitable = value;
 				cx.notify();
 			})
 			.ok();
@@ -170,6 +217,26 @@ impl Render for CreateThread {
 					pick,
 				),
 			))
+			.when(self.options.offer_private, |form| {
+				form.child(switch_row(
+					"thread-private",
+					cx.t("thread-private"),
+					None,
+					self.options.private,
+					&theme,
+					private,
+				))
+			})
+			.when(self.options.private && self.options.moderator, |form| {
+				form.child(switch_row(
+					"thread-invitable",
+					cx.t("thread-invitable"),
+					None,
+					self.invitable,
+					&theme,
+					invitable,
+				))
+			})
 			.child(dialog_footer(
 				cx.t("action-cancel"),
 				cx.t("thread-create-confirm"),

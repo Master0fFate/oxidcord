@@ -83,6 +83,7 @@ message-more = Více
 composer-placeholder = Napsat do #{ $name }
 composer-placeholder-direct = Napsat @{ $name }
 composer-no-permission = V tomto kanálu nemáš oprávnění posílat zprávy.
+composer-thread-locked = Toto vlákno je zamčené.
 composer-attach = Nahrát soubor
 composer-gift = Poslat dárek
 composer-gif = Otevřít výběr GIFů

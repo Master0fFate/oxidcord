@@ -40,6 +40,7 @@ pub enum Loaded {
 		members: Vec<ThreadMember>,
 		has_more: bool,
 		append: bool,
+		private: bool,
 	},
 	ActiveThreads {
 		guild_id: Snowflake,
@@ -236,6 +237,7 @@ pub(crate) struct PinList {
 #[derive(Debug, Default)]
 pub(crate) struct ArchivedThreads {
 	pub(crate) ids: Vec<Snowflake>,
+	pub(crate) private_ids: Vec<Snowflake>,
 	pub(crate) has_more: bool,
 }
 
@@ -545,15 +547,20 @@ impl State {
 				members,
 				has_more,
 				append,
+				private,
 			} => {
 				let guild_id = self.channel_guild(*channel_id);
 				let ids = self.store_threads(guild_id, threads, members, &mut changes);
 				let entry = self.lazy.archived.entry(*channel_id).or_default();
-				if !*append {
-					entry.ids.clear();
+				if *private {
+					entry.private_ids = ids;
+				} else {
+					if !*append {
+						entry.ids.clear();
+					}
+					entry.ids.extend(ids);
+					entry.has_more = *has_more;
 				}
-				entry.ids.extend(ids);
-				entry.has_more = *has_more;
 				changes.loaded.insert(*channel_id);
 			}
 			Loaded::ActiveThreads {
@@ -899,14 +906,24 @@ impl State {
 		let Some(archived) = self.lazy.archived.get(&channel_id) else {
 			return Vec::new();
 		};
-		archived.ids.iter().filter_map(|id| self.channel(*id)).collect()
+		archived
+			.ids
+			.iter()
+			.chain(&archived.private_ids)
+			.filter_map(|id| self.channel(*id))
+			.collect()
 	}
 
-	pub fn archived_threads_has_more(&self, channel_id: Snowflake) -> bool {
-		self.lazy
+	pub fn archived_threads_cursor(&self, channel_id: Snowflake) -> Option<DateTime<Utc>> {
+		let archived = self
+			.lazy
 			.archived
 			.get(&channel_id)
-			.is_some_and(|archived| archived.has_more)
+			.filter(|archived| archived.has_more)?;
+		self.channel(*archived.ids.last()?)?
+			.thread_metadata
+			.as_ref()?
+			.archive_timestamp
 	}
 
 	pub fn profile(&self, user_id: Snowflake) -> Option<&UserProfile> {
