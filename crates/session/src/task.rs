@@ -15,7 +15,7 @@ use protocol::gateway::IdentifyProperties;
 use protocol::{
 	AllowedMentions, Channel, ChannelType, CreateMessage, DISCORD_EPOCH_MS, DispatchEvent, EditMessage,
 	Message, MessageAck, MessageFlags, MessageReference, MessagesQuery, Nonce, ProtoCustomStatus, Snowflake,
-	Token, User,
+	Token, User, VoiceState,
 };
 use rest::api::SearchQuery;
 use rest::{RestClient, RestError};
@@ -676,6 +676,14 @@ impl Core {
 			}
 			DispatchEvent::MessageAck(ack) => self.persist_read_state(ack.channel_id),
 			DispatchEvent::VoiceStateUpdate(update) => self.voice_state_update(&update),
+			DispatchEvent::PassiveUpdateV2(update) if self.voice.target().is_some() => {
+				for voice in update.updated_voice_states.iter() {
+					self.voice_state_update(&VoiceState {
+						guild_id: voice.guild_id.or(Some(update.guild_id)),
+						..voice.clone()
+					});
+				}
+			}
 			DispatchEvent::VoiceServerUpdate(update) => self.voice_server_update(update),
 			DispatchEvent::StreamCreate(stream) => self.stream_created(&stream),
 			DispatchEvent::StreamServerUpdate(update) => self.stream_server_updated(update),
