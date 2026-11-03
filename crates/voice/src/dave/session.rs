@@ -512,20 +512,31 @@ impl DaveSession {
 	}
 
 	fn apply(&mut self, transition: Transition) {
-		{
+		let announced = {
 			let mut crypto = self.crypto.lock();
 			match (transition.version, transition.own) {
-				(0, _) => crypto.stop_sending(),
-				(_, Some(own)) => crypto.start_sending(own),
-				(_, None) => crypto.block_sending(),
+				(0, _) => {
+					crypto.stop_sending();
+					true
+				}
+				(_, Some(own)) => {
+					crypto.start_sending(own);
+					true
+				}
+				(_, None) => {
+					crypto.block_sending();
+					false
+				}
 			}
+		};
+		if announced {
+			self.events.push(DaveEvent::Epoch {
+				epoch: transition.epoch,
+				version: transition.version,
+				members: transition.members,
+				privacy_code: transition.privacy_code,
+			});
 		}
-		self.events.push(DaveEvent::Epoch {
-			epoch: transition.epoch,
-			version: transition.version,
-			members: transition.members,
-			privacy_code: transition.privacy_code,
-		});
 	}
 
 	fn derive_keys(&self) -> Result<EpochKeys> {

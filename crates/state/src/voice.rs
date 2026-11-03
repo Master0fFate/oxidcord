@@ -412,9 +412,10 @@ impl State {
 
 	pub(crate) fn voice_e2ee(&mut self, info: Option<E2eeInfo>) -> Changes {
 		self.edit_voice(|session| {
-			let changed = session.e2ee != info || session.e2ee_failed;
+			let failed = session.e2ee_failed && info.as_ref().is_some_and(|info| info.privacy_code.is_none());
+			let changed = session.e2ee != info || session.e2ee_failed != failed;
 			session.e2ee = info;
-			session.e2ee_failed = false;
+			session.e2ee_failed = failed;
 			changed
 		})
 	}
