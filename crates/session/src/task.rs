@@ -144,6 +144,7 @@ pub(crate) enum Internal {
 		db: Option<Arc<Database>>,
 	},
 	RestoreRead(Vec<ReadSnapshot>),
+	RestoreSettings(LocalEvent),
 	RestoreChannels(Vec<(Snowflake, Option<i64>, Option<Snowflake>)>),
 	FriendRequestSent(String),
 	FriendRequestFailed {
@@ -900,6 +901,7 @@ impl Core {
 			Internal::PluginApplied { loaded, answer } => self.on_plugin_applied(loaded, answer),
 			Internal::Rejected(reason) => self.reject(reason),
 			Internal::CacheOpened { user_id, db } => self.on_cache_opened(user_id, db),
+			Internal::RestoreSettings(undo) => self.apply_local(undo),
 			Internal::RestoreRead(snapshots) => {
 				for snapshot in snapshots {
 					self.apply_dispatch(&DispatchEvent::MessageAck(MessageAck {

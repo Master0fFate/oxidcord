@@ -12,6 +12,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::changes::Changes;
+use crate::event::LocalEvent;
 use crate::state::State;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -125,23 +126,31 @@ impl State {
 		self.status_patch(status)
 	}
 
-	pub fn privacy_patch(&mut self, change: PrivacyChange) -> String {
+	pub fn privacy_patch(&mut self, change: PrivacyChange) -> (String, LocalEvent) {
+		let undo = LocalEvent::RestorePrivacy(self.proto_privacy.clone());
 		self.proto_privacy = privacy_with(&self.proto_privacy, change);
 		self.privacy = decode_privacy(&self.proto_privacy);
-		encode_settings(&ProtoSettings {
+		let patch = encode_settings(&ProtoSettings {
 			privacy_bytes: Some(self.proto_privacy.clone()),
 			..ProtoSettings::default()
-		})
+		});
+		(patch, undo)
 	}
 
-	pub fn explicit_media_patch(&mut self, scope: MediaScope, redaction: MediaRedaction) -> String {
+	pub fn explicit_media_patch(
+		&mut self,
+		scope: MediaScope,
+		redaction: MediaRedaction,
+	) -> (String, LocalEvent) {
+		let undo = LocalEvent::RestoreSensitiveMedia(self.proto_text_and_images.clone());
 		self.proto_text_and_images =
 			text_and_images_with_explicit(&self.proto_text_and_images, scope, redaction);
 		self.sensitive_media = merge_sensitive_media(self.sensitive_media, &self.proto_text_and_images);
-		encode_settings(&ProtoSettings {
+		let patch = encode_settings(&ProtoSettings {
 			text_and_images_bytes: Some(self.proto_text_and_images.clone()),
 			..ProtoSettings::default()
-		})
+		});
+		(patch, undo)
 	}
 
 	fn status_patch(&mut self, mut status: Vec<u8>) -> String {
@@ -239,7 +248,7 @@ impl State {
 		changes
 	}
 
-	fn replace_sensitive_media(&mut self, bytes: &[u8], partial: bool) -> Changes {
+	pub(crate) fn replace_sensitive_media(&mut self, bytes: &[u8], partial: bool) -> Changes {
 		self.proto_text_and_images = if partial {
 			merge_fields(&self.proto_text_and_images, bytes)
 		} else {
@@ -259,7 +268,7 @@ impl State {
 		}
 	}
 
-	fn replace_privacy_settings(&mut self, bytes: Vec<u8>) -> Changes {
+	pub(crate) fn replace_privacy_settings(&mut self, bytes: Vec<u8>) -> Changes {
 		let privacy = decode_privacy(&bytes);
 		let changed = privacy != self.privacy;
 		self.proto_privacy = bytes;

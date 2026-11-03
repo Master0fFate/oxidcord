@@ -914,15 +914,17 @@ impl Core {
 			} => self.mark_unread(channel_id, message_id),
 			Command::SetShowCurrentGame(shown) => {
 				let patch = self.state.write().show_current_game_patch(shown);
-				self.patch_settings_proto(patch, "activity sharing");
+				self.patch_settings_proto(patch, "activity sharing", None);
 			}
 			Command::SetPrivacy(change) => {
-				let patch = self.state.write().privacy_patch(change);
-				self.patch_settings_proto(patch, "privacy");
+				let (patch, undo) = self.state.write().privacy_patch(change);
+				self.apply_local(LocalEvent::SettingsEdited);
+				self.patch_settings_proto(patch, "privacy", Some(undo));
 			}
 			Command::SetExplicitMedia { scope, redaction } => {
-				let patch = self.state.write().explicit_media_patch(scope, redaction);
-				self.patch_settings_proto(patch, "sensitive media");
+				let (patch, undo) = self.state.write().explicit_media_patch(scope, redaction);
+				self.apply_local(LocalEvent::SettingsEdited);
+				self.patch_settings_proto(patch, "sensitive media", Some(undo));
 			}
 			Command::SetGuildLayout(layout) => {
 				self.set_guild_layout(&layout);
@@ -977,7 +979,7 @@ impl Core {
 				});
 				self.custom_status = None;
 				let patch = self.state.write().custom_status_patch(custom.as_ref());
-				self.patch_settings_proto(patch, "custom status");
+				self.patch_settings_proto(patch, "custom status", None);
 			}
 			Command::SetStatus(status) => {
 				let body = json!({ "status": status.as_str() });
@@ -1865,11 +1867,20 @@ impl Core {
 		});
 	}
 
-	fn patch_settings_proto(&self, patch: String, what: &'static str) {
-		self.spawn_load(what, move |rest| async move {
-			Ok(Loaded::SettingsProto(
-				rest.patch_user_settings_proto(patch).await?,
-			))
+	fn patch_settings_proto(&self, patch: String, what: &'static str, undo: Option<LocalEvent>) {
+		let rest = self.rest.clone();
+		let internal = self.internal.clone();
+		self.runtime.spawn(async move {
+			let message = match rest.patch_user_settings_proto(patch).await {
+				Ok(encoded) => Internal::Loaded(Loaded::SettingsProto(encoded)),
+				Err(error) => {
+					if let Some(undo) = undo {
+						let _ = internal.send(Internal::RestoreSettings(undo));
+					}
+					rest_failure(what, &error)
+				}
+			};
+			let _ = internal.send(message);
 		});
 	}
 
