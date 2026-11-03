@@ -40,7 +40,7 @@ mod voice;
 
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use gpui::{
 	Anchor, AnyElement, App, AppContext as _, ClickEvent, Context, Entity, EventEmitter, FocusHandle,
@@ -113,6 +113,7 @@ const SIDEBAR_MIN_WIDTH: f32 = 900.;
 const WINDOW_TITLE: &str = "Oxidcord";
 const NOTIFICATION_BODY_LIMIT: usize = 140;
 const NOTIFICATION_ICON_SIZE: u32 = 64;
+const NOTIFICATION_ICON_WAIT: Duration = Duration::from_millis(1500);
 const RECENT_TARGETS: usize = 8;
 
 pub enum ShellEvent {
@@ -1334,10 +1335,13 @@ impl Shell {
 			let clicks = self.notification_clicks.clone();
 			let media = media.clone();
 			media.runtime().clone().spawn(async move {
-				notification.icon_path = media
-					.icon_file(&avatar, SizeHint::square(NOTIFICATION_ICON_SIZE))
-					.await
-					.ok();
+				notification.icon_path = tokio::time::timeout(
+					NOTIFICATION_ICON_WAIT,
+					media.icon_file(&avatar, SizeHint::square(NOTIFICATION_ICON_SIZE)),
+				)
+				.await
+				.ok()
+				.and_then(Result::ok);
 				platform::notifications::show_with_click(notification, move || {
 					clicks.send(Notified::Channel(channel)).ok();
 				});
