@@ -299,7 +299,16 @@ impl Core {
 					self.try_connect();
 				} else {
 					self.voice.target = Some(Target { channel_id, ..target });
-					self.hold_connection(None);
+					if self.voice.server.is_some() {
+						self.hold_connection(None);
+						self.apply_local(LocalEvent::VoiceSelf {
+							self_mute: self.voice.self_mute,
+							self_deaf: self.voice.self_deaf,
+						});
+						self.apply_local(LocalEvent::CameraChanged(self.voice.camera));
+					} else {
+						self.announce(VoiceStatus::Connecting);
+					}
 				}
 			}
 			None if self.voice.session_id.is_some() => {
@@ -345,7 +354,7 @@ impl Core {
 		match self.voice.closed_with.take() {
 			Some(code) => self.end_voice(Some(close_reason(Some(code))), false),
 			None if self.voice.server.is_some() => self.try_connect(),
-			None => self.end_voice(Some("voice server did not respond".to_owned()), true),
+			None => {}
 		}
 	}
 

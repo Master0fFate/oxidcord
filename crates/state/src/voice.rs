@@ -126,13 +126,16 @@ impl State {
 		let changed = match (status, self.voice.as_mut()) {
 			(VoiceStatus::Disconnected { reason: None }, _) => self.voice.take().is_some(),
 			(status, Some(session)) if session.channel_id == channel_id && session.guild_id == guild_id => {
-				let changed = session.status != *status;
+				let mut changed = session.status != *status;
 				session.status = status.clone();
+				if *status != VoiceStatus::Connected && !session.speaking.is_empty() {
+					session.speaking.clear();
+					changed = true;
+				}
 				if *status == VoiceStatus::Connected && session.connected_at.is_none() {
 					session.connected_at = Some(Utc::now());
 				}
 				if matches!(status, VoiceStatus::Disconnected { .. }) {
-					session.speaking.clear();
 					session.camera_on = false;
 					session.screen_share = None;
 					session.watching = None;
