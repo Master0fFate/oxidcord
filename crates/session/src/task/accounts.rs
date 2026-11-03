@@ -6,13 +6,9 @@ use store::{Database, Store};
 use super::{Core, Internal};
 
 fn known_account(store: &Store, token: &Token) -> Option<Snowflake> {
-	let saved_token = |user_id| store.accounts.token_for(user_id).ok().flatten();
 	match token.user_id() {
-		Some(user_id) => saved_token(user_id).map(|_| user_id),
-		None => {
-			let current = store.accounts.current()?;
-			(saved_token(current).as_deref() == Some(token.as_str())).then_some(current)
-		}
+		Some(user_id) => store.accounts.token_for(user_id).ok().flatten().map(|_| user_id),
+		None => store.accounts.current(),
 	}
 }
 
