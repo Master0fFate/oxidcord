@@ -59,7 +59,6 @@ pub use views::{
 };
 pub use voice::{
 	Call, DisconnectReason, E2eeInfo, E2eeMember, MicTest, SoundBlock, StreamInfo, StreamSummary,
-	VOICE_EFFECT_LIFETIME,
-	VideoKind, VoiceCue, VoiceCueEntry, VoiceEffect, VoiceLevels, VoiceSession, VoiceStats, VoiceStatus,
-	stream_user,
+	VOICE_EFFECT_LIFETIME, VideoKind, VoiceCue, VoiceCueEntry, VoiceEffect, VoiceLevels, VoiceSession,
+	VoiceStats, VoiceStatus, stream_user,
 };
