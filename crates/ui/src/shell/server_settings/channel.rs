@@ -24,6 +24,7 @@ use crate::data::Data;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind, channel_icon};
 use crate::model::role_color;
+use crate::shell::community::access::GuildAccess;
 use crate::shell::community::data_handle;
 use crate::shell::community::modal::{self, Close};
 use crate::theme::Theme;
@@ -1037,6 +1038,8 @@ impl Render for CreateChannel {
 		let theme = Theme::current(cx);
 		let kind = self.chosen_kind();
 		let enabled = !normalize(&self.name.read(cx).value(), kind).is_empty();
+		let can_private =
+			GuildAccess::of(&self.data.read(cx).state(), self.guild).has(Permissions::MANAGE_ROLES);
 		let weak_cancel = cx.weak_entity();
 		let weak_create = cx.weak_entity();
 		let weak_private = cx.weak_entity();
@@ -1063,18 +1066,20 @@ impl Render for CreateChannel {
 				&theme,
 				Input::new(&self.name),
 			))
-			.child(switch_row(
-				"channel-private",
-				cx.t(if self.category {
-					"channel-private-category"
-				} else {
-					"channel-private"
-				}),
-				Some(cx.t("channel-private-hint")),
-				self.private,
-				&theme,
-				private,
-			))
+			.when(can_private, |form| {
+				form.child(switch_row(
+					"channel-private",
+					cx.t(if self.category {
+						"channel-private-category"
+					} else {
+						"channel-private"
+					}),
+					Some(cx.t("channel-private-hint")),
+					self.private,
+					&theme,
+					private,
+				))
+			})
 			.child(dialog_footer(
 				cx.t("action-cancel"),
 				cx.t(if self.category {

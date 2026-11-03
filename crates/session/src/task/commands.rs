@@ -46,13 +46,22 @@ fn png(bytes: &[u8]) -> Value {
 	Value::String(image_data_uri(PNG, bytes))
 }
 
-fn private_overwrites(guild_id: Snowflake) -> Value {
-	json!([{
+fn private_overwrites(guild_id: Snowflake, creator: Option<Snowflake>) -> Value {
+	let mut overwrites = vec![json!({
 		"id": guild_id,
 		"type": i64::from(PermissionOverwriteKind::Role),
 		"allow": Permissions::empty(),
 		"deny": Permissions::VIEW_CHANNEL,
-	}])
+	})];
+	if let Some(creator) = creator {
+		overwrites.push(json!({
+			"id": creator,
+			"type": i64::from(PermissionOverwriteKind::Member),
+			"allow": Permissions::VIEW_CHANNEL,
+			"deny": Permissions::empty(),
+		}));
+	}
+	Value::Array(overwrites)
 }
 
 fn guild_edit_body(edit: GuildEdit) -> Value {
@@ -1111,14 +1120,24 @@ impl Core {
 				parent_id,
 				private,
 			} => {
-				if self.guild_allows(guild_id, Permissions::MANAGE_CHANNELS, "Manage Channels") {
+				if self.guild_allows(guild_id, Permissions::MANAGE_CHANNELS, "Manage Channels")
+					&& (!private || self.guild_allows(guild_id, Permissions::MANAGE_ROLES, "Manage Roles"))
+				{
+					let creator = {
+						let state = self.state.read();
+						state.current_user_id().filter(|me| {
+							!state
+								.guild_permissions(guild_id, *me)
+								.contains(Permissions::ADMINISTRATOR)
+						})
+					};
 					let body = object([
 						("name", Some(json!(name))),
 						("type", Some(json!(i64::from(kind)))),
 						("parent_id", parent_id.map(|id| json!(id))),
 						(
 							"permission_overwrites",
-							private.then(|| private_overwrites(guild_id)),
+							private.then(|| private_overwrites(guild_id, creator)),
 						),
 					]);
 					self.spawn_action("create channel", move |rest| async move {
