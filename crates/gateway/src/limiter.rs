@@ -30,6 +30,7 @@ impl SendWindow {
 	}
 
 	pub fn record(&mut self) {
+		self.expire();
 		self.sent.push_back(Instant::now());
 	}
 
