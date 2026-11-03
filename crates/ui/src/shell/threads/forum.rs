@@ -75,7 +75,7 @@ fn first_image(attachments: &[Attachment]) -> Option<String> {
 	})
 }
 
-fn tag_label(tag: &ForumTag) -> SharedString {
+pub(super) fn tag_label(tag: &ForumTag) -> SharedString {
 	match tag.emoji_name.as_deref().filter(|emoji| !emoji.is_empty()) {
 		Some(emoji) => format!("{emoji} {}", tag.name).into(),
 		None => tag.name.clone().into(),

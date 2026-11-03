@@ -4,6 +4,7 @@ pub mod bans;
 pub mod channel;
 mod channel_voice;
 pub mod emoji;
+pub mod forum_settings;
 pub mod invites;
 pub mod kit;
 pub mod members;

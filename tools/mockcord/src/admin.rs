@@ -2,9 +2,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use chrono::{DateTime, Duration, Utc};
 use protocol::{
-	Channel, ChannelFlags, ChannelType, Emoji, LenientVec, Member, MessageType, PermissionOverwrite,
-	PermissionOverwriteKind, Permissions, Relationship, RelationshipKind, Role, RoleColors, Snowflake,
-	UserGuildSettings, VideoQualityMode,
+	Channel, ChannelFlags, ChannelType, Emoji, ForumLayout, ForumSortOrder, ForumTag, LenientVec, Member,
+	MessageType, PermissionOverwrite, PermissionOverwriteKind, Permissions, Relationship, RelationshipKind,
+	Role, RoleColors, Snowflake, UserGuildSettings, VideoQualityMode,
 };
 use serde_json::{Value, json};
 
@@ -255,6 +255,22 @@ fn guild_payload(store: &Store, guild: &GuildFixture) -> Value {
 
 fn permissions_of(value: &Value) -> Permissions {
 	serde_json::from_value(value.clone()).unwrap_or_else(|_| Permissions::empty())
+}
+
+fn tags_of(value: &Value, mut next_id: impl FnMut() -> u64) -> LenientVec<ForumTag> {
+	value
+		.as_array()
+		.into_iter()
+		.flatten()
+		.filter_map(|entry| {
+			let mut tag: ForumTag = serde_json::from_value(entry.clone()).ok()?;
+			if tag.id == Snowflake::default() {
+				tag.id = Snowflake(next_id());
+			}
+			Some(tag)
+		})
+		.collect::<Vec<_>>()
+		.into()
 }
 
 fn overwrites_of(value: &Value) -> LenientVec<PermissionOverwrite> {
@@ -681,12 +697,37 @@ impl Shared {
 		let new_icon = body["icon"]
 			.is_string()
 			.then(|| format!("{:032x}", store.next_snowflake()));
+		let available_tags = body
+			.get("available_tags")
+			.map(|tags| tags_of(tags, || store.next_snowflake()));
 		let channel = store
 			.channels
 			.get_mut(&channel_id)
 			.ok_or_else(ApiError::unknown_channel)?;
 		if let Some(name) = body["name"].as_str() {
 			channel.name = Some(name.to_owned());
+		}
+		if let Some(tags) = available_tags {
+			channel.available_tags = tags;
+		}
+		if let Some(applied) = body["applied_tags"].as_array() {
+			channel.applied_tags = applied.iter().filter_map(parse_id).map(Snowflake).collect();
+		}
+		if body.get("default_reaction_emoji").is_some() {
+			channel.default_reaction_emoji =
+				serde_json::from_value(body["default_reaction_emoji"].clone()).ok();
+		}
+		if let Some(order) = body["default_sort_order"].as_i64() {
+			channel.default_sort_order = Some(ForumSortOrder::from(order));
+		}
+		if let Some(layout) = body["default_forum_layout"].as_i64() {
+			channel.default_forum_layout = Some(ForumLayout::from(layout));
+		}
+		if let Some(limit) = body["default_thread_rate_limit_per_user"].as_i64() {
+			channel.default_thread_rate_limit_per_user = Some(limit);
+		}
+		if let Ok(flags) = serde_json::from_value(body["flags"].clone()) {
+			channel.flags = flags;
 		}
 		if new_icon.is_some() {
 			channel.icon = new_icon;

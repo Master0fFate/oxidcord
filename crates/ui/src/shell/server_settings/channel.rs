@@ -14,6 +14,7 @@ use protocol::{ChannelType, PermissionOverwriteKind, Permissions, Snowflake};
 use session::{Command, ForumEdit, VoiceChannelEdit};
 
 use super::channel_voice::VoiceForm;
+use super::forum_settings::ForumSettings;
 use super::rights::GROUPS;
 use crate::components::{
 	ContextMenuBuilder, PickHandler, ToggleHandler, Tri, dialog_footer, field, hint, segmented, select,
@@ -116,8 +117,22 @@ fn applicable(kind: ChannelType) -> Permissions {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Tab {
 	Overview,
+	Posts,
 	Permissions,
 }
+
+impl Tab {
+	fn label(self) -> &'static str {
+		match self {
+			Self::Overview => "channel-tab-overview",
+			Self::Posts => "channel-tab-posts",
+			Self::Permissions => "channel-tab-permissions",
+		}
+	}
+}
+
+const PLAIN_TABS: [Tab; 2] = [Tab::Overview, Tab::Permissions];
+const FORUM_TABS: [Tab; 3] = [Tab::Overview, Tab::Posts, Tab::Permissions];
 
 #[derive(Clone)]
 struct Overwrite {
@@ -141,6 +156,7 @@ pub struct EditChannel {
 	parent: Option<Snowflake>,
 	original_parent: Option<Snowflake>,
 	original: (String, String, usize, bool),
+	forum: Option<Entity<ForumSettings>>,
 	overwrites: Vec<Overwrite>,
 	selected: Option<Snowflake>,
 	voice: Option<Entity<VoiceForm>>,
@@ -188,7 +204,12 @@ impl EditChannel {
 			.position(|(_, seconds)| *seconds >= slowmode_value)
 			.unwrap_or(0);
 		let nsfw = channel.nsfw == Some(true);
-		let topic_placeholder = cx.t("channel-topic-placeholder");
+		let post_channel = matches!(channel.kind, ChannelType::GuildForum | ChannelType::GuildMedia);
+		let topic_placeholder = cx.t(if post_channel {
+			"channel-guidelines-placeholder"
+		} else {
+			"channel-topic-placeholder"
+		});
 		let name = cx.new(|cx| {
 			let mut state = InputState::new(window, cx);
 			state.set_value(name_value.clone(), window, cx);
@@ -227,6 +248,8 @@ impl EditChannel {
 				.as_ref()
 				.map(|voice| cx.observe(voice, |_, _, cx| cx.notify())),
 		);
+		let forum =
+			post_channel.then(|| cx.new(|cx| ForumSettings::new(data.clone(), guild, channel, window, cx)));
 		Self {
 			data,
 			guild,
@@ -244,10 +267,19 @@ impl EditChannel {
 			parent: channel.parent_id,
 			original_parent: channel.parent_id,
 			original: (name_value, topic_value, slowmode, nsfw),
+			forum,
 			overwrites,
 			selected,
 			voice,
 			_subscriptions: subscriptions,
+		}
+	}
+
+	fn tabs(&self) -> &'static [Tab] {
+		if self.forum.is_some() {
+			&FORUM_TABS
+		} else {
+			&PLAIN_TABS
 		}
 	}
 
@@ -292,6 +324,23 @@ impl EditChannel {
 				.voice
 				.as_ref()
 				.map_or_else(VoiceChannelEdit::default, |voice| voice.read(cx).edit(cx)),
+		});
+		cx.emit(Close);
+	}
+
+	fn save_forum(&mut self, cx: &mut Context<Self>) {
+		let Some(forum) = &self.forum else {
+			return;
+		};
+		let forum = forum.read(cx).edit(cx);
+		self.data.read(cx).send(Command::EditChannel {
+			channel_id: self.channel,
+			name: None,
+			topic: None,
+			nsfw: None,
+			slowmode: None,
+			parent_id: None,
+			forum,
 		});
 		cx.emit(Close);
 	}
@@ -532,26 +581,34 @@ impl EditChannel {
 			.gap(theme.space_20)
 			.child(field(cx.t("channel-name"), theme, Input::new(&self.name)))
 			.when(text, |form| {
-				form.child(field(cx.t("channel-topic"), theme, Input::new(&self.topic)))
-					.child(field(
-						cx.t("channel-slowmode"),
-						theme,
-						select(
-							"channel-slowmode",
-							slow_labels[self.slowmode].clone(),
-							&slow_labels,
-							self.slowmode,
-							pick_slow,
-						),
-					))
-					.child(switch_row(
-						"channel-nsfw",
-						cx.t("channel-nsfw"),
-						Some(cx.t("channel-nsfw-hint")),
-						self.nsfw,
-						theme,
-						nsfw,
-					))
+				form.child(field(
+					cx.t(if self.forum.is_some() {
+						"channel-guidelines"
+					} else {
+						"channel-topic"
+					}),
+					theme,
+					Input::new(&self.topic),
+				))
+				.child(field(
+					cx.t("channel-slowmode"),
+					theme,
+					select(
+						"channel-slowmode",
+						slow_labels[self.slowmode].clone(),
+						&slow_labels,
+						self.slowmode,
+						pick_slow,
+					),
+				))
+				.child(switch_row(
+					"channel-nsfw",
+					cx.t("channel-nsfw"),
+					Some(cx.t("channel-nsfw-hint")),
+					self.nsfw,
+					theme,
+					nsfw,
+				))
 			})
 			.children(self.voice.clone())
 			.when(self.kind != ChannelType::GuildCategory, |form| {
@@ -753,26 +810,27 @@ impl EditChannel {
 impl Render for EditChannel {
 	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
-		let labels = [cx.t("channel-tab-overview"), cx.t("channel-tab-permissions")];
+		let tabs = self.tabs();
+		let labels: Vec<SharedString> = tabs.iter().map(|tab| cx.t(tab.label())).collect();
 		let weak = cx.weak_entity();
 		let pick: PickHandler = Rc::new(move |index, _, cx| {
-			weak.update(cx, |this, cx| {
-				this.tab = if index == 0 {
-					Tab::Overview
-				} else {
-					Tab::Permissions
-				};
-				cx.notify();
-			})
-			.ok();
+			if let Some(tab) = tabs.get(index).copied() {
+				weak.update(cx, |this, cx| {
+					this.tab = tab;
+					cx.notify();
+				})
+				.ok();
+			}
 		});
-		let body = match self.tab {
-			Tab::Overview => self.overview(&theme, cx),
-			Tab::Permissions => self.permissions(&theme, cx),
+		let body = match (self.tab, &self.forum) {
+			(Tab::Overview, _) => self.overview(&theme, cx),
+			(Tab::Posts, Some(forum)) => forum.clone().into_any_element(),
+			(Tab::Posts, None) | (Tab::Permissions, _) => self.permissions(&theme, cx),
 		};
-		let (enabled, confirm_key) = match self.tab {
-			Tab::Overview => (self.overview_dirty(cx), "settings-save"),
-			Tab::Permissions => (self.permissions_dirty(), "settings-save"),
+		let enabled = match (self.tab, &self.forum) {
+			(Tab::Overview, _) => self.overview_dirty(cx),
+			(Tab::Posts, Some(forum)) => forum.read(cx).can_save(cx),
+			(Tab::Posts, None) | (Tab::Permissions, _) => self.permissions_dirty(),
 		};
 		let weak_cancel = cx.weak_entity();
 		let weak_save = cx.weak_entity();
@@ -785,14 +843,14 @@ impl Render for EditChannel {
 			.child(segmented(
 				"channel-tabs",
 				&labels,
-				usize::from(self.tab == Tab::Permissions),
+				tabs.iter().position(|candidate| *candidate == tab).unwrap_or(0),
 				&theme,
 				pick,
 			))
 			.child(body)
 			.child(dialog_footer(
 				cx.t("action-close"),
-				cx.t(confirm_key),
+				cx.t("settings-save"),
 				false,
 				enabled,
 				&theme,
@@ -803,6 +861,7 @@ impl Render for EditChannel {
 					weak_save
 						.update(cx, |this, cx| match tab {
 							Tab::Overview => this.save_overview(cx),
+							Tab::Posts => this.save_forum(cx),
 							Tab::Permissions => this.save_permissions(cx),
 						})
 						.ok();

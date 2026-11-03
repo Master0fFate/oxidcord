@@ -7,6 +7,7 @@ use protocol::Snowflake;
 use session::Command;
 
 use super::edit;
+use super::forum::tag_label;
 use crate::components::ContextMenuBuilder;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::IconKind;
@@ -14,6 +15,8 @@ use crate::shell::community::notify::{self, Scope};
 use crate::shell::community::{act, data_handle, developer_mode, raw};
 
 type Toggle = Rc<dyn Fn(&mut Window, &mut App)>;
+
+const MAX_POST_TAGS: usize = 5;
 
 #[derive(Clone)]
 pub struct ThreadFacts {
@@ -128,6 +131,9 @@ fn build(facts: &ThreadFacts, toggle: &Toggle, cx: &App) -> ContextMenuBuilder {
 			.item(cx.t(name), Some(IconKind::Edit), move |window, cx| {
 				edit::open(window, cx, data_handle(cx), thread, post);
 			});
+		if post {
+			menu = tag_items(menu, facts, cx);
+		}
 	}
 	menu = menu
 		.separator()
@@ -153,6 +159,54 @@ fn build(facts: &ThreadFacts, toggle: &Toggle, cx: &App) -> ContextMenuBuilder {
 		);
 	}
 	tail_items(menu.separator(), facts, cx)
+}
+
+fn tag_items(menu: ContextMenuBuilder, facts: &ThreadFacts, cx: &App) -> ContextMenuBuilder {
+	let thread = facts.thread;
+	let (tags, applied) = {
+		let data = data_handle(cx);
+		let state = data.read(cx).state();
+		let post = state.channel(thread);
+		let forum = post
+			.and_then(|post| post.parent_id)
+			.and_then(|parent| state.channel(parent));
+		(
+			forum
+				.map(|forum| forum.available_tags.to_vec())
+				.unwrap_or_default(),
+			post.map(|post| post.applied_tags.clone()).unwrap_or_default(),
+		)
+	};
+	let can_moderate = facts.can_moderate;
+	let choices = tags.iter().filter(|tag| !tag.moderated || can_moderate).fold(
+		ContextMenuBuilder::new(),
+		|choices, tag| {
+			let id = tag.id;
+			let checked = applied.contains(&id);
+			let applied = applied.clone();
+			choices.checked_item(tag_label(tag), checked, move |_, cx| {
+				let mut next = applied.clone();
+				if checked {
+					next.retain(|applied| *applied != id);
+				} else if next.len() < MAX_POST_TAGS {
+					next.push(id);
+				} else {
+					return;
+				}
+				send(
+					Command::SetPostTags {
+						thread_id: thread,
+						tags: next,
+					},
+					cx,
+				);
+			})
+		},
+	);
+	if choices.is_empty() {
+		return menu;
+	}
+	menu.submenu(cx.t("forum-edit-tags"), Some(IconKind::Tag), choices)
 }
 
 fn notification_items(menu: ContextMenuBuilder, facts: &ThreadFacts, cx: &App) -> ContextMenuBuilder {

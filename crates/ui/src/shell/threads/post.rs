@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use bytes::Bytes;
 use gpui::{
 	App, AppContext as _, ClipboardItem, Context, Entity, EventEmitter, ExternalPaths, Focusable as _,
-	InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
-	StatefulInteractiveElement as _, Styled as _, Window, div, prelude::FluentBuilder as _,
+	InteractiveElement as _, IntoElement, ParentElement as _, Render, StatefulInteractiveElement as _,
+	Styled as _, Window, div, prelude::FluentBuilder as _,
 };
 use gpui_component::Sizable as _;
 use gpui_component::button::Button;
@@ -15,6 +15,7 @@ use rest::UploadFile;
 use session::Command;
 use state::Changes;
 
+use super::forum::tag_label;
 use crate::components::{IconButton, dialog_footer, field};
 use crate::data::{Data, DataEvent};
 use crate::format;
@@ -252,10 +253,7 @@ impl Render for NewPost {
 			.map(|tag| {
 				let id = tag.id;
 				let active = self.chosen.contains(&id);
-				let label: SharedString = match tag.emoji_name.as_deref().filter(|emoji| !emoji.is_empty()) {
-					Some(emoji) => format!("{emoji} {}", tag.name).into(),
-					None => tag.name.clone().into(),
-				};
+				let label = tag_label(tag);
 				div()
 					.id(("post-tag", id.get()))
 					.flex()

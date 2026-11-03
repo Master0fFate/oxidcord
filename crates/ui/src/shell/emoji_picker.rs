@@ -9,7 +9,7 @@ use gpui_component::scroll::ScrollableElement as _;
 use media::SizeHint;
 use protocol::{PartialEmoji, Snowflake};
 
-use crate::components::unicode_emoji;
+use crate::components::{StatusEmoji, unicode_emoji};
 use crate::emoji::{self, CATEGORIES};
 use crate::i18n::Translate as _;
 use crate::images::Images;
@@ -28,6 +28,16 @@ pub enum EmojiChoice {
 }
 
 impl EmojiChoice {
+	pub fn status_emoji(&self) -> StatusEmoji {
+		match self {
+			Self::Unicode(glyph) => StatusEmoji::Unicode(glyph.clone().into()),
+			Self::Custom { id, animated, .. } => StatusEmoji::Custom {
+				id: *id,
+				animated: *animated,
+			},
+		}
+	}
+
 	pub fn reaction_key(&self) -> String {
 		match self {
 			Self::Unicode(glyph) => glyph.clone(),

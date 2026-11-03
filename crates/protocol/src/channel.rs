@@ -194,6 +194,7 @@ pub struct Channel {
 	pub default_reaction_emoji: Option<DefaultReaction>,
 	pub default_sort_order: Option<ForumSortOrder>,
 	pub default_forum_layout: Option<ForumLayout>,
+	pub default_thread_rate_limit_per_user: Option<i64>,
 	pub total_message_sent: Option<i64>,
 	pub is_message_request: Option<bool>,
 	#[serde(deserialize_with = "timestamp")]

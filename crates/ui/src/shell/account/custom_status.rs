@@ -11,7 +11,6 @@ use gpui_component::input::{Input, InputState};
 use protocol::{ProtoCustomStatus, Snowflake};
 use session::Command;
 
-use crate::components::StatusEmoji;
 use crate::data::Data;
 use crate::i18n::Translate as _;
 use crate::icons::{Icon, IconKind};
@@ -80,16 +79,6 @@ fn saved_emoji(saved: &ProtoCustomStatus) -> Option<EmojiChoice> {
 		}),
 		(None, Some(name)) => Some(EmojiChoice::Unicode(name.clone())),
 		(None, None) => None,
-	}
-}
-
-fn preview(choice: &EmojiChoice) -> StatusEmoji {
-	match choice {
-		EmojiChoice::Unicode(glyph) => StatusEmoji::Unicode(glyph.clone().into()),
-		EmojiChoice::Custom { id, animated, .. } => StatusEmoji::Custom {
-			id: *id,
-			animated: *animated,
-		},
 	}
 }
 
@@ -191,7 +180,7 @@ impl CustomStatusForm {
 impl Render for CustomStatusForm {
 	fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
 		let theme = Theme::current(cx);
-		let chosen = self.emoji.as_ref().map(preview);
+		let chosen = self.emoji.as_ref().map(EmojiChoice::status_emoji);
 		div()
 			.flex()
 			.flex_col()
