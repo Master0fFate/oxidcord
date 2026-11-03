@@ -128,6 +128,10 @@ pub enum LocalEvent {
 	VoiceE2eeFailed,
 	SettingsEdited,
 	GuildLayout(Vec<RailEntry>),
+	RestoreGuildLayout {
+		before: Vec<RailEntry>,
+		applied: Vec<RailEntry>,
+	},
 	RestorePrivacy {
 		before: Vec<u8>,
 		applied: Vec<u8>,

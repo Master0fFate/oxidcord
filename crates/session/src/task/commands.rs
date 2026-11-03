@@ -13,7 +13,7 @@ use rest::api::ArchivedScope;
 use rest::api::image_data_uri;
 use rest::{RestClient, RestError, UploadFile};
 use serde_json::{Value, json};
-use state::{Loaded, LocalEvent, USER_COMMANDS, guild_layout_patch};
+use state::{Loaded, LocalEvent, USER_COMMANDS};
 
 use super::actions::{mute_config, object, rest_failure, some, timestamp};
 use super::{Command, Core, Internal, ReadSnapshot};
@@ -2278,9 +2278,13 @@ fn custom_status_activity(custom: &ProtoCustomStatus) -> Value {
 impl Core {
 	fn set_guild_layout(&mut self, layout: Vec<state::RailEntry>) {
 		let previous = self.state.read().guild_layout();
-		let patch = guild_layout_patch(&layout);
+		let patch = self.state.read().guild_layout_patch(&layout);
 		self.apply_local(LocalEvent::GuildLayout(layout));
-		self.patch_settings_proto(patch, "server order", Some(LocalEvent::GuildLayout(previous)));
+		let undo = LocalEvent::RestoreGuildLayout {
+			before: previous,
+			applied: self.state.read().guild_layout(),
+		};
+		self.patch_settings_proto(patch, "server order", Some(undo));
 	}
 
 	pub(super) fn load_unnamed_applications(&self) {

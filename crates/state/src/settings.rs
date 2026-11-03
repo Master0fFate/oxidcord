@@ -236,8 +236,46 @@ impl State {
 		self.reorder_guilds();
 	}
 
+	fn layout_folders(&self, layout: &[RailEntry]) -> ProtoGuildFolders {
+		let mut folders = guild_folders_proto(layout).folders;
+		for (index, folder) in self.guild_folders.iter().enumerate() {
+			let absent: Vec<Snowflake> = folder
+				.guild_ids
+				.iter()
+				.copied()
+				.filter(|id| !self.guilds.contains_key(id))
+				.collect();
+			if absent.is_empty() {
+				continue;
+			}
+			match folders
+				.iter_mut()
+				.find(|found| found.id.is_some() && found.id == folder.id)
+			{
+				Some(found) => found.guild_ids.extend(absent),
+				None => folders.insert(
+					index.min(folders.len()),
+					ProtoGuildFolder {
+						id: folder.id,
+						name: folder.name.clone(),
+						color: folder.color.map(u64::from),
+						guild_ids: absent,
+					},
+				),
+			}
+		}
+		with_positions(folders)
+	}
+
+	pub fn guild_layout_patch(&self, layout: &[RailEntry]) -> String {
+		encode_settings(&ProtoSettings {
+			guild_folders: Some(self.layout_folders(layout)),
+			..ProtoSettings::default()
+		})
+	}
+
 	pub(crate) fn apply_guild_layout(&mut self, layout: &[RailEntry]) -> Changes {
-		self.replace_guild_folders(guild_folders_proto(layout));
+		self.replace_guild_folders(self.layout_folders(layout));
 		Changes {
 			guild_list: true,
 			..Changes::default()
@@ -450,16 +488,13 @@ fn guild_folders_proto(layout: &[RailEntry]) -> ProtoGuildFolders {
 			},
 		})
 		.collect();
+	with_positions(folders)
+}
+
+fn with_positions(folders: Vec<ProtoGuildFolder>) -> ProtoGuildFolders {
 	let positions = folders
 		.iter()
 		.flat_map(|folder| folder.guild_ids.iter().copied())
 		.collect();
 	ProtoGuildFolders { folders, positions }
-}
-
-pub fn guild_layout_patch(layout: &[RailEntry]) -> String {
-	encode_settings(&ProtoSettings {
-		guild_folders: Some(guild_folders_proto(layout)),
-		..ProtoSettings::default()
-	})
 }

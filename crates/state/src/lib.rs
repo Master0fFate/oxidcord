@@ -46,7 +46,7 @@ pub use plugin_shell::{
 };
 pub use relationships::shared_members;
 pub use rows::set_names_masked;
-pub use settings::{GuildFolder, RailEntry, guild_layout_patch};
+pub use settings::{GuildFolder, RailEntry};
 pub use state::{
 	EventNotice, FriendNotice, Rejection, RequestOutcome, Selection, SentRequest, SessionInfo, SharedState,
 	State, TYPING_TIMEOUT,
