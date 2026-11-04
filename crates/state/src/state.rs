@@ -138,15 +138,19 @@ pub enum RequestOutcome {
 	Failed(String),
 }
 
+fn deadline_left(deadlines: &HashMap<Snowflake, Instant>, channel_id: Snowflake) -> Option<Duration> {
+	deadlines
+		.get(&channel_id)
+		.map(|until| until.saturating_duration_since(Instant::now()))
+		.filter(|remaining| !remaining.is_zero())
+}
+
 fn time_left(
 	deadlines: &HashMap<Snowflake, Instant>,
 	channel_id: Snowflake,
 	interval: Duration,
 ) -> Option<Duration> {
-	deadlines
-		.get(&channel_id)
-		.map(|until| until.saturating_duration_since(Instant::now()).min(interval))
-		.filter(|remaining| !remaining.is_zero())
+	deadline_left(deadlines, channel_id).map(|remaining| remaining.min(interval))
 }
 
 fn arm(deadlines: &mut HashMap<Snowflake, Instant>, channel_id: Snowflake, wait: Duration) -> Changes {
@@ -417,11 +421,7 @@ impl State {
 	}
 
 	pub fn thread_cooldown_remaining(&self, parent_id: Snowflake) -> Option<Duration> {
-		time_left(
-			&self.thread_cooldown,
-			parent_id,
-			self.slowmode_interval(parent_id)?,
-		)
+		deadline_left(&self.thread_cooldown, parent_id)
 	}
 
 	pub(crate) fn start_slowmode(&mut self, channel_id: Snowflake, wait: Duration) -> Changes {

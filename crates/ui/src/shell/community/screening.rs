@@ -4,6 +4,7 @@ use gpui::{
 	AnyElement, App, AppContext as _, Context, Entity, EventEmitter, FontWeight, IntoElement,
 	ParentElement as _, Render, SharedString, Styled as _, Subscription, Window, div,
 };
+use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
 use protocol::{FormField, FormFieldKind, JoinRequestStatus, Snowflake};
 use serde_json::Value;
@@ -360,16 +361,17 @@ fn field_body(view: &FieldView, theme: &Theme, content: impl IntoElement) -> Any
 }
 
 impl Screening {
-	fn closed(&self, title: &'static str, theme: &Theme, cx: &mut Context<Self>) -> AnyElement {
+	fn closed(
+		&self,
+		title: &'static str,
+		withdraw: bool,
+		theme: &Theme,
+		cx: &mut Context<Self>,
+	) -> AnyElement {
 		let weak_close = cx.weak_entity();
-		let weak_withdraw = cx.weak_entity();
-		div()
-			.flex()
-			.flex_col()
-			.gap(theme.space_16)
-			.pt(theme.space_8)
-			.child(hint(cx.t(title), theme))
-			.child(dialog_footer(
+		let footer = if withdraw {
+			let weak_withdraw = cx.weak_entity();
+			dialog_footer(
 				cx.t("action-close"),
 				cx.t("screening-withdraw"),
 				true,
@@ -388,7 +390,29 @@ impl Screening {
 						})
 						.ok();
 				},
-			))
+			)
+		} else {
+			div()
+				.flex()
+				.items_center()
+				.justify_end()
+				.child(
+					Button::new("dialog-cancel")
+						.ghost()
+						.label(cx.t("action-close"))
+						.on_click(move |_, _, cx| {
+							weak_close.update(cx, |_, cx| cx.emit(Close)).ok();
+						}),
+				)
+				.into_any_element()
+		};
+		div()
+			.flex()
+			.flex_col()
+			.gap(theme.space_16)
+			.pt(theme.space_8)
+			.child(hint(cx.t(title), theme))
+			.child(footer)
 			.into_any_element()
 	}
 }
@@ -405,17 +429,17 @@ impl Render for Screening {
 		match sent {
 			Some(JoinRequestStatus::Submitted) => {
 				return self
-					.closed("membership-bar-submitted", &theme, cx)
+					.closed("membership-bar-submitted", true, &theme, cx)
 					.into_any_element();
 			}
 			Some(JoinRequestStatus::Rejected) => {
 				return self
-					.closed("membership-bar-rejected", &theme, cx)
+					.closed("membership-bar-rejected", false, &theme, cx)
 					.into_any_element();
 			}
 			Some(JoinRequestStatus::Approved) => {
 				return self
-					.closed("membership-bar-approved", &theme, cx)
+					.closed("membership-bar-approved", false, &theme, cx)
 					.into_any_element();
 			}
 			_ => {}

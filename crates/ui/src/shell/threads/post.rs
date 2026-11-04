@@ -115,6 +115,11 @@ impl NewPost {
 	}
 
 	fn on_changes(&mut self, changes: &Changes, cx: &mut Context<Self>) {
+		if changes.slowmode.contains(self.channel)
+			&& cooldown::remaining(&self.data, self.channel, cx).is_some()
+		{
+			self._cooldown = cooldown::watch(self.data.clone(), self.channel, cx);
+		}
 		let Some(baseline) = self.sending else {
 			return;
 		};
