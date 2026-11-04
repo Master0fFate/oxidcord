@@ -649,7 +649,12 @@ async fn cached_start(
 	channel_id: Snowflake,
 	guilds: usize,
 ) -> Result<()> {
-	let offline = Harness::start(store.clone(), UNREACHABLE_REST, UNREACHABLE_GATEWAY, MOCK_TOKEN)?;
+	let token = store
+		.accounts
+		.current()
+		.and_then(|user_id| store.accounts.token_for(user_id).ok().flatten())
+		.unwrap_or_else(|| MOCK_TOKEN.to_owned());
+	let offline = Harness::start(store.clone(), UNREACHABLE_REST, UNREACHABLE_GATEWAY, &token)?;
 	offline
 		.until("cached guilds to load", |state| state.guilds().count() == guilds)
 		.await?;
