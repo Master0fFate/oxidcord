@@ -81,3 +81,9 @@ Video textures are shared by every view through `Textures`: the voice room, the 
 ## Soundboard
 
 Sounds are listed per guild (`SOUNDBOARD_SOUNDS` after gateway op 31, or `GET /guilds/{id}/soundboard-sounds` for the server settings page) plus the default list from `GET /soundboard-default-sounds`. Sending a sound is `POST /channels/{id}/send-soundboard-sound`; Discord answers every client in the channel with `VOICE_CHANNEL_EFFECT_SEND`. The session downloads `cdn.discordapp.com/soundboard-sounds/{id}` through the media fetcher, decodes it to 48 kHz stereo with `voice::decode_sound` (symphonia for mp3 and vorbis, libopus for opus) and hands it to the voice connection, which mixes it into playback after the remote streams and drops it while deafened. The effect also lands in `VoiceSession::effects`, which the voice room draws on the sender tile for `VOICE_EFFECT_LIFETIME`. Uploads are checked for 512 KB and 5.2 s before the request is made.
+
+## Echo cancellation
+
+The echo canceller hears what the speakers actually play, not what the call mixes. Every voice output stream (the call, a watched Go Live stream, the mic test) and every cue stream from `platform::sound` writes the samples it hands the device into `voice::RenderTap`, a process-wide 48 kHz mono timeline stamped with the wall clock at the moment the device pulls them. Cue streams reach it through `platform::sound::monitor_playback`, which the UI wires to `RenderTap` at startup. Writers keep their own cursor and only snap back to the clock when they drift more than 30 ms, so the timeline stays continuous.
+
+The capture side reads one 10 ms reference chunk right before each 10 ms capture chunk, aimed at the moment that chunk was captured (now minus the capture backlog). The read never goes past what the devices have already pulled and resyncs when it falls more than 60 ms behind, so device clock drift costs one small jump instead of a reference that slides away from real playback.

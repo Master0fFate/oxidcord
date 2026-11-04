@@ -1,4 +1,5 @@
 use std::f32::consts::{PI, TAU};
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Sender, channel};
 use std::thread;
@@ -77,6 +78,14 @@ const RINGBACK_NOTES: [Note; 4] = [
 const MAX_PLAYING: usize = 4;
 
 static PLAYING: AtomicUsize = AtomicUsize::new(0);
+
+pub type PlaybackMonitor = Box<dyn FnMut(&[f32]) + Send>;
+
+static MONITOR: OnceLock<fn(u32) -> Option<PlaybackMonitor>> = OnceLock::new();
+
+pub fn monitor_playback(open: fn(u32) -> Option<PlaybackMonitor>) {
+	let _ = MONITOR.set(open);
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Cue {
@@ -287,11 +296,19 @@ where
 		position: 0,
 		repeat,
 	};
+	let mut monitor = MONITOR.get().and_then(|open| open(config.sample_rate));
+	let mut played = Vec::new();
 	device.build_output_stream(
 		config,
 		move |data: &mut [T], _| {
+			played.clear();
 			for frame in data.chunks_exact_mut(channels) {
-				frame.fill(T::from_sample(playback.next_sample()));
+				let sample = playback.next_sample();
+				frame.fill(T::from_sample(sample));
+				played.push(sample);
+			}
+			if let Some(monitor) = &mut monitor {
+				monitor(&played);
 			}
 		},
 		|error| tracing::warn!(%error, "sound stream error"),

@@ -174,7 +174,8 @@ impl Media {
 		let _ = now;
 		let mut frame = std::mem::take(&mut self.frame);
 		while self.capture.take_frame(&mut frame) {
-			self.send_frame(&mut frame);
+			let backlog = self.capture.backlog();
+			self.send_frame(&mut frame, backlog);
 		}
 		self.frame = frame;
 		if self.route == AudioRoute::Share {
@@ -206,7 +207,7 @@ impl Media {
 		}
 	}
 
-	fn send_frame(&mut self, frame: &mut [f32]) {
+	fn send_frame(&mut self, frame: &mut [f32], backlog: usize) {
 		let gain = self.shared.input_volume.load();
 		for sample in frame.iter_mut() {
 			*sample *= gain;
@@ -215,7 +216,7 @@ impl Media {
 			echo_cancellation: self.shared.echo_cancellation.load(Ordering::Relaxed),
 			auto_gain: self.shared.auto_gain.load(Ordering::Relaxed),
 		});
-		self.processor.cancel_echo(frame);
+		self.processor.cancel_echo(frame, backlog);
 		if self.shared.noise_suppression.load(Ordering::Relaxed) {
 			self.denoiser.process(frame);
 		}
@@ -581,7 +582,6 @@ impl Media {
 			self.shared.output_volume.load()
 		};
 		let level = meter_level(rms(self.mixer.finish(master)));
-		self.processor.analyze_playback(self.mixer.output());
 		let previous = self.shared.output_level.load();
 		self.shared.output_level.store(level.max(previous * METER_DECAY));
 		active

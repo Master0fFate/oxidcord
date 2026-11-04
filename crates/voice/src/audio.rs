@@ -13,6 +13,7 @@ use tracing::warn;
 
 use crate::codec::Profile;
 use crate::error::{Result, VoiceError};
+use crate::render_tap::RenderTap;
 use crate::wire::SPEAKING_MICROPHONE;
 
 #[cfg(windows)]
@@ -482,20 +483,32 @@ where
 {
 	let channels = usize::from(config.channels);
 	let rings = rings.clone();
+	let mut tap = RenderTap::new(config.sample_rate)
+		.inspect_err(|error| warn!(%error, "playback will not reach the echo canceller"))
+		.ok();
+	let mut played = Vec::new();
 	device.build_output_stream(
 		config,
 		move |data: &mut [T], _| {
+			played.clear();
 			let mut ring = rings.playback.lock();
 			for frame in data.chunks_exact_mut(channels) {
 				let (Some(left), Some(right)) = (ring.pop_front(), ring.pop_front()) else {
 					break;
 				};
+				let mono = (left + right) * 0.5;
 				if channels == 1 {
-					frame[0] = T::from_sample((left + right) * 0.5);
+					frame[0] = T::from_sample(mono);
 				} else {
 					frame[0] = T::from_sample(left);
 					frame[1] = T::from_sample(right);
 				}
+				played.push(mono);
+			}
+			drop(ring);
+			if let Some(tap) = &mut tap {
+				played.resize(data.len() / channels, 0.0);
+				tap.write(&played);
 			}
 		},
 		|error| warn!(%error, "output stream error"),
