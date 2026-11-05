@@ -215,7 +215,7 @@ fn notes(args: NotesArgs) -> Result<()> {
 	let mut text = String::from_utf8(output.stdout)?
 		.lines()
 		.filter(|line| !line.trim().is_empty())
-		.map(|line| format!("- {}\n", line.trim()))
+		.map(|line| format!("- {}\n", escape_mentions(line.trim())))
 		.collect::<String>();
 	if text.is_empty() {
 		text.push_str("- no changes\n");
@@ -227,4 +227,34 @@ fn notes(args: NotesArgs) -> Result<()> {
 			Ok(())
 		}
 	}
+}
+
+fn escape_mentions(line: &str) -> String {
+	let mut out = String::with_capacity(line.len() + 8);
+	let mut rest = line;
+	while let Some(index) = rest.find('@') {
+		let prefix = &rest[..index];
+		let after = &rest[index + 1..];
+		let end = after
+			.char_indices()
+			.find(|(_, ch)| !(ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.')))
+			.map_or(after.len(), |(offset, _)| offset);
+		let preceded_by_word = prefix
+			.chars()
+			.next_back()
+			.is_some_and(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.'));
+		if end == 0 || preceded_by_word {
+			out.push_str(&rest[..index + 1]);
+			rest = after;
+			continue;
+		}
+		out.push_str(prefix);
+		out.push('`');
+		out.push('@');
+		out.push_str(&after[..end]);
+		out.push('`');
+		rest = &after[end..];
+	}
+	out.push_str(rest);
+	out
 }
