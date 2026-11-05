@@ -89,12 +89,12 @@ pub struct Hello {
 
 macro_rules! chrome_version {
 	() => {
-		"156.0.0.0"
+		"158.0.0.0"
 	};
 }
 
 pub const CHROME_VERSION: &str = chrome_version!();
-pub const FALLBACK_BUILD_NUMBER: u64 = 655747;
+pub const FALLBACK_BUILD_NUMBER: u64 = 663810;
 
 const WINDOWS_USER_AGENT: &str = concat!(
 	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/",
@@ -181,6 +181,21 @@ fn random_uuid() -> String {
 pub fn reduced_chrome_version(version: &str) -> String {
 	let major = version.split('.').next().unwrap_or_default();
 	format!("{major}.0.0.0")
+}
+
+pub fn effective_chrome_version(stored: &str) -> String {
+	let major = |version: &str| {
+		version
+			.split('.')
+			.next()
+			.and_then(|part| part.parse::<u64>().ok())
+			.unwrap_or_default()
+	};
+	if major(stored) < major(CHROME_VERSION) {
+		CHROME_VERSION.to_owned()
+	} else {
+		stored.to_owned()
+	}
 }
 
 impl IdentifyProperties {
@@ -338,8 +353,27 @@ pub struct Ready {
 	pub user_settings_proto: Option<String>,
 	#[serde(deserialize_with = "or_default")]
 	pub user_settings: Option<Value>,
-	#[serde(skip_serializing, deserialize_with = "or_default")]
+	#[serde(skip_serializing, deserialize_with = "auth_token")]
 	pub auth_token: Option<Token>,
+}
+
+fn auth_token<'de, D>(deserializer: D) -> Result<Option<Token>, D::Error>
+where
+	D: serde::Deserializer<'de>,
+{
+	let value = Option::<Value>::deserialize(deserializer)?;
+	Ok(match value {
+		Some(Value::String(token)) => Some(Token::new(token)),
+		Some(Value::Object(map)) => map
+			.get("token")
+			.or_else(|| map.get("auth_token"))
+			.or_else(|| map.get("value"))
+			.or_else(|| map.get("access_token"))
+			.and_then(Value::as_str)
+			.map(Token::new),
+		Some(Value::Array(items)) => items.first().and_then(Value::as_str).map(Token::new),
+		_ => None,
+	})
 }
 
 impl Ready {

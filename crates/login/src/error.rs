@@ -30,7 +30,7 @@ impl From<rest::RestError> for LoginError {
 	fn from(error: rest::RestError) -> Self {
 		match error {
 			rest::RestError::Unauthorized(_) => Self::InvalidToken,
-			rest::RestError::CaptchaRequired => Self::Captcha,
+			rest::RestError::CaptchaRequired(_) => Self::Captcha,
 			rest::RestError::Network(reason) => Self::Network(reason),
 			rest::RestError::RateLimited { retry_after } => {
 				Self::Network(format!("rate limited, retry in {retry_after:?}"))

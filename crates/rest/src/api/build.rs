@@ -7,7 +7,8 @@ use url::Url;
 use crate::error::{RestError, Result, network_error};
 
 const APP_URL: &str = "https://discord.com/app";
-const CHROME_VERSION_URL: &str = "https://chromiumdash.appspot.com/version.json";
+const CHROME_VERSION_URL: &str =
+	"https://versionhistory.googleapis.com/v1/chrome/platforms/win64/channels/stable/versions?page_size=1";
 const MAX_VERSION_BYTES: usize = 16 * 1024;
 const MAX_SCRIPTS: usize = 6;
 const MAX_TOTAL_BYTES: usize = 30 * 1024 * 1024;
@@ -27,8 +28,10 @@ pub async fn discover_chrome_version(client: &Client) -> Result<String> {
 	let (body, _) = fetch_capped(client, &base, MAX_VERSION_BYTES).await?;
 	let parsed: Value = serde_json::from_slice(&body).map_err(|_| RestError::NotFound(None))?;
 	let version = parsed
-		.get("latest_version")
-		.and_then(|channel| channel.get("stable"))
+		.get("versions")
+		.and_then(Value::as_array)
+		.and_then(|versions| versions.first())
+		.and_then(|version| version.get("version"))
 		.and_then(Value::as_str)
 		.ok_or(RestError::NotFound(None))?
 		.to_owned();

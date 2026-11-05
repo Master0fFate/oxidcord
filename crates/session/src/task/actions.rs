@@ -50,7 +50,9 @@ fn failure_reason(what: &str, error: &RestError) -> String {
 		RestError::IndexNotReady { .. } => format!("{what}: still indexing, try again shortly"),
 		RestError::RateLimited { .. } => format!("{what}: rate limited, try again shortly"),
 		RestError::Slowmode { .. } => format!("{what}: slowmode is active"),
-		RestError::CaptchaRequired => format!("{what}: Discord asks for a captcha, do this on discord.com"),
+		RestError::CaptchaRequired(_) => {
+			format!("{what}: Discord asks for a captcha, do this on discord.com")
+		}
 		RestError::Http(_, Some(api)) if !api.message.is_empty() => format!("{what}: {}", api.message),
 		RestError::Http(status, _) => format!("{what}: http {}", status.as_u16()),
 		RestError::Network(reason) => format!("{what}: {reason}"),

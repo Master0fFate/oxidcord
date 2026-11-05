@@ -1525,24 +1525,6 @@ impl Core {
 		});
 	}
 
-	pub(super) fn load_event_interest(&self) {
-		let guild_ids: Vec<Snowflake> = self.state.read().guilds().map(|guild| guild.id).collect();
-		if guild_ids.is_empty() {
-			return;
-		}
-		let rest = self.rest.clone();
-		let internal = self.internal.clone();
-		self.runtime.spawn(async move {
-			match rest.scheduled_event_rsvps(&guild_ids).await {
-				Ok(rsvps) => {
-					let interested = interested_events(&rsvps);
-					let _ = internal.send(Internal::Loaded(Loaded::EventInterest(interested)));
-				}
-				Err(error) => tracing::warn!(%error, "event interest was not loaded"),
-			}
-		});
-	}
-
 	pub(super) fn load_connections(&self) {
 		self.spawn_load("connections", |rest| async move {
 			Ok(Loaded::Connections(rest.connections().await?.into_vec()))

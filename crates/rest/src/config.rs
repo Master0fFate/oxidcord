@@ -16,7 +16,7 @@ fn current_identity() -> IdentifyProperties {
 	})
 }
 
-const DEFAULT_BASE_URL: &str = "https://discord.com/api/v10";
+const DEFAULT_BASE_URL: &str = "https://discord.com/api/v9";
 const DEFAULT_LOCALE: &str = "en-US";
 
 #[derive(Debug, Clone)]

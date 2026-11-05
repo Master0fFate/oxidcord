@@ -669,7 +669,6 @@ impl Core {
 				self.activity.refresh_connections();
 				self.note_ready();
 				self.load_unnamed_applications();
-				self.load_event_interest();
 				let stale = {
 					let state = self.state.read();
 					state

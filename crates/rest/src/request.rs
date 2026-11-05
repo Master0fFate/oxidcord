@@ -75,6 +75,7 @@ pub struct Request {
 	pub(crate) path: String,
 	pub(crate) query: Vec<(String, String)>,
 	pub(crate) audit_reason: Option<String>,
+	pub(crate) headers: Vec<(String, String)>,
 	pub(crate) idempotent: bool,
 	pub(crate) body: Body,
 }
@@ -86,6 +87,7 @@ impl Request {
 			path: path.into(),
 			query: Vec::new(),
 			audit_reason: None,
+			headers: Vec::new(),
 			idempotent: false,
 			body: Body::Empty,
 		}
@@ -109,6 +111,11 @@ impl Request {
 
 	pub fn delete(path: impl Into<String>) -> Self {
 		Self::new(Method::DELETE, path)
+	}
+
+	pub fn header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+		self.headers.push((name.into(), value.into()));
+		self
 	}
 
 	pub fn json<T: Serialize + ?Sized>(mut self, body: &T) -> Self {

@@ -7,4 +7,4 @@ pub mod web_login;
 pub use error::{LoginError, Result};
 pub use qr::{QrBitmap, QrConfig, QrEvent, QrLogin, QrSession};
 pub use token_login::TokenLogin;
-pub use web_login::{WebLogin, WebLoginSession};
+pub use web_login::{CaptchaLogin, CaptchaSession, WebLogin, WebLoginSession};

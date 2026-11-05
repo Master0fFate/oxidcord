@@ -39,7 +39,7 @@ pub(crate) fn endpoint(base: &str) -> Result<Url, GatewayError> {
 	}
 	url.query_pairs_mut()
 		.clear()
-		.append_pair("v", "10")
+		.append_pair("v", "9")
 		.append_pair("encoding", "json")
 		.append_pair("compress", "zlib-stream");
 	Ok(url)

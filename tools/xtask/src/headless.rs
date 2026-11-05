@@ -218,7 +218,7 @@ impl Harness {
 			(
 				settings.locale.clone(),
 				settings.client.build_number,
-				settings.client.chrome_version.clone(),
+				protocol::gateway::effective_chrome_version(&settings.client.chrome_version),
 			)
 		};
 		let session = Session::start_with(

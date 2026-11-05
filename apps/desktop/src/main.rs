@@ -11,7 +11,7 @@ use mockcord::{MockConfig, Server};
 use platform::notifications::Notification;
 use platform::single_instance::{self, AlreadyRunning, Guard};
 use protocol::Token;
-use protocol::gateway::IdentifyProperties;
+use protocol::gateway::{IdentifyProperties, effective_chrome_version};
 use session::{BrokerSink, PluginOptions, Session, SessionConfig, VoiceIo};
 use store::{Paths, Store};
 use tokio::runtime::Handle;
@@ -275,16 +275,18 @@ fn endpoints(mock: Option<&Server>, store: &Store, show_login: bool) -> anyhow::
 	})
 }
 
+fn client_identity(store: &Store) -> (String, u64, String) {
+	let settings = store.settings.read();
+	(
+		settings.locale.clone(),
+		settings.client.build_number,
+		effective_chrome_version(&settings.client.chrome_version),
+	)
+}
+
 fn session_starter(store: &Arc<Store>, rest_base: Url, gateway_url: String, safe_mode: bool) -> StartSession {
 	let store = store.clone();
-	let (locale, build_number, chrome_version) = {
-		let settings = store.settings.read();
-		(
-			settings.locale.clone(),
-			settings.client.build_number,
-			settings.client.chrome_version.clone(),
-		)
-	};
+	let (locale, build_number, chrome_version) = client_identity(&store);
 	rest::install_identity(IdentifyProperties::web_client(
 		&locale,
 		build_number,
@@ -293,6 +295,12 @@ fn session_starter(store: &Arc<Store>, rest_base: Url, gateway_url: String, safe
 	let runtime = Handle::current();
 	let plugins = PluginOptions::new(safe_mode, Arc::new(PlatformSink));
 	Box::new(move |token, notify| {
+		let (locale, build_number, chrome_version) = client_identity(&store);
+		rest::install_identity(IdentifyProperties::web_client(
+			&locale,
+			build_number,
+			&chrome_version,
+		));
 		Session::start_with_plugins(
 			SessionConfig {
 				store: store.clone(),
@@ -300,7 +308,7 @@ fn session_starter(store: &Arc<Store>, rest_base: Url, gateway_url: String, safe
 				gateway_url: gateway_url.clone(),
 				token: Token::new(token),
 				identify: IdentifyProperties::web_client(&locale, build_number, &chrome_version),
-				locale: locale.clone(),
+				locale,
 				runtime: Some(runtime.clone()),
 				notify,
 			},
@@ -346,7 +354,7 @@ fn refresh_client_identity(runtime: &tokio::runtime::Runtime, store: &Arc<Store>
 			rest::install_identity(IdentifyProperties::web_client(
 				&settings.locale,
 				settings.client.build_number,
-				&settings.client.chrome_version,
+				&effective_chrome_version(&settings.client.chrome_version),
 			));
 			tracing::debug!("discord client identity refreshed");
 		}
@@ -406,14 +414,28 @@ fn install_panic_hook(logs: PathBuf) {
 
 fn run_login_helper() -> Option<i32> {
 	let mut args = std::env::args();
-	if args.nth(1).as_deref() != Some(login::web_login::HELPER_FLAG) {
-		return None;
-	}
-	let ipc_name = args.next().unwrap_or_default();
-	Some(match login::web_login::run_helper(&ipc_name) {
+	let mode = args.nth(1)?;
+	let code = |result: login::Result<()>| match result {
 		Ok(()) => 0,
 		Err(_) => 1,
-	})
+	};
+	match mode.as_str() {
+		login::web_login::HELPER_FLAG => {
+			let ipc_name = args.next().unwrap_or_default();
+			Some(code(login::web_login::run_helper(&ipc_name)))
+		}
+		login::web_login::CAPTCHA_HELPER_FLAG => {
+			let ipc_name = args.next().unwrap_or_default();
+			let sitekey = args.next().unwrap_or_default();
+			let rqdata = args.next().filter(|value| !value.is_empty());
+			Some(code(login::web_login::run_captcha_helper(
+				&ipc_name,
+				&sitekey,
+				rqdata.as_deref(),
+			)))
+		}
+		_ => None,
+	}
 }
 
 fn qr_config(mock: bool) -> login::QrConfig {

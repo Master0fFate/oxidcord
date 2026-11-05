@@ -3,9 +3,26 @@ use std::time::Duration;
 use protocol::DecodeError;
 use protocol::rest::ApiError;
 use reqwest::StatusCode;
+use serde::Deserialize;
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, RestError>;
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct CaptchaChallenge {
+	#[serde(default)]
+	pub sitekey: Option<String>,
+	#[serde(default)]
+	pub service: Option<String>,
+	#[serde(default)]
+	pub session_id: Option<String>,
+	#[serde(default)]
+	pub rqdata: Option<String>,
+	#[serde(default)]
+	pub rqtoken: Option<String>,
+	#[serde(default)]
+	pub invisible: bool,
+}
 
 #[derive(Debug, Error)]
 pub enum RestError {
@@ -16,7 +33,7 @@ pub enum RestError {
 	#[error("slowmode is active")]
 	Slowmode { retry_after: Option<Duration> },
 	#[error("captcha required")]
-	CaptchaRequired,
+	CaptchaRequired(Box<CaptchaChallenge>),
 	#[error("network error: {0}")]
 	Network(String),
 	#[error(transparent)]

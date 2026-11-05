@@ -19,6 +19,7 @@ use super::crypto::{SessionKey, nonce_proof};
 use super::messages::{Incoming, Outgoing, TicketExchange, TokenGrant};
 use super::{QrConfig, QrEvent};
 use crate::error::{LoginError, Result};
+use crate::web_login::CaptchaLogin;
 
 type Socket = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 
@@ -28,6 +29,7 @@ const HELLO_TIMEOUT: Duration = Duration::from_secs(15);
 const MIN_HEARTBEAT: Duration = Duration::from_secs(1);
 const CODE_URL_PREFIX: &str = "https://discord.com/ra/";
 const LOGIN_PATH: &str = "/users/@me/remote-auth/login";
+const CAPTCHA_ATTEMPTS: usize = 3;
 
 struct Flow<'a> {
 	events: &'a Sender<QrEvent>,
@@ -250,10 +252,50 @@ impl Flow<'_> {
 	}
 
 	async fn exchange(&self, ticket: &str) -> Result<Token> {
-		let request = Request::post(LOGIN_PATH).json(&TicketExchange { ticket });
-		let grant: TokenGrant = self.rest.send(request).await.map_err(exchange_error)?;
-		self.key.decrypt_token(&grant.encrypted_token)
+		let mut captcha: Option<CaptchaSolution> = None;
+		for _ in 0..CAPTCHA_ATTEMPTS {
+			let mut request = Request::post(LOGIN_PATH).json(&TicketExchange { ticket });
+			if let Some(solution) = &captcha {
+				request = request.header("X-Captcha-Key", solution.key.as_str());
+				if let Some(session_id) = &solution.session_id {
+					request = request.header("X-Captcha-Session-Id", session_id.as_str());
+				}
+				if let Some(rqtoken) = &solution.rqtoken {
+					request = request.header("X-Captcha-Rqtoken", rqtoken.as_str());
+				}
+			}
+			match self.rest.send(request).await {
+				Ok(grant) => {
+					let grant: TokenGrant = grant;
+					return self.key.decrypt_token(&grant.encrypted_token);
+				}
+				Err(rest::RestError::CaptchaRequired(challenge)) => {
+					captcha = Some(self.solve_captcha(*challenge).await?);
+				}
+				Err(error) => return Err(exchange_error(error)),
+			}
+		}
+		Err(LoginError::Captcha)
 	}
+
+	async fn solve_captcha(&self, challenge: rest::CaptchaChallenge) -> Result<CaptchaSolution> {
+		let sitekey = challenge
+			.sitekey
+			.ok_or_else(|| LoginError::Protocol("captcha site key missing".to_owned()))?;
+		let session = CaptchaLogin::start(&sitekey, challenge.rqdata.as_deref())?;
+		let key = session.wait().await?;
+		Ok(CaptchaSolution {
+			key,
+			session_id: challenge.session_id,
+			rqtoken: challenge.rqtoken,
+		})
+	}
+}
+
+struct CaptchaSolution {
+	key: String,
+	session_id: Option<String>,
+	rqtoken: Option<String>,
 }
 
 fn exchange_error(error: rest::RestError) -> LoginError {

@@ -15,7 +15,7 @@ use serde_json::Value;
 use url::{Host, Url};
 
 use crate::config::RestConfig;
-use crate::error::{RestError, Result, network_error};
+use crate::error::{CaptchaChallenge, RestError, Result, network_error};
 use crate::limiter::{RateLimiter, clamp_wait, header_global, header_retry_after, header_u32};
 use crate::request::{Body, Request, UploadFile, UploadProgress, encode_component};
 use crate::route::{RouteKey, route_key};
@@ -191,7 +191,19 @@ fn contains(body: &[u8], marker: &[u8]) -> bool {
 
 fn classify(status: StatusCode, body: &[u8]) -> RestError {
 	if status == StatusCode::BAD_REQUEST && contains(body, CAPTCHA_MARKER) {
-		return RestError::CaptchaRequired;
+		let value = serde_json::from_slice::<Value>(body).unwrap_or_default();
+		let text = |name: &str| value.get(name).and_then(Value::as_str).map(str::to_owned);
+		return RestError::CaptchaRequired(Box::new(CaptchaChallenge {
+			sitekey: text("captcha_sitekey"),
+			service: text("captcha_service"),
+			session_id: text("captcha_session_id"),
+			rqdata: text("captcha_rqdata"),
+			rqtoken: text("captcha_rqtoken"),
+			invisible: value
+				.get("should_serve_invisible")
+				.and_then(Value::as_bool)
+				.unwrap_or(false),
+		}));
 	}
 	let value = serde_json::from_slice::<Value>(body).ok();
 	let gated = matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN);
@@ -348,6 +360,11 @@ impl RestClient {
 		}
 		if request.method != Method::GET && discord_host(url) {
 			builder = builder.header(ORIGIN, HeaderValue::from_static(WEB_ORIGIN));
+		}
+		for (name, value) in &request.headers {
+			if let Ok(value) = HeaderValue::from_str(value) {
+				builder = builder.header(name.as_str(), value);
+			}
 		}
 		builder = match &request.body {
 			Body::Empty => builder,
