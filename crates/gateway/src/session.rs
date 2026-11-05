@@ -286,7 +286,7 @@ impl Session {
 			Some(code) if FATAL_CLOSE_CODES.contains(&code) => {
 				return Ended::fatal(Some(code), reason, GatewayError::Fatal { code });
 			}
-			Some(4007 | 4009) => self.clear_session(),
+			Some(4003 | 4007 | 4009) => self.clear_session(),
 			_ => {}
 		}
 		Ended::Reconnect {

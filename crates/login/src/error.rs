@@ -4,8 +4,6 @@ use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, LoginError>;
 
-const CAPTCHA_REFUSAL: &str = "Discord wants a captcha for this login, use the web login";
-
 #[derive(Debug, Error)]
 pub enum LoginError {
 	#[error("the token was rejected")]
@@ -18,6 +16,8 @@ pub enum LoginError {
 	Cancelled,
 	#[error("login session expired")]
 	Expired,
+	#[error("Discord wants a captcha for this login, use the web login")]
+	Captcha,
 	#[error("login helper failed: {0}")]
 	Helper(String),
 	#[error("storage error: {0}")]
@@ -30,7 +30,7 @@ impl From<rest::RestError> for LoginError {
 	fn from(error: rest::RestError) -> Self {
 		match error {
 			rest::RestError::Unauthorized(_) => Self::InvalidToken,
-			rest::RestError::CaptchaRequired => Self::Protocol(CAPTCHA_REFUSAL.to_owned()),
+			rest::RestError::CaptchaRequired => Self::Captcha,
 			rest::RestError::Network(reason) => Self::Network(reason),
 			rest::RestError::RateLimited { retry_after } => {
 				Self::Network(format!("rate limited, retry in {retry_after:?}"))

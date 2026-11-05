@@ -45,6 +45,7 @@ pub enum QrEvent {
 	Token(protocol::Token),
 	Expired,
 	Cancelled,
+	Captcha,
 	Error(String),
 }
 

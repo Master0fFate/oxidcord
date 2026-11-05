@@ -22,6 +22,7 @@ pub(super) enum QrState {
 	Scanned { name: SharedString, avatar: String },
 	Expired,
 	Cancelled,
+	Captcha,
 	Failed(String),
 }
 
@@ -78,6 +79,11 @@ impl LoginScreen {
 				self.qr_state = QrState::Cancelled;
 				true
 			}
+			QrEvent::Captcha => {
+				self.qr_state = QrState::Captcha;
+				self.start_web(cx);
+				true
+			}
 			QrEvent::Error(reason) => {
 				self.qr_state = QrState::Failed(reason);
 				true
@@ -94,6 +100,7 @@ impl LoginScreen {
 			QrState::Starting => Some((cx.t("login-qr-starting"), false)),
 			QrState::Expired => danger(cx.t("login-qr-expired")),
 			QrState::Cancelled => danger(cx.t("login-qr-cancelled")),
+			QrState::Captcha => Some((cx.t("login-qr-captcha"), false)),
 			QrState::Failed(reason) => {
 				danger(cx.t_args("login-qr-error", &[("reason", ArgValue::from(reason.clone()))]))
 			}
@@ -143,7 +150,7 @@ impl LoginScreen {
 				let (text, failed) = self.qr_message(cx).unwrap_or_default();
 				let retry = matches!(
 					self.qr_state,
-					QrState::Expired | QrState::Cancelled | QrState::Failed(_)
+					QrState::Expired | QrState::Cancelled | QrState::Captcha | QrState::Failed(_)
 				);
 				div()
 					.flex()

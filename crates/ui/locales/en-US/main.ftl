@@ -639,6 +639,7 @@ login-qr-starting = Generating code...
 login-qr-scanned = Check your phone!
 login-qr-expired = This code expired.
 login-qr-cancelled = The login was cancelled.
+login-qr-captcha = Captcha required. Finish the web login.
 login-qr-error = Could not use QR login: { $reason }
 login-qr-refresh = Refresh
 login-web-waiting = Complete the login in the window that opened...

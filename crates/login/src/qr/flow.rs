@@ -40,6 +40,7 @@ pub(super) async fn drive(config: QrConfig, events: Sender<QrEvent>) {
 		Ok(token) => QrEvent::Token(token),
 		Err(LoginError::Expired) => QrEvent::Expired,
 		Err(LoginError::Cancelled) => QrEvent::Cancelled,
+		Err(LoginError::Captcha) => QrEvent::Captcha,
 		Err(error) => {
 			tracing::warn!(%error, "qr login failed");
 			QrEvent::Error(error.to_string())

@@ -16,7 +16,7 @@ pub(super) enum WebState {
 }
 
 impl LoginScreen {
-	fn start_web(&mut self, cx: &mut Context<Self>) {
+	pub(super) fn start_web(&mut self, cx: &mut Context<Self>) {
 		if !self.acknowledged || matches!(self.web_state, WebState::Waiting) {
 			return;
 		}
