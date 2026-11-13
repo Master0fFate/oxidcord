@@ -5,7 +5,7 @@ use std::time::Duration;
 use plugin_host::api::model::{ClientOption, DmSection};
 use plugin_host::{Invalidation, Navigation, Permission, PickedPath};
 use protocol::{Permissions, Snowflake};
-use state::{ClientOptions, DmSectionView, LoadDirection, LocalEvent, UiIntent};
+use state::{ClientOptions, DmSectionView, IdSet, LoadDirection, LocalEvent, UiIntent};
 
 use super::actions::{channel_notification_body, guild_notification_body};
 use super::{Command, Core, Internal, PAGE_SIZE, page_query};
@@ -16,7 +16,6 @@ use crate::render::RenderJob;
 use crate::views::message_meta;
 
 const SAVE_LIMIT_BYTES: i64 = 100 * 1024 * 1024;
-const MAX_INVALIDATED: usize = 1_024;
 
 fn client_options_key(plugin_id: &str) -> String {
 	format!("plugins.client-options.{plugin_id}")
@@ -459,10 +458,9 @@ impl Core {
 				self.rerender_message(Snowflake(channel_id), Snowflake(message_id));
 			}
 			Invalidation::User(user_id) => {
-				if self.invalidated_users.len() >= MAX_INVALIDATED {
-					self.invalidated_users.clear();
-				}
-				self.invalidated_users.insert(Snowflake(user_id));
+				let mut users = IdSet::default();
+				users.insert(Snowflake(user_id));
+				self.invalidate_overrides(users);
 				self.schedule_overrides(Duration::ZERO);
 			}
 			Invalidation::Channel(channel_id) => self.decoration_stale(Snowflake(channel_id)),

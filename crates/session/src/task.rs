@@ -236,7 +236,7 @@ pub(crate) enum Internal {
 	},
 	Overrides {
 		epoch: u64,
-		entries: Vec<(Option<Snowflake>, Snowflake, Option<UserOverride>)>,
+		entries: Vec<(Option<Snowflake>, Snowflake, Option<UserOverride>, bool)>,
 	},
 	MicTestLevel {
 		generation: u64,
@@ -309,6 +309,7 @@ pub(crate) struct Core {
 	member_ranges: Vec<[u32; 2]>,
 	command_scopes: HashSet<Snowflake>,
 	events_requested: HashSet<Snowflake>,
+	private_presences_requested: HashSet<Snowflake>,
 	completion: Option<(Nonce, u64)>,
 	typing_expiry: Option<Instant>,
 	interaction_due: Option<Instant>,
@@ -342,7 +343,6 @@ pub(crate) struct Core {
 	sink: Arc<dyn BrokerSink>,
 	plugin_options: BTreeMap<String, ClientOptions>,
 	plugin_dm_sections: BTreeMap<String, Vec<DmSection>>,
-	invalidated_users: HashSet<Snowflake>,
 	hooks: plugin_hooks::HookState,
 	sending: HashMap<Nonce, Sending>,
 	activity: ActivityHandle,
@@ -408,6 +408,7 @@ impl Core {
 			member_ranges: member_ranges(0..0),
 			command_scopes: HashSet::new(),
 			events_requested: HashSet::new(),
+			private_presences_requested: HashSet::new(),
 			completion: None,
 			typing_expiry: None,
 			interaction_due: None,
@@ -441,7 +442,6 @@ impl Core {
 			sink: parts.sink,
 			plugin_options: BTreeMap::new(),
 			plugin_dm_sections: BTreeMap::new(),
-			invalidated_users: HashSet::new(),
 			hooks: plugin_hooks::HookState::default(),
 			sending: HashMap::new(),
 			activity: parts.activity,
@@ -663,6 +663,7 @@ impl Core {
 			GatewayEvent::Ready(ready) => {
 				self.marks.record("ready");
 				self.events_requested.clear();
+				self.private_presences_requested.clear();
 				self.attach_cache(ready.user.id);
 				self.apply(Event::Ready(&ready));
 				self.activity.set_user(Some(ready.user.clone()));
@@ -1425,6 +1426,8 @@ impl Core {
 		if let Some(guild_id) = guild_id {
 			self.subscribe(guild_id, Some(channel_id));
 			self.request_scheduled_events(guild_id);
+		} else {
+			self.refresh_private_presences(channel_id);
 		}
 		if self.selected_guild != guild_id {
 			self.schedule_decorations();
@@ -1791,12 +1794,44 @@ impl Core {
 
 	fn subscribe_selected(&mut self) {
 		let selected = self.state.read().selected();
-		if let Some(selected) = selected
-			&& let Some(guild_id) = selected.guild_id
-		{
-			self.subscribe(guild_id, Some(selected.channel_id));
-			self.request_channel_info(guild_id);
-			self.request_scheduled_events(guild_id);
+		if let Some(selected) = selected {
+			if let Some(guild_id) = selected.guild_id {
+				self.subscribe(guild_id, Some(selected.channel_id));
+				self.request_channel_info(guild_id);
+				self.request_scheduled_events(guild_id);
+			} else {
+				self.refresh_private_presences(selected.channel_id);
+			}
+		}
+	}
+
+	fn refresh_private_presences(&mut self, channel_id: Snowflake) {
+		let requests = {
+			let state = self.state.read();
+			let Some(channel) = state
+				.channel(channel_id)
+				.filter(|channel| matches!(channel.kind, ChannelType::Dm | ChannelType::GroupDm))
+			else {
+				return;
+			};
+			let mut requests: BTreeMap<Snowflake, Vec<Snowflake>> = BTreeMap::new();
+			for &user_id in channel.recipient_ids.iter().take(100) {
+				if !self.private_presences_requested.contains(&user_id)
+					&& !state
+						.presence(user_id)
+						.is_some_and(|presence| presence.client_status.is_some())
+					&& let Some(guild_id) = state.shared_guild(user_id, None)
+				{
+					requests.entry(guild_id).or_default().push(user_id);
+				}
+			}
+			requests
+		};
+		for (guild_id, user_ids) in requests {
+			match self.gateway.request_members(guild_id, "", 0, user_ids.clone()) {
+				Ok(()) => self.private_presences_requested.extend(user_ids),
+				Err(error) => tracing::warn!(%error, "conversation presence request was not sent"),
+			}
 		}
 	}
 

@@ -74,6 +74,12 @@ pub enum DisplayAnswer {
 	Full(Arc<str>, DisplayOverrideFull),
 }
 
+#[derive(Clone)]
+pub struct DisplayResult {
+	pub answers: Vec<DisplayAnswer>,
+	pub complete: bool,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChannelBadges {
 	pub plugin_id: Arc<str>,
@@ -1368,9 +1374,15 @@ impl PluginManager {
 			})
 	}
 
-	pub fn display_users(&self, users: &[(Option<u64>, User, Option<Presence>)]) -> Vec<Vec<DisplayAnswer>> {
+	pub fn display_users(&self, users: &[(Option<u64>, User, Option<Presence>)]) -> Vec<DisplayResult> {
 		let sets = self.hooks();
-		let mut answers: Vec<Vec<DisplayAnswer>> = vec![Vec::new(); users.len()];
+		let mut answers = vec![
+			DisplayResult {
+				answers: Vec::new(),
+				complete: true
+			};
+			users.len()
+		];
 		let everyone: Vec<usize> = (0..users.len()).collect();
 		for entry in &sets.display {
 			for chunk in everyone.chunks(DISPLAY_CHUNK) {
@@ -1562,7 +1574,7 @@ fn display_full_chunk(
 	entry: &HookEntry,
 	users: &[(Option<u64>, User, Option<Presence>)],
 	chunk: &[usize],
-	answers: &mut [Vec<DisplayAnswer>],
+	answers: &mut [DisplayResult],
 ) {
 	let batch: Arc<[DisplayRequest]> = chunk
 		.iter()
@@ -1580,11 +1592,18 @@ fn display_full_chunk(
 			entry.plugin.succeeded(Breaker::Display);
 			for (&index, over) in chunk.iter().zip(overrides) {
 				if let Some(over) = over.and_then(|over| sanitize_display_full(over, &entry.images)) {
-					answers[index].push(DisplayAnswer::Full(Arc::clone(&entry.id), over));
+					answers[index]
+						.answers
+						.push(DisplayAnswer::Full(Arc::clone(&entry.id), over));
 				}
 			}
 		}
-		Err(error) => entry.plugin.failed(Breaker::Display, &error),
+		Err(error) => {
+			entry.plugin.failed(Breaker::Display, &error);
+			for &index in chunk {
+				answers[index].complete = false;
+			}
+		}
 	}
 }
 
@@ -1592,7 +1611,7 @@ fn display_legacy_chunk(
 	entry: &HookEntry,
 	users: &[(Option<u64>, User, Option<Presence>)],
 	chunk: &[usize],
-	answers: &mut [Vec<DisplayAnswer>],
+	answers: &mut [DisplayResult],
 ) {
 	let batch: Arc<[(Option<u64>, User)]> = chunk
 		.iter()
@@ -1606,11 +1625,18 @@ fn display_legacy_chunk(
 			entry.plugin.succeeded(Breaker::Display);
 			for (&index, over) in chunk.iter().zip(overrides) {
 				if let Some(over) = over {
-					answers[index].push(DisplayAnswer::Legacy(sanitize_override(over)));
+					answers[index]
+						.answers
+						.push(DisplayAnswer::Legacy(sanitize_override(over)));
 				}
 			}
 		}
-		Err(error) => entry.plugin.failed(Breaker::Display, &error),
+		Err(error) => {
+			entry.plugin.failed(Breaker::Display, &error);
+			for &index in chunk {
+				answers[index].complete = false;
+			}
+		}
 	}
 }
 

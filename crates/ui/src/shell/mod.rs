@@ -1133,7 +1133,11 @@ impl Shell {
 		if pins_target.is_some_and(|channel| changes.loaded.contains(channel)) {
 			self.sync_pins_unread(cx);
 		}
-		if changes.private_channels || changes.relationships || changes.presence_any() {
+		if changes.private_channels
+			|| changes.relationships
+			|| changes.presence_any()
+			|| !changes.members.is_empty()
+		{
 			self.sync_request(cx);
 			self.groups.refresh(cx);
 			self.sync_group_header(cx);

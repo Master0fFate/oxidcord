@@ -266,33 +266,25 @@ impl Core {
 		}
 	}
 
-	fn note_presence(&mut self, presence: &Presence) {
+	fn note_presence(&self, presence: &Presence) {
 		let Some(user_id) = presence
 			.user_id
 			.or_else(|| presence.user.as_ref().map(|user| user.id))
 		else {
 			return;
 		};
-		let (view, tracked) = {
+		let tracked = {
 			let state = self.state.read();
-			let mine = state.current_user_id() == Some(user_id);
-			let friend = state
-				.relationship(user_id)
-				.is_some_and(|relationship| relationship.kind == protocol::RelationshipKind::Friend);
-			let tracked = state
-				.selected()
-				.is_some_and(|selected| state.has_override_entry(selected.guild_id, user_id));
-			(
-				(mine || friend).then(|| views::presence_view(user_id, presence)),
-				tracked,
-			)
+			state.current_user_id() == Some(user_id)
+				|| state
+					.relationship(user_id)
+					.is_some_and(|relationship| relationship.kind == protocol::RelationshipKind::Friend)
 		};
-		if let Some(view) = view {
-			self.client_event(ClientEvent::PresenceChanged(view), false);
-		}
-		if tracked && self.flags.display {
-			self.invalidated_users.insert(user_id);
-			self.schedule_overrides(Duration::from_secs(2));
+		if tracked {
+			self.client_event(
+				ClientEvent::PresenceChanged(views::presence_view(user_id, presence)),
+				false,
+			);
 		}
 	}
 

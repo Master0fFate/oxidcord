@@ -12,7 +12,7 @@ use plugin_host::convert::user_view;
 use plugin_host::{DisplayAnswer, FullSendDecision, PACKAGE_EXTENSION, Permission, SlotEntry};
 use protocol::{DispatchEvent, Message, MessageUpdate, Nonce, PartialEmoji, Snowflake, User};
 use state::{
-	BadgeColor, Changes, Event, LocalEvent, MemberSlot, PluginBadge, RenderedMessage, SharedState,
+	BadgeColor, Changes, Event, IdSet, LocalEvent, MemberSlot, PluginBadge, RenderedMessage, SharedState,
 	UserOverride, apply_update,
 };
 use tokio::runtime::Handle;
@@ -33,11 +33,10 @@ use crate::views::{message_meta, presence};
 
 const OVERRIDE_DEBOUNCE: Duration = Duration::from_secs(2);
 const OVERRIDE_BATCH: usize = 200;
-const OVERRIDE_AUTHOR_WINDOW: usize = 100;
 const FILTER_RECHECK: usize = 100;
 const ACCESSORY_SLOT: &str = "message-accessory";
 
-type OverrideEntry = (Option<Snowflake>, Snowflake, Option<UserOverride>);
+type OverrideEntry = (Option<Snowflake>, Snowflake, Option<UserOverride>, bool);
 type OverrideTarget = (Option<Snowflake>, User, Option<Presence>);
 
 type PluginJob = Box<dyn FnOnce() + Send>;
@@ -674,12 +673,21 @@ impl Core {
 		if !self.flags.display {
 			return;
 		}
+		if !changes.presence.is_empty() {
+			self.invalidate_overrides(changes.presence.clone());
+		}
 		let selected = self.state.read().selected();
 		let visible_messages =
 			selected.is_some_and(|selected| changes.messages.contains(selected.channel_id));
-		if visible_messages || !changes.members.is_empty() {
+		if visible_messages || !changes.members.is_empty() || changes.private_channels {
 			self.schedule_overrides(OVERRIDE_DEBOUNCE);
 		}
+	}
+
+	pub(super) fn invalidate_overrides(&mut self, users: IdSet) {
+		self.overrides_generation += 1;
+		self.apply_local(LocalEvent::UserOverridesInvalidated { users });
+		self.schedule_overrides(OVERRIDE_DEBOUNCE);
 	}
 
 	pub(super) fn refresh_overrides(&mut self) {
@@ -710,7 +718,9 @@ impl Core {
 				.display_users(&users)
 				.into_iter()
 				.zip(keys)
-				.map(|(answer, (guild_id, user_id))| (guild_id, user_id, merge_answers(answer)))
+				.map(|(result, (guild_id, user_id))| {
+					(guild_id, user_id, merge_answers(result.answers), result.complete)
+				})
 				.collect();
 			let _ = internal.send(Internal::Overrides { epoch, entries });
 		});
@@ -722,13 +732,13 @@ impl Core {
 			self.schedule_overrides(Duration::ZERO);
 			return;
 		}
-		for (_, user_id, _) in &entries {
-			self.invalidated_users.remove(user_id);
-		}
-		let more = entries.len() >= OVERRIDE_BATCH;
+		let more = entries.iter().filter(|(_, _, _, complete)| *complete).count() >= OVERRIDE_BATCH;
+		let retry = entries.iter().any(|(_, _, _, complete)| !*complete);
 		self.apply_local(LocalEvent::UserOverrides { entries });
 		if more {
 			self.schedule_overrides(Duration::ZERO);
+		} else if retry {
+			self.schedule_overrides(OVERRIDE_DEBOUNCE);
 		}
 	}
 
@@ -743,7 +753,7 @@ impl Core {
 		let mut targets = Vec::new();
 		let mut consider = |user: &User| {
 			if targets.len() < OVERRIDE_BATCH
-				&& (!state.has_override_entry(guild_id, user.id) || self.invalidated_users.contains(&user.id))
+				&& !state.has_override_entry(guild_id, user.id)
 				&& seen.insert(user.id)
 			{
 				targets.push((
@@ -754,8 +764,23 @@ impl Core {
 			}
 		};
 		if let Some(cache) = state.messages(selected.channel_id) {
-			for message in cache.ordered.iter().rev().take(OVERRIDE_AUTHOR_WINDOW) {
+			for message in cache.ordered.iter().rev() {
 				consider(&message.author);
+			}
+		}
+		if guild_id.is_none()
+			&& let Some(channel) = state.channel(selected.channel_id)
+		{
+			for user_id in &channel.recipient_ids {
+				if let Some(user) = state.user(*user_id) {
+					consider(user);
+				}
+			}
+			for user in channel.recipients.iter() {
+				consider(user);
+			}
+			if let Some(user) = state.current_user() {
+				consider(user);
 			}
 		}
 		if let Some(guild) = guild_id.and_then(|id| state.guild(id)) {
