@@ -6,7 +6,7 @@ use url::Url;
 #[derive(Debug, Error)]
 pub enum LoginError {
 	#[error("token was rejected")]
-	Rejected,
+	Rejected { api_code: Option<i64> },
 	#[error("token is empty")]
 	Empty,
 	#[error(transparent)]
@@ -47,7 +47,9 @@ pub async fn validate_token(rest_base: &Url, token: &str) -> Result<User, LoginE
 	});
 	client.set_token(Token::new(token));
 	client.current_user().await.map_err(|error| match error {
-		RestError::Unauthorized(_) | RestError::Forbidden(_) => LoginError::Rejected,
+		RestError::Unauthorized(api) => LoginError::Rejected {
+			api_code: api.map(|api| api.code),
+		},
 		other => LoginError::Rest(other),
 	})
 }

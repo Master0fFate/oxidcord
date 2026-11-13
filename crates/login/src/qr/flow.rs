@@ -253,7 +253,7 @@ impl Flow<'_> {
 
 	async fn exchange(&self, ticket: &str) -> Result<Token> {
 		let mut captcha: Option<CaptchaSolution> = None;
-		for _ in 0..CAPTCHA_ATTEMPTS {
+		for attempt in 0..CAPTCHA_ATTEMPTS {
 			let mut request = Request::post(LOGIN_PATH).json(&TicketExchange { ticket });
 			if let Some(solution) = &captcha {
 				request = request.header("X-Captcha-Key", solution.key.as_str());
@@ -269,9 +269,10 @@ impl Flow<'_> {
 					let grant: TokenGrant = grant;
 					return self.key.decrypt_token(&grant.encrypted_token);
 				}
-				Err(rest::RestError::CaptchaRequired(challenge)) => {
+				Err(rest::RestError::CaptchaRequired(challenge)) if attempt + 1 < CAPTCHA_ATTEMPTS => {
 					captcha = Some(self.solve_captcha(*challenge).await?);
 				}
+				Err(rest::RestError::CaptchaRequired(_)) => return Err(LoginError::Captcha),
 				Err(error) => return Err(exchange_error(error)),
 			}
 		}
@@ -279,10 +280,19 @@ impl Flow<'_> {
 	}
 
 	async fn solve_captcha(&self, challenge: rest::CaptchaChallenge) -> Result<CaptchaSolution> {
+		if challenge
+			.service
+			.as_deref()
+			.is_some_and(|service| service != "hcaptcha")
+		{
+			return Err(LoginError::Captcha);
+		}
 		let sitekey = challenge
 			.sitekey
-			.ok_or_else(|| LoginError::Protocol("captcha site key missing".to_owned()))?;
-		let session = CaptchaLogin::start(&sitekey, challenge.rqdata.as_deref())?;
+			.filter(|sitekey| !sitekey.trim().is_empty())
+			.ok_or(LoginError::Captcha)?;
+		self.emit(QrEvent::WaitingForCaptcha).await?;
+		let session = CaptchaLogin::start(&sitekey, challenge.rqdata.as_deref(), challenge.invisible)?;
 		let key = session.wait().await?;
 		Ok(CaptchaSolution {
 			key,
@@ -300,15 +310,10 @@ struct CaptchaSolution {
 
 fn exchange_error(error: rest::RestError) -> LoginError {
 	match error {
-		rest::RestError::Http(status, Some(api)) if !api.message.is_empty() => LoginError::Protocol(format!(
-			"Discord refused the ticket ({}): {}",
-			status.as_u16(),
-			api.message
-		)),
-		rest::RestError::Http(status, _) => LoginError::Protocol(format!(
-			"Discord refused the ticket with http {}",
-			status.as_u16()
-		)),
+		rest::RestError::Unauthorized(api) => {
+			let api = api.map(|api| format!(", API {}", api.code)).unwrap_or_default();
+			LoginError::Protocol(format!("Discord refused the request (HTTP 401{api})"))
+		}
 		other => LoginError::from(other),
 	}
 }

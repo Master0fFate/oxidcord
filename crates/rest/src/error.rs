@@ -63,6 +63,17 @@ pub enum RestError {
 const INVALID_TOKEN_CODE: i64 = 40001;
 
 impl RestError {
+	pub fn status_code(&self) -> Option<u16> {
+		match self {
+			Self::Http(status, _) => Some(status.as_u16()),
+			Self::Unauthorized(_) => Some(401),
+			Self::Forbidden(_) => Some(403),
+			Self::NotFound(_) => Some(404),
+			Self::RateLimited { .. } => Some(429),
+			_ => None,
+		}
+	}
+
 	pub fn api(&self) -> Option<&ApiError> {
 		match self {
 			Self::Http(_, api) | Self::Unauthorized(api) | Self::Forbidden(api) | Self::NotFound(api) => {

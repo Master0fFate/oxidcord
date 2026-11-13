@@ -78,7 +78,7 @@ pub(super) fn send_failure_reason(error: &RestError) -> String {
 }
 
 pub(super) fn rest_failure(what: &str, error: &RestError) -> Internal {
-	tracing::warn!(%error, what, "rest call failed");
+	tracing::warn!(what, status = ?error.status_code(), api_code = ?error.api().map(|api| api.code), "rest call failed");
 	if error.is_dead_session() {
 		Internal::SignedOut
 	} else {

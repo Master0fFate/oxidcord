@@ -121,7 +121,7 @@ const NOTIFICATION_ICON_WAIT: Duration = Duration::from_millis(1500);
 const RECENT_TARGETS: usize = 8;
 
 pub enum ShellEvent {
-	LoggedOut,
+	LoggedOut { auth_rejected: bool },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -782,7 +782,7 @@ impl Shell {
 	fn log_out(&mut self, window: &mut Window, cx: &mut Context<Self>) {
 		self.send(Command::Logout, cx);
 		self.close_settings(window, cx);
-		cx.emit(ShellEvent::LoggedOut);
+		cx.emit(ShellEvent::LoggedOut { auth_rejected: false });
 	}
 
 	fn confirm_close_dm(&mut self, channel: Snowflake, window: &mut Window, cx: &mut Context<Self>) {
@@ -1164,7 +1164,8 @@ impl Shell {
 		if changes.session {
 			let session = self.data.read(cx).state().session().clone();
 			if session.signed_out {
-				self.log_out(window, cx);
+				self.close_settings(window, cx);
+				cx.emit(ShellEvent::LoggedOut { auth_rejected: true });
 				return;
 			}
 			self.timeline
@@ -1790,7 +1791,7 @@ impl Shell {
 				SettingsEvent::LogOut => {
 					this.send(Command::Logout, cx);
 					this.close_settings(window, cx);
-					cx.emit(ShellEvent::LoggedOut);
+					cx.emit(ShellEvent::LoggedOut { auth_rejected: false });
 				}
 				SettingsEvent::CompactMessages(compact) => {
 					let compact = *compact;

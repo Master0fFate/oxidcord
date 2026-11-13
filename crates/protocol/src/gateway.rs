@@ -279,11 +279,11 @@ pub fn sec_ch_ua(version: &str) -> String {
 
 pub fn sec_ch_ua_platform() -> &'static str {
 	if cfg!(target_os = "macos") {
-		"macOS"
+		"\"macOS\""
 	} else if cfg!(target_os = "linux") {
-		"Linux"
+		"\"Linux\""
 	} else {
-		"Windows"
+		"\"Windows\""
 	}
 }
 

@@ -33,7 +33,6 @@ const UNSTRUCTURED_RETRY_AFTER: Duration = Duration::from_secs(5);
 const UPLOAD_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 const WEB_ORIGIN: &str = "https://discord.com";
 const WEB_REFERER: &str = "https://discord.com/channels/@me";
-const CAPTCHA_MARKER: &[u8] = b"\"captcha_key\"";
 
 struct Throttle {
 	retry_after: Duration,
@@ -185,13 +184,15 @@ async fn read_capped(response: Response, max: usize) -> Result<Bytes> {
 	Ok(buffer.freeze())
 }
 
-fn contains(body: &[u8], marker: &[u8]) -> bool {
-	body.windows(marker.len()).any(|window| window == marker)
-}
-
 fn classify(status: StatusCode, body: &[u8]) -> RestError {
-	if status == StatusCode::BAD_REQUEST && contains(body, CAPTCHA_MARKER) {
-		let value = serde_json::from_slice::<Value>(body).unwrap_or_default();
+	let value = serde_json::from_slice::<Value>(body).ok();
+	if matches!(status, StatusCode::BAD_REQUEST | StatusCode::FORBIDDEN)
+		&& let Some(value) = value.as_ref()
+		&& value
+			.get("captcha_key")
+			.and_then(Value::as_array)
+			.is_some_and(|keys| keys.iter().all(Value::is_string))
+	{
 		let text = |name: &str| value.get(name).and_then(Value::as_str).map(str::to_owned);
 		return RestError::CaptchaRequired(Box::new(CaptchaChallenge {
 			sitekey: text("captcha_sitekey"),
@@ -205,7 +206,6 @@ fn classify(status: StatusCode, body: &[u8]) -> RestError {
 				.unwrap_or(false),
 		}));
 	}
-	let value = serde_json::from_slice::<Value>(body).ok();
 	let gated = matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN);
 	if gated && value.as_ref().is_some_and(|value| value.get("mfa").is_some()) {
 		return RestError::MfaRequired;

@@ -42,6 +42,7 @@ pub enum QrEvent {
 		avatar: Option<String>,
 		id: String,
 	},
+	WaitingForCaptcha,
 	Token(protocol::Token),
 	Expired,
 	Cancelled,

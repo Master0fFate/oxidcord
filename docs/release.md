@@ -16,7 +16,7 @@ Rotating the key requires shipping a release signed with the old key that contai
 
 1. Bump `version` in `[workspace.package]` and commit.
 2. Tag the commit `vX.Y.Z` (`vX.Y.Z-beta.1` for a prerelease) and push the tag.
-3. `.github/workflows/release.yml` checks the tag against the crate version, builds every package, writes and signs `manifest.json`, and creates the GitHub release with the commit subjects since the previous tag as notes.
+3. `.github/workflows/release.yml` checks the tag against the crate version, builds every package, writes and signs `manifest.json`, and creates the GitHub release with `docs/releases/<version>.md` as notes when present, otherwise the commit subjects since the previous tag.
 
 Prereleases are skipped by `releases/latest`, so only clients on the beta channel or with prereleases allowed see them.
 

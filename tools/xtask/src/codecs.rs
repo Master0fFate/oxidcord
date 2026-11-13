@@ -5,8 +5,9 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail, ensure};
 use sha2::{Digest, Sha256};
 
-const RELEASE: &str = "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-26-14-25";
-const BUILD: &str = "ffmpeg-n8.1.3-24-g92611900bb";
+const RELEASE: &str =
+	"https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/autobuild-2026-11-13-12-43";
+const BUILD: &str = "ffmpeg-n8.1.3-35-gf1acb0a266";
 const LICENSE_FILE: &str = "LICENSE.txt";
 const LICENSE_OUT: &str = "LICENSE-FFMPEG.txt";
 const WINDOWS_LIBRARIES: [&str; 3] = ["avcodec-62.dll", "avutil-60.dll", "swresample-6.dll"];
@@ -30,28 +31,28 @@ const PACKS: [Pack; 4] = [
 	Pack {
 		name: "windows-x64",
 		platform: "win64",
-		sha256: "96afe9bee66012f4cbc336a473f0b595060d73bdc5efe4331d55101500d0a93e",
+		sha256: "57cb10e4703b88edf55aa49e94dee19fd12f555f82ed3493a8cd70c847699996",
 		archive: Archive::Zip,
 		libraries: WINDOWS_LIBRARIES,
 	},
 	Pack {
 		name: "windows-arm64",
 		platform: "winarm64",
-		sha256: "4b08c715ab4d088c9ed4d1fd90d0975a41a21be7c45d2ddf26e69621770b9d98",
+		sha256: "cba8cbe7d9577bd01f6f165a3e59811e481aafe0a12db178c20171eeb5cbb79f",
 		archive: Archive::Zip,
 		libraries: WINDOWS_LIBRARIES,
 	},
 	Pack {
 		name: "linux-x64",
 		platform: "linux64",
-		sha256: "149e1b0e4f92ef33925fab34bf6809e116d486a9331ec9d38b306c3096bc9160",
+		sha256: "67b307fb2b07d2510a8d61cda583695560af1c76e355969e37133e66f98db7c4",
 		archive: Archive::TarXz,
 		libraries: LINUX_LIBRARIES,
 	},
 	Pack {
 		name: "linux-arm64",
 		platform: "linuxarm64",
-		sha256: "6d09e7dbe475aec23b997ace6f0c96c0fa9dbbad868e0671a8f1b669f5956f5c",
+		sha256: "b3e1af569cb227bee9d2030783a4e92757843d16a04e415e6167183ca4aa3a96",
 		archive: Archive::TarXz,
 		libraries: LINUX_LIBRARIES,
 	},

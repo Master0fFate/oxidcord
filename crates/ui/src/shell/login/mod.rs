@@ -22,7 +22,7 @@ use self::qr::QrState;
 use self::web::WebState;
 use super::SettingsBackend;
 use super::title_bar::TitleBar;
-use crate::i18n::Translate as _;
+use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
 use crate::theme::{Theme, with_alpha};
 
@@ -39,7 +39,11 @@ pub struct LoginOptions {
 enum Phase {
 	Idle,
 	Checking,
-	Failed(&'static str),
+	Failed {
+		key: &'static str,
+		status: Option<u16>,
+		api_code: Option<i64>,
+	},
 }
 
 pub struct LoginScreen {
@@ -96,6 +100,15 @@ impl LoginScreen {
 		screen
 	}
 
+	pub(crate) fn show_auth_rejected(&mut self, cx: &mut Context<Self>) {
+		self.phase = Phase::Failed {
+			key: "login-auth-rejected",
+			status: None,
+			api_code: None,
+		};
+		cx.notify();
+	}
+
 	fn acknowledge(&mut self, cx: &mut Context<Self>) {
 		self.acknowledged = true;
 		(self.backend.write)(&|settings| settings.first_run_acknowledged = true);
@@ -109,7 +122,11 @@ impl LoginScreen {
 		}
 		let token = self.input.read(cx).value().trim().to_owned();
 		if token.is_empty() {
-			self.phase = Phase::Failed("login-empty");
+			self.phase = Phase::Failed {
+				key: "login-empty",
+				status: None,
+				api_code: None,
+			};
 			cx.notify();
 			return;
 		}
@@ -128,14 +145,30 @@ impl LoginScreen {
 		cx.spawn(async move |this, cx| {
 			let failure = match receiver.await {
 				Ok(Ok(_)) => None,
-				Ok(Err(LoginError::Rejected)) => Some("login-rejected"),
-				Ok(Err(LoginError::Empty)) => Some("login-empty"),
-				Ok(Err(LoginError::Rest(_))) | Err(_) => Some("login-network"),
+				Ok(Err(LoginError::Rejected { api_code })) => Some(("login-rejected", Some(401), api_code)),
+				Ok(Err(LoginError::Empty)) => Some(("login-empty", None, None)),
+				Ok(Err(LoginError::Rest(error))) => {
+					let key = match &error {
+						rest::RestError::CaptchaRequired(_) => "login-captcha-required",
+						rest::RestError::MfaRequired => "login-mfa-required",
+						rest::RestError::RateLimited { .. } => "login-rate-limited",
+						rest::RestError::Forbidden(_) => "login-forbidden",
+						rest::RestError::Network(_) => "login-network",
+						_ => "login-response-error",
+					};
+					Some((key, error.status_code(), error.api().map(|api| api.code)))
+				}
+				Err(_) => Some(("login-network", None, None)),
 			};
+			tracing::info!(success = failure.is_none(), "login REST validation finished");
 			this.update(cx, |this, cx| match failure {
 				None => cx.emit(LoginEvent::Authenticated(token)),
-				Some(key) => {
-					this.phase = Phase::Failed(key);
+				Some((key, status, api_code)) => {
+					this.phase = Phase::Failed {
+						key,
+						status,
+						api_code,
+					};
 					cx.notify();
 				}
 			})
@@ -185,9 +218,27 @@ impl LoginScreen {
 		let status: Option<SharedString> = match self.phase {
 			Phase::Idle => None,
 			Phase::Checking => Some(cx.t("login-checking")),
-			Phase::Failed(key) => Some(cx.t(key)),
+			Phase::Failed {
+				key,
+				status,
+				api_code,
+			} => {
+				let mut message = cx.t(key).to_string();
+				if let Some(status) = status {
+					let detail = cx.t_args(
+						"login-error-http",
+						&[("status", ArgValue::from(status.to_string()))],
+					);
+					message.push_str(&format!(" ({detail})"));
+				}
+				if let Some(code) = api_code {
+					let detail = cx.t_args("login-error-api", &[("code", ArgValue::from(code.to_string()))]);
+					message.push_str(&format!(" ({detail})"));
+				}
+				Some(message.into())
+			}
 		};
-		let failed = matches!(self.phase, Phase::Failed(_));
+		let failed = matches!(self.phase, Phase::Failed { .. });
 		let locked = !self.acknowledged;
 		div()
 			.flex()

@@ -428,10 +428,12 @@ fn run_login_helper() -> Option<i32> {
 			let ipc_name = args.next().unwrap_or_default();
 			let sitekey = args.next().unwrap_or_default();
 			let rqdata = args.next().filter(|value| !value.is_empty());
+			let invisible = args.next().as_deref() == Some("--invisible");
 			Some(code(login::web_login::run_captcha_helper(
 				&ipc_name,
 				&sitekey,
 				rqdata.as_deref(),
+				invisible,
 			)))
 		}
 		_ => None,

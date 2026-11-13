@@ -12,7 +12,7 @@ use tokio::time::{Instant, Interval, MissedTickBehavior, interval_at, sleep, sle
 use tokio_tungstenite::tungstenite::Error as WebSocketError;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::protocol::CloseFrame;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use crate::config::GatewayConfig;
 use crate::error::{FATAL_CLOSE_CODES, GatewayError};
@@ -80,6 +80,8 @@ struct Connection {
 	awaiting_ack: bool,
 	heartbeat_sent: Instant,
 	ready: bool,
+	ready_received: bool,
+	auth_sent: bool,
 	identify_at: Option<Instant>,
 	sent: SendWindow,
 }
@@ -93,6 +95,8 @@ impl Connection {
 			awaiting_ack: false,
 			heartbeat_sent: Instant::now(),
 			ready: false,
+			ready_received: false,
+			auth_sent: false,
 			identify_at: None,
 			sent: SendWindow::new(SEND_PERMITS, SEND_WINDOW),
 		}
@@ -146,6 +150,15 @@ impl Session {
 			if self.failures > 0 {
 				self.pause(backoff(self.failures)).await?;
 			}
+			info!(
+				attempt = self.failures + 1,
+				mode = if self.session_id.is_some() {
+					"resume"
+				} else {
+					"identify"
+				},
+				"gateway connecting"
+			);
 			self.emit(GatewayEvent::Connecting {
 				attempt: self.failures + 1,
 			})
@@ -159,10 +172,10 @@ impl Session {
 					if failure {
 						self.failures += 1;
 					}
-					debug!(
+					info!(
 						?code,
 						will_resume = self.session_id.is_some(),
-						"gateway disconnected"
+						"gateway reconnecting"
 					);
 					self.emit(GatewayEvent::Disconnected {
 						code,
@@ -230,6 +243,15 @@ impl Session {
 				}
 			};
 			if let Some(ended) = ended {
+				let code = match &ended {
+					Ended::Reconnect { code, .. } | Ended::Fatal { code, .. } => *code,
+				};
+				info!(
+					?code,
+					ready_received = connection.ready_received,
+					before_auth = !connection.auth_sent,
+					"gateway connection ended"
+				);
 				return Ok(ended);
 			}
 		}
@@ -315,6 +337,11 @@ impl Session {
 					.d
 					.and_then(|data| serde_json::from_str::<bool>(data.get()).ok())
 					.unwrap_or(false);
+				info!(
+					resumable,
+					will_resume = resumable && self.session_id.is_some(),
+					"gateway invalid session"
+				);
 				if resumable && self.session_id.is_some() {
 					return Ok(Some(
 						self.hangup(connection, LIBRARY_CLOSE, "invalid session", false)
@@ -384,8 +411,21 @@ impl Session {
 				frames::identify(&self.config)
 			}
 		};
+		let mode = if self.session_id.is_some() {
+			"resume"
+		} else {
+			"identify"
+		};
 		match frame {
-			Ok(frame) => self.transmit(connection, frame).await,
+			Ok(frame) => {
+				info!(mode, "gateway authentication sending");
+				let ended = self.transmit(connection, frame).await;
+				if ended.is_none() {
+					connection.auth_sent = true;
+					info!(mode, "gateway authentication sent");
+				}
+				ended
+			}
 			Err(error) => Some(Ended::fatal(None, error.to_string(), error)),
 		}
 	}
@@ -441,6 +481,8 @@ impl Session {
 		debug!(event = name, "gateway dispatch");
 		let event = match event {
 			DispatchEvent::Ready(mut ready) => {
+				connection.ready_received = true;
+				info!("gateway READY received");
 				self.session_id = Some(ready.session_id.clone()).filter(|id| !id.is_empty());
 				self.resume_url = ready
 					.resume_gateway_url
@@ -451,6 +493,10 @@ impl Session {
 				self.ready_failures = 0;
 				self.outbox.discard_queued();
 				if let Some(token) = ready.auth_token.take().filter(|token| !token.as_str().is_empty()) {
+					info!(
+						changed = token.as_str() != self.config.token.as_str(),
+						"gateway token rotated"
+					);
 					self.config.token = Token::new(token.as_str());
 					self.emit(GatewayEvent::TokenRefreshed(token)).await?;
 				}
@@ -458,6 +504,7 @@ impl Session {
 			}
 			DispatchEvent::ReadySupplemental(supplemental) => GatewayEvent::ReadySupplemental(supplemental),
 			DispatchEvent::Resumed => {
+				info!("gateway resumed");
 				connection.ready = true;
 				self.failures = 0;
 				GatewayEvent::Resumed

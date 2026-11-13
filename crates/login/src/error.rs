@@ -32,10 +32,16 @@ impl From<rest::RestError> for LoginError {
 			rest::RestError::Unauthorized(_) => Self::InvalidToken,
 			rest::RestError::CaptchaRequired(_) => Self::Captcha,
 			rest::RestError::Network(reason) => Self::Network(reason),
-			rest::RestError::RateLimited { retry_after } => {
-				Self::Network(format!("rate limited, retry in {retry_after:?}"))
-			}
-			other => Self::Protocol(other.to_string()),
+			other => match other.status_code() {
+				Some(status) => {
+					let api = other
+						.api()
+						.map(|api| format!(", API {}", api.code))
+						.unwrap_or_default();
+					Self::Protocol(format!("Discord refused the request (HTTP {status}{api})"))
+				}
+				None => Self::Protocol(other.to_string()),
+			},
 		}
 	}
 }

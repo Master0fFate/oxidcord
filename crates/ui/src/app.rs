@@ -392,8 +392,11 @@ impl AppRoot {
 		self._screen_subscription =
 			Some(
 				cx.subscribe_in(&shell, window, |this, _, event: &ShellEvent, window, cx| {
-					let ShellEvent::LoggedOut = event;
+					let ShellEvent::LoggedOut { auth_rejected } = event;
 					this.show_login(window, cx);
+					if *auth_rejected && let Screen::Login(login) = &this.screen {
+						login.update(cx, |login, cx| login.show_auth_rejected(cx));
+					}
 				}),
 			);
 		self.screen = Screen::Main(shell);

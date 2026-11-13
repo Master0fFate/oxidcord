@@ -8,4 +8,4 @@ out_dir="${OUT_DIR:-$root/dist}"
 mkdir -p "$out_dir"
 
 cd "$root"
-cargo deb -p oxidcord --no-build --deb-version "$version" -o "$out_dir/oxidcord-$version-linux-$arch-deb.deb"
+cargo deb -p oxidcord --no-build --deb-version "${version/-/~}" -o "$out_dir/oxidcord-$version-linux-$arch-deb.deb"

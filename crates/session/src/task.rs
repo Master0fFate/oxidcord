@@ -705,16 +705,19 @@ impl Core {
 			GatewayEvent::Dispatch { event, .. } => self.on_dispatch(event),
 			GatewayEvent::Disconnected {
 				code,
-				reason,
+				reason: _,
 				will_resume,
 			} => {
-				tracing::info!(?code, reason, will_resume, "gateway disconnected");
+				tracing::info!(?code, will_resume, "gateway disconnected");
 				self.stats.reconnects.fetch_add(1, Ordering::Relaxed);
 				self.apply_local(LocalEvent::ConnectionChanged { connected: false });
 			}
 			GatewayEvent::Fatal(GatewayError::Fatal {
 				code: AUTHENTICATION_FAILED,
-			}) => self.on_signed_out(),
+			}) => {
+				tracing::info!(source = "gateway", "authentication rejected");
+				self.on_signed_out();
+			}
 			GatewayEvent::Fatal(error) => {
 				tracing::error!(%error, "gateway stopped");
 				self.apply_local(LocalEvent::ConnectionChanged { connected: false });
@@ -999,7 +1002,10 @@ impl Core {
 			Internal::FriendRequestFailed { username, reason } => {
 				self.apply_local(LocalEvent::FriendRequestFailed { username, reason })
 			}
-			Internal::SignedOut => self.on_signed_out(),
+			Internal::SignedOut => {
+				tracing::info!(source = "rest", "authentication rejected");
+				self.on_signed_out();
+			}
 			Internal::CameraStarted { generation, result } => self.on_camera_started(generation, result),
 			Internal::StreamTimeout { generation } => self.on_stream_timeout(generation),
 			Internal::StreamConnected { generation, result } => self.on_stream_connected(generation, result),

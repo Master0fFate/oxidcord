@@ -20,6 +20,7 @@ pub(super) enum QrState {
 	Starting,
 	Code(Arc<RenderImage>),
 	Scanned { name: SharedString, avatar: String },
+	WaitingForCaptcha,
 	Expired,
 	Cancelled,
 	Captcha,
@@ -28,6 +29,8 @@ pub(super) enum QrState {
 
 impl LoginScreen {
 	pub(super) fn start_qr(&mut self, cx: &mut Context<Self>) {
+		self.qr_session = None;
+		self.qr_task = None;
 		self.qr_state = QrState::Starting;
 		let entered = self.runtime.enter();
 		let mut session = QrLogin::start(self.options.qr_config.clone());
@@ -67,6 +70,10 @@ impl LoginScreen {
 				};
 				false
 			}
+			QrEvent::WaitingForCaptcha => {
+				self.qr_state = QrState::WaitingForCaptcha;
+				false
+			}
 			QrEvent::Token(token) => {
 				self.validate(token.as_str().to_owned(), cx);
 				true
@@ -98,6 +105,7 @@ impl LoginScreen {
 		match &self.qr_state {
 			QrState::Idle => Some((cx.t("login-qr-locked"), false)),
 			QrState::Starting => Some((cx.t("login-qr-starting"), false)),
+			QrState::WaitingForCaptcha => Some((cx.t("login-qr-captcha-waiting"), false)),
 			QrState::Expired => danger(cx.t("login-qr-expired")),
 			QrState::Cancelled => danger(cx.t("login-qr-cancelled")),
 			QrState::Captcha => Some((cx.t("login-qr-captcha"), false)),
@@ -150,7 +158,9 @@ impl LoginScreen {
 				let (text, failed) = self.qr_message(cx).unwrap_or_default();
 				let retry = matches!(
 					self.qr_state,
-					QrState::Expired | QrState::Cancelled | QrState::Captcha | QrState::Failed(_)
+					QrState::WaitingForCaptcha
+						| QrState::Expired | QrState::Cancelled
+						| QrState::Captcha | QrState::Failed(_)
 				);
 				div()
 					.flex()

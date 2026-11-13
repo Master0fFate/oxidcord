@@ -89,7 +89,7 @@ Discord startup time was not measured, because that would mean closing a running
 
 ## Install
 
-Download the package for your system from the [latest release](https://github.com/Master0fFate/oxidcord/releases/latest). Versions with a `-beta` suffix are pre-releases and only reach clients on the beta update channel.
+Download the package for your system from the [latest release](https://github.com/Master0fFate/oxidcord/releases/latest). Pre-releases, including release candidates, reach clients on the beta update channel or with pre-releases allowed.
 
 | System | File | Notes |
 | --- | --- | --- |
@@ -110,9 +110,9 @@ Builds are not code signed with a paid developer certificate. Expect these warni
 1. Start Oxidcord. The login screen carries a notice about the Discord Terms of Service and account termination. Read it, and only continue if you accept the risk.
 2. Sign in with one of the methods the login screen offers:
    - **QR code**: open Discord on your phone, go to Settings, Scan QR Code, and scan the code shown in Oxidcord.
-   - **Web login**: sign in through a Discord login page in a separate window. Oxidcord only reads the resulting session.
+   - **Web login**: finish signing in on the official Discord page in the separate window, then click **Continue**. Oxidcord only reads the resulting session.
    - **Token**: paste an existing session token. Never paste a token someone else gave you, and never share yours.
-3. If the sign-in asks for multi-factor authentication or a captcha, complete it yourself. Oxidcord does not solve, skip or bypass either of them.
+3. If sign-in asks for multi-factor authentication or a captcha, complete it yourself. For a QR login captcha, click **Start captcha** if prompted. Oxidcord does not solve, skip or bypass either of them.
 4. Your servers and direct messages load in the sidebar. The token is saved to the OS credential store (Windows Credential Manager, macOS Keychain, Secret Service on Linux).
 
 Want to look around without an account? Run the built-in mock server. Nothing leaves your machine:

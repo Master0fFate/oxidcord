@@ -43,7 +43,6 @@ const LATE_TOKEN_GRACE: Duration = Duration::from_millis(750);
 const REAP_ATTEMPTS: u32 = 30;
 const REMOVE_ATTEMPTS: u32 = 30;
 const RETRY_DELAY: Duration = Duration::from_millis(100);
-const GATEWAY_CLOSE_DELAY: Duration = Duration::from_millis(3000);
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -52,34 +51,55 @@ const TOKEN_PROBE: &str = r#"
 	if (window.top !== window || location.origin !== 'https://discord.com') {
 		return;
 	}
-	const direct = window.localStorage;
-	let probe = null;
-	const storage = () => {
-		if (direct) {
-			return direct;
-		}
-		if (!probe && document.body) {
-			const frame = document.createElement('iframe');
-			frame.style.display = 'none';
-			document.body.appendChild(frame);
-			probe = frame.contentWindow.localStorage;
-		}
-		return probe;
-	};
-	const timer = setInterval(() => {
-		try {
-			const area = storage();
-			const stored = area && area.getItem('token');
-			if (!stored) {
+	let originalStorage;
+	try {
+		originalStorage = window.localStorage;
+	} catch (error) {}
+	let fallbackStorage;
+	const initialize = () => {
+		const control = document.createElement('div');
+		control.style.cssText = 'position:fixed;bottom:8px;right:8px;z-index:2147483647;background:#202225;color:white;padding:8px;border-radius:6px;font:14px sans-serif;max-width:240px';
+		const status = document.createElement('div');
+		status.textContent = 'Finish signing in, then select Continue.';
+		status.setAttribute('role', 'status');
+		const button = document.createElement('button');
+		button.textContent = 'Continue';
+		control.append(status, button);
+		document.body.appendChild(control);
+		button.addEventListener('click', () => {
+			if (!location.pathname.startsWith('/channels/')) {
+				status.textContent = 'Finish signing in to Discord first.';
 				return;
 			}
-			const token = stored.trim().replace(/^"+|"+$/g, '');
-			if (token) {
-				clearInterval(timer);
-				window.ipc.postMessage(token);
-			}
-		} catch (error) {}
-	}, 1000);
+			try {
+				let area = originalStorage;
+				if (!area) {
+					if (!fallbackStorage) {
+						const frame = document.createElement('iframe');
+						frame.style.display = 'none';
+						document.body.appendChild(frame);
+						fallbackStorage = frame.contentWindow.localStorage;
+					}
+					area = fallbackStorage;
+				}
+				const stored = area.getItem('token');
+				let token = stored;
+				if (stored !== null) {
+					try { token = JSON.parse(stored); } catch (error) {}
+				}
+				if (typeof token === 'string' && token.trim()) {
+					window.ipc.postMessage(token);
+					return;
+				}
+			} catch (error) {}
+			status.textContent = 'Sign in to Discord, then select Continue.';
+		});
+	};
+	if (document.readyState === 'loading') {
+		document.addEventListener('DOMContentLoaded', initialize, { once: true });
+	} else {
+		initialize();
+	}
 })();
 "#;
 
@@ -109,7 +129,7 @@ impl WebLogin {
 pub struct CaptchaLogin;
 
 impl CaptchaLogin {
-	pub fn start(sitekey: &str, rqdata: Option<&str>) -> Result<CaptchaSession> {
+	pub fn start(sitekey: &str, rqdata: Option<&str>, invisible: bool) -> Result<CaptchaSession> {
 		if sitekey.is_empty() {
 			return Err(LoginError::Helper("captcha site key missing".to_owned()));
 		}
@@ -117,7 +137,7 @@ impl CaptchaLogin {
 		let listener = ListenerOptions::new()
 			.name(socket_name(&ipc_name)?)
 			.create_tokio()?;
-		let child = spawn_captcha_helper(&std::env::current_exe()?, &ipc_name, sitekey, rqdata)?;
+		let child = spawn_captcha_helper(&std::env::current_exe()?, &ipc_name, sitekey, rqdata, invisible)?;
 		Ok(CaptchaSession {
 			session: HelperSession {
 				listener,
@@ -234,22 +254,36 @@ async fn read_token(stream: async_socket::Stream) -> Result<Token> {
 	if !plausible(cleaned) {
 		return Err(LoginError::Helper("helper sent a malformed token".to_owned()));
 	}
+	tracing::info!("web login handoff received");
 	Ok(Token::new(cleaned))
 }
 
 async fn read_captcha(stream: async_socket::Stream) -> Result<String> {
-	let mut received = Zeroizing::new(Vec::with_capacity(MAX_CAPTCHA_BYTES + 1));
-	let mut limited = stream.take(MAX_CAPTCHA_BYTES as u64 + 1);
+	let mut received = Zeroizing::new(Vec::with_capacity(MAX_CAPTCHA_BYTES + 10));
+	let mut limited = stream.take(MAX_CAPTCHA_BYTES as u64 + 10);
 	timeout(READ_TIMEOUT, limited.read_to_end(&mut received))
 		.await
 		.map_err(|_| LoginError::Helper("helper stalled while sending the captcha".to_owned()))??;
 	let text = std::str::from_utf8(&received)
 		.map_err(|_| LoginError::Helper("helper sent a malformed captcha".to_owned()))?;
-	let trimmed = text.trim();
-	if trimmed.is_empty() || trimmed.len() > MAX_CAPTCHA_BYTES {
+	if let Some(reason) = captcha_failure(text) {
+		return Err(LoginError::Helper(reason.to_owned()));
+	}
+	let token = text.strip_prefix("solution:").unwrap_or_default().trim();
+	if token.is_empty() || token.len() > MAX_CAPTCHA_BYTES {
 		return Err(LoginError::Helper("helper sent a malformed captcha".to_owned()));
 	}
-	Ok(trimmed.to_owned())
+	Ok(token.to_owned())
+}
+
+fn captcha_failure(message: &str) -> Option<&'static str> {
+	match message {
+		"failure:load" => Some("captcha failed to load"),
+		"failure:timeout" => Some("captcha loading timed out"),
+		"failure:render" => Some("captcha failed to render"),
+		"failure:challenge" => Some("captcha challenge failed"),
+		_ => None,
+	}
 }
 
 fn random_ipc_name() -> String {
@@ -303,13 +337,18 @@ fn spawn_captcha_helper(
 	ipc_name: &str,
 	sitekey: &str,
 	rqdata: Option<&str>,
+	invisible: bool,
 ) -> io::Result<Child> {
 	let mut command = Command::new(executable);
 	command
 		.arg(CAPTCHA_HELPER_FLAG)
 		.arg(ipc_name)
 		.arg(sitekey)
-		.arg(rqdata.unwrap_or_default())
+		.arg(rqdata.unwrap_or_default());
+	if invisible {
+		command.arg("--invisible");
+	}
+	command
 		.stdin(Stdio::null())
 		.stdout(Stdio::null())
 		.stderr(Stdio::null());
@@ -332,11 +371,23 @@ pub fn run_helper(ipc_name: &str) -> Result<()> {
 	run_helper_window(ipc_name, HelperMode::Web)
 }
 
-pub fn run_captcha_helper(ipc_name: &str, sitekey: &str, rqdata: Option<&str>) -> Result<()> {
+pub fn run_captcha_helper(
+	ipc_name: &str,
+	sitekey: &str,
+	rqdata: Option<&str>,
+	invisible: bool,
+) -> Result<()> {
 	if sitekey.is_empty() {
 		return Err(LoginError::Helper("captcha site key missing".to_owned()));
 	}
-	run_helper_window(ipc_name, HelperMode::Captcha { sitekey, rqdata })
+	run_helper_window(
+		ipc_name,
+		HelperMode::Captcha {
+			sitekey,
+			rqdata,
+			invisible,
+		},
+	)
 }
 
 enum HelperMode<'a> {
@@ -344,6 +395,7 @@ enum HelperMode<'a> {
 	Captcha {
 		sitekey: &'a str,
 		rqdata: Option<&'a str>,
+		invisible: bool,
 	},
 }
 
@@ -365,7 +417,11 @@ fn helper_failure(error: impl std::fmt::Display) -> LoginError {
 fn show_login_window(ipc_name: &str, data_dir: &Path, mode: HelperMode<'_>) -> Result<()> {
 	let (script, title, captcha) = match mode {
 		HelperMode::Web => (TOKEN_PROBE.to_owned(), WINDOW_TITLE, false),
-		HelperMode::Captcha { sitekey, rqdata } => (captcha_probe(sitekey, rqdata), CAPTCHA_TITLE, true),
+		HelperMode::Captcha {
+			sitekey,
+			rqdata,
+			invisible,
+		} => (captcha_probe(sitekey, rqdata, invisible), CAPTCHA_TITLE, true),
 	};
 	let mut event_loop = EventLoopBuilder::<HelperEvent>::with_user_event().build();
 	let proxy = event_loop.create_proxy();
@@ -407,7 +463,6 @@ fn show_login_window(ipc_name: &str, data_dir: &Path, mode: HelperMode<'_>) -> R
 	drop(webview);
 	drop(window);
 	if let Some(token) = pending {
-		thread::sleep(GATEWAY_CLOSE_DELAY);
 		outcome = deliver(ipc_name, &token);
 	}
 	outcome
@@ -427,13 +482,22 @@ fn forward_captcha(proxy: &EventLoopProxy<HelperEvent>, request: &Request<String
 	if request.uri().host() != Some(LOGIN_HOST) {
 		return;
 	}
-	let token = Zeroizing::new(request.body().trim().to_owned());
-	if !token.is_empty() && token.len() <= MAX_CAPTCHA_BYTES {
-		let _ = proxy.send_event(HelperEvent::Token(token));
-	}
+	let message = request.body();
+	let forwarded = if let Some(token) = message.strip_prefix("solution:") {
+		if token.trim().is_empty() || token.len() > MAX_CAPTCHA_BYTES {
+			"failure:challenge"
+		} else {
+			message
+		}
+	} else if captcha_failure(message).is_some() {
+		message
+	} else {
+		return;
+	};
+	let _ = proxy.send_event(HelperEvent::Token(Zeroizing::new(forwarded.to_owned())));
 }
 
-fn captcha_probe(sitekey: &str, rqdata: Option<&str>) -> String {
+fn captcha_probe(sitekey: &str, rqdata: Option<&str>, invisible: bool) -> String {
 	let sitekey = serde_json::to_string(sitekey).unwrap_or_else(|_| "\"\"".to_owned());
 	let rqdata = rqdata
 		.map(|value| serde_json::to_string(value).unwrap_or_else(|_| "null".to_owned()))
@@ -446,31 +510,121 @@ fn captcha_probe(sitekey: &str, rqdata: Option<&str>) -> String {
 	}}
 	const sitekey = {sitekey};
 	const rqdata = {rqdata};
-	let started = false;
-	const show = () => {{
-		if (started || !window.hcaptcha || !document.body) {{
-			return;
-		}}
-		started = true;
+	const invisible = {invisible};
+	const initialize = () => {{
 		const box = document.createElement('div');
-		box.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:#0b0b0b;display:flex;align-items:center;justify-content:center';
-		document.body.appendChild(box);
+		box.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:#0b0b0b;color:white;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;font:16px sans-serif';
+		const status = document.createElement('p');
+		status.textContent = 'Loading captcha...';
+		status.setAttribute('role', 'status');
 		const widget = document.createElement('div');
-		box.appendChild(widget);
-		const options = {{ sitekey, callback: (token) => window.ipc.postMessage(token) }};
-		if (rqdata) {{
-			options.rqdata = rqdata;
+		const retry = document.createElement('button');
+		retry.textContent = invisible ? 'Start captcha' : 'Try again';
+		retry.hidden = true;
+		const disclosure = document.createElement('p');
+		disclosure.append('This site is protected by hCaptcha and its ');
+		for (const [label, url] of [['Privacy Policy', 'https://www.hcaptcha.com/privacy'], ['Terms of Service', 'https://www.hcaptcha.com/terms']]) {{
+			if (label === 'Terms of Service') disclosure.append(' and ');
+			const link = document.createElement('a');
+			link.href = url;
+			link.textContent = label;
+			link.style.color = 'white';
+			disclosure.append(link);
 		}}
-		try {{
-			window.hcaptcha.render(widget, options);
-		}} catch (error) {{}}
+		disclosure.append(' apply.');
+		box.append(status, widget, retry, disclosure);
+		document.body.appendChild(box);
+		let finished = false;
+		let ready = false;
+		let widgetId;
+		const fail = (reason, message) => {{
+			if (finished) return;
+			finished = true;
+			clearTimeout(timer);
+			status.textContent = message;
+			window.ipc.postMessage('failure:' + reason);
+		}};
+		const timer = setTimeout(() => fail('timeout', 'Captcha loading timed out.'), 15000);
+		window.oxidcordCaptchaReady = () => {{
+			if (finished || ready) return;
+			ready = true;
+			clearTimeout(timer);
+			const expired = () => {{
+				if (finished) return;
+				status.textContent = 'Captcha closed or expired. Try again.';
+				retry.textContent = 'Try again';
+				retry.hidden = false;
+			}};
+			const options = {{
+				sitekey,
+				callback: (token) => {{
+					if (finished) return;
+					finished = true;
+					window.ipc.postMessage('solution:' + token);
+				}},
+				'error-callback': () => fail('challenge', 'Captcha challenge failed.'),
+				'expired-callback': expired,
+				'chalexpired-callback': expired,
+				'close-callback': expired
+			}};
+			if (invisible) options.size = 'invisible';
+			try {{
+				widgetId = window.hcaptcha.render(widget, options);
+				if (!invisible && rqdata) {{
+					if (typeof window.hcaptcha.setData !== 'function') {{
+						fail('render', 'Captcha could not be configured.');
+						return;
+					}}
+					window.hcaptcha.setData(widgetId, {{ rqdata }});
+				}}
+				if (!finished) {{
+					status.textContent = invisible ? 'Start the captcha to continue.' : 'Complete the captcha to continue.';
+					retry.hidden = !invisible;
+				}}
+			}} catch (error) {{
+				fail('render', 'Captcha failed to render.');
+			}}
+		}};
+		let started = false;
+		retry.addEventListener('click', () => {{
+			try {{
+				if (started || !invisible) {{
+					window.hcaptcha.reset(widgetId);
+					if (!invisible && rqdata) window.hcaptcha.setData(widgetId, {{ rqdata }});
+				}}
+				retry.hidden = true;
+				status.textContent = 'Complete the captcha to continue.';
+				if (invisible) {{
+					started = true;
+					window.hcaptcha.execute(widgetId, rqdata ? {{ rqdata }} : {{}});
+				}}
+			}} catch (error) {{
+				fail('render', 'Captcha failed to start.');
+			}}
+		}});
+		const existing = document.querySelector('script[src^="https://js.hcaptcha.com/1/api.js"]');
+		const useExisting = () => {{
+			if (window.hcaptcha && typeof window.hcaptcha.render === 'function') {{
+				window.oxidcordCaptchaReady();
+			}}
+		}};
+		if (window.hcaptcha && typeof window.hcaptcha.render === 'function') {{
+			useExisting();
+		}} else if (existing) {{
+			existing.addEventListener('load', useExisting, {{ once: true }});
+			existing.addEventListener('error', () => fail('load', 'Captcha failed to load.'), {{ once: true }});
+		}} else {{
+			const script = document.createElement('script');
+			script.src = 'https://js.hcaptcha.com/1/api.js?onload=oxidcordCaptchaReady&render=explicit';
+			script.onerror = () => fail('load', 'Captcha failed to load.');
+			document.head.appendChild(script);
+		}}
 	}};
-	const timer = setInterval(show, 250);
-	const script = document.createElement('script');
-	script.src = 'https://js.hcaptcha.com/1/api.js?render=explicit';
-	script.onload = show;
-	script.onerror = () => clearInterval(timer);
-	document.head.appendChild(script);
+	if (document.readyState === 'loading') {{
+		document.addEventListener('DOMContentLoaded', initialize, {{ once: true }});
+	}} else {{
+		initialize();
+	}}
 }})();
 "#
 	)
