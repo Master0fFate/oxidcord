@@ -1,5 +1,7 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+mod diagnostics;
+
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -17,6 +19,8 @@ use store::{Paths, Store};
 use tokio::runtime::Handle;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::writer::MakeWriterExt as _;
+use tracing_subscriber::layer::SubscriberExt as _;
+use tracing_subscriber::util::SubscriberInitExt as _;
 use ui::{AppFlags, LaunchConfig, StartSession};
 use url::Url;
 
@@ -52,6 +56,8 @@ struct Cli {
 	relaunch: bool,
 	#[arg(long, help = "Start without plugins")]
 	safe_mode: bool,
+	#[arg(long, help = "Record local diagnostics")]
+	diagnostics: bool,
 	#[arg(long, hide = true, help = "Show the login screen even with --mock")]
 	login: bool,
 	#[arg(
@@ -146,7 +152,13 @@ fn main() -> anyhow::Result<()> {
 		(None, false) => Paths::discover(),
 	}
 	.context("prepare data directories")?;
-	init_tracing(&cli.log, &paths.logs_dir());
+	init_tracing(
+		&cli.log,
+		&paths.logs_dir(),
+		cli.diagnostics,
+		cli.mock,
+		cli.safe_mode,
+	);
 	install_panic_hook(paths.logs_dir());
 	match updater::apply_pending_on_start(paths.data_dir()) {
 		Ok(outcome) if outcome.should_exit() => return Ok(()),
@@ -367,12 +379,29 @@ fn unix_now() -> i64 {
 		.map_or(0, |elapsed| elapsed.as_secs() as i64)
 }
 
-fn init_tracing(filter: &str, logs: &Path) {
+fn init_tracing(filter: &str, logs: &Path, diagnostics: bool, mock: bool, safe_mode: bool) {
+	use tracing_subscriber::Layer as _;
+	use tracing_subscriber::filter::filter_fn;
+
 	let filter = EnvFilter::try_new(filter).unwrap_or_else(|_| EnvFilter::new("info"));
-	let subscriber = tracing_subscriber::fmt().with_env_filter(filter).with_ansi(false);
+	let recorder = diagnostics
+		.then(|| diagnostics::Recorder::new(logs, mock, safe_mode))
+		.flatten();
+	let diagnostics_failed = diagnostics && recorder.is_none();
+	let recorder = recorder.map(|recorder| recorder.with_filter(filter_fn(diagnostics::allowed_metadata)));
+	let subscriber = tracing_subscriber::registry().with(recorder);
+	let log = tracing_subscriber::fmt::layer().with_ansi(false);
 	match log_file(logs) {
-		Some(file) => subscriber.with_writer(std::io::stdout.and(file)).init(),
-		None => subscriber.init(),
+		Some(file) => subscriber
+			.with(log.with_writer(std::io::stdout.and(file)).with_filter(filter))
+			.init(),
+		None => subscriber.with(log.with_filter(filter)).init(),
+	}
+	if diagnostics_failed {
+		tracing::warn!("local diagnostics could not be started");
+		eprintln!("Oxidcord could not start local diagnostics.");
+	} else if diagnostics {
+		tracing::info!(directory = %logs.display(), "local diagnostics recording");
 	}
 }
 

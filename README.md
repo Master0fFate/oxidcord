@@ -135,6 +135,9 @@ oxidcord --mock
 | `--safe-mode` | Start with every plugin disabled. Use it if a plugin misbehaves. |
 | `--data-dir <path>` | Keep settings, cache and logs under this folder, for example on a USB stick. |
 | `--log <filter>` | Log level, for example `debug`. Logs never contain the token or raw gateway payloads. |
+| `--diagnostics` | Record selected local diagnostic events. Off by default. |
+
+To record diagnostics, fully quit Oxidcord and start it with `oxidcord --diagnostics`. Restart without the flag to stop recording; passing it to an already running instance does not enable recording there. Each launch writes a new `logs/diagnostics-<timestamp>-<pid>.jsonl` under the data directory (or the folder selected by `--data-dir`). With `--data-dir <root>`, captures are in `<root>/data/logs`. The file is capped at 10 MiB. It contains only selected native login, REST and gateway events and approved fields, not screen or traffic captures, tokens, messages, IDs, URLs, paths, plugin data or error text. Events inside the separate browser login window are not recorded. It stays local and is not uploaded.
 
 ## Plugins
 

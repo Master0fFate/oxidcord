@@ -28,10 +28,13 @@ CLAUDE.md
 *.pfx
 *.p8
 update-signing.key
-/token
-/cache-key
-/accounts.json
-/account-tokens
+token
+cache-key
+accounts.json
+account-tokens/
+*.token
+diagnostics-*.jsonl
+oxidcord-login-*
 
 *.db
 *.db-wal
@@ -50,7 +53,8 @@ oxshots*
 /data/
 /config/
 /cache/
-/settings.json
+settings.json
+settings.json.bad
 /*.db
 /logs/
 

@@ -1,15 +1,11 @@
 # Clear URLs
 
-Removes tracking elements from the links in a message before it is sent, using the rule set of the ClearURLs project (`raw.githubusercontent.com/ClearURLs/Rules`). The composer shows its usual indicator that a plugin changed the message.
+Removes common tracking query parameters from links in new messages before they are sent. Matching is case-insensitive and handles percent-encoded parameter names. Kept values, paths, fragments, surrounding text, and trailing punctuation are left unchanged.
 
-For every link the plugin follows the provider rules that match it: tracking query parameters are dropped (`rules` and `referralMarketing`), raw patterns are cut out of the link (`rawRules`), provider exceptions are respected, and redirect wrappers such as `google.com/url?q=...` are replaced by their target (`redirections`). Providers that only exist to block requests (`completeProvider`) are ignored.
+The built-in patterns cover `utm`, `utm_*`, `ga_*`, `fbclid`, `gclid`, `dclid`, `msclkid`, `twclid`, `ttclid`, `yclid`, `gbraid`, `wbraid`, `mc_eid`, `mc_cid`, `mc_tc`, `mkt_tok`, `igshid`, `_ga`, `_gl`, `srsltid`, `ref_src`, `fb_source`, and `fb_ref`. The `si` parameter is also removed from `youtube.com` and `youtu.be` and their subdomains, including YouTube Music. It is kept on unrelated hosts. Generic parameters such as `ref`, `source`, and `s` are kept.
 
-The rules are downloaded three seconds after the plugin starts when the saved copy is missing or older than a day, and checked again every six hours. The saved copy is kept in plugin storage with the time it was fetched. Until a download works a small built-in list of common parameters (`utm_*`, `fbclid`, `gclid`, `msclkid`, `igshid` and similar) is used. A rule that the regex engine cannot read is skipped.
+Everything runs locally: there are no downloads, cache, or network permissions. Previously saved plugin data is not removed. This is not a full provider rule or redirect engine, so it does not unwrap redirect links or remove provider-specific tracking outside the built-in rules.
 
-`link-cleaner` is a small separate plugin with a fixed list. This one uses the full ClearURLs data and needs network access to GitHub.
+Links inside code blocks are cleaned too. Message edits are not cleaned, only new messages. Messages are only changed when the result is not empty and fits in 4000 bytes.
 
-Limits: the regex engine is `regex-lite`, so a rule with look-around or backreferences would be skipped (none of the current rules use them). Links inside code blocks are cleaned too. Message edits are not cleaned, only new messages. Messages are only changed when the result is not empty and fits in 4000 bytes.
-
-Permissions: `message-send`, `net-fetch` (host `raw.githubusercontent.com`), `storage`.
-
-Port of the Vencord plugin clearURLs.
+Permission: `message-send`, to clean links in messages before sending.

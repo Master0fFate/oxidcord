@@ -160,7 +160,12 @@ impl LoginScreen {
 				}
 				Err(_) => Some(("login-network", None, None)),
 			};
-			tracing::info!(success = failure.is_none(), "login REST validation finished");
+			tracing::info!(
+				success = failure.is_none(),
+				status = ?failure.as_ref().and_then(|(_, status, _)| *status),
+				api_code = ?failure.as_ref().and_then(|(_, _, api_code)| *api_code),
+				"login REST validation finished"
+			);
 			this.update(cx, |this, cx| match failure {
 				None => cx.emit(LoginEvent::Authenticated(token)),
 				Some((key, status, api_code)) => {

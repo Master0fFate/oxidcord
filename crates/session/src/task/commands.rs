@@ -309,6 +309,7 @@ impl Core {
 			| Command::LoadProfile { .. }
 			| Command::CreateInvite { .. }
 			| Command::ResolveInvite { .. }
+			| Command::PreviewInvite { .. }
 			| Command::AcceptInvite { .. }
 			| Command::LoadMemberVerification { .. }
 			| Command::SubmitMemberVerification { .. }
@@ -393,6 +394,24 @@ impl Core {
 			| Command::SetGuildProfile { .. }) => self.on_social_command(command),
 			command => self.on_admin_command(command),
 		}
+	}
+
+	fn resolve_invite(&self, code: String, event_id: Option<Snowflake>, background: bool) {
+		let rest = self.rest.clone();
+		let internal = self.internal.clone();
+		self.runtime.spawn(async move {
+			match rest.invite(&code, event_id).await {
+				Ok(raw) => {
+					let _ = internal.send(Internal::Loaded(Loaded::InvitePreview { code, event_id, raw }));
+				}
+				Err(error) if background && error.api().is_some_and(|api| api.code == 10006) => {
+					tracing::debug!(status = ?error.status_code(), api_code = ?error.api().map(|api| api.code), "invite preview unavailable");
+				}
+				Err(error) => {
+					let _ = internal.send(rest_failure("invite", &error));
+				}
+			}
+		});
 	}
 
 	fn on_text_command(&mut self, command: Command) {
@@ -631,10 +650,8 @@ impl Core {
 					});
 				}
 			}
-			Command::ResolveInvite { code, event_id } => self.spawn_load("invite", move |rest| async move {
-				let raw = rest.invite(&code, event_id).await?;
-				Ok(Loaded::InvitePreview { code, event_id, raw })
-			}),
+			Command::ResolveInvite { code, event_id } => self.resolve_invite(code, event_id, false),
+			Command::PreviewInvite { code, event_id } => self.resolve_invite(code, event_id, true),
 			Command::AcceptInvite { code } => {
 				let internal = self.internal.clone();
 				self.spawn_action("accept invite", move |rest| async move {

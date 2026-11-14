@@ -76,7 +76,7 @@ fn request_once(link: &InviteLink, cx: &App) {
 		return;
 	};
 	if requests.0.borrow_mut().insert((link.code.clone(), link.event)) {
-		data_handle(cx).read(cx).send(Command::ResolveInvite {
+		data_handle(cx).read(cx).send(Command::PreviewInvite {
 			code: link.code.clone(),
 			event_id: link.event,
 		});

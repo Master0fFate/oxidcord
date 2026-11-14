@@ -42,7 +42,7 @@ What you type and send.
 | Plugin | What it does | Permissions |
 | --- | --- | --- |
 | `link-cleaner` | Strips tracking parameters from links before a message is sent. | `message-send` |
-| `clear-urls` | Removes tracking parameters from links you send, using the ClearURLs rules. | `message-send`, `net-fetch`, `storage` |
+| `clear-urls` | Removes common tracking parameters from links you send, entirely offline. | `message-send` |
 | `text-shortcuts` | Expands emoticons like :shrug: and your own ;shortcuts before sending. | `message-send`, `storage`, `ui-slots` |
 | `text-replace` | Replaces text in your messages with string and regex rules. | `message-send`, `storage`, `ui-mount` |
 | `send-timestamps` | Timestamp picker button and backtick shortcut for Discord timestamps. | `ui-mount`, `composer`, `message-send`, `storage` |
@@ -176,7 +176,7 @@ Two pairs of plugins do similar things. They can run together, and each is the b
 
 | Plugins | Difference |
 | --- | --- |
-| `clear-urls` and `link-cleaner` | `link-cleaner` is a small plugin with a fixed list of tracking parameters and no network access. `clear-urls` uses the full ClearURLs rule set, which it downloads and refreshes, so it knows many more sites but needs `net-fetch` |
+| `clear-urls` and `link-cleaner` | Both run offline and remove `si` on YouTube hosts. `clear-urls` has a broader built-in tracker list and recognizes encoded parameter names. `link-cleaner` has a smaller list plus `si` rules for Spotify and `s` rules for Twitter and X. |
 | `custom-commands` and `quick-replies` | `quick-replies` keeps snippets you pick from a composer popover or send with `/snip <name>`. `custom-commands` turns saved text into slash commands of their own (`/tags create`, then `/<name>`) with arguments |
 
 ## Commands

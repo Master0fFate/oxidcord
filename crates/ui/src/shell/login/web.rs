@@ -20,6 +20,7 @@ impl LoginScreen {
 		if !self.acknowledged || matches!(self.web_state, WebState::Waiting) {
 			return;
 		}
+		tracing::info!("web login requested");
 		let started = {
 			let _entered = self.runtime.enter();
 			match &self.options.web_helper {
@@ -30,6 +31,7 @@ impl LoginScreen {
 		let session = match started {
 			Ok(session) => Arc::new(session),
 			Err(error) => {
+				tracing::info!(success = false, cancelled = false, "web login finished");
 				self.web_state = WebState::Failed(error.to_string());
 				cx.notify();
 				return;
@@ -40,8 +42,9 @@ impl LoginScreen {
 		self.web_state = WebState::Waiting;
 		self.web_session = Some(session.clone());
 		let (sender, receiver) = tokio::sync::oneshot::channel();
+		let rest_base = self.options.rest_base.clone();
 		self.runtime.spawn(async move {
-			let _ = sender.send(session.wait().await);
+			let _ = sender.send(session.wait(&rest_base).await);
 		});
 		cx.spawn(async move |this, cx| {
 			let Ok(outcome) = receiver.await else {
@@ -63,6 +66,11 @@ impl LoginScreen {
 		if run != self.web_run {
 			return;
 		}
+		tracing::info!(
+			success = outcome.is_ok(),
+			cancelled = matches!(&outcome, Err(LoginError::Cancelled)),
+			"web login finished"
+		);
 		self.web_session = None;
 		match outcome {
 			Ok(token) => {
@@ -76,6 +84,7 @@ impl LoginScreen {
 	}
 
 	fn cancel_web(&mut self, cx: &mut Context<Self>) {
+		tracing::info!("web login cancelled");
 		self.web_run += 1;
 		if let Some(session) = self.web_session.take() {
 			session.abort();

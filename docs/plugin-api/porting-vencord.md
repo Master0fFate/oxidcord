@@ -43,7 +43,7 @@ Notes for ports describe what is different from the Vencord plugin. Settings kee
 | `blurNsfw` | `blur-nsfw` | partial | blurAmount dropped (host blur is fixed), attachments only, 10 per message. |
 | `callTimer` | `call-timer` | ported | Only the stopwatch and human formats (no moment.js format), 1 s timer runs only during a call and stops itself when voice-detail is gone. |
 | `characterCounter` | `character-counter` | partial | Limit is a setting (2000 or 4000) because the user record has no premium flag, no selected-character count, theme tone tokens instead of yellow/orange/red. |
-| `clearURLs` | `clear-urls` | ported | Uses regex-lite so a rule with look-around would be skipped (none today); completeProvider entries are ignored; links inside code blocks are cleaned too, message edits are not cleaned. |
+| `clearURLs` | `clear-urls` | partial | Uses built-in common tracker patterns offline and removes `si` on YouTube hosts while keeping it on unrelated hosts, without provider downloads or redirect unwrapping. Links inside code blocks are cleaned too; message edits are not cleaned. |
 | `clientTheme` | | not ported | Impossible: CSS injection, themes are handled by the core theme system. |
 | `colorSighted` | | not ported | Impossible: Discord's internal status mask icons. |
 | `consoleJanitor` | | not ported | Impossible: web console. |

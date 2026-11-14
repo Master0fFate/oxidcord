@@ -13,6 +13,8 @@ use interprocess::local_socket::{
 use parking_lot::Mutex;
 use protocol::Token;
 use rand::RngCore;
+use rest::{Request as RestRequest, RestClient, RestConfig};
+use serde::{Deserialize, Serialize};
 use tao::dpi::LogicalSize;
 use tao::event::{Event, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy};
@@ -25,7 +27,7 @@ use wry::{WebContext, WebViewBuilder};
 use zeroize::Zeroizing;
 
 use crate::error::{LoginError, Result};
-use crate::token_login::{clean_token, plausible};
+use crate::token_login::plausible;
 
 pub const HELPER_FLAG: &str = "--login-helper";
 pub const CAPTCHA_HELPER_FLAG: &str = "--captcha-helper";
@@ -35,7 +37,9 @@ const LOGIN_HOST: &str = "discord.com";
 const WINDOW_TITLE: &str = "Sign in to Discord";
 const CAPTCHA_TITLE: &str = "Discord captcha";
 const IPC_PREFIX: &str = "oxidcord-login-";
-const MAX_TOKEN_BYTES: usize = 1024;
+const MAX_HANDOFF_BYTES: usize = 2048;
+const MAX_HANDOFF_TOKEN_BYTES: usize = 1024;
+const MAX_HANDOFF_KEY_BYTES: usize = 128;
 const MAX_CAPTCHA_BYTES: usize = 8192;
 const READ_TIMEOUT: Duration = Duration::from_secs(5);
 const EXIT_POLL: Duration = Duration::from_millis(250);
@@ -66,11 +70,13 @@ const TOKEN_PROBE: &str = r#"
 		button.textContent = 'Continue';
 		control.append(status, button);
 		document.body.appendChild(control);
-		button.addEventListener('click', () => {
+		button.addEventListener('click', async () => {
+			if (button.disabled) return;
 			if (!location.pathname.startsWith('/channels/')) {
 				status.textContent = 'Finish signing in to Discord first.';
 				return;
 			}
+			let token;
 			try {
 				let area = originalStorage;
 				if (!area) {
@@ -83,16 +89,50 @@ const TOKEN_PROBE: &str = r#"
 					area = fallbackStorage;
 				}
 				const stored = area.getItem('token');
-				let token = stored;
+				token = stored;
 				if (stored !== null) {
 					try { token = JSON.parse(stored); } catch (error) {}
 				}
-				if (typeof token === 'string' && token.trim()) {
-					window.ipc.postMessage(token);
+			} catch (error) {}
+			if (typeof token !== 'string' || !token.trim()) {
+				status.textContent = 'Sign in to Discord, then select Continue.';
+				return;
+			}
+			button.disabled = true;
+			let submitted = false;
+			status.textContent = 'Starting login handoff...';
+			try {
+				const key = crypto.randomUUID();
+				const response = await fetch('https://discord.com/api/v9/auth/handoff', {
+					method: 'POST',
+					headers: { 'Authorization': token, 'Content-Type': 'application/json' },
+					credentials: 'same-origin',
+					redirect: 'error',
+					body: JSON.stringify({ key })
+				});
+				if (!response.ok) {
+					status.textContent = `Login handoff failed (HTTP ${response.status}). Try again.`;
 					return;
 				}
-			} catch (error) {}
-			status.textContent = 'Sign in to Discord, then select Continue.';
+				const data = await response.json();
+				if (typeof data?.handoff_token !== 'string' || !/^[\x21-\x7e]{1,1024}$/.test(data.handoff_token)) {
+					status.textContent = 'Invalid handoff response. Try again.';
+					return;
+				}
+				const message = JSON.stringify({ key, handoff_token: data.handoff_token });
+				if (message.length > 2048) {
+					status.textContent = 'Invalid handoff response. Try again.';
+					return;
+				}
+				window.ipc.postMessage(message);
+				submitted = true;
+				status.textContent = 'Finishing login...';
+				return;
+			} catch (error) {
+				status.textContent = 'Login handoff failed. Check your connection or try again.';
+			} finally {
+				button.disabled = submitted;
+			}
 		});
 	};
 	if (document.readyState === 'loading') {
@@ -116,6 +156,7 @@ impl WebLogin {
 			.name(socket_name(&ipc_name)?)
 			.create_tokio()?;
 		let child = spawn_helper(executable, &ipc_name)?;
+		tracing::info!("web login helper started");
 		Ok(WebLoginSession {
 			session: HelperSession {
 				listener,
@@ -201,11 +242,37 @@ pub struct WebLoginSession {
 }
 
 impl WebLoginSession {
-	pub async fn wait(&self) -> Result<Token> {
+	pub async fn wait(&self, rest_base: &url::Url) -> Result<Token> {
 		let stream = self.session.accept().await?;
-		let token = read_token(stream).await;
+		let handoff = read_handoff(stream).await;
 		self.session.reap().await;
-		token
+		let handoff = handoff?;
+		let client = RestClient::new(RestConfig {
+			base_url: rest_base.clone(),
+			..RestConfig::default()
+		});
+		tracing::info!("web login handoff exchange started");
+		let response: HandoffResponse = client
+			.send(RestRequest::post("/auth/handoff/exchange").json(&handoff))
+			.await
+			.map_err(|error| {
+				tracing::info!(
+					status = ?error.status_code(),
+					api_code = ?error.api().map(|api| api.code),
+					"web login handoff exchange failed"
+				);
+				match error {
+					rest::RestError::Decode(_) => {
+						LoginError::Protocol("malformed handoff response".to_owned())
+					}
+					other => other.into(),
+				}
+			})?;
+		if !plausible(response.token.as_str()) {
+			return Err(LoginError::Protocol("malformed handoff response".to_owned()));
+		}
+		tracing::info!("web login handoff exchanged");
+		Ok(response.token)
 	}
 
 	pub fn abort(&self) {
@@ -242,20 +309,43 @@ impl Drop for CaptchaSession {
 	}
 }
 
-async fn read_token(stream: async_socket::Stream) -> Result<Token> {
-	let mut received = Zeroizing::new(Vec::with_capacity(MAX_TOKEN_BYTES + 1));
-	let mut limited = stream.take(MAX_TOKEN_BYTES as u64 + 1);
+#[derive(Deserialize, Serialize)]
+struct Handoff {
+	key: String,
+	handoff_token: Token,
+}
+
+#[derive(Deserialize)]
+struct HandoffResponse {
+	token: Token,
+}
+
+fn parse_handoff(message: &[u8]) -> Result<Handoff> {
+	let malformed = || LoginError::Helper("helper sent a malformed handoff".to_owned());
+	if message.len() > MAX_HANDOFF_BYTES {
+		return Err(malformed());
+	}
+	let handoff: Handoff = serde_json::from_slice(message).map_err(|_| malformed())?;
+	let valid = |value: &str, max: usize| {
+		!value.is_empty() && value.len() <= max && value.bytes().all(|byte| byte.is_ascii_graphic())
+	};
+	if !valid(&handoff.key, MAX_HANDOFF_KEY_BYTES)
+		|| !valid(handoff.handoff_token.as_str(), MAX_HANDOFF_TOKEN_BYTES)
+	{
+		return Err(malformed());
+	}
+	Ok(handoff)
+}
+
+async fn read_handoff(stream: async_socket::Stream) -> Result<Handoff> {
+	let mut received = Zeroizing::new(Vec::with_capacity(MAX_HANDOFF_BYTES + 1));
+	let mut limited = stream.take(MAX_HANDOFF_BYTES as u64 + 1);
 	timeout(READ_TIMEOUT, limited.read_to_end(&mut received))
 		.await
-		.map_err(|_| LoginError::Helper("helper stalled while sending the token".to_owned()))??;
-	let text = std::str::from_utf8(&received)
-		.map_err(|_| LoginError::Helper("helper sent a malformed token".to_owned()))?;
-	let cleaned = clean_token(text);
-	if !plausible(cleaned) {
-		return Err(LoginError::Helper("helper sent a malformed token".to_owned()));
-	}
+		.map_err(|_| LoginError::Helper("helper stalled while sending the handoff".to_owned()))??;
+	let handoff = parse_handoff(&received)?;
 	tracing::info!("web login handoff received");
-	Ok(Token::new(cleaned))
+	Ok(handoff)
 }
 
 async fn read_captcha(stream: async_socket::Stream) -> Result<String> {
@@ -472,9 +562,9 @@ fn forward_token(proxy: &EventLoopProxy<HelperEvent>, request: &Request<String>)
 	if request.uri().host() != Some(LOGIN_HOST) {
 		return;
 	}
-	let token = Zeroizing::new(clean_token(request.body()).to_owned());
-	if plausible(&token) {
-		let _ = proxy.send_event(HelperEvent::Token(token));
+	if parse_handoff(request.body().as_bytes()).is_ok() {
+		let handoff = Zeroizing::new(request.body().to_owned());
+		let _ = proxy.send_event(HelperEvent::Token(handoff));
 	}
 }
 

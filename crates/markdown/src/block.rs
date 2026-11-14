@@ -6,8 +6,6 @@ const MAX_LIST_LEVEL: u8 = 2;
 
 struct ListLine<'a> {
 	level: u8,
-	ordered: bool,
-	number: u32,
 	text: &'a str,
 }
 
@@ -170,24 +168,11 @@ fn list_line(line: &str) -> Option<ListLine<'_>> {
 	let (indent, rest) = line.split_at(indent_len);
 	let tabs = indent.bytes().filter(|&b| b == b'\t').count();
 	let level = ((tabs + (indent_len - tabs) / 2) as u8).min(MAX_LIST_LEVEL);
-	let (ordered, number, text) = match rest.strip_prefix("- ").or_else(|| rest.strip_prefix("* ")) {
-		Some(text) => (false, 1, text),
-		None => {
-			let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
-			if !(1..=9).contains(&digits) {
-				return None;
-			}
-			let text = rest[digits..].strip_prefix(". ")?;
-			(true, rest[..digits].parse().ok()?, text)
-		}
-	};
-	let text = text.trim();
-	(!text.is_empty()).then_some(ListLine {
-		level,
-		ordered,
-		number,
-		text,
-	})
+	let text = rest
+		.strip_prefix("- ")
+		.or_else(|| rest.strip_prefix("* "))?
+		.trim();
+	(!text.is_empty()).then_some(ListLine { level, text })
 }
 
 fn collect_list(input: &str, pos: usize) -> (Vec<ListLine<'_>>, usize) {
@@ -205,8 +190,6 @@ fn collect_list(input: &str, pos: usize) -> (Vec<ListLine<'_>>, usize) {
 }
 
 fn build_list(lines: &[ListLine], index: &mut usize, level: u8) -> Node {
-	let first = &lines[*index];
-	let (ordered, start) = (first.ordered, first.number);
 	let mut items: Vec<Vec<Node>> = Vec::new();
 	while let Some(line) = lines.get(*index) {
 		if line.level < level {
@@ -218,15 +201,12 @@ fn build_list(lines: &[ListLine], index: &mut usize, level: u8) -> Node {
 			last.push(build_list(lines, index, level + 1));
 			continue;
 		}
-		if line.ordered != ordered && !items.is_empty() {
-			break;
-		}
 		items.push(inline::parse(line.text));
 		*index += 1;
 	}
 	Node::List {
-		ordered,
-		start,
+		ordered: false,
+		start: 1,
 		items,
 	}
 }

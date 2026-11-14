@@ -638,6 +638,10 @@ pub enum Command {
 		code: String,
 		event_id: Option<Snowflake>,
 	},
+	PreviewInvite {
+		code: String,
+		event_id: Option<Snowflake>,
+	},
 	LoadMemberVerification {
 		guild_id: Snowflake,
 	},
