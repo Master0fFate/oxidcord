@@ -82,6 +82,7 @@ pub struct State {
 	pub(crate) altered: HashMap<Snowflake, String>,
 	pub(crate) sent_by_plugin: HashMap<Snowflake, String>,
 	pub(crate) user_overrides: HashMap<(Option<Snowflake>, Snowflake), Option<UserOverride>>,
+	stale_user_overrides: HashSet<(Option<Snowflake>, Snowflake)>,
 	pub(crate) unrendered: Vec<Arc<Message>>,
 	pub(crate) keep_deleted: bool,
 	pub(crate) lazy: Lazy,
@@ -294,7 +295,8 @@ impl State {
 	}
 
 	pub fn has_override_entry(&self, guild_id: Option<Snowflake>, user_id: Snowflake) -> bool {
-		self.user_overrides.contains_key(&(guild_id, user_id))
+		let key = (guild_id, user_id);
+		self.user_overrides.contains_key(&key) && !self.stale_user_overrides.contains(&key)
 	}
 
 	pub fn take_unrendered(&mut self) -> Vec<Arc<Message>> {
@@ -585,13 +587,30 @@ impl State {
 				}
 			}
 			LocalEvent::UserOverrides { entries } => {
-				for (guild_id, user_id, over) in entries {
-					self.user_overrides.insert((*guild_id, *user_id), over.clone());
+				for (guild_id, user_id, over, complete) in entries {
+					let key = (*guild_id, *user_id);
+					if *complete {
+						self.stale_user_overrides.remove(&key);
+					} else {
+						self.stale_user_overrides.insert(key);
+					}
+					if self.user_overrides.get(&key) != Some(over) {
+						self.user_overrides.insert(key, over.clone());
+						changes.messages.mark_all();
+						changes.members.mark_all();
+					}
 				}
-				changes.messages.mark_all();
-				changes.members.mark_all();
+			}
+			LocalEvent::UserOverridesInvalidated { users } => {
+				self.stale_user_overrides.extend(
+					self.user_overrides
+						.keys()
+						.filter(|(_, user_id)| users.contains(*user_id))
+						.copied(),
+				);
 			}
 			LocalEvent::UserOverridesCleared => {
+				self.stale_user_overrides.clear();
 				if !self.user_overrides.is_empty() {
 					self.user_overrides.clear();
 					changes.messages.mark_all();

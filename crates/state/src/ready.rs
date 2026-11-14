@@ -296,6 +296,11 @@ impl State {
 			self.presences.remove(&user_id);
 			return;
 		}
+		let client_status = presence.client_status.clone().or_else(|| {
+			self.presences
+				.get(&user_id)
+				.and_then(|known| known.client_status.clone())
+		});
 		self.presences.insert(
 			user_id,
 			Presence {
@@ -304,7 +309,7 @@ impl State {
 				guild_id: presence.guild_id,
 				status: presence.status.clone(),
 				activities: presence.activities.clone(),
-				client_status: presence.client_status.clone(),
+				client_status,
 			},
 		);
 	}

@@ -230,7 +230,7 @@ Merge rules when several plugins patch one message:
 
 ## User display
 
-`display-user-full` overrides draw in messages, the member list, DM rows, reply previews, the typing line and the profile popout.
+`display-user-full` overrides draw in messages, guild and group DM member lists, DM rows, reply previews, the typing line and the profile popout. User display hooks receive a user identity and optional guild id, not the channel or message. They run with `user-display` in both guilds and private conversations; reading private conversation data still requires `context-private`.
 
 | Field | Result | Limits |
 | --- | --- | --- |
@@ -243,7 +243,7 @@ Merge rules when several plugins patch one message:
 | `banner` | Profile popout banner | Image URL |
 | `decoration` | A ring image drawn over the avatar | Image URL |
 
-A badge with a `key` calls `on-badge-click(user-id, key)` of the plugin that made it; this is a user action. The hook receives `presence` for the user when the plugin holds `context-presence`, and `none` otherwise.
+A badge with a `key` calls `on-badge-click(user-id, key)` of the plugin that made it; this is a user action. The display hook receives `presence` for the user when the plugin holds `context-presence`, and `none` otherwise. Presence updates invalidate cached overrides across guild and private scopes, including updates received in the initial sync and member lists. Failed display calls are retried instead of being cached as an empty override.
 
 Overrides from several plugins merge per user in plugin priority order. The first plugin that sets `name`, `suffix`, `color`, `avatar`, `banner`, `decoration` or `pronouns` wins that field, and the badges of every plugin are listed in priority order and capped at 8. This applies to `display-user` and `display-user-full` alike. A plugin can use `invalidate-user` to have its override computed again.
 

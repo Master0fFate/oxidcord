@@ -460,7 +460,6 @@ impl MemberList {
 			.rounded(theme.radius_md)
 			.cursor_pointer()
 			.hover(|style| style.bg(theme.modifier_hover))
-			.when(offline, |row| row.opacity(0.5))
 			.on_click(cx.listener(move |_, event: &gpui::ClickEvent, _, cx| {
 				cx.emit(MemberListEvent::OpenProfile {
 					user: id,
@@ -476,12 +475,14 @@ impl MemberList {
 					.map(|plate| nameplate_backdrop(plate, theme, cx)),
 			)
 			.child(
-				Avatar::new(member.name.clone())
-					.size(rem(32.))
-					.url(member.avatar.clone())
-					.status(member.status)
-					.decoration(member.flair.decoration.clone())
-					.cutout(theme.background_primary),
+				div().when(offline, |avatar| avatar.opacity(0.2)).child(
+					Avatar::new(member.name.clone())
+						.size(rem(32.))
+						.url(member.avatar.clone())
+						.status(member.status)
+						.decoration(member.flair.decoration.clone())
+						.cutout(theme.background_primary),
+				),
 			)
 			.child(
 				div()
@@ -501,6 +502,7 @@ impl MemberList {
 									.line_height(rem(20.))
 									.font_weight(FontWeight::MEDIUM)
 									.text_color(name_color)
+									.when(offline, |name| name.opacity(0.2))
 									.child(name_text(member.name.clone(), member.flair.name_style.as_ref())),
 							)
 							.when_some(member.role_icon.as_ref(), |name, icon| {

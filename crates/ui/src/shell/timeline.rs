@@ -247,6 +247,9 @@ impl Timeline {
 		}
 		self.guild = guild;
 		self.channel = channel;
+		if channel.is_some() && self.data.read(cx).state().gif_favorites().is_none() {
+			self.data.read(cx).send(Command::LoadGifFavorites);
+		}
 		self.welcome = Rc::new(Welcome { name, direct });
 		self.editing = None;
 		self.requested_older = None;

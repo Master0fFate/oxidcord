@@ -8,16 +8,17 @@ use gpui_component::menu::ContextMenuExt as _;
 use gpui_component::scroll::ScrollableElement as _;
 use protocol::{ChannelType, Snowflake};
 use session::Command;
+use state::UserOverride;
 
 use super::picker;
 use crate::components::{Avatar, ContextMenuBuilder, IconButton};
 use crate::data::Data;
 use crate::i18n::{ArgValue, Translate as _};
 use crate::icons::{Icon, IconKind};
-use crate::lookup::avatar_for;
-use crate::model::{Status, status_of};
+use crate::model::{Status, role_display_color, status_of};
 use crate::shell::community::files::{Fit, IMAGE_TYPES, pick_image};
 use crate::shell::community::menus::user_apps;
+use crate::shell::plugins;
 use crate::theme::{Theme, rem};
 
 const AVATAR_PIXELS: u32 = 64;
@@ -275,6 +276,7 @@ struct MemberItem {
 	avatar: String,
 	status: Status,
 	owner: bool,
+	over: Option<UserOverride>,
 }
 
 pub struct GroupMembers {
@@ -320,10 +322,11 @@ impl GroupMembers {
 			.into_iter()
 			.map(|id| MemberItem {
 				id,
-				name: state.display_name(None, id).into(),
-				avatar: avatar_for(&state, id, AVATAR_PIXELS),
+				name: plugins::display_name(&state, None, id).into(),
+				avatar: plugins::avatar_url(&state, None, id, AVATAR_PIXELS),
 				status: status_of(&state, id),
 				owner: group.owner == Some(id),
+				over: state.user_override(None, id).cloned(),
 			})
 			.collect();
 		drop(state);
@@ -342,6 +345,7 @@ impl GroupMembers {
 		cx: &mut Context<Self>,
 	) -> AnyElement {
 		let id = item.id;
+		let offline = item.status == Status::Offline;
 		let channel = self.channel;
 		let data = self.data.clone();
 		let remove_data = self.data.clone();
@@ -413,20 +417,41 @@ impl GroupMembers {
 			}))
 			.context_menu(menu.build())
 			.child(
-				Avatar::new(item.name.clone())
-					.size(theme.avatar_sm)
-					.url(item.avatar.clone())
-					.status(item.status)
-					.cutout(theme.background_secondary),
+				div().when(offline, |avatar| avatar.opacity(0.2)).child(
+					Avatar::new(item.name.clone())
+						.size(theme.avatar_sm)
+						.url(item.avatar.clone())
+						.status(item.status)
+						.cutout(theme.background_secondary),
+				),
 			)
 			.child(
 				div()
+					.flex()
 					.flex_1()
-					.truncate()
-					.text_size(theme.font_md)
-					.font_weight(FontWeight::MEDIUM)
-					.text_color(theme.header_primary)
-					.child(item.name.clone()),
+					.min_w_0()
+					.items_center()
+					.gap(theme.space_4)
+					.child(
+						div()
+							.min_w_0()
+							.truncate()
+							.text_size(theme.font_md)
+							.font_weight(FontWeight::MEDIUM)
+							.text_color(
+								item.over
+									.as_ref()
+									.and_then(|over| over.color)
+									.map_or(theme.header_primary, role_display_color),
+							)
+							.when(offline, |name| name.opacity(0.2))
+							.child(item.name.clone()),
+					)
+					.children(
+						item.over
+							.as_ref()
+							.map_or_else(Vec::new, |over| plugins::tags(over, id, theme, cx)),
+					),
 			)
 			.when(item.owner, |row| {
 				row.child(

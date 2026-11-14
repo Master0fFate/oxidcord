@@ -3,6 +3,7 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -21,11 +22,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - id: version
         run: |
-          version="${GITHUB_REF_NAME#v}"
           crate_version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "oxidcord") | .version')"
-          if [ "$version" != "$crate_version" ]; then
-            echo "tag $GITHUB_REF_NAME does not match crate version $crate_version" >&2
-            exit 1
+          version="$crate_version"
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            version="${GITHUB_REF_NAME#v}"
+            if [ "$version" != "$crate_version" ]; then
+              echo "tag $GITHUB_REF_NAME does not match crate version $crate_version" >&2
+              exit 1
+            fi
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
@@ -171,6 +175,7 @@ jobs:
           if-no-files-found: error
 
   publish:
+    if: github.event_name == 'push'
     needs: [verify, windows, macos, linux]
     runs-on: ubuntu-latest
     permissions:

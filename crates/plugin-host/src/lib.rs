@@ -44,8 +44,8 @@ pub use instance::{CallError, PluginInstance, PluginState};
 pub use keybinds::{KeybindError, Keybinds, MAX_KEYBINDS_PER_PLUGIN, normalize_chord};
 pub use latency::LatencyStats;
 pub use manager::{
-	ChannelBadges, CommandError, DisplayAnswer, EmojiPick, FullSendDecision, HookFlags, InterceptInput,
-	Intercepted, LoadIssue, PluginDebug, PluginInfo, PluginManager, RenderHooks,
+	ChannelBadges, CommandError, DisplayAnswer, DisplayResult, EmojiPick, FullSendDecision, HookFlags,
+	InterceptInput, Intercepted, LoadIssue, PluginDebug, PluginInfo, PluginManager, RenderHooks,
 };
 pub use manifest::{API_VERSION, MANIFEST_FILE, Manifest, PermissionRequest, URL_SCHEMES};
 pub use mounts::{Mount, Mounts, ViewContext};

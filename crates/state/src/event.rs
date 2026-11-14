@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use protocol::{DispatchEvent, Message, Nonce, Ready, ReadySupplemental, Snowflake, StatusKind, User};
 
+use crate::changes::IdSet;
 use crate::loaded::Loaded;
 use crate::messages::PendingFile;
 use crate::notifications::AlertVerdict;
@@ -53,7 +54,10 @@ pub enum LocalEvent {
 		rendered: Arc<RenderedMessage>,
 	},
 	UserOverrides {
-		entries: Vec<(Option<Snowflake>, Snowflake, Option<UserOverride>)>,
+		entries: Vec<(Option<Snowflake>, Snowflake, Option<UserOverride>, bool)>,
+	},
+	UserOverridesInvalidated {
+		users: IdSet,
 	},
 	UserOverridesCleared,
 	KeepDeleted(bool),

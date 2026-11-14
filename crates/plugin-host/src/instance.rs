@@ -747,17 +747,11 @@ impl WorkerContext {
 				.map(Output::Render),
 			CallKind::BeforeSend(msg) => guest.call_before_send(&mut *store, &msg).map(Output::Send),
 			CallKind::FilterMessage(msg) => guest.call_filter_message(&mut *store, &msg).map(Output::Filter),
-			CallKind::DisplayUsers(batch) => {
-				let ticks = self.epoch_ticks(self.runtime.config.timeouts.display_item);
-				batch
-					.iter()
-					.map(|(guild_id, user)| {
-						store.set_epoch_deadline(ticks);
-						guest.call_display_user(&mut *store, *guild_id, user)
-					})
-					.collect::<wasmtime::Result<Vec<_>>>()
-					.map(Output::Displays)
-			}
+			CallKind::DisplayUsers(batch) => batch
+				.iter()
+				.map(|(guild_id, user)| guest.call_display_user(&mut *store, *guild_id, user))
+				.collect::<wasmtime::Result<Vec<_>>>()
+				.map(Output::Displays),
 			CallKind::UiAction { id, payload } => guest
 				.call_on_ui_action(&mut *store, &id, &payload)
 				.map(Output::Ui),
@@ -776,7 +770,7 @@ impl WorkerContext {
 				let event = Event::SettingChanged(SettingChange { key, value });
 				guest.call_on_event(&mut *store, &event).map(|()| Output::Done)
 			}
-			kind if kind.is_hooks2() => self.execute_hook2(store, hooks2.as_ref(), kind),
+			kind if kind.is_hooks2() => Self::execute_hook2(store, hooks2.as_ref(), kind),
 			kind => execute_hook(store, hooks.as_ref(), kind),
 		};
 		if gesture {
@@ -786,28 +780,22 @@ impl WorkerContext {
 	}
 
 	fn execute_hook2(
-		&self,
 		store: &mut Store<HostState>,
 		hooks2: Option<&hooks2::Guest>,
 		kind: CallKind,
 	) -> wasmtime::Result<Output> {
-		let timeouts = &self.runtime.config.timeouts;
 		match (hooks2, kind) {
 			(Some(hooks), CallKind::BeforeSendFull(msg)) => hooks
 				.call_before_send_full(&mut *store, &msg)
 				.map(Output::SendFull),
 			(None, CallKind::BeforeSendFull(_)) => Ok(Output::SendFull(SendDecisionFull::Pass)),
-			(Some(hooks), CallKind::DisplayUsersFull(batch)) => {
-				let ticks = self.epoch_ticks(timeouts.display_item);
-				batch
-					.iter()
-					.map(|(guild_id, user, presence)| {
-						store.set_epoch_deadline(ticks);
-						hooks.call_display_user_full(&mut *store, *guild_id, user, presence.as_ref())
-					})
-					.collect::<wasmtime::Result<Vec<_>>>()
-					.map(Output::DisplaysFull)
-			}
+			(Some(hooks), CallKind::DisplayUsersFull(batch)) => batch
+				.iter()
+				.map(|(guild_id, user, presence)| {
+					hooks.call_display_user_full(&mut *store, *guild_id, user, presence.as_ref())
+				})
+				.collect::<wasmtime::Result<Vec<_>>>()
+				.map(Output::DisplaysFull),
 			(None, CallKind::DisplayUsersFull(batch)) => Ok(Output::DisplaysFull(vec![None; batch.len()])),
 			(Some(hooks), CallKind::InterceptExt { msg, meta, content }) => hooks
 				.call_intercept_message_ext(&mut *store, &msg, *meta, &content)
@@ -839,17 +827,11 @@ impl WorkerContext {
 				.call_autocomplete_emoji(&mut *store, &query, &candidates)
 				.map(Output::Emojis),
 			(None, CallKind::AutocompleteEmoji { .. }) => Ok(Output::Emojis(Vec::new())),
-			(Some(hooks), CallKind::DecorateChannels(channels)) => {
-				let ticks = self.epoch_ticks(timeouts.decorate_item);
-				channels
-					.iter()
-					.map(|channel| {
-						store.set_epoch_deadline(ticks);
-						hooks.call_decorate_channel(&mut *store, channel)
-					})
-					.collect::<wasmtime::Result<Vec<_>>>()
-					.map(Output::Badges)
-			}
+			(Some(hooks), CallKind::DecorateChannels(channels)) => channels
+				.iter()
+				.map(|channel| hooks.call_decorate_channel(&mut *store, channel))
+				.collect::<wasmtime::Result<Vec<_>>>()
+				.map(Output::Badges),
 			(None, CallKind::DecorateChannels(channels)) => {
 				Ok(Output::Badges(vec![Vec::new(); channels.len()]))
 			}

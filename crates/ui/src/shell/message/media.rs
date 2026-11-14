@@ -146,6 +146,18 @@ fn embed_animated(media: &EmbedMedia) -> bool {
 			.is_some_and(|url| is_gif(media.content_type.as_deref(), url))
 }
 
+fn image_favorite(url: &str, width: f32, height: f32) -> Gif {
+	Gif {
+		id: url.to_owned(),
+		url: url.to_owned(),
+		src: url.to_owned(),
+		width: width as u32,
+		height: height as u32,
+		format: GifFormat::Gif,
+		..Gif::default()
+	}
+}
+
 fn embed_key(env: &BodyEnv, index: usize) -> MediaKey {
 	MediaKey {
 		message: env.message_id,
@@ -671,7 +683,10 @@ fn image_attachment(
 	let dispatch = env.dispatch.clone();
 	let at = env.message_at();
 	let attachment_id = attachment.id.get();
-	div()
+	let favorite = attachment_animated(attachment)
+		.then(|| image_favorite(&target.url, native_width, native_height))
+		.filter(|gif| !gif.url.is_empty());
+	let image = div()
 		.id(("attachment", attachment_id))
 		.on_mouse_down(MouseButton::Right, pointed)
 		.mt(theme.space_4)
@@ -698,7 +713,18 @@ fn image_attachment(
 			theme,
 			cx,
 		))
-		.into_any_element()
+		.into_any_element();
+	match favorite {
+		Some(favorite) => favorite_star(
+			favorite,
+			image,
+			width,
+			format!("attachment-{attachment_id}"),
+			env,
+			cx,
+		),
+		None => image,
+	}
 }
 
 fn file_card(attachment: &Attachment, video: bool, env: &BodyEnv, cx: &App) -> AnyElement {
@@ -863,6 +889,7 @@ pub fn removable(embeds: Vec<AnyElement>, env: &BodyEnv, cx: &App) -> AnyElement
 	let dispatch = env.dispatch.clone();
 	let group = SharedString::from(format!("embeds-{message}"));
 	div()
+		.id(group.clone())
 		.relative()
 		.self_start()
 		.flex()
@@ -874,7 +901,7 @@ pub fn removable(embeds: Vec<AnyElement>, env: &BodyEnv, cx: &App) -> AnyElement
 				.id(("embeds-remove", message))
 				.absolute()
 				.top(theme.space_8)
-				.right(theme.space_8)
+				.left(theme.space_8)
 				.size(rem(GIF_STAR))
 				.rounded_full()
 				.bg(with_alpha(theme.background_floating, 0.85))
@@ -926,6 +953,7 @@ fn bare_media(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<An
 		width: native_width as u32,
 		height: native_height as u32,
 	};
+	let favorite = animated.then(|| image_favorite(&target.url, native_width, native_height));
 	let pointed = point_media(&target, None);
 	let gallery = Gallery::single(target);
 	let dispatch = env.dispatch.clone();
@@ -950,6 +978,12 @@ fn bare_media(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<An
 			cx,
 		))
 		.into_any_element();
+	let card = match favorite {
+		Some(favorite) if !favorite.url.is_empty() => {
+			favorite_star(favorite, card, width, format!("embed-{index}"), env, cx)
+		}
+		_ => card,
+	};
 	Some(shielded(card, &[Some(media)], index * 4, env, cx))
 }
 
@@ -994,7 +1028,10 @@ fn gifv(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<AnyEleme
 		env,
 		cx,
 	);
-	let card = with_link_menu(&link, favorite_star(favorite, gif, width, index, env, cx));
+	let card = with_link_menu(
+		&link,
+		favorite_star(favorite, gif, width, format!("embed-{index}"), env, cx),
+	);
 	Some(shielded(card, &[Some(video), thumbnail], index * 4 + 1, env, cx))
 }
 
@@ -1002,7 +1039,7 @@ fn favorite_star(
 	favorite: Gif,
 	gif: AnyElement,
 	width: f32,
-	index: usize,
+	key: String,
 	env: &BodyEnv,
 	cx: &App,
 ) -> AnyElement {
@@ -1016,10 +1053,12 @@ fn favorite_star(
 				.gif_favorites()
 				.is_some_and(|favorites| favorites.iter().any(|known| known.url == favorite.url))
 		});
-	let group = SharedString::from(format!("gif-{}-{index}", env.message_id));
+	let group = SharedString::from(format!("gif-{}-{key}", env.message_id));
 	let dispatch = env.dispatch.clone();
 	div()
+		.id(group.clone())
 		.relative()
+		.self_start()
 		.flex_none()
 		.w(rem(width))
 		.max_w_full()
@@ -1027,7 +1066,7 @@ fn favorite_star(
 		.child(gif)
 		.child(
 			div()
-				.id(("gif-star", env.message_id ^ ((index as u64) << 48)))
+				.id(SharedString::from(format!("{group}-star")))
 				.absolute()
 				.top(theme.space_4)
 				.right(theme.space_4)
@@ -1046,7 +1085,7 @@ fn favorite_star(
 				} else {
 					"picker-gif-favorite"
 				})))
-				.on_mouse_down(MouseButton::Left, move |_, window, cx| {
+				.on_click(move |_, window, cx| {
 					cx.stop_propagation();
 					dispatch(RowAction::ToggleGifFavorite(favorite.clone()), window, cx);
 				})
@@ -1300,6 +1339,20 @@ fn embed_card(index: usize, embed: &Embed, env: &BodyEnv, cx: &App) -> Option<An
 				theme,
 				cx,
 			);
+			let image = if embed_animated(media) {
+				let source = media.url.as_deref().or(media.proxy_url.as_deref())?;
+				let (width, height) = dimensions(media.width, media.height);
+				favorite_star(
+					image_favorite(source, width, height),
+					div().size(rem(THUMBNAIL)).child(image).into_any_element(),
+					THUMBNAIL,
+					format!("embed-{index}-thumbnail"),
+					env,
+					cx,
+				)
+			} else {
+				image
+			};
 			Some(shielded(image, &[Some(media)], index * 4 + 3, env, cx))
 		});
 	Some(
@@ -1544,6 +1597,19 @@ fn large_media(
 			)
 		})
 		.into_any_element();
+	let frame = if embed_animated(media) {
+		let source = media.url.as_deref().unwrap_or(url);
+		favorite_star(
+			image_favorite(source, native_width, native_height),
+			frame,
+			width,
+			format!("embed-{index}"),
+			env,
+			cx,
+		)
+	} else {
+		frame
+	};
 	shielded(
 		frame,
 		&[Some(media), embed.video.as_ref()],

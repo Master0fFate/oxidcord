@@ -1,10 +1,6 @@
-use std::collections::HashMap;
-
-use plugin_sdk::model::{Badge, ClientEvent, Color, DisplayOverrideFull, Presence};
+use plugin_sdk::model::{Badge, Color, DisplayOverrideFull, Presence};
 use plugin_sdk::types::SettingChange;
-use plugin_sdk::{Event, Plugin, PluginExt, User, actions, export_plugin, log, storage};
-
-const SEEN_CAPACITY: usize = 4096;
+use plugin_sdk::{Event, Plugin, PluginExt, User, export_plugin, storage};
 const SETTING_KEYS: [&str; 2] = ["show", "colorMobileIndicator"];
 
 struct Config {
@@ -32,12 +28,9 @@ impl Config {
 	}
 }
 
-type Seen = (String, Vec<String>);
-
 #[derive(Default)]
 struct PlatformIndicators {
 	config: Config,
-	seen: HashMap<u64, Seen>,
 }
 
 fn icon(platform: &str) -> &'static str {
@@ -80,11 +73,6 @@ impl PluginExt for PlatformIndicators {
 		presence: Option<&Presence>,
 	) -> Option<DisplayOverrideFull> {
 		let presence = presence.filter(|_| !user.bot && self.config.show)?;
-		if self.seen.len() >= SEEN_CAPACITY {
-			self.seen.clear();
-		}
-		self.seen
-			.insert(user.id, (presence.status.clone(), presence.platforms.clone()));
 		if presence.platforms.is_empty() {
 			return None;
 		}
@@ -111,22 +99,6 @@ impl PluginExt for PlatformIndicators {
 			decoration: None,
 			pronouns: None,
 		})
-	}
-
-	fn on_client_event(&mut self, event: ClientEvent) {
-		let ClientEvent::PresenceChanged(presence) = event else {
-			return;
-		};
-		let Some(previous) = self.seen.get_mut(&presence.user_id) else {
-			return;
-		};
-		if previous.0 == presence.status && previous.1 == presence.platforms {
-			return;
-		}
-		*previous = (presence.status, presence.platforms);
-		if let Err(error) = actions::invalidate_user(presence.user_id) {
-			log::debug!("could not refresh user {}: {error:?}", presence.user_id);
-		}
 	}
 }
 
